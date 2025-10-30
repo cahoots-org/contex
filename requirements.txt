@@ -10,7 +10,7 @@ httpx==0.25.2
 
 # Embedding model for semantic matching (v2)
 sentence-transformers==3.3.1
-scikit-learn==1.3.2  # For cosine similarity
+scikit-learn==1.7.2  # For cosine similarity
 
 # Utilities
 python-dotenv==1.0.0
