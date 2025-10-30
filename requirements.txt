@@ -6,7 +6,7 @@ redis==5.0.1
 pydantic==2.5.0
 fastapi==0.104.0
 uvicorn[standard]==0.24.0
-httpx==0.25.2
+httpx==0.28.1
 
 # Embedding model for semantic matching (v2)
 sentence-transformers==3.3.1
