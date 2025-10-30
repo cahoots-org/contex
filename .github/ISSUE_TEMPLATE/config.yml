@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/contex/contex/discussions
+    about: Ask questions or discuss ideas with the community
+  - name: Documentation
+    url: https://docs.contex.dev
+    about: Read the official documentation
+  - name: Discord Community
+    url: https://discord.gg/contex
+    about: Join our Discord server for real-time help and discussion
