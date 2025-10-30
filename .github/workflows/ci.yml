@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      env:
+        REDIS_URL: redis://localhost:6379
+      run: |
+        pytest tests/ -v
+
+  docker:
+    name: Docker Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: contex:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker Compose
+      run: |
+        docker compose up -d
+        sleep 15
+        curl -f http://localhost:8001/health || exit 1
+        docker compose down
