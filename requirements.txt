@@ -2,7 +2,7 @@
 # This is for the standalone context-engine microservice deployment (CPU-ONLY)
 
 # Core dependencies
-redis==5.0.1
+redis==7.0.1
 pydantic==2.5.0
 fastapi==0.104.0
 uvicorn[standard]==0.24.0
