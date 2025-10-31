@@ -14,6 +14,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy requirements and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt && \
     # Remove unnecessary files to reduce image size
     find /opt/venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
