@@ -1,41 +1,24 @@
 # Contex
 
-**Semantic context routing for AI agents**
+**Keep your AI agents focused on what matters.**
 
-Contex is a context engine that automatically delivers relevant project data to AI agents based on their semantic needs. Agents describe what they need in natural language, and Contex uses embedding-based matching to route the right information—updating them in real-time as your project evolves.
+When you have multiple AI agents working on the same project, each agent needs context—but agent context windows are limited. You can't give them everything.
+
+Contex solves this by **filtering your entire project down to just what each agent needs**, based on semantic meaning. Your code review agent gets coding standards and test requirements. Your documentation agent gets API schemas and endpoint descriptions. Each agent gets a personalized, minimal context that fits in their window.
 
 ```python
-# Agent declares needs
+# Agent describes what it needs (in plain language)
 await contex.register_agent(
-    agent_id="code-generator",
-    data_needs=["coding standards", "API patterns", "database schemas"]
+    agent_id="code-reviewer",
+    data_needs=["coding standards", "testing requirements"]
 )
 
-# Publish any data
+# Publish any project data (any structure)
 await contex.publish(data_key="api_docs", data={...})
 
-# Matching agents get notified automatically
+# Matching agents automatically receive relevant context
+# No schemas. No polling. Just semantic matching + real-time updates.
 ```
-
-**No schemas. No polling. Just semantic matching + real-time updates.**
-
----
-
-## Why Contex?
-
-**Without Contex:**
-- Agents duplicate context-building logic
-- Hardcoded queries to specific data sources
-- Manual polling for updates
-- Tight coupling between agents and data
-
-**With Contex:**
-- Agents declare what they need in natural language
-- Semantic matching finds relevant data automatically
-- Real-time updates via Redis pub/sub or webhooks
-- Zero coupling—add/remove agents without code changes
-
----
 
 ## Quick Start
 
