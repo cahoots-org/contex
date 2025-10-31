@@ -163,11 +163,6 @@ class TestWebhookIntegration:
     """Test webhook integration with ContextEngine"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        return FakeAsyncRedis(decode_responses=False)
-
-    @pytest_asyncio.fixture
     async def context_engine(self, redis):
         """Create a ContextEngine instance"""
         return ContextEngine(redis=redis, similarity_threshold=0.5, max_matches=10)

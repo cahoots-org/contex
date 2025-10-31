@@ -10,11 +10,6 @@ class TestEventStore:
     """Test EventStore functionality"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        return FakeAsyncRedis(decode_responses=False)
-
-    @pytest_asyncio.fixture
     async def event_store(self, redis):
         """Create an EventStore instance"""
         return EventStore(redis)

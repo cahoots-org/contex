@@ -12,11 +12,6 @@ class TestContextEngine:
     """Test ContextEngine functionality"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        return FakeAsyncRedis(decode_responses=False)
-
-    @pytest_asyncio.fixture
     async def context_engine(self, redis):
         """Create a ContextEngine instance"""
         return ContextEngine(redis=redis, similarity_threshold=0.5, max_matches=10)
@@ -474,11 +469,6 @@ class TestContextEngine:
 
 class TestContextSizeLimits:
     """Test context size limiting functionality"""
-
-    @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        return FakeAsyncRedis(decode_responses=False)
 
     @pytest_asyncio.fixture
     async def context_engine_with_limit(self, redis):
