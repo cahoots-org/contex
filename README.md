@@ -22,12 +22,8 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 ## Quick Start
 
 ### Using Docker (Recommended)
-### Using Docker (Recommended)
 
 ```bash
-# 1. Clone and start
-git clone https://github.com/yourusername/contex.git
-cd contex
 # 1. Clone and start
 git clone https://github.com/yourusername/contex.git
 cd contex
@@ -49,32 +45,11 @@ Services:
 
 ```bash
 # Install dependencies
-# 2. Verify it's running
-curl http://localhost:8001/api/health
-
-# 3. Try the web UI
-open http://localhost:8001
-```
-
-Services:
-- **Contex API**: `http://localhost:8001`
-- **Redis**: `localhost:6379`
-- **OpenSearch**: `http://localhost:9200`
-
-### Local Development
-
-```bash
-# Install dependencies
 pip install -r requirements.txt
 
 # Start Redis and OpenSearch (required)
 docker compose up -d redis opensearch
 
-# Start Redis and OpenSearch (required)
-docker compose up -d redis opensearch
-
-# Run Contex
-REDIS_URL=redis://localhost:6379 python main.py
 # Run Contex
 REDIS_URL=redis://localhost:6379 python main.py
 ```
@@ -83,16 +58,6 @@ REDIS_URL=redis://localhost:6379 python main.py
 
 ## How It Works
 
----
-
-## How It Works
-
-### 1. Publish Data (Any Format)
-
-Contex accepts JSON, YAML, TOML, or plain text—publish however your data is stored.
-
-<details open>
-<summary><b>📦 JSON</b> - Structured data</summary>
 ### 1. Publish Data (Any Format)
 
 Contex accepts JSON, YAML, TOML, or plain text—publish however your data is stored.
@@ -104,18 +69,9 @@ Contex accepts JSON, YAML, TOML, or plain text—publish however your data is st
 import httpx
 
 await httpx.post("http://localhost:8001/api/data/publish", json={
-await httpx.post("http://localhost:8001/api/data/publish", json={
     "project_id": "my-app",
     "data_key": "api_config",
-    "data_key": "api_config",
     "data": {
-        "base_url": "https://api.example.com",
-        "timeout": 30,
-        "retry_count": 3,
-        "endpoints": {
-            "users": "/v1/users",
-            "orders": "/v1/orders"
-        }
         "base_url": "https://api.example.com",
         "timeout": 30,
         "retry_count": 3,
@@ -258,142 +214,9 @@ await httpx.post("http://localhost:8001/api/data/publish", json={
 </details>
 
 ### 2. Register Agent with Semantic Needs
-</details>
-
-<details>
-<summary><b>📄 YAML</b> - Configuration files</summary>
-
-```python
-import httpx
-
-yaml_content = """
-database:
-  host: localhost
-  port: 5432
-  name: myapp_production
-  pool_size: 10
-  timeout: 30
-
-redis:
-  host: redis.example.com
-  port: 6379
-  db: 0
-  max_connections: 50
-"""
-
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "infrastructure_config",
-    "data": yaml_content
-})
-```
-</details>
-
-<details>
-<summary><b>⚙️ TOML</b> - Package configuration</summary>
-
-```python
-import httpx
-
-toml_content = """
-[tool.poetry]
-name = "my-app"
-version = "1.2.3"
-python = "^3.11"
-
-[tool.poetry.dependencies]
-fastapi = "^0.104.0"
-redis = "^5.0.0"
-pydantic = "^2.0.0"
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-select = ["E", "F", "I"]
-"""
-
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "project_config",
-    "data": toml_content
-})
-```
-</details>
-
-<details>
-<summary><b>📝 Plain Text</b> - Policies and guidelines</summary>
-
-```python
-import httpx
-
-guidelines = """
-Code Review Guidelines
-
-1. All PRs require 2 approvals before merge
-2. PRs over 500 lines need architecture team review
-3. All tests must pass before merge
-4. No direct commits to main branch
-5. Security changes require security team approval
-
-Response Time SLAs:
-- P0 (Critical): 15 minutes
-- P1 (High): 2 hours
-- P2 (Medium): 1 business day
-- P3 (Low): 1 week
-
-On-call rotation: See PagerDuty schedule
-Escalation: After 2 failed attempts, page manager
-"""
-
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "dev_guidelines",
-    "data": guidelines
-})
-```
-</details>
-
-<details>
-<summary><b>📋 Markdown</b> - Technical documentation</summary>
-
-```python
-import httpx
-
-markdown_doc = """
-# Authentication Flow
-
-Our API uses OAuth2 with PKCE for secure authentication.
-
-## Flow Steps
-1. Client requests authorization code
-2. User authenticates with identity provider
-3. Client exchanges code for access token
-4. Access token is used for API requests (expires after 1 hour)
-
-## Token Refresh
-Use the refresh token to obtain a new access token without re-authenticating.
-Call POST /oauth/token with grant_type=refresh_token.
-
-## Security Notes
-- All tokens must be transmitted over HTTPS
-- Store refresh tokens securely (encrypted at rest)
-- Rotate tokens on any suspected compromise
-- Implement token binding when possible
-"""
-
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "auth_documentation",
-    "data": markdown_doc
-})
-```
-</details>
-
-### 2. Register Agent with Semantic Needs
 
 ```python
 # Agent describes needs in natural language
-await httpx.post("http://localhost:8001/api/agents/register", json={
 await httpx.post("http://localhost:8001/api/agents/register", json={
     "agent_id": "code-reviewer",
     "project_id": "my-app",
@@ -407,11 +230,7 @@ await httpx.post("http://localhost:8001/api/agents/register", json={
 **Returns:** Matched data + notification channel
 
 ### 3. Receive Updates
-**Returns:** Matched data + notification channel
 
-### 3. Receive Updates
-
-**Option A: Redis Pub/Sub**
 **Option A: Redis Pub/Sub**
 ```python
 import redis.asyncio as redis
@@ -424,14 +243,11 @@ async for message in pubsub.listen():
     if message["type"] == "message":
         update = json.loads(message["data"])
         # Process updated context
-        # Process updated context
 ```
 
 **Option B: Webhooks**
-**Option B: Webhooks**
 ```python
 # Register with webhook
-await httpx.post("http://localhost:8001/api/agents/register", json={
 await httpx.post("http://localhost:8001/api/agents/register", json={
     "agent_id": "code-reviewer",
     "project_id": "my-app",
@@ -473,13 +289,7 @@ events = await httpx.get(
 ### Core Endpoints
 
 **Publish Data**
-### Core Endpoints
-
-**Publish Data**
 ```http
-POST /api/data/publish
-Content-Type: application/json
-
 POST /api/data/publish
 Content-Type: application/json
 
@@ -487,17 +297,11 @@ Content-Type: application/json
   "project_id": "my-project",
   "data_key": "config",
   "data": { /* any JSON */ }
-  "data_key": "config",
-  "data": { /* any JSON */ }
 }
 ```
 
 **Register Agent**
-**Register Agent**
 ```http
-POST /api/agents/register
-Content-Type: application/json
-
 POST /api/agents/register
 Content-Type: application/json
 
@@ -506,28 +310,21 @@ Content-Type: application/json
   "project_id": "my-project",
   "data_needs": ["natural language descriptions"],
   "notification_method": "redis" | "webhook"
-  "notification_method": "redis" | "webhook"
 }
 ```
 
-**Query/Search Data**
 **Query/Search Data**
 ```http
 POST /api/projects/{project_id}/query
 Content-Type: application/json
 
-POST /api/projects/{project_id}/query
-Content-Type: application/json
-
 {
-  "query": "authentication methods OAuth JWT",
   "query": "authentication methods OAuth JWT",
   "top_k": 5
 }
 ```
 
 **List Agents**
-**List Agents**
 ```http
 GET /api/agents
 GET /api/agents/{agent_id}
@@ -549,77 +346,7 @@ DELETE /api/agents/{agent_id}
 ### Configuration
 
 **Environment Variables** (`.env` or `docker-compose.yml`):
-GET /api/agents
-GET /api/agents/{agent_id}
-DELETE /api/agents/{agent_id}
-```
-
-### Additional Endpoints
-
-- `GET /api/projects/{project_id}/data` - List all project data
-- `GET /api/projects/{project_id}/events` - Get event history
-- `GET /api/health` - Health check
-- `GET /api/metrics` - Prometheus metrics
-- `GET /api/docs` - Interactive API documentation
-
----
-
-## Docker Deployment
-
-### Configuration
-
-**Environment Variables** (`.env` or `docker-compose.yml`):
 ```bash
-# Redis
-REDIS_URL=redis://redis:6379
-
-# Semantic matching
-SIMILARITY_THRESHOLD=0.5    # Match threshold (0-1)
-MAX_MATCHES=10              # Max results per query
-MAX_CONTEXT_SIZE=51200      # Max context tokens
-
-# Logging
-LOG_LEVEL=INFO
-LOG_JSON=true
-
-# Hybrid search
-HYBRID_SEARCH_ENABLED=false
-BM25_WEIGHT=0.7
-KNN_WEIGHT=0.3
-```
-
-### Common Commands
-
-```bash
-# Start services
-docker compose up -d
-
-# View logs
-docker compose logs -f contex
-
-# Rebuild after code changes
-docker compose build contex
-docker compose up -d
-
-# Stop services
-docker compose down
-
-# Remove all data (WARNING: destructive)
-docker compose down -v
-
-# Check resource usage
-docker stats contex-app
-```
-
-### Health Checks
-
-Services include health checks:
-
-- **Redis**: `redis-cli ping` (every 5s)
-- **Contex**: `GET /api/health` (every 10s)
-- **OpenSearch**: Built-in health check (every 10s)
-
-Check status:
 # Redis
 REDIS_URL=redis://redis:6379
 
@@ -695,46 +422,13 @@ Data persists in Docker volumes:
 - `opensearch-data` - OpenSearch vector and keyword indices
 
 **Backup Redis data:**
-docker compose ps
-```
-
-### Resource Limits
-
-Default limits (configurable in `docker-compose.yml`):
-
-**Contex**:
-- Memory: 2GB limit, 1GB reserved
-- CPU: 2.0 limit, 1.0 reserved
-
-**Redis**:
-- Memory: 512MB limit, 256MB reserved
-
-**OpenSearch**:
-- Memory: 2GB limit (via `OPENSEARCH_JAVA_OPTS`)
-
-### Data Persistence
-
-Data persists in Docker volumes:
-- `redis-data` - Redis event store and indices
-- `opensearch-data` - OpenSearch vector and keyword indices
-
-**Backup Redis data:**
 ```bash
-docker compose exec redis redis-cli BGSAVE
-docker cp contex-redis:/data/dump.rdb ./backup-$(date +%Y%m%d).rdb
 docker compose exec redis redis-cli BGSAVE
 docker cp contex-redis:/data/dump.rdb ./backup-$(date +%Y%m%d).rdb
 ```
 
 **Restore Redis data:**
-**Restore Redis data:**
 ```bash
-docker compose down
-docker cp ./backup.rdb contex-redis:/data/dump.rdb
-docker compose up -d
-```
-
-See [`scripts/backup-redis.sh`](scripts/backup-redis.sh) for automated backups.
 docker compose down
 docker cp ./backup.rdb contex-redis:/data/dump.rdb
 docker compose up -d
@@ -744,31 +438,6 @@ See [`scripts/backup-redis.sh`](scripts/backup-redis.sh) for automated backups.
 
 ---
 
-## Configuration
-
-### Core Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `SIMILARITY_THRESHOLD` | `0.5` | Minimum similarity score (0-1) |
-| `MAX_MATCHES` | `10` | Maximum results per query |
-| `MAX_CONTEXT_SIZE` | `51200` | Maximum context size in tokens |
-
-### Logging
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
-| `LOG_JSON` | `true` | Output JSON-structured logs |
-
-### Hybrid Search
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HYBRID_SEARCH_ENABLED` | `false` | Enable hybrid search |
-| `BM25_WEIGHT` | `0.7` | Weight for keyword matching (0-1) |
-| `KNN_WEIGHT` | `0.3` | Weight for semantic matching (0-1) |
 ## Configuration
 
 ### Core Settings
@@ -801,10 +470,7 @@ See [`scripts/backup-redis.sh`](scripts/backup-redis.sh) for automated backups.
 
 ### Setup
 
-### Setup
-
 ```bash
-# Install dependencies
 # Install dependencies
 pip install -r requirements.txt
 
@@ -819,20 +485,8 @@ docker compose up -d redis opensearch
 
 ```bash
 # Run all tests
-# Install dev dependencies (optional)
-pip install -r requirements-dev.txt
-
-# Start infrastructure
-docker compose up -d redis opensearch
-```
-
-### Running Tests
-
-```bash
-# Run all tests
 pytest tests/ -v
 
-# Run with coverage
 # Run with coverage
 pytest tests/ --cov=src --cov-report=html
 
@@ -858,112 +512,10 @@ contex/
 ├── scripts/          # Utility scripts
 ├── examples/         # Usage examples
 └── main.py           # Application entry point
-
-# Run specific test file
-pytest tests/test_context_engine.py -v
-```
-
-**Test Coverage:** 154 tests, 100% passing
-
-### Project Structure
-
-```
-contex/
-├── src/
-│   ├── api/          # REST API routes
-│   ├── core/         # Core engine and matching logic
-│   ├── web/          # Web UI
-│   └── models/       # Data models
-├── tests/            # Test suite
-├── docs/             # Documentation
-├── k8s/              # Kubernetes manifests
-├── helm/             # Helm chart
-├── scripts/          # Utility scripts
-├── examples/         # Usage examples
-└── main.py           # Application entry point
 ```
 
 ---
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Contex Service                     │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐  │
-│  │   Sentence Transformers (all-MiniLM-L6-v2)  │  │
-│  └────────────────┬────────────────────────────┘  │
-│                   │                                │
-│  ┌────────────────▼────────────────────────────┐  │
-│  │        Semantic Matcher + Hybrid Search     │  │
-│  │         (Vector + BM25 via OpenSearch)      │  │
-│  └────────────────┬────────────────────────────┘  │
-│                   │                                │
-│  ┌────────────────▼────────────────────────────┐  │
-│  │     Context Engine (Filtering + Routing)    │  │
-│  └────────────────┬────────────────────────────┘  │
-│                   │                                │
-│  ┌────────────────▼────────────────────────────┐  │
-│  │    Event Store (Redis Streams) + Pub/Sub    │  │
-│  └─────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────┘
-         │                              ▲
-         │ (push updates)               │ (publish/register)
-         ▼                              │
-   AI Agents ──────────────► Data Publishers
-```
-
-**Technology Stack:**
-- **API**: FastAPI (Python 3.11+)
-- **Embeddings**: sentence-transformers (all-MiniLM-L6-v2, 384 dims)
-- **Event Store**: Redis Streams
-- **Vector Search**: OpenSearch with kNN
-- **Keyword Search**: OpenSearch with BM25
-- **Notifications**: Redis pub/sub or HTTP webhooks
-
-**Resource Requirements:**
-- Memory: ~2GB (400MB model + 500MB runtime + buffer)
-- CPU: 2+ cores recommended (CPU-only, no GPU required)
-- Storage: Depends on data volume (Redis + OpenSearch)
-
----
-
-## Kubernetes Deployment
-
-Production-ready Kubernetes manifests and Helm chart available:
-
-```bash
-# Using kubectl with Kustomize
-kubectl apply -k k8s/overlays/prod
-
-# Using Helm (recommended)
-helm install contex ./helm/contex \
-  --set redis.enabled=true \
-  --set resources.memory=2Gi \
-  -f production-values.yaml
-```
-
-Features:
-- Liveness and readiness probes
-- Horizontal Pod Autoscaler (2-10 replicas)
-- Resource limits and requests
-- ServiceMonitor for Prometheus
-- Ingress with TLS support
-
-See [`docs/KUBERNETES.md`](docs/KUBERNETES.md) for complete guide.
-
----
-
-## Use Cases
-
-- **AI Coding Assistants** - Code generators, test writers, doc agents that adapt to your codebase
-- **Content Pipelines** - Multi-stage workflows where agents pass context seamlessly
-- **Code Review** - Quality checkers that enforce standards consistently
-- **Documentation** - Agents that maintain docs based on code changes
-- **Multi-Agent Systems** - Coordinating multiple specialized agents
-
-Any scenario where you need to share data across agents without enforcing rigid schemas.
 ## Architecture
 
 ```
@@ -1049,26 +601,12 @@ Any scenario where you need to share data across agents without enforcing rigid 
 ## Roadmap
 
 ### ✅ Completed (v0.2.0)
-### ✅ Completed (v0.2.0)
 - [x] Semantic matching with embeddings
 - [x] Event-driven updates via pub/sub
 - [x] Historical catch-up for new agents
 - [x] Multi-project support
 - [x] Webhook support (alternative to Redis)
 - [x] Ad-hoc query endpoint
-- [x] Hybrid search (BM25 + kNN)
-- [x] Structured JSON logging
-- [x] Prometheus metrics
-- [x] Health checks (liveness/readiness)
-- [x] Kubernetes manifests + Helm chart
-
-### 🚧 In Development
-- [ ] API key authentication (code complete, needs deployment)
-- [ ] Rate limiting (code complete, needs deployment)
-- [ ] RBAC (code complete, needs deployment)
-- [ ] Circuit breaker for webhooks (code complete, needs testing)
-
-### 📋 Planned (v0.3.0+)
 - [x] Hybrid search (BM25 + kNN)
 - [x] Structured JSON logging
 - [x] Prometheus metrics
@@ -1113,36 +651,6 @@ A: Authentication, rate limiting, and RBAC are implemented but not yet deployed 
 
 **Q: How does hybrid search work?**
 A: Combines semantic (vector/kNN) and keyword (BM25) search. Results are scored using weighted combination (default: 70% BM25, 30% kNN). Enable with `HYBRID_SEARCH_ENABLED=true`.
-- [ ] Node.js/TypeScript SDK
-- [ ] Distributed tracing (OpenTelemetry)
-- [ ] Data retention policies
-- [ ] Export/import functionality
-- [ ] GraphQL API
-- [ ] WebSocket support
-
-See [`ROADMAP.md`](ROADMAP.md) for detailed planning.
-
----
-
-## FAQ
-
-**Q: How is this different from a vector database?**
-A: Vector DBs are for retrieval (query → results). Contex is for subscription (needs → live updates). Agents don't query—they subscribe and get pushed updates when relevant data changes.
-
-**Q: Different from RAG?**
-A: RAG is pull-based (agent requests context). Contex is push-based (context sent when it changes). Better for long-running agents that need to stay updated.
-
-**Q: Do I need a GPU?**
-A: No. Runs on CPU with sentence-transformers (~10ms per embedding on modern CPUs).
-
-**Q: Can I use without Redis?**
-A: Agents can use webhooks instead of Redis pub/sub for notifications. However, Contex itself requires Redis for the event store and indices.
-
-**Q: What about authentication?**
-A: Authentication, rate limiting, and RBAC are implemented but not yet deployed by default. See security roadmap above.
-
-**Q: How does hybrid search work?**
-A: Combines semantic (vector/kNN) and keyword (BM25) search. Results are scored using weighted combination (default: 70% BM25, 30% kNN). Enable with `HYBRID_SEARCH_ENABLED=true`.
 
 ---
 
@@ -1155,31 +663,9 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Pull request process
 
 ---
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Code of conduct
-- Development setup
-- Testing guidelines
-- Pull request process
-
----
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
-
----
-
-## Support
-
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/contex/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/contex/discussions)
-
----
-
-<p align="center">
-  Built with ❤️ for AI agent developers
-</p>
 MIT License - See [LICENSE](LICENSE) for details.
 
 ---
