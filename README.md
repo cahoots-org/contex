@@ -29,14 +29,49 @@ pip install contex-python
 
 ### 2. Start Contex Server
 
+**Option A: Docker Compose (Recommended)**
+
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  contex:
+    image: ghcr.io/cahoots-org/contex:latest
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on:
+      - redis
+      - opensearch
+
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+    ports:
+      - "9200:9200"
+```
+
+Then run:
 ```bash
-# Using Docker (recommended)
+docker compose up -d
+curl http://localhost:8001/api/health
+```
+
+**Option B: Clone and Run (for development)**
+
+```bash
 git clone https://github.com/cahoots-org/contex.git
 cd contex
 docker compose up -d
-
-# Verify it's running
-curl http://localhost:8001/api/health
 ```
 
 ### 3. Use the SDK
