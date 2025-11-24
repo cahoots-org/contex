@@ -69,7 +69,7 @@ class TestContextEngine:
     async def test_publish_registers_with_semantic_matcher(self, context_engine):
         """Test that publishing data registers it with semantic matcher"""
         event = DataPublishEvent(
-            project_id="proj1", data_key="api_docs", data={"endpoints": ["/api/users"]}
+            project_id="proj1", data_key="api_docs", data={"endpoints": ["/api/v1/users"]}
         )
 
         await context_engine.publish_data(event)
@@ -299,7 +299,7 @@ class TestContextEngine:
             DataPublishEvent(
                 project_id="proj1",
                 data_key="api_docs",
-                data={"endpoints": ["/api/users", "/api/posts"]},
+                data={"endpoints": ["/api/v1/users", "/api/v1/posts"]},
             )
         )
 
@@ -442,7 +442,7 @@ class TestContextEngine:
                 DataPublishEvent(
                     project_id="proj1",
                     data_key=f"api_endpoint_{i}",
-                    data={"endpoint": f"/api/v1/resource{i}"},
+                    data={"endpoint": f"/api/v1/v1/resource{i}"},
                 )
             )
 

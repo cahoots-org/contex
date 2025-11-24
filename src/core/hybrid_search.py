@@ -1,210 +1,228 @@
 """
-Hybrid search combining BM25 text search with kNN vector search.
+Hybrid search using Reciprocal Rank Fusion (RRF) algorithm.
 
-Based on implementation from UpContent Content service.
+Combines lexical (BM25) and semantic (vector) search using rank-based fusion
+rather than score normalization, providing more robust result merging.
+
+References:
+- Cormack, G. V., Clarke, C. L., & Buettcher, S. (2009).
+  "Reciprocal rank fusion outperforms condorcet and individual rank learning methods."
 """
 
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 from opensearchpy import OpenSearch
 
 from .semantic_matcher import SemanticDataMatcher
 
 
-class HybridSearchMatcher:
+class RankFusionSearch:
     """
-    Hybrid search matcher combining BM25 text search and kNN vector search.
+    Hybrid search using Reciprocal Rank Fusion (RRF) algorithm.
 
-    This class uses Elasticsearch to perform:
-    - BM25: Traditional keyword-based relevance ranking
-    - kNN: Vector similarity search using embeddings
+    RRF combines multiple ranked lists by computing reciprocal ranks,
+    which is more robust than score-based fusion and doesn't require
+    score normalization or weight tuning.
 
-    Results are normalized and combined with configurable weights.
+    Formula: RRF_score = Σ 1/(k + rank_i)
+    where k is a constant (typically 60) and rank_i is the rank in list i.
     """
 
     def __init__(
         self,
         semantic_matcher: SemanticDataMatcher,
-        elasticsearch_url: Optional[str] = None,
-        bm25_weight: float = 0.7,
-        knn_weight: float = 0.3,
+        opensearch_url: Optional[str] = None,
+        rrf_k: int = 60,  # Standard RRF constant
+        vector_boost: float = 1.0,  # Boost factor for vector results
     ):
         """
-        Initialize hybrid search matcher.
+        Initialize rank fusion search.
 
         Args:
-            semantic_matcher: Existing semantic matcher for embeddings
-            elasticsearch_url: Elasticsearch connection URL
-            bm25_weight: Weight for BM25 text search (default: 0.7)
-            knn_weight: Weight for kNN vector search (default: 0.3)
+            semantic_matcher: Semantic matcher for vector embeddings
+            opensearch_url: OpenSearch connection URL
+            rrf_k: RRF constant (default: 60, standard value)
+            vector_boost: Multiplier for vector rank contributions (default: 1.0)
         """
         self.semantic_matcher = semantic_matcher
-        self.bm25_weight = bm25_weight
-        self.knn_weight = knn_weight
+        self.rrf_k = rrf_k
+        self.vector_boost = vector_boost
 
-        # Connect to OpenSearch
-        es_url = elasticsearch_url or os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-        self.es = OpenSearch(
-            hosts=[es_url],
+        # Initialize OpenSearch connection
+        os_url = opensearch_url or os.getenv("OPENSEARCH_URL", "http://localhost:9200")
+        self.client = OpenSearch(
+            hosts=[os_url],
             http_compress=True,
             use_ssl=False,
             verify_certs=False,
             ssl_assert_hostname=False,
             ssl_show_warn=False
         )
-        self.index_name = "contex-data"
+        self.index_name = "contex-hybrid-index"
 
-        # Ensure index exists
-        self._ensure_index_exists()
+        # Initialize index
+        self._initialize_index()
 
-        print(f"[HybridSearch] Connected to OpenSearch at {es_url}")
-        print(f"[HybridSearch] Weights: BM25={bm25_weight}, kNN={knn_weight}")
+        print(f"[RankFusionSearch] Connected to OpenSearch at {os_url}")
+        print(f"[RankFusionSearch] RRF constant k={rrf_k}, vector_boost={vector_boost}")
 
-    def _ensure_index_exists(self) -> None:
-        """Create Elasticsearch index if it doesn't exist."""
-        if self.es.indices.exists(index=self.index_name):
-            print(f"[HybridSearch] Index {self.index_name} already exists")
+    def _initialize_index(self) -> None:
+        """Initialize OpenSearch index with appropriate mappings."""
+        if self.client.indices.exists(index=self.index_name):
+            print(f"[RankFusionSearch] Index {self.index_name} exists")
             return
 
-        print(f"[HybridSearch] Creating index {self.index_name}")
+        print(f"[RankFusionSearch] Creating index {self.index_name}")
 
-        # Index configuration with both text and vector fields
-        index_body = {
+        # Index configuration
+        index_config = {
             "settings": {
                 "number_of_shards": 1,
                 "number_of_replicas": 0,
                 "index": {
-                    "knn": True,  # Enable kNN search
+                    "knn": True,
+                    "knn.algo_param.ef_search": 100,  # HNSW parameter
                 }
             },
             "mappings": {
                 "properties": {
-                    # Identification
                     "project_id": {"type": "keyword"},
                     "data_key": {"type": "keyword"},
-
-                    # Text fields for BM25 search
-                    "description": {"type": "text"},
-                    "data_json": {"type": "text"},  # JSON representation for keyword search
-
-                    # Metadata
-                    "data_format": {"type": "keyword"},
+                    "content": {
+                        "type": "text",
+                        "analyzer": "standard",
+                        "fields": {
+                            "keyword": {"type": "keyword"}
+                        }
+                    },
+                    "metadata": {"type": "text"},
+                    "format": {"type": "keyword"},
                     "is_structured": {"type": "boolean"},
-
-                    # Vector field for kNN search
-                    "embedding": {
+                    "vector": {
                         "type": "knn_vector",
-                        "dimension": 384,  # all-MiniLM-L6-v2 dimension
+                        "dimension": 384,
                         "method": {
                             "name": "hnsw",
                             "space_type": "cosinesimil",
-                            "engine": "nmslib"
+                            "engine": "nmslib",
+                            "parameters": {
+                                "ef_construction": 128,
+                                "m": 24
+                            }
                         }
                     }
                 }
             }
         }
 
-        self.es.indices.create(index=self.index_name, body=index_body)
-        print(f"[HybridSearch] Successfully created index {self.index_name}")
+        self.client.indices.create(index=self.index_name, body=index_config)
+        print(f"[RankFusionSearch] Index created successfully")
 
-    async def index_data(
+    async def index_document(
         self,
         project_id: str,
         data_key: str,
-        description: str,
-        data_json: str,
-        embedding: List[float],
+        content: str,
+        metadata: str,
+        vector: List[float],
         data_format: str,
         is_structured: bool
     ) -> None:
         """
-        Index data into Elasticsearch for hybrid search.
+        Index a document for hybrid search.
 
         Args:
             project_id: Project identifier
-            data_key: Data key
-            description: Text description for BM25 search
-            data_json: JSON representation for keyword matching
-            embedding: Vector embedding for kNN search
-            data_format: Format of the data
+            data_key: Unique data key
+            content: Searchable text content
+            metadata: Additional metadata
+            vector: Embedding vector
+            data_format: Data format type
             is_structured: Whether data is structured
         """
-        doc_id = f"{project_id}:{data_key}"
+        doc_id = f"{project_id}::{data_key}"
 
-        doc = {
+        document = {
             "project_id": project_id,
             "data_key": data_key,
-            "description": description,
-            "data_json": data_json,
-            "embedding": embedding,
-            "data_format": data_format,
+            "content": content,
+            "metadata": metadata,
+            "vector": vector,
+            "format": data_format,
             "is_structured": is_structured
         }
 
-        self.es.index(index=self.index_name, id=doc_id, body=doc, refresh=True)
-        print(f"[HybridSearch] Indexed: {doc_id}")
+        self.client.index(
+            index=self.index_name,
+            id=doc_id,
+            body=document,
+            refresh=True
+        )
+        print(f"[RankFusionSearch] Indexed document: {doc_id}")
 
-    async def search(
+    async def hybrid_search(
         self,
         project_id: str,
         query: str,
-        size: int = 10
+        top_k: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Perform hybrid search combining BM25 and kNN.
+        Perform hybrid search using RRF algorithm.
 
         Args:
             project_id: Project to search within
-            query: Search query string
-            size: Number of results to return
+            query: Search query
+            top_k: Number of results to return
 
         Returns:
-            List of search results with combined scores
+            Ranked list of results with RRF scores
         """
-        # Generate embedding for the query
-        query_embedding = self.semantic_matcher.model.encode(query).tolist()
+        # Generate query embedding
+        query_vector = self.semantic_matcher.model.encode(query).tolist()
 
-        # Perform BM25 search
-        bm25_results = self._bm25_search(project_id, query, size)
+        # Execute both searches in parallel
+        lexical_results = self._lexical_search(project_id, query, top_k * 2)
+        vector_results = self._vector_search(project_id, query_vector, top_k * 2)
 
-        # Perform kNN search
-        knn_results = self._knn_search(project_id, query_embedding, size)
-
-        # Combine and normalize results
-        combined_results = self._combine_results(
-            bm25_results, knn_results, self.bm25_weight, self.knn_weight
+        # Apply Reciprocal Rank Fusion
+        fused_results = self._reciprocal_rank_fusion(
+            lexical_results,
+            vector_results,
+            top_k
         )
 
-        print(f"[HybridSearch] Found {len(combined_results)} results for query: {query}")
-        return combined_results[:size]
+        print(f"[RankFusionSearch] Fused {len(fused_results)} results for: {query}")
+        return fused_results
 
-    def _bm25_search(self, project_id: str, query: str, size: int) -> List[Dict[str, Any]]:
+    def _lexical_search(
+        self,
+        project_id: str,
+        query: str,
+        size: int
+    ) -> List[Tuple[str, int]]:
         """
-        Perform BM25 text search.
+        Perform lexical (BM25) search.
 
         Args:
-            project_id: Project to search within
-            query: Search query string
+            project_id: Project filter
+            query: Search query
             size: Number of results
 
         Returns:
-            List of results with BM25 scores
+            List of (doc_id, rank) tuples
         """
-        search_body = {
+        query_body = {
             "query": {
                 "bool": {
                     "must": [
-                        {
-                            "term": {"project_id": project_id}
-                        },
+                        {"term": {"project_id": project_id}},
                         {
                             "multi_match": {
                                 "query": query,
-                                "fields": ["description^2", "data_json"],
-                                "type": "best_fields"
+                                "fields": ["content^3", "metadata"],
+                                "type": "best_fields",
+                                "operator": "or"
                             }
                         }
                     ]
@@ -213,39 +231,42 @@ class HybridSearchMatcher:
             "size": size
         }
 
-        response = self.es.search(index=self.index_name, body=search_body)
+        response = self.client.search(index=self.index_name, body=query_body)
 
-        results = []
-        for hit in response["hits"]["hits"]:
-            results.append({
-                "id": hit["_id"],
-                "source": hit["_source"],
-                "bm25_score": hit["_score"]
-            })
+        # Return (doc_id, rank) tuples
+        results = [
+            (hit["_id"], idx)
+            for idx, hit in enumerate(response["hits"]["hits"])
+        ]
 
-        print(f"[HybridSearch] BM25 search returned {len(results)} results")
+        print(f"[RankFusionSearch] Lexical search: {len(results)} results")
         return results
 
-    def _knn_search(self, project_id: str, query_embedding: List[float], size: int) -> List[Dict[str, Any]]:
+    def _vector_search(
+        self,
+        project_id: str,
+        query_vector: List[float],
+        size: int
+    ) -> List[Tuple[str, int]]:
         """
-        Perform kNN vector search.
+        Perform vector similarity search.
 
         Args:
-            project_id: Project to search within
-            query_embedding: Query embedding vector
+            project_id: Project filter
+            query_vector: Query embedding
             size: Number of results
 
         Returns:
-            List of results with kNN scores
+            List of (doc_id, rank) tuples
         """
-        search_body = {
+        query_body = {
             "size": size,
             "query": {
                 "bool": {
                     "must": {
                         "knn": {
-                            "embedding": {
-                                "vector": query_embedding,
+                            "vector": {
+                                "vector": query_vector,
                                 "k": size
                             }
                         }
@@ -257,123 +278,105 @@ class HybridSearchMatcher:
             }
         }
 
-        response = self.es.search(index=self.index_name, body=search_body)
+        response = self.client.search(index=self.index_name, body=query_body)
 
-        results = []
-        for hit in response["hits"]["hits"]:
-            results.append({
-                "id": hit["_id"],
-                "source": hit["_source"],
-                "knn_score": hit["_score"]
-            })
+        # Return (doc_id, rank) tuples
+        results = [
+            (hit["_id"], idx)
+            for idx, hit in enumerate(response["hits"]["hits"])
+        ]
 
-        print(f"[HybridSearch] kNN search returned {len(results)} results")
+        print(f"[RankFusionSearch] Vector search: {len(results)} results")
         return results
 
-    def _combine_results(
+    def _reciprocal_rank_fusion(
         self,
-        bm25_results: List[Dict[str, Any]],
-        knn_results: List[Dict[str, Any]],
-        bm25_weight: float,
-        knn_weight: float
+        lexical_ranks: List[Tuple[str, int]],
+        vector_ranks: List[Tuple[str, int]],
+        top_k: int
     ) -> List[Dict[str, Any]]:
         """
-        Combine BM25 and kNN results using weighted score normalization.
+        Combine rankings using Reciprocal Rank Fusion algorithm.
 
-        Uses z-score normalization with min-max fallback.
+        RRF Score = Σ 1/(k + rank_i)
+
+        This approach is more robust than weighted score combinations
+        as it doesn't require score normalization or parameter tuning.
 
         Args:
-            bm25_results: Results from BM25 search
-            knn_results: Results from kNN search
-            bm25_weight: Weight for BM25 scores
-            knn_weight: Weight for kNN scores
+            lexical_ranks: List of (doc_id, rank) from lexical search
+            vector_ranks: List of (doc_id, rank) from vector search
+            top_k: Number of top results to return
 
         Returns:
-            Combined results sorted by final weighted score
+            Fused and ranked results
         """
-        # Create lookup maps by document ID
-        bm25_map = {r["id"]: r for r in bm25_results}
-        knn_map = {r["id"]: r for r in knn_results}
+        # Build rank maps
+        lexical_map = {doc_id: rank for doc_id, rank in lexical_ranks}
+        vector_map = {doc_id: rank for doc_id, rank in vector_ranks}
 
         # Get all unique document IDs
-        all_ids = set(bm25_map.keys()) | set(knn_map.keys())
+        all_doc_ids = set(lexical_map.keys()) | set(vector_map.keys())
 
-        if not all_ids:
-            return []
+        # Calculate RRF scores
+        rrf_scores = {}
+        for doc_id in all_doc_ids:
+            score = 0.0
 
-        # Normalize scores
-        bm25_scores = [r["bm25_score"] for r in bm25_results]
-        knn_scores = [r["knn_score"] for r in knn_results]
+            # Lexical contribution
+            if doc_id in lexical_map:
+                score += 1.0 / (self.rrf_k + lexical_map[doc_id])
 
-        norm_bm25 = self._normalize_scores(bm25_scores)
-        norm_knn = self._normalize_scores(knn_scores)
+            # Vector contribution (with boost)
+            if doc_id in vector_map:
+                score += self.vector_boost / (self.rrf_k + vector_map[doc_id])
 
-        # Build normalized score maps
-        bm25_norm_map = {bm25_results[i]["id"]: norm_bm25[i] for i in range(len(bm25_results))}
-        knn_norm_map = {knn_results[i]["id"]: norm_knn[i] for i in range(len(knn_results))}
+            rrf_scores[doc_id] = score
 
-        # Combine scores
-        combined = []
-        for doc_id in all_ids:
-            bm25_score = bm25_norm_map.get(doc_id, 0.0)
-            knn_score = knn_norm_map.get(doc_id, 0.0)
+        # Sort by RRF score (descending)
+        sorted_docs = sorted(
+            rrf_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:top_k]
 
-            final_score = (bm25_weight * bm25_score) + (knn_weight * knn_score)
+        # Retrieve full documents
+        results = []
+        for doc_id, rrf_score in sorted_docs:
+            try:
+                doc = self.client.get(index=self.index_name, id=doc_id)
+                source = doc["_source"]
 
-            # Get source document from either result set
-            source = bm25_map.get(doc_id, {}).get("source") or knn_map.get(doc_id, {}).get("source")
+                results.append({
+                    "data_key": source["data_key"],
+                    "rrf_score": float(rrf_score),
+                    "lexical_rank": lexical_map.get(doc_id, -1),
+                    "vector_rank": vector_map.get(doc_id, -1),
+                    "similarity": float(rrf_score),  # For compatibility
+                })
+            except Exception as e:
+                print(f"[RankFusionSearch] Error retrieving doc {doc_id}: {e}")
+                continue
 
-            combined.append({
-                "data_key": source["data_key"],
-                "bm25_score": float(bm25_score),
-                "knn_score": float(knn_score),
-                "final_score": float(final_score),
-                "similarity": float(final_score)  # For compatibility with existing code
-            })
+        return results
 
-        # Sort by final score descending
-        combined.sort(key=lambda x: x["final_score"], reverse=True)
-
-        return combined
-
-    def _normalize_scores(self, scores: List[float]) -> List[float]:
+    def get_index_stats(self) -> Dict[str, Any]:
         """
-        Normalize scores using z-score normalization with min-max fallback.
-
-        Args:
-            scores: List of scores to normalize
+        Get statistics about the search index.
 
         Returns:
-            List of normalized scores
+            Dictionary with index statistics
         """
-        if not scores:
-            return []
-
-        if len(scores) == 1:
-            return [1.0]
-
-        # Try z-score normalization
         try:
-            scaler = StandardScaler()
-            scores_array = np.array(scores).reshape(-1, 1)
-            normalized = scaler.fit_transform(scores_array).flatten()
+            stats = self.client.indices.stats(index=self.index_name)
+            count = self.client.count(index=self.index_name)
 
-            # Check for valid results
-            if not np.isnan(normalized).any():
-                # Scale to 0-1 range for consistency
-                min_val = normalized.min()
-                max_val = normalized.max()
-                if max_val > min_val:
-                    normalized = (normalized - min_val) / (max_val - min_val)
-                return normalized.tolist()
+            return {
+                "index_name": self.index_name,
+                "document_count": count["count"],
+                "size_bytes": stats["_all"]["total"]["store"]["size_in_bytes"],
+            }
         except Exception as e:
-            print(f"[HybridSearch] Z-score normalization failed, using min-max: {e}")
-
-        # Fallback to min-max normalization
-        min_score = min(scores)
-        max_score = max(scores)
-
-        if max_score == min_score:
-            return [1.0] * len(scores)
-
-        return [(s - min_score) / (max_score - min_score) for s in scores]
+            return {
+                "error": str(e)
+            }

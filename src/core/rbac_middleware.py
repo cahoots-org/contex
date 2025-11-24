@@ -44,35 +44,34 @@ METHOD_PERMISSIONS = {
 
 class RBACMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce role-based access control"""
-    
-    def __init__(self, app, redis: Redis):
+
+    def __init__(self, app):
         super().__init__(app)
-        self.redis = redis
-        
+
     def get_required_permission(self, method: str, path: str) -> Optional[Permission]:
         """Get the required permission for a method and path"""
         # Check method-specific permissions first
         for (req_method, pattern), permission in METHOD_PERMISSIONS.items():
             if method == req_method and self._path_matches(path, pattern):
                 return permission
-        
+
         # Check general endpoint permissions
         for pattern, permission in ENDPOINT_PERMISSIONS.items():
             if self._path_matches(path, pattern):
                 return permission
-        
+
         return None
-    
+
     def _path_matches(self, path: str, pattern: str) -> bool:
         """Check if a path matches a pattern (supports * wildcard)"""
         if "*" not in pattern:
             return path.startswith(pattern)
-        
+
         # Simple wildcard matching
         parts = pattern.split("*")
         if not path.startswith(parts[0]):
             return False
-        
+
         current_pos = len(parts[0])
         for part in parts[1:]:
             if not part:
@@ -81,9 +80,9 @@ class RBACMiddleware(BaseHTTPMiddleware):
             if pos == -1:
                 return False
             current_pos = pos + len(part)
-        
+
         return True
-    
+
     def extract_project_id(self, path: str, body: Optional[dict] = None) -> Optional[str]:
         """Extract project_id from path or request body"""
         # Try to extract from path (e.g., /api/projects/proj123/query)
@@ -93,47 +92,50 @@ class RBACMiddleware(BaseHTTPMiddleware):
                 project_part = parts[1].split("/")[0]
                 if project_part:
                     return project_part
-        
+
         # Try to extract from body
         if body and "project_id" in body:
             return body["project_id"]
-        
+
         return None
-    
+
     async def dispatch(self, request: Request, call_next):
         # Skip RBAC for public endpoints
         if request.url.path in ["/health", "/", "/docs", "/openapi.json", "/redoc", "/sandbox"]:
             return await call_next(request)
-        
+
         # Skip RBAC for static files
         if request.url.path.startswith("/static/"):
             return await call_next(request)
-        
+
         # Get API key from request (should be set by APIKeyMiddleware)
         api_key_header = request.headers.get("X-API-Key")
         if not api_key_header:
             # No API key - let APIKeyMiddleware handle this
             return await call_next(request)
-        
+
         # Extract key_id from state (set by APIKeyMiddleware)
         key_id = getattr(request.state, "api_key_id", None)
         if not key_id:
             # Try to get from header (fallback)
             key_id = api_key_header[:16] if len(api_key_header) >= 16 else api_key_header
-        
+
+        # Get Redis from app state
+        redis = request.app.state.redis
+
         # Get role for this API key
-        role_assignment = await get_role(self.redis, key_id)
-        
+        role_assignment = await get_role(redis, key_id)
+
         # Get required permission for this endpoint
         required_permission = self.get_required_permission(
             request.method,
             request.url.path
         )
-        
+
         # If no specific permission required, allow
         if not required_permission:
             return await call_next(request)
-        
+
         # Extract project_id if applicable
         project_id = None
         if request.method in ["POST", "PUT", "PATCH"]:
@@ -142,11 +144,13 @@ class RBACMiddleware(BaseHTTPMiddleware):
                 project_id = self.extract_project_id(request.url.path, body)
                 # Re-create request with body (since we consumed it)
                 request._body = None
-            except:
+            except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
+                # Body is not JSON or couldn't be decoded, extract from URL instead
+                print(f"[RBAC] Could not decode request body: {type(e).__name__}, extracting project_id from URL")
                 project_id = self.extract_project_id(request.url.path)
         else:
             project_id = self.extract_project_id(request.url.path)
-        
+
         # Check if role has permission
         if not role_assignment.has_permission(required_permission, project_id):
             return JSONResponse(
@@ -158,9 +162,9 @@ class RBACMiddleware(BaseHTTPMiddleware):
                     "your_role": role_assignment.role.value
                 }
             )
-        
+
         # Store role in request state for use by endpoints
         request.state.role = role_assignment.role
         request.state.role_assignment = role_assignment
-        
+
         return await call_next(request)

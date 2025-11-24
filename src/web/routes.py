@@ -210,6 +210,47 @@ async def project_stats(request: Request, project_id: str):
     )
 
 
+@router.get("/projects/{project_id}/data")
+async def get_project_data(request: Request, project_id: str):
+    """Get all data for a project (JSON endpoint for sandbox UI)"""
+    engine = request.app.state.context_engine
+
+    # Get all data for this project
+    data_keys = await engine.semantic_matcher.get_registered_data(project_id)
+
+    data_items = []
+
+    # Fetch data from Redis for each key
+    for key in data_keys:
+        redis_key = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}"
+        data_info = await engine.semantic_matcher.redis.hgetall(redis_key)
+
+        if data_info:
+            # Decode bytes if needed
+            description = data_info.get(b"description") or data_info.get("description", "")
+            if isinstance(description, bytes):
+                description = description.decode()
+
+            data_str = data_info.get(b"data") or data_info.get("data", "{}")
+            if isinstance(data_str, bytes):
+                data_str = data_str.decode()
+
+            # Parse the data JSON
+            import json
+            try:
+                data_obj = json.loads(data_str)
+            except (json.JSONDecodeError, ValueError):
+                data_obj = {}
+
+            data_items.append({
+                "data_key": key,
+                "description": description,
+                "data": data_obj
+            })
+
+    return {"data": data_items}
+
+
 @router.get("/subscribe")
 async def subscribe_to_updates(
     request: Request,

@@ -8,16 +8,17 @@ from src.core.auth import APIKeyMiddleware, create_api_key, revoke_api_key
 @pytest_asyncio.fixture
 async def app_with_auth(redis):
     app = FastAPI()
-    app.add_middleware(APIKeyMiddleware, redis=redis)
-    
+    app.state.redis = redis  # Make Redis available via app state
+    app.add_middleware(APIKeyMiddleware)
+
     @app.get("/protected")
     async def protected():
         return {"status": "ok"}
-        
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}
-        
+
     return app
 
 @pytest.mark.asyncio

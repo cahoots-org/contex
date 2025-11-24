@@ -332,11 +332,11 @@
         console.log('Loading data for project:', app.selectedProject);
 
         try {
-            const response = await fetch(`/api/projects/${app.selectedProject}/data`);
+            const response = await fetch(`/sandbox/projects/${app.selectedProject}/data`);
             if (response.ok) {
-                const data = await response.json();
-                console.log('Loaded project data:', data);
-                app.projectData = data.map(item => ({
+                const result = await response.json();
+                console.log('Loaded project data:', result);
+                app.projectData = (result.data || []).map(item => ({
                     ...item,
                     expanded: false
                 }));

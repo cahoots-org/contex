@@ -37,7 +37,7 @@ class XMLParser(BaseFormatParser):
         try:
             ET.fromstring(data)
             return True
-        except:
+        except (ET.ParseError, ValueError, TypeError):
             return False
 
     def parse(self, data: Any) -> ParseResult:

@@ -200,7 +200,7 @@ class ContexAsyncClient:
             data_format=data_format,
             metadata=metadata,
         )
-        return await self._request("POST", "/api/data/publish", json=event.model_dump())
+        return await self._request("POST", "/api/v1/v1/data/publish", json=event.model_dump())
     
     # ========================================================================
     # Agent Management
@@ -248,7 +248,7 @@ class ContexAsyncClient:
             webhook_secret=webhook_secret,
             last_seen_sequence=last_seen_sequence,
         )
-        result = await self._request("POST", "/api/agents/register", json=registration.model_dump())
+        result = await self._request("POST", "/api/v1/agents/register", json=registration.model_dump())
         return RegistrationResponse(**result)
     
     async def unregister_agent(self, agent_id: str) -> Dict[str, Any]:
@@ -261,7 +261,7 @@ class ContexAsyncClient:
         Returns:
             Response confirming unregistration
         """
-        return await self._request("DELETE", f"/api/agents/{agent_id}")
+        return await self._request("DELETE", f"/api/v1/agents/{agent_id}")
     
     async def get_agent_status(self, agent_id: str) -> Dict[str, Any]:
         """
@@ -273,7 +273,7 @@ class ContexAsyncClient:
         Returns:
             Agent status information
         """
-        return await self._request("GET", f"/api/agents/{agent_id}/status")
+        return await self._request("GET", f"/api/v1/agents/{agent_id}/status")
     
     # ========================================================================
     # Querying
@@ -309,7 +309,7 @@ class ContexAsyncClient:
             query=query,
             max_results=max_results,
         )
-        result = await self._request("POST", "/api/query", json=request.model_dump())
+        result = await self._request("POST", "/api/v1/query", json=request.model_dump())
         return QueryResponse(**result)
     
     # ========================================================================
@@ -329,12 +329,12 @@ class ContexAsyncClient:
         Note:
             The API key is only returned once. Store it securely!
         """
-        result = await self._request("POST", f"/api/auth/keys?name={name}")
+        result = await self._request("POST", f"/api/v1/auth/keys?name={name}")
         return APIKeyResponse(**result)
     
     async def list_api_keys(self) -> List[Dict[str, Any]]:
         """List all API keys (without the actual key values)"""
-        return await self._request("GET", "/api/auth/keys")
+        return await self._request("GET", "/api/v1/auth/keys")
     
     async def revoke_api_key(self, key_id: str) -> Dict[str, Any]:
         """
@@ -343,7 +343,7 @@ class ContexAsyncClient:
         Args:
             key_id: Key identifier
         """
-        return await self._request("DELETE", f"/api/auth/keys/{key_id}")
+        return await self._request("DELETE", f"/api/v1/auth/keys/{key_id}")
     
     # ========================================================================
     # Health & Status
@@ -351,15 +351,15 @@ class ContexAsyncClient:
     
     async def health(self) -> Dict[str, Any]:
         """Get comprehensive health status"""
-        return await self._request("GET", "/api/health")
+        return await self._request("GET", "/api/v1/health")
     
     async def ready(self) -> Dict[str, Any]:
         """Get readiness status"""
-        return await self._request("GET", "/api/health/ready")
+        return await self._request("GET", "/api/v1/health/ready")
     
     async def rate_limit_status(self) -> RateLimitInfo:
         """Get current rate limit status"""
-        result = await self._request("GET", "/api/rate-limit/status")
+        result = await self._request("GET", "/api/v1/rate-limit/status")
         return RateLimitInfo(**result)
 
 

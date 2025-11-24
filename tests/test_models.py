@@ -105,7 +105,7 @@ class TestMatchedDataSource:
         match = MatchedDataSource(
             data_key="api_docs",
             similarity=0.85,
-            data={"endpoints": ["/api/v1/users"]},
+            data={"endpoints": ["/api/v1/v1/users"]},
             description="API documentation with endpoints",
         )
 

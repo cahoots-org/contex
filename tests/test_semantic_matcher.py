@@ -144,7 +144,7 @@ class TestSemanticDataMatcher:
         """Test matching returns multiple relevant sources"""
         # Register multiple data sources
         await matcher.register_data(
-            "proj1", "api_docs", {"endpoints": ["/api/users", "/api/posts"]}
+            "proj1", "api_docs", {"endpoints": ["/api/v1/users", "/api/v1/posts"]}
         )
         
         # Mock search response with multiple docs

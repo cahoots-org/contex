@@ -33,7 +33,7 @@ class JSONParser(BaseFormatParser):
             try:
                 obj = json.loads(data)
                 return isinstance(obj, dict)
-            except:
+            except (json.JSONDecodeError, ValueError, TypeError):
                 return False
 
         return False

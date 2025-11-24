@@ -19,16 +19,16 @@ class APIKey(BaseModel):
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to validate API keys"""
-    
-    def __init__(self, app, redis: Redis, public_paths: List[str] = None):
+
+    def __init__(self, app, public_paths: List[str] = None):
         super().__init__(app)
-        self.redis = redis
         self.public_paths = public_paths or [
-            "/health", 
-            "/api/docs", 
+            "/health",
+            "/api/docs",
             "/api/openapi.json",
             "/sandbox",
-            "/static"
+            "/static",
+            "/favicon.ico"
         ]
 
     async def dispatch(self, request: Request, call_next):
@@ -40,34 +40,37 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if not api_key:
             return JSONResponse(status_code=401, content={"detail": "Missing API Key"})
 
-        key_id = await self.validate_key(api_key)
+        key_id = await self.validate_key(request, api_key)
         if not key_id:
             return JSONResponse(status_code=401, content={"detail": "Invalid API Key"})
 
         # Store key_id in request state for RBAC middleware
         request.state.api_key_id = key_id
-        
+
         return await call_next(request)
 
-    async def validate_key(self, api_key: str) -> Optional[str]:
+    async def validate_key(self, request: Request, api_key: str) -> Optional[str]:
         """Validate API key against Redis and return key_id if valid"""
         # Key format: ck_<random>
         if not api_key.startswith("ck_"):
             return None
-            
+
         # Hash key for lookup
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        
+
+        # Get Redis from app state
+        redis = request.app.state.redis
+
         # Check if key exists in Redis and get key_id
-        data = await self.redis.hgetall(f"contex:apikey:{key_hash}")
+        data = await redis.hgetall(f"contex:apikey:{key_hash}")
         if not data:
             return None
-        
+
         # Extract key_id
         key_id = data.get(b"key_id")
         if key_id:
             return key_id.decode() if isinstance(key_id, bytes) else key_id
-        
+
         return None
 
 async def create_api_key(redis: Redis, name: str, scopes: List[str] = None) -> tuple[str, APIKey]:
