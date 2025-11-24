@@ -107,7 +107,9 @@ class DataNormalizer:
                 data_copy = {k: v for k, v in normalized_data.items()
                            if not k.startswith('_') and k not in ['content_type', 'structure', 'schema']}
                 content = json.dumps(data_copy, ensure_ascii=False, indent=None)
-            except:
+            except (TypeError, ValueError) as e:
+                # If JSON serialization fails, fallback to string representation
+                print(f"[DataNormalizer] Warning: Failed to JSON serialize data: {type(e).__name__}, using str() fallback")
                 content = str(normalized_data)
 
             # Build embedding text

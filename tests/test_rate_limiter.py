@@ -112,22 +112,23 @@ class TestRateLimitMiddleware:
     async def app_with_rate_limit(self, redis):
         """Create a test app with rate limiting"""
         app = FastAPI()
-        
+        app.state.redis = redis  # Make Redis available via app state
+
         # Add rate limit middleware
-        app.add_middleware(RateLimitMiddleware, redis=redis)
-        
-        @app.get("/api/publish")
+        app.add_middleware(RateLimitMiddleware)
+
+        @app.get("/api/v1/publish")
         async def publish():
             return {"status": "ok"}
-        
-        @app.get("/api/query")
+
+        @app.get("/api/v1/query")
         async def query():
             return {"status": "ok"}
-        
+
         @app.get("/health")
         async def health():
             return {"status": "healthy"}
-        
+
         return app
 
     @pytest.mark.asyncio
@@ -137,7 +138,7 @@ class TestRateLimitMiddleware:
             # Make several requests (should all succeed)
             for i in range(5):
                 response = await client.get(
-                    "/api/query",
+                    "/api/v1/query",
                     headers={"X-API-Key": "test-key"}
                 )
                 assert response.status_code == 200
@@ -148,35 +149,16 @@ class TestRateLimitMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_blocks_over_limit(self, redis):
         """Test that middleware blocks requests over limit"""
-        # Create app with custom low limits
-        app = FastAPI()
-        
-        # Create middleware with custom limits
-        middleware = RateLimitMiddleware(app, redis)
-        middleware.endpoint_limits["/api/query"] = 2
-        
-        app.add_middleware(RateLimitMiddleware, redis=redis)
-        
-        @app.get("/api/query")
-        async def query():
-            return {"status": "ok"}
-        
-        # Manually set the limit on the middleware
-        for m in app.user_middleware:
-            if isinstance(m.cls, type) and issubclass(m.cls, RateLimitMiddleware):
-                # Can't easily modify after creation, so we'll test the limiter directly
-                pass
-        
-        # Test the limiter directly instead
+        # Test the limiter directly to verify rate limit blocking
         limiter = RateLimiter(redis)
         key = "test-key-2:/api/query"
         limit = 2
-        
+
         # Make requests up to limit
         for i in range(2):
             allowed, info = await limiter.check_rate_limit(key, limit)
             assert allowed
-        
+
         # Next request should be blocked
         allowed, info = await limiter.check_rate_limit(key, limit)
         assert not allowed

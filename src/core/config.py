@@ -1,7 +1,7 @@
 """Configuration management with validation for Contex"""
 
 import os
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 from src.core.logging import get_logger
 
@@ -28,12 +28,22 @@ class SecurityConfig(BaseModel):
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limiting")
     rate_limit_requests: int = Field(default=100, ge=1, le=10000, description="Requests per minute")
     rate_limit_window: int = Field(default=60, ge=1, le=3600, description="Rate limit window in seconds")
-    
+    cors_origins: List[str] = Field(default=["*"], description="Allowed CORS origins")
+    cors_allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
+
     @field_validator('api_key_salt')
     @classmethod
     def validate_salt(cls, v):
         if v and len(v) < 16:
             raise ValueError("API key salt must be at least 16 characters")
+        return v
+
+    @field_validator('cors_origins', mode='before')
+    @classmethod
+    def validate_cors_origins(cls, v):
+        if isinstance(v, str):
+            # Allow comma-separated string from env var
+            return [origin.strip() for origin in v.split(',')]
         return v
 
 
@@ -59,15 +69,9 @@ class FeaturesConfig(BaseModel):
     similarity_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="Similarity threshold")
     max_matches: int = Field(default=10, ge=1, le=100, description="Maximum matches per query")
     max_context_size: int = Field(default=51200, ge=1024, le=1048576, description="Maximum context size in tokens")
-    hybrid_search_enabled: bool = Field(default=False, description="Enable hybrid search")
-    bm25_weight: float = Field(default=0.7, ge=0.0, le=1.0, description="BM25 weight for hybrid search")
-    knn_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="KNN weight for hybrid search")
-    
-    @field_validator('bm25_weight', 'knn_weight')
-    @classmethod
-    def validate_weights(cls, v, info):
-        # This will be called for both fields
-        return v
+    hybrid_search_enabled: bool = Field(default=False, description="Enable hybrid search with RRF")
+    rrf_k: int = Field(default=60, ge=1, le=1000, description="RRF constant (typical value: 60)")
+    vector_boost: float = Field(default=1.0, ge=0.1, le=10.0, description="Vector rank boost multiplier")
 
 
 class ContexConfig(BaseModel):
@@ -91,6 +95,8 @@ class ContexConfig(BaseModel):
                 rate_limit_enabled=os.getenv('RATE_LIMIT_ENABLED', 'true').lower() == 'true',
                 rate_limit_requests=int(os.getenv('RATE_LIMIT_REQUESTS', '100')),
                 rate_limit_window=int(os.getenv('RATE_LIMIT_WINDOW', '60')),
+                cors_origins=os.getenv('CORS_ORIGINS', '*').split(',') if os.getenv('CORS_ORIGINS') else ['*'],
+                cors_allow_credentials=os.getenv('CORS_ALLOW_CREDENTIALS', 'true').lower() == 'true',
             ),
             observability=ObservabilityConfig(
                 log_level=os.getenv('LOG_LEVEL', 'INFO'),
@@ -104,35 +110,43 @@ class ContexConfig(BaseModel):
                 max_matches=int(os.getenv('MAX_MATCHES', '10')),
                 max_context_size=int(os.getenv('MAX_CONTEXT_SIZE', '51200')),
                 hybrid_search_enabled=os.getenv('HYBRID_SEARCH_ENABLED', 'false').lower() == 'true',
-                bm25_weight=float(os.getenv('BM25_WEIGHT', '0.7')),
-                knn_weight=float(os.getenv('KNN_WEIGHT', '0.3')),
+                rrf_k=int(os.getenv('RRF_K', '60')),
+                vector_boost=float(os.getenv('VECTOR_BOOST', '1.0')),
             ),
         )
     
     def validate_config(self) -> list[str]:
         """Validate configuration and return warnings"""
         warnings = []
-        
+
         # Check security warnings
         if not self.security.api_key_salt:
             warnings.append("API_KEY_SALT not set - using default (INSECURE for production)")
-        
+
         if self.security.api_key_salt == "CHANGE_ME_IN_PRODUCTION":
             warnings.append("API_KEY_SALT is set to default value - CHANGE THIS IN PRODUCTION")
-        
-        # Check hybrid search weights
+
+        # Check CORS configuration
+        if "*" in self.security.cors_origins:
+            warnings.append("CORS allows all origins (*) - INSECURE for production. Set CORS_ORIGINS env var.")
+
+        if self.security.cors_allow_credentials and "*" in self.security.cors_origins:
+            warnings.append("CORS allows credentials with wildcard origin - SECURITY RISK! This combination is not allowed by browsers.")
+
+        # Check hybrid search configuration
         if self.features.hybrid_search_enabled:
-            weight_sum = self.features.bm25_weight + self.features.knn_weight
-            if abs(weight_sum - 1.0) > 0.01:
-                warnings.append(f"Hybrid search weights don't sum to 1.0 (sum={weight_sum:.2f})")
-        
+            if self.features.rrf_k < 1:
+                warnings.append(f"RRF constant must be positive (got {self.features.rrf_k})")
+            if self.features.vector_boost < 0.1:
+                warnings.append(f"Vector boost is very low: {self.features.vector_boost}")
+
         # Check resource limits
         if self.redis.max_connections > 500:
             warnings.append(f"High Redis connection limit: {self.redis.max_connections}")
-        
+
         if self.features.max_context_size > 100000:
             warnings.append(f"Very large context size: {self.features.max_context_size} tokens")
-        
+
         return warnings
     
     def log_config(self):

@@ -58,15 +58,15 @@ class SemanticDataMatcher:
         self.hybrid_search = None
         if os.getenv("HYBRID_SEARCH_ENABLED", "false").lower() == "true":
             try:
-                from .hybrid_search import HybridSearchMatcher
+                from .hybrid_search import RankFusionSearch
 
-                bm25_weight = float(os.getenv("BM25_WEIGHT", "0.7"))
-                knn_weight = float(os.getenv("KNN_WEIGHT", "0.3"))
+                rrf_k = int(os.getenv("RRF_K", "60"))
+                vector_boost = float(os.getenv("VECTOR_BOOST", "1.0"))
 
-                self.hybrid_search = HybridSearchMatcher(
+                self.hybrid_search = RankFusionSearch(
                     semantic_matcher=self,
-                    bm25_weight=bm25_weight,
-                    knn_weight=knn_weight
+                    rrf_k=rrf_k,
+                    vector_boost=vector_boost
                 )
                 print(f"[SemanticMatcher] ✓ Hybrid search enabled")
             except Exception as e:
@@ -83,9 +83,9 @@ class SemanticDataMatcher:
             # Try to get existing index info
             await self.redis.ft(self.INDEX_NAME).info()
             print(f"[SemanticMatcher] ✓ Index '{self.INDEX_NAME}' already exists")
-        except:
-            # Index doesn't exist, create it
-            print(f"[SemanticMatcher] Creating index '{self.INDEX_NAME}'...")
+        except Exception as e:
+            # Index doesn't exist or error occurred, create it
+            print(f"[SemanticMatcher] Index not found (reason: {type(e).__name__}), creating '{self.INDEX_NAME}'...")
 
             schema = (
                 VectorField(
@@ -163,20 +163,21 @@ class SemanticDataMatcher:
             },
         )
 
-        # Also index into Elasticsearch if hybrid search is enabled
+        # Also index into OpenSearch if hybrid search is enabled
         if self.hybrid_search:
             try:
-                await self.hybrid_search.index_data(
+                await self.hybrid_search.index_document(
                     project_id=project_id,
                     data_key=data_key,
-                    description=embedding_text,
-                    data_json=json.dumps(normalized_data),
-                    embedding=embedding.tolist(),
+                    content=embedding_text,
+                    metadata=json.dumps(normalized_data),
+                    vector=embedding.tolist(),
                     data_format=detected_format,
                     is_structured=is_structured
                 )
+                print(f"[SemanticMatcher] ✓ Indexed in OpenSearch: {project_id}:{data_key}")
             except Exception as e:
-                print(f"[SemanticMatcher] ⚠ Failed to index in Elasticsearch: {e}")
+                print(f"[SemanticMatcher] ⚠ Failed to index in OpenSearch: {e}")
 
         format_label = f"{detected_format} ({'structured' if is_structured else 'unstructured'})"
         print(f"[SemanticMatcher] Registered: {project_id}:{data_key} [{format_label}]")
@@ -228,19 +229,20 @@ class SemanticDataMatcher:
             # Use hybrid search if enabled
             if self.hybrid_search:
                 try:
-                    results = await self.hybrid_search.search(
+                    results = await self.hybrid_search.hybrid_search(
                         project_id=project_id,
                         query=need,
-                        size=self.max_matches * 2  # Get more candidates for threshold filtering
+                        top_k=self.max_matches * 2  # Get more candidates for threshold filtering
                     )
 
-                    # Filter by threshold and fetch full data
+                    # Fetch full data for all hybrid search results
+                    # (RRF scores are not comparable to cosine similarity thresholds)
                     candidates = []
                     for result in results:
                         similarity = result["similarity"]
 
-                        # Include if above threshold
-                        if similarity >= self.threshold:
+                        # Always include hybrid search results (already ranked by RRF)
+                        if True:
                             # Fetch full data from Redis
                             redis_key = f"{self.KEY_PREFIX}{project_id}:{result['data_key']}"
                             data_info = await self.redis.hgetall(redis_key)
@@ -392,7 +394,9 @@ class SemanticDataMatcher:
         try:
             results = await self.redis.ft(self.INDEX_NAME).search(q)
             return [doc.data_key for doc in results.docs]
-        except:
+        except Exception as e:
+            # Log error but return empty list (index may not exist yet)
+            print(f"[SemanticMatcher] Warning: Failed to list keys for project {project_id}: {type(e).__name__}: {e}")
             return []
 
     async def clear_project(self, project_id: str):

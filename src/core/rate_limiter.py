@@ -90,12 +90,10 @@ class RateLimiter:
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limits on API endpoints"""
-    
-    def __init__(self, app, redis: Redis):
+
+    def __init__(self, app):
         super().__init__(app)
-        self.redis = redis
-        self.limiter = RateLimiter(redis)
-        
+
         # Define rate limits per endpoint pattern
         self.endpoint_limits = {
             "/api/publish": RateLimitConfig.PUBLISH_DATA,
@@ -104,36 +102,40 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/auth/": RateLimitConfig.ADMIN,
             "/admin/": RateLimitConfig.ADMIN,
         }
-        
+
     def get_rate_limit_for_path(self, path: str) -> int:
         """Get rate limit for a given path"""
         for pattern, limit in self.endpoint_limits.items():
             if path.startswith(pattern):
                 return limit
         return RateLimitConfig.DEFAULT
-    
+
     async def dispatch(self, request: Request, call_next):
         # Skip rate limiting for health checks and docs
         if request.url.path in ["/health", "/", "/docs", "/openapi.json", "/redoc"]:
             return await call_next(request)
-        
+
+        # Get Redis from app state
+        redis = request.app.state.redis
+        limiter = RateLimiter(redis)
+
         # Get API key from request (set by APIKeyMiddleware)
         api_key = request.headers.get("X-API-Key", "anonymous")
-        
+
         # Build rate limit key
         path = request.url.path
         limit = self.get_rate_limit_for_path(path)
-        
+
         # Include project_id in key if available (for project-level limits)
         project_id = request.path_params.get("project_id") or request.query_params.get("project_id")
         if project_id:
             rate_key = f"{api_key}:{path}:{project_id}"
         else:
             rate_key = f"{api_key}:{path}"
-        
+
         # Check rate limit
-        allowed, info = await self.limiter.check_rate_limit(rate_key, limit)
-        
+        allowed, info = await limiter.check_rate_limit(rate_key, limit)
+
         if not allowed:
             # Return 429 Too Many Requests
             return JSONResponse(
@@ -151,13 +153,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "Retry-After": str(info["retry_after"])
                 }
             )
-        
+
         # Add rate limit headers to response
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(info["limit"])
         response.headers["X-RateLimit-Remaining"] = str(info["remaining"])
         response.headers["X-RateLimit-Reset"] = str(info["reset"])
-        
+
         return response
 
 

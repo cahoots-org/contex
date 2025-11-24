@@ -568,3 +568,220 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
             return response_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/cleanup")
+async def cleanup_all_projects(request: Request):
+    """
+    Run cleanup for all projects (admin only).
+
+    Applies retention policies:
+    - TTL for events
+    - Stream trimming
+    - Stale agent cleanup
+
+    Returns:
+        Cleanup statistics
+    """
+    try:
+        from src.core.retention import get_retention_manager_from_env
+
+        redis = request.app.state.redis
+        retention_manager = get_retention_manager_from_env(redis)
+
+        stats = await retention_manager.cleanup_all_projects()
+
+        logger.info("Admin cleanup executed", **stats)
+
+        return {
+            "status": "success",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error("Cleanup failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/cleanup/{project_id}")
+async def cleanup_project(project_id: str, request: Request):
+    """
+    Run cleanup for a specific project (admin only).
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Cleanup statistics
+    """
+    try:
+        from src.core.retention import get_retention_manager_from_env
+
+        redis = request.app.state.redis
+        retention_manager = get_retention_manager_from_env(redis)
+
+        stats = await retention_manager.cleanup_project(project_id)
+
+        logger.info("Project cleanup executed", **stats)
+
+        return {
+            "status": "success",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error("Project cleanup failed",
+                    project_id=project_id,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/retention/{project_id}")
+async def get_retention_stats(project_id: str, request: Request):
+    """
+    Get retention statistics for a project.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Retention statistics
+    """
+    try:
+        from src.core.retention import get_retention_manager_from_env
+
+        redis = request.app.state.redis
+        retention_manager = get_retention_manager_from_env(redis)
+
+        stats = await retention_manager.get_retention_stats(project_id)
+
+        return stats
+    except Exception as e:
+        logger.error("Failed to get retention stats",
+                    project_id=project_id,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================================================
+# Export/Import Endpoints
+# ========================================================================
+
+@router.get("/projects/{project_id}/export")
+async def export_project(
+    project_id: str,
+    request: Request,
+    format: str = "json",
+    include_events: bool = True,
+    include_embeddings: bool = True,
+    include_agents: bool = True,
+):
+    """
+    Export all project data.
+
+    Args:
+        project_id: Project identifier
+        format: Export format (json or toon)
+        include_events: Include event stream data
+        include_embeddings: Include embeddings data
+        include_agents: Include agent registrations
+
+    Returns:
+        Serialized project data
+    """
+    try:
+        from src.core.export_import import ExportImportManager
+
+        if format not in ["json", "toon"]:
+            raise HTTPException(status_code=400, detail="Format must be 'json' or 'toon'")
+
+        redis = request.app.state.redis
+        export_manager = ExportImportManager(redis)
+
+        exported_data = await export_manager.export_project(
+            project_id=project_id,
+            format=format,
+            include_events=include_events,
+            include_embeddings=include_embeddings,
+            include_agents=include_agents,
+        )
+
+        logger.info("Project exported",
+                   project_id=project_id,
+                   format=format)
+
+        # Return as plain text with appropriate content type
+        content_type = "application/json" if format == "json" else "text/plain"
+        from fastapi.responses import Response
+        return Response(content=exported_data, media_type=content_type)
+
+    except Exception as e:
+        logger.error("Project export failed",
+                    project_id=project_id,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/projects/{project_id}/import")
+async def import_project(
+    project_id: str,
+    request: Request,
+    format: str = "json",
+    validate_only: bool = False,
+    overwrite: bool = False,
+):
+    """
+    Import project data.
+
+    Args:
+        project_id: Project identifier (must match data)
+        format: Import format (json or toon)
+        validate_only: If True, only validate without importing
+        overwrite: If True, overwrite existing data
+
+    Returns:
+        Import statistics and validation results
+    """
+    try:
+        from src.core.export_import import ExportImportManager
+
+        if format not in ["json", "toon"]:
+            raise HTTPException(status_code=400, detail="Format must be 'json' or 'toon'")
+
+        # Read request body
+        body = await request.body()
+        data = body.decode("utf-8")
+
+        redis = request.app.state.redis
+        import_manager = ExportImportManager(redis)
+
+        result = await import_manager.import_project(
+            data=data,
+            format=format,
+            validate_only=validate_only,
+            overwrite=overwrite,
+        )
+
+        # Verify project_id matches
+        if result.get("status") == "success":
+            import_project_id = result.get("stats", {}).get("project_id") or result.get("validation", {}).get("project_id")
+            if import_project_id and import_project_id != project_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Project ID mismatch: URL has '{project_id}' but data has '{import_project_id}'"
+                )
+
+        logger.info("Project import processed",
+                   project_id=project_id,
+                   status=result.get("status"))
+
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message", "Import failed"))
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Project import failed",
+                    project_id=project_id,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

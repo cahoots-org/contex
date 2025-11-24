@@ -96,15 +96,15 @@ class TestMetricsCounters:
         """Test recording HTTP request"""
         initial = http_requests_total.labels(
             method="GET",
-            endpoint="/api/health",
+            endpoint="/api/v1/health",
             status_code="200"
         )._value.get()
         
-        record_http_request("GET", "/api/health", 200)
+        record_http_request("GET", "/api/v1/health", 200)
         
         final = http_requests_total.labels(
             method="GET",
-            endpoint="/api/health",
+            endpoint="/api/v1/health",
             status_code="200"
         )._value.get()
         
@@ -287,17 +287,17 @@ class TestMetricsMiddleware:
         middleware = MetricsMiddleware(None)
         
         # Test UUID normalization
-        assert middleware._normalize_endpoint("/api/agents/550e8400-e29b-41d4-a716-446655440000") == "/api/agents/{id}"
+        assert middleware._normalize_endpoint("/api/v1/agents/550e8400-e29b-41d4-a716-446655440000") == "/api/v1/agents/{id}"
         
         # Test numeric ID normalization
-        assert middleware._normalize_endpoint("/api/projects/123/data") == "/api/projects/{id}/data"
+        assert middleware._normalize_endpoint("/api/v1/projects/123/data") == "/api/v1/projects/{id}/data"
         
         # Test prefix ID normalization
-        assert middleware._normalize_endpoint("/api/agents/agent-123") == "/api/agents/{id}"
+        assert middleware._normalize_endpoint("/api/v1/agents/agent-123") == "/api/v1/agents/{id}"
         
         # Test normal paths
-        assert middleware._normalize_endpoint("/api/health") == "/api/health"
-        assert middleware._normalize_endpoint("/api/data/publish") == "/api/data/publish"
+        assert middleware._normalize_endpoint("/api/v1/health") == "/api/v1/health"
+        assert middleware._normalize_endpoint("/api/v1/data/publish") == "/api/v1/data/publish"
     
     def test_looks_like_id(self):
         """Test ID detection"""

@@ -43,13 +43,13 @@ services:
       - "8001:8001"
     environment:
       - REDIS_URL=redis://redis:6379
-      - ELASTICSEARCH_URL=http://opensearch:9200
+      - OPENSEARCH_URL=http://opensearch:9200
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
       - HYBRID_SEARCH_ENABLED=true
-      - BM25_WEIGHT=0.7
-      - KNN_WEIGHT=0.3
+      - RRF_K=60
+      - VECTOR_BOOST=1.0
     depends_on:
       redis:
         condition: service_healthy
