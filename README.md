@@ -25,7 +25,7 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 
 ```bash
 # 1. Clone and start
-git clone https://github.com/yourusername/contex.git
+git clone https://github.com/cahoots-org/contex.git
 cd contex
 docker compose up -d
 
@@ -673,8 +673,8 @@ MIT License - See [LICENSE](LICENSE) for details.
 ## Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/contex/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/contex/discussions)
+- **Issues**: [GitHub Issues](https://github.com/cahoots-org/contex/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cahoots-org/contex/discussions)
 
 ---
 
