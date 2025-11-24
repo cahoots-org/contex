@@ -21,38 +21,56 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 
 ## Quick Start
 
-### Using Docker (Recommended)
+### 1. Install the Python SDK
 
 ```bash
-# 1. Clone and start
+pip install contex-python
+```
+
+### 2. Start Contex Server
+
+```bash
+# Using Docker (recommended)
 git clone https://github.com/cahoots-org/contex.git
 cd contex
 docker compose up -d
 
-# 2. Verify it's running
+# Verify it's running
 curl http://localhost:8001/api/health
-
-# 3. Try the web UI
-open http://localhost:8001
 ```
 
-Services:
-- **Contex API**: `http://localhost:8001`
-- **Redis**: `localhost:6379`
-- **OpenSearch**: `http://localhost:9200`
+### 3. Use the SDK
 
-### Local Development
+```python
+from contex import ContexAsyncClient
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    # Publish data
+    await client.publish(
+        project_id="my-app",
+        data_key="api_config",
+        data={"base_url": "https://api.example.com", "timeout": 30}
+    )
 
-# Start Redis and OpenSearch (required)
-docker compose up -d redis opensearch
+    # Register agent
+    response = await client.register_agent(
+        agent_id="my-agent",
+        project_id="my-app",
+        data_needs=["API configuration and endpoints"]
+    )
 
-# Run Contex
-REDIS_URL=redis://localhost:6379 python main.py
+    # Agent receives matched data automatically
+    for match in response.matched_data:
+        print(f"Matched: {match.data_key} (score: {match.similarity_score:.2f})")
 ```
+
+**SDK Features:**
+- ✅ Async & sync clients
+- ✅ Type hints with Pydantic models
+- ✅ Automatic retries & rate limiting
+- ✅ Comprehensive error handling
+
+**Learn More:** [Python SDK Documentation](sdk/python/README.md) | [PyPI Package](https://pypi.org/project/contex-python/)
 
 ---
 
@@ -66,21 +84,22 @@ Contex accepts JSON, YAML, TOML, or plain text—publish however your data is st
 <summary><b>📦 JSON</b> - Structured data</summary>
 
 ```python
-import httpx
+from contex import ContexAsyncClient
 
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "api_config",
-    "data": {
-        "base_url": "https://api.example.com",
-        "timeout": 30,
-        "retry_count": 3,
-        "endpoints": {
-            "users": "/v1/users",
-            "orders": "/v1/orders"
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    await client.publish(
+        project_id="my-app",
+        data_key="api_config",
+        data={
+            "base_url": "https://api.example.com",
+            "timeout": 30,
+            "retry_count": 3,
+            "endpoints": {
+                "users": "/v1/users",
+                "orders": "/v1/orders"
+            }
         }
-    }
-})
+    )
 ```
 </details>
 
@@ -88,7 +107,7 @@ await httpx.post("http://localhost:8001/api/data/publish", json={
 <summary><b>📄 YAML</b> - Configuration files</summary>
 
 ```python
-import httpx
+from contex import ContexAsyncClient
 
 yaml_content = """
 database:
@@ -105,11 +124,13 @@ redis:
   max_connections: 50
 """
 
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "infrastructure_config",
-    "data": yaml_content
-})
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    await client.publish(
+        project_id="my-app",
+        data_key="infrastructure_config",
+        data=yaml_content,
+        data_format="yaml"
+    )
 ```
 </details>
 
@@ -117,7 +138,7 @@ await httpx.post("http://localhost:8001/api/data/publish", json={
 <summary><b>⚙️ TOML</b> - Package configuration</summary>
 
 ```python
-import httpx
+from contex import ContexAsyncClient
 
 toml_content = """
 [tool.poetry]
@@ -129,18 +150,15 @@ python = "^3.11"
 fastapi = "^0.104.0"
 redis = "^5.0.0"
 pydantic = "^2.0.0"
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-select = ["E", "F", "I"]
 """
 
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "project_config",
-    "data": toml_content
-})
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    await client.publish(
+        project_id="my-app",
+        data_key="project_config",
+        data=toml_content,
+        data_format="toml"
+    )
 ```
 </details>
 
@@ -148,7 +166,7 @@ await httpx.post("http://localhost:8001/api/data/publish", json={
 <summary><b>📝 Plain Text</b> - Policies and guidelines</summary>
 
 ```python
-import httpx
+from contex import ContexAsyncClient
 
 guidelines = """
 Code Review Guidelines
@@ -157,74 +175,36 @@ Code Review Guidelines
 2. PRs over 500 lines need architecture team review
 3. All tests must pass before merge
 4. No direct commits to main branch
-5. Security changes require security team approval
-
-Response Time SLAs:
-- P0 (Critical): 15 minutes
-- P1 (High): 2 hours
-- P2 (Medium): 1 business day
-- P3 (Low): 1 week
-
-On-call rotation: See PagerDuty schedule
-Escalation: After 2 failed attempts, page manager
 """
 
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "dev_guidelines",
-    "data": guidelines
-})
-```
-</details>
-
-<details>
-<summary><b>📋 Markdown</b> - Technical documentation</summary>
-
-```python
-import httpx
-
-markdown_doc = """
-# Authentication Flow
-
-Our API uses OAuth2 with PKCE for secure authentication.
-
-## Flow Steps
-1. Client requests authorization code
-2. User authenticates with identity provider
-3. Client exchanges code for access token
-4. Access token is used for API requests (expires after 1 hour)
-
-## Token Refresh
-Use the refresh token to obtain a new access token without re-authenticating.
-Call POST /oauth/token with grant_type=refresh_token.
-
-## Security Notes
-- All tokens must be transmitted over HTTPS
-- Store refresh tokens securely (encrypted at rest)
-- Rotate tokens on any suspected compromise
-- Implement token binding when possible
-"""
-
-await httpx.post("http://localhost:8001/api/data/publish", json={
-    "project_id": "my-app",
-    "data_key": "auth_documentation",
-    "data": markdown_doc
-})
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    await client.publish(
+        project_id="my-app",
+        data_key="dev_guidelines",
+        data=guidelines,
+        data_format="text"
+    )
 ```
 </details>
 
 ### 2. Register Agent with Semantic Needs
 
 ```python
-# Agent describes needs in natural language
-await httpx.post("http://localhost:8001/api/agents/register", json={
-    "agent_id": "code-reviewer",
-    "project_id": "my-app",
-    "data_needs": [
-        "code style guidelines and linting rules",
-        "testing requirements and coverage goals"
-    ]
-})
+from contex import ContexAsyncClient
+
+async with ContexAsyncClient(url="http://localhost:8001") as client:
+    response = await client.register_agent(
+        agent_id="code-reviewer",
+        project_id="my-app",
+        data_needs=[
+            "code style guidelines and linting rules",
+            "testing requirements and coverage goals"
+        ]
+    )
+
+    # Get matched data
+    for match in response.matched_data:
+        print(f"{match.data_key}: {match.similarity_score:.2f}")
 ```
 
 **Returns:** Matched data + notification channel
