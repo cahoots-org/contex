@@ -9,9 +9,9 @@ keywords:
   - agents
   - context
   - semantic-search
-home: https://github.com/yourusername/contex
+home: https://github.com/cahoots-org/contex
 sources:
-  - https://github.com/yourusername/contex
+  - https://github.com/cahoots-org/contex
 maintainers:
   - name: Contex Team
     email: team@contex.example.com
