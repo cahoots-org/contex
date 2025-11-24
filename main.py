@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from src.core import ContextEngine
 from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
+from src.core.graceful_shutdown import shutdown_cleanup
 
 # Environment variables
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
@@ -107,9 +108,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if hasattr(app.state, 'redis') and app.state.redis:
-        await app.state.redis.aclose()
-        print("✓ Redis connection closed")
+    await shutdown_cleanup(app.state)
 
 
 # Global instances
