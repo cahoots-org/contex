@@ -3,6 +3,7 @@
 import asyncio
 import json
 import tiktoken
+import toon_format as toon
 from typing import Dict, List, Any, Optional
 from redis.asyncio import Redis
 
@@ -39,7 +40,9 @@ class ContextEngine:
     ):
         self.redis = redis
         self.semantic_matcher = SemanticDataMatcher(
-            similarity_threshold=similarity_threshold, max_matches=max_matches
+            redis=redis,
+            similarity_threshold=similarity_threshold,
+            max_matches=max_matches
         )
         self.event_store = EventStore(redis)
         self.webhook_dispatcher = WebhookDispatcher()
@@ -61,6 +64,31 @@ class ContextEngine:
         print("[ContextEngine] ✓ Initialized")
         if self.max_context_size:
             print(f"[ContextEngine]   Max context size: {self.max_context_size} tokens")
+
+    async def initialize(self):
+        """Initialize RediSearch index for vector similarity search"""
+        await self.semantic_matcher.initialize_index()
+
+    def _format_data(self, data: Any, format: str = "toon") -> str:
+        """
+        Format data according to agent preference.
+
+        Args:
+            data: Data to format
+            format: 'toon' or 'json'
+
+        Returns:
+            Formatted string
+        """
+        if format == "toon":
+            try:
+                return toon.encode(data)
+            except NotImplementedError:
+                # TOON encoder not yet available, fall back to JSON
+                print("[ContextEngine] ⚠ TOON format requested but not yet implemented, using JSON")
+                return json.dumps(data, indent=2)
+        else:
+            return json.dumps(data, indent=2)
 
     def _estimate_tokens(self, data: Any) -> int:
         """
@@ -176,7 +204,7 @@ class ContextEngine:
 
     async def publish_data(self, event: DataPublishEvent) -> str:
         """
-        Main app publishes data change.
+        Main app publishes data change (supports any format).
 
         Args:
             event: Data publish event
@@ -187,11 +215,14 @@ class ContextEngine:
         project_id = event.project_id
         data_key = event.data_key
         data = event.data
+        format_hint = event.data_format
 
         print(f"[ContextEngine] Publishing data: {project_id}:{data_key}")
 
-        # 1. Register data with semantic matcher
-        self.semantic_matcher.register_data(project_id, data_key, data)
+        # 1. Register data with semantic matcher (normalizes and stores)
+        await self.semantic_matcher.register_data(
+            project_id, data_key, data, format_hint
+        )
 
         # 2. Append to event store
         event_type = event.event_type or f"{data_key}_updated"
@@ -224,7 +255,7 @@ class ContextEngine:
         print(f"[ContextEngine] Registering agent: {agent_id} (project: {project_id})")
 
         # 1. Match agent needs to available data
-        matches = self.semantic_matcher.match_agent_needs(project_id, needs)
+        matches = await self.semantic_matcher.match_agent_needs(project_id, needs)
 
         # 2. Truncate matches if they exceed context size limit
         if self.max_context_size:
@@ -253,6 +284,7 @@ class ContextEngine:
             "project_id": project_id,
             "needs": needs,
             "notification_method": registration.notification_method,
+            "response_format": registration.response_format,  # TOON or JSON
             "channel": notification_channel,  # For Redis
             "webhook_url": (
                 str(registration.webhook_url) if registration.webhook_url else None
@@ -325,21 +357,35 @@ class ContextEngine:
                 for match in need_matches
             ]
 
+        # Format the context according to agent's preference
+        format_type = registration.response_format
+        context_payload = {
+            "type": "initial_context",
+            "agent_id": agent_id,
+            "format": format_type,
+            "context": context,
+        }
+
+        # Serialize based on format
+        if format_type == "toon":
+            try:
+                serialized_payload = toon.encode(context_payload)
+            except NotImplementedError:
+                # TOON encoder not yet available, fall back to JSON
+                print(f"[ContextEngine] ⚠ TOON format requested but not yet implemented, using JSON for {agent_id}")
+                serialized_payload = json.dumps(context_payload)
+                format_type = "json"  # Update format type for logging
+        else:
+            serialized_payload = json.dumps(context_payload)
+
         # Send via appropriate method
         if registration.notification_method == "redis":
             # Redis pub/sub
             channel = registration.notification_channel or f"agent:{agent_id}:updates"
-            await self.redis.publish(
-                channel,
-                json.dumps(
-                    {
-                        "type": "initial_context",
-                        "agent_id": agent_id,
-                        "context": context,
-                    }
-                ),
+            await self.redis.publish(channel, serialized_payload)
+            print(
+                f"[ContextEngine] Sent initial context to {agent_id} via Redis ({format_type.upper()} format)"
             )
-            print(f"[ContextEngine] Sent initial context to {agent_id} via Redis")
 
         elif registration.notification_method == "webhook":
             # HTTP webhook
@@ -350,7 +396,9 @@ class ContextEngine:
                 secret=registration.webhook_secret,
             )
             if success:
-                print(f"[ContextEngine] Sent initial context to {agent_id} via webhook")
+                print(
+                    f"[ContextEngine] Sent initial context to {agent_id} via webhook ({format_type.upper()} format)"
+                )
             else:
                 print(
                     f"[ContextEngine] ⚠ Failed to send initial context to {agent_id} via webhook"
@@ -379,21 +427,31 @@ class ContextEngine:
 
         for agent_id in affected_agents:
             agent_info = self.agents[agent_id]
+            format_type = agent_info.get("response_format", "toon")
+
+            # Build update payload
+            update_payload = {
+                "type": "data_update",
+                "sequence": sequence,
+                "data_key": data_key,
+                "format": format_type,
+                "data": data,
+            }
+
+            # Serialize based on format
+            if format_type == "toon":
+                try:
+                    serialized_payload = toon.encode(update_payload)
+                except NotImplementedError:
+                    # TOON encoder not yet available, fall back to JSON
+                    serialized_payload = json.dumps(update_payload)
+            else:
+                serialized_payload = json.dumps(update_payload)
 
             # Send via appropriate method
             if agent_info["notification_method"] == "redis":
                 # Redis pub/sub
-                await self.redis.publish(
-                    agent_info["channel"],
-                    json.dumps(
-                        {
-                            "type": "data_update",
-                            "sequence": sequence,
-                            "data_key": data_key,
-                            "data": data,
-                        }
-                    ),
-                )
+                await self.redis.publish(agent_info["channel"], serialized_payload)
 
             elif agent_info["notification_method"] == "webhook":
                 # HTTP webhook (fire and forget - don't block on delivery)
@@ -427,8 +485,8 @@ class ContextEngine:
         """Get info about a registered agent"""
         return self.agents.get(agent_id)
 
-    def query_project_data(
-        self, project_id: str, query: str, top_k: int = 5
+    async def query_project_data(
+        self, project_id: str, query: str, top_k: int = 5, threshold: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
         Ad-hoc semantic query of project data without agent registration.
@@ -440,19 +498,23 @@ class ContextEngine:
             project_id: Project identifier
             query: Natural language query
             top_k: Maximum number of results to return
+            threshold: Optional similarity threshold override (0-1)
 
         Returns:
             List of matched data sources with similarity scores
         """
         print(f"[ContextEngine] Ad-hoc query for project {project_id}: '{query}'")
 
-        # Use semantic matcher with temporary high max_matches
+        # Use semantic matcher with temporary overrides
         original_max = self.semantic_matcher.max_matches
+        original_threshold = self.semantic_matcher.threshold
         self.semantic_matcher.max_matches = top_k
+        if threshold is not None:
+            self.semantic_matcher.threshold = threshold
 
         try:
             # Match the query as if it were a single agent need
-            matches = self.semantic_matcher.match_agent_needs(project_id, [query])
+            matches = await self.semantic_matcher.match_agent_needs(project_id, [query])
 
             # Extract matches for the query
             results = matches.get(query, [])
@@ -462,5 +524,6 @@ class ContextEngine:
             return results
 
         finally:
-            # Restore original max_matches
+            # Restore original values
             self.semantic_matcher.max_matches = original_max
+            self.semantic_matcher.threshold = original_threshold

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contex
+  labels:
+    app: contex
+    version: v0.2.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: contex
+  template:
+    metadata:
+      labels:
+        app: contex
+        version: v0.2.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      containers:
+      - name: contex
+        image: contex:0.2.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8001
+          protocol: TCP
+        env:
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_url
+        - name: SIMILARITY_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: similarity_threshold
+        - name: MAX_MATCHES
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: max_matches
+        - name: MAX_CONTEXT_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: max_context_size
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: log_level
+        - name: LOG_JSON
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: log_json
+        livenessProbe:
+          httpGet:
+            path: /api/health/live
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health/ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      restartPolicy: Always

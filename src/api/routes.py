@@ -1,0 +1,570 @@
+"""REST API routes for Contex"""
+
+from fastapi import APIRouter, HTTPException, Request
+from src.core.models import (
+    AgentRegistration,
+    DataPublishEvent,
+    RegistrationResponse,
+    QueryRequest,
+    QueryResponse,
+    QueryResponse,
+    MatchedDataSource,
+)
+from src.core.auth import create_api_key, revoke_api_key, list_api_keys, APIKey
+from src.core.logging import get_logger
+from typing import List
+
+router = APIRouter()
+logger = get_logger(__name__)
+
+
+@router.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "service": "Contex",
+        "status": "running",
+        "version": "0.2.0"
+    }
+
+
+@router.get("/health")
+async def health(request: Request):
+    """Comprehensive health check endpoint"""
+    from src.core.health import HealthChecker
+    
+    # Get health checker from app state (will be initialized in main.py)
+    if hasattr(request.app.state, 'health_checker'):
+        health_data = await request.app.state.health_checker.get_full_health()
+        
+        # Return 503 if unhealthy
+        status_code = 200 if health_data["status"] != "unhealthy" else 503
+        
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=health_data, status_code=status_code)
+    else:
+        # Fallback if health checker not initialized
+        return {"status": "healthy"}
+
+
+@router.get("/health/ready")
+async def readiness(request: Request):
+    """Readiness check for Kubernetes"""
+    from src.core.health import HealthChecker
+    from fastapi.responses import JSONResponse
+    
+    if hasattr(request.app.state, 'health_checker'):
+        readiness_data = await request.app.state.health_checker.get_readiness()
+        status_code = 200 if readiness_data["ready"] else 503
+        return JSONResponse(content=readiness_data, status_code=status_code)
+    else:
+        return {"ready": True}
+
+
+@router.get("/health/live")
+async def liveness(request: Request):
+    """Liveness check for Kubernetes"""
+    from src.core.health import HealthChecker
+    
+    if hasattr(request.app.state, 'health_checker'):
+        liveness_data = await request.app.state.health_checker.get_liveness()
+        return liveness_data
+    else:
+        return {"alive": True}
+
+
+@router.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    from fastapi.responses import Response
+    from src.core.metrics import get_metrics
+    
+    metrics_output = get_metrics()
+    return Response(content=metrics_output, media_type="text/plain; version=0.0.4")
+
+
+@router.post("/auth/keys", response_model=dict)
+async def create_key(name: str, request: Request):
+    """Create a new API key"""
+    try:
+        redis = request.app.state.redis
+        raw_key, api_key = await create_api_key(redis, name)
+        return {
+            "api_key": raw_key,
+            "key_id": api_key.key_id,
+            "name": api_key.name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/auth/keys", response_model=List[APIKey])
+async def list_keys(request: Request):
+    """List all API keys"""
+    try:
+        redis = request.app.state.redis
+        return await list_api_keys(redis)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/auth/keys/{key_id}")
+async def revoke_key(key_id: str, request: Request):
+    """Revoke an API key"""
+    try:
+        redis = request.app.state.redis
+        success = await revoke_api_key(redis, key_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Key not found")
+        return {"status": "revoked", "key_id": key_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/rate-limits")
+async def get_rate_limits(request: Request):
+    """Get current rate limit status for the authenticated API key"""
+    try:
+        from src.core.rate_limiter import get_rate_limit_status
+        redis = request.app.state.redis
+        api_key = request.headers.get("X-API-Key", "anonymous")
+        
+        status = await get_rate_limit_status(redis, api_key)
+        return {
+            "api_key_prefix": api_key[:7] if len(api_key) > 7 else api_key,
+            "limits": status
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auth/roles")
+async def assign_role_endpoint(
+    key_id: str,
+    role: str,
+    projects: List[str] = None,
+    request: Request = None
+):
+    """Assign a role to an API key"""
+    try:
+        from src.core.rbac import assign_role, Role
+        redis = request.app.state.redis
+        
+        # Validate role
+        try:
+            role_enum = Role(role)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid role. Must be one of: {[r.value for r in Role]}"
+            )
+        
+        role_assignment = await assign_role(redis, key_id, role_enum, projects)
+        return {
+            "key_id": role_assignment.key_id,
+            "role": role_assignment.role.value,
+            "projects": role_assignment.projects
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/auth/roles")
+async def list_roles_endpoint(request: Request):
+    """List all role assignments"""
+    try:
+        from src.core.rbac import list_roles
+        redis = request.app.state.redis
+        
+        roles = await list_roles(redis)
+        return [
+            {
+                "key_id": r.key_id,
+                "role": r.role.value,
+                "projects": r.projects
+            }
+            for r in roles
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/auth/roles/{key_id}")
+async def get_role_endpoint(key_id: str, request: Request):
+    """Get role assignment for a specific API key"""
+    try:
+        from src.core.rbac import get_role
+        redis = request.app.state.redis
+        
+        role_assignment = await get_role(redis, key_id)
+        if not role_assignment:
+            raise HTTPException(status_code=404, detail="Role not found")
+        
+        return {
+            "key_id": role_assignment.key_id,
+            "role": role_assignment.role.value,
+            "projects": role_assignment.projects
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/auth/roles/{key_id}")
+async def revoke_role_endpoint(key_id: str, request: Request):
+    """Revoke role assignment for an API key"""
+    try:
+        from src.core.rbac import revoke_role
+        redis = request.app.state.redis
+        
+        success = await revoke_role(redis, key_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Role not found")
+        
+        return {"status": "revoked", "key_id": key_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/auth/permissions")
+async def list_permissions():
+    """List all available permissions and roles"""
+    from src.core.rbac import Role, Permission, ROLE_PERMISSIONS
+    
+    return {
+        "roles": {
+            role.value: {
+                "permissions": [p.value for p in perms]
+            }
+            for role, perms in ROLE_PERMISSIONS.items()
+        },
+        "all_permissions": [p.value for p in Permission]
+    }
+
+
+@router.post("/data/publish", response_model=dict)
+async def publish_data(event: DataPublishEvent, request: Request):
+    """
+    Main app publishes data change in ANY format.
+
+    Supports multiple formats:
+    - JSON (dict/object)
+    - YAML (string)
+    - TOML (string)
+    - Plain text (string)
+    - Markdown (string)
+
+    Examples:
+        # JSON (structured)
+        POST /data/publish
+        {
+            "project_id": "proj_123",
+            "data_key": "tech_stack",
+            "data": {"backend": "Python/FastAPI", "frontend": "React"}
+        }
+
+        # YAML (structured)
+        POST /data/publish
+        {
+            "project_id": "proj_123",
+            "data_key": "database_config",
+            "data": "database:\n  host: localhost\n  port: 5432",
+            "data_format": "yaml"
+        }
+
+        # Plain text (unstructured)
+        POST /data/publish
+        {
+            "project_id": "proj_123",
+            "data_key": "architecture_notes",
+            "data": "We use a microservices architecture with Redis for caching"
+        }
+    """
+    try:
+        from src.core.metrics import record_event_published, publish_duration_seconds
+        import time
+        
+        logger.info("Publishing data",
+                   project_id=event.project_id,
+                   data_key=event.data_key,
+                   data_format=event.data_format)
+        
+        start_time = time.time()
+        engine = request.app.state.context_engine
+        sequence = await engine.publish_data(event)
+        duration = time.time() - start_time
+        
+        # Record metrics
+        record_event_published(event.project_id, event.data_format or "json")
+        publish_duration_seconds.labels(project_id=event.project_id).observe(duration)
+        
+        logger.info("Data published successfully",
+                   project_id=event.project_id,
+                   data_key=event.data_key,
+                   sequence=sequence,
+                   duration_ms=round(duration * 1000, 2))
+        
+        return {
+            "status": "published",
+            "project_id": event.project_id,
+            "data_key": event.data_key,
+            "sequence": sequence
+        }
+    except Exception as e:
+        logger.error("Failed to publish data",
+                    project_id=event.project_id,
+                    data_key=event.data_key,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agents/register", response_model=RegistrationResponse)
+async def register_agent(registration: AgentRegistration, request: Request):
+    """
+    Agent registers with semantic data needs.
+
+    Example:
+        POST /agents/register
+        {
+            "agent_id": "task-decomposer",
+            "project_id": "proj_123",
+            "data_needs": [
+                "programming languages and frameworks",
+                "event model with events and commands"
+            ],
+            "last_seen_sequence": "0"
+        }
+    """
+    try:
+        from src.core.metrics import record_agent_registered, registration_duration_seconds
+        import time
+        
+        logger.info("Registering agent",
+                   agent_id=registration.agent_id,
+                   project_id=registration.project_id,
+                   needs_count=len(registration.data_needs),
+                   notification_method=registration.notification_method)
+        
+        start_time = time.time()
+        engine = request.app.state.context_engine
+        response = await engine.register_agent(registration)
+        duration = time.time() - start_time
+        
+        # Record metrics
+        record_agent_registered(
+            registration.project_id,
+            registration.notification_method or "redis"
+        )
+        registration_duration_seconds.labels(project_id=registration.project_id).observe(duration)
+        
+        logger.info("Agent registered successfully",
+                   agent_id=registration.agent_id,
+                   project_id=registration.project_id,
+                   matched_data_count=len(response.matched_data),
+                   duration_ms=round(duration * 1000, 2))
+        
+        return response
+    except Exception as e:
+        logger.error("Failed to register agent",
+                    agent_id=registration.agent_id,
+                    project_id=registration.project_id,
+                    error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/agents/{agent_id}")
+async def unregister_agent(agent_id: str, request: Request):
+    """Unregister an agent"""
+    engine = request.app.state.context_engine
+    await engine.unregister_agent(agent_id)
+    return {"status": "unregistered", "agent_id": agent_id}
+
+
+@router.get("/agents")
+async def list_agents(request: Request):
+    """List all registered agents"""
+    engine = request.app.state.context_engine
+    agents = engine.get_registered_agents()
+    return {"agents": agents, "count": len(agents)}
+
+
+@router.get("/agents/{agent_id}")
+async def get_agent_info(agent_id: str, request: Request):
+    """Get info about a registered agent"""
+    engine = request.app.state.context_engine
+    info = engine.get_agent_info(agent_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return info
+
+
+@router.get("/projects/{project_id}/events")
+async def get_project_events(project_id: str, request: Request, since: str = "0", count: int = 100):
+    """Get events for a project"""
+    engine = request.app.state.context_engine
+    events = await engine.event_store.get_events_since(
+        project_id,
+        since,
+        count
+    )
+    return {"events": events, "count": len(events)}
+
+
+@router.get("/projects/{project_id}/data")
+async def get_project_data(project_id: str, request: Request, include_content: bool = True):
+    """Get all registered data for a project"""
+    engine = request.app.state.context_engine
+    data_keys = await engine.semantic_matcher.get_registered_data(project_id)
+
+    if not include_content:
+        return {"project_id": project_id, "data_keys": data_keys, "count": len(data_keys)}
+
+    # Fetch full data for each key
+    result = []
+    for key in data_keys:
+        redis_key = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}"
+        data_info = await engine.semantic_matcher.redis.hgetall(redis_key)
+
+        if data_info:
+            # Helper to decode bytes
+            def decode(val):
+                return val.decode() if isinstance(val, bytes) else val
+
+            description = decode(data_info.get(b"description") or data_info.get("description", ""))
+            data_str = decode(data_info.get(b"data") or data_info.get("data", "{}"))
+            data_format = decode(data_info.get(b"data_format") or data_info.get("data_format", "json"))
+            is_structured = decode(data_info.get(b"is_structured") or data_info.get("is_structured", "true"))
+
+            try:
+                import json
+                data_obj = json.loads(data_str)
+            except:
+                data_obj = {}
+
+            # Generate TOON format
+            try:
+                import toon_format as toon
+                toon_str = toon.encode(data_obj)
+            except:
+                toon_str = "TOON format not available"
+
+            result.append({
+                "data_key": key,
+                "description": description,
+                "data": data_obj,
+                "data_format": data_format,
+                "is_structured": is_structured == "true",
+                "toon": toon_str
+            })
+
+    return result
+
+
+@router.post("/projects/{project_id}/query")
+async def query_project(project_id: str, query_req: QueryRequest, request: Request):
+    """
+    Search project data by semantic similarity without agent registration.
+
+    This endpoint finds and returns data that semantically matches your search terms,
+    returning complete data sources ranked by similarity. Perfect for:
+    - One-off data lookups from CLIs or scripts
+    - Interactive exploration of what data is available
+    - Testing semantic matching quality
+    - Finding relevant data during development
+
+    Example:
+        POST /projects/my-app/query
+        {
+            "query": "authentication methods OAuth JWT",
+            "top_k": 3,
+            "response_format": "toon"
+        }
+
+    Returns:
+        Complete data sources that match your search, ranked by semantic similarity,
+        formatted as TOON or JSON.
+    """
+    try:
+        engine = request.app.state.context_engine
+        matches = await engine.query_project_data(
+            project_id=project_id,
+            query=query_req.query,
+            top_k=query_req.top_k,
+            threshold=query_req.threshold
+        )
+
+        # Apply token limit truncation if specified
+        if query_req.max_tokens and matches:
+            matches_dict = {query_req.query: matches}
+            truncated = engine._truncate_matches(matches_dict, query_req.max_tokens)
+            matches = truncated.get(query_req.query, [])
+
+        # Convert to MatchedDataSource models with enhanced metadata
+        import json
+        import toon_format as toon
+        import tiktoken
+
+        # Initialize tokenizer for counting
+        try:
+            enc = tiktoken.get_encoding("cl100k_base")
+        except:
+            enc = None
+
+        matched_sources = []
+        for match in matches:
+            # Calculate token count
+            token_count = None
+            if enc:
+                try:
+                    data_str = json.dumps(match["data"])
+                    token_count = len(enc.encode(data_str))
+                except:
+                    pass
+
+            # Generate preview
+            preview = None
+            try:
+                data_str = json.dumps(match["data"], indent=2)
+                preview = data_str[:200] + "..." if len(data_str) > 200 else data_str
+            except:
+                pass
+
+            matched_sources.append(
+                MatchedDataSource(
+                    data_key=match["data_key"],
+                    similarity=match["similarity"],
+                    data=match["data"],
+                    description=match.get("description"),
+                    token_count=token_count,
+                    preview=preview
+                )
+            )
+
+        # Build response object
+        response_data = QueryResponse(
+            query=query_req.query,
+            matches=matched_sources,
+            total_matches=len(matched_sources)
+        )
+
+        # Format according to preference
+        if query_req.response_format == "toon":
+            from fastapi.responses import PlainTextResponse
+            try:
+                content = toon.encode(response_data.model_dump())
+                return PlainTextResponse(content=content, media_type="text/plain")
+            except NotImplementedError:
+                # TOON encoder not yet available, fall back to JSON
+                return response_data
+        else:
+            # Default JSON response
+            return response_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

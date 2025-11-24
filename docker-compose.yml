@@ -1,16 +1,38 @@
 services:
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack:latest
     container_name: contex-redis
     ports:
       - "6379:6379"
+      - "8002:8001"  # RedisInsight (optional web UI)
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    environment:
+      - REDIS_ARGS=--appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: contex-opensearch
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
       retries: 5
     restart: unless-stopped
 
@@ -21,11 +43,17 @@ services:
       - "8001:8001"
     environment:
       - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://opensearch:9200
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
+      - HYBRID_SEARCH_ENABLED=true
+      - BM25_WEIGHT=0.7
+      - KNN_WEIGHT=0.3
     depends_on:
       redis:
+        condition: service_healthy
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -44,4 +72,6 @@ services:
 
 volumes:
   redis-data:
+    driver: local
+  opensearch-data:
     driver: local

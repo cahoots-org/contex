@@ -1,9 +1,11 @@
+
 """Tests for event store"""
 
 import pytest
 import pytest_asyncio
 from fakeredis import FakeAsyncRedis
-from src.event_store import EventStore
+from src.core.event_store import EventStore
+from src.core.models import DataPublishEvent
 
 
 class TestEventStore:

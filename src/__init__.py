@@ -1,9 +1,11 @@
 """Contex - Semantic context routing for AI agents"""
 
-from .context_engine import ContextEngine
-from .semantic_matcher import SemanticDataMatcher
-from .event_store import EventStore
-from .models import (
+from .core import (
+    ContextEngine,
+    SemanticDataMatcher,
+    EventStore,
+    WebhookDispatcher,
+    verify_webhook_signature,
     AgentRegistration,
     DataPublishEvent,
     RegistrationResponse,
@@ -16,6 +18,8 @@ __all__ = [
     "ContextEngine",
     "SemanticDataMatcher",
     "EventStore",
+    "WebhookDispatcher",
+    "verify_webhook_signature",
     "AgentRegistration",
     "DataPublishEvent",
     "RegistrationResponse",

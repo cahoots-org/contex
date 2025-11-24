@@ -7,9 +7,9 @@ import hmac
 import hashlib
 from unittest.mock import Mock, AsyncMock, patch
 from fakeredis import FakeAsyncRedis
-from src.context_engine import ContextEngine
-from src.webhook_dispatcher import WebhookDispatcher, verify_webhook_signature
-from src.models import AgentRegistration, DataPublishEvent
+from src.core.context_engine import ContextEngine
+from src.core.webhook_dispatcher import WebhookDispatcher, verify_webhook_signature
+from src.core.models import AgentRegistration, DataPublishEvent
 
 
 class TestWebhookDispatcher:

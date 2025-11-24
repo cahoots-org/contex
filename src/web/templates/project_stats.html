@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="project-stats">
+    <div class="stats-header">
+        <h2>{{ project_id }}</h2>
+        <p>Project Statistics</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>{{ data_count }}</h3>
+            <p>Data Sources</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ "{:,}".format(total_tokens) }}</h3>
+            <p>Total Tokens</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ (total_tokens / data_count)|round(0)|int if data_count > 0 else 0 }}</h3>
+            <p>Avg Tokens/Source</p>
+        </div>
+    </div>
+
+    <div class="data-list">
+        <h3>Data Sources</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data Key</th>
+                    <th>Description</th>
+                    <th>Tokens</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in data_items %}
+                <tr>
+                    <td><strong>{{ item.data_key }}</strong></td>
+                    <td>{{ item.description or 'No description' }}</td>
+                    <td>{{ "{:,}".format(item.token_count) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <a href="/" class="btn-secondary">← Back to Sandbox</a>
+</div>
+{% endblock %}

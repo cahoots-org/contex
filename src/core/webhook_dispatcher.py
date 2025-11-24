@@ -6,6 +6,7 @@ import hmac
 import json
 from typing import Dict, Any, Optional
 import httpx
+from src.core.circuit_breaker import get_circuit_breaker, CircuitBreakerOpen, CircuitBreakerConfig
 
 
 class WebhookDispatcher:
@@ -17,10 +18,12 @@ class WebhookDispatcher:
     - Retry logic with exponential backoff
     - Timeout handling
     - Error logging
+    - Circuit breaker for reliability
     """
 
     def __init__(
-        self, timeout: float = 5.0, max_retries: int = 3, retry_delay: float = 1.0
+        self, timeout: float = 5.0, max_retries: int = 3, retry_delay: float = 1.0,
+        circuit_breaker_config: Optional[CircuitBreakerConfig] = None
     ):
         """
         Initialize webhook dispatcher.
@@ -29,10 +32,12 @@ class WebhookDispatcher:
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts
             retry_delay: Initial delay between retries (doubles each retry)
+            circuit_breaker_config: Optional circuit breaker configuration
         """
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.circuit_breaker_config = circuit_breaker_config or CircuitBreakerConfig()
 
     def _generate_signature(self, payload: str, secret: str) -> str:
         """
@@ -57,7 +62,7 @@ class WebhookDispatcher:
         event_type: str = "data_update",
     ) -> bool:
         """
-        Send webhook with retry logic.
+        Send webhook with retry logic and circuit breaker.
 
         Args:
             url: Webhook URL to POST to
@@ -68,6 +73,25 @@ class WebhookDispatcher:
         Returns:
             True if successful, False otherwise
         """
+        # Get circuit breaker for this URL
+        breaker = get_circuit_breaker(f"webhook:{url}", self.circuit_breaker_config)
+        
+        # Check if circuit breaker allows execution
+        try:
+            with breaker:
+                return await self._send_webhook_internal(url, payload, secret, event_type)
+        except CircuitBreakerOpen:
+            print(f"[WebhookDispatcher] ⚠ Circuit breaker OPEN for {url}, skipping")
+            return False
+    
+    async def _send_webhook_internal(
+        self,
+        url: str,
+        payload: Dict[str, Any],
+        secret: Optional[str] = None,
+        event_type: str = "data_update",
+    ) -> bool:
+        """Internal webhook sending logic"""
         payload_str = json.dumps(payload)
         headers = {
             "Content-Type": "application/json",

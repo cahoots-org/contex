@@ -1,0 +1,22 @@
+apiVersion: v2
+name: contex
+description: Semantic context routing for AI agents
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - ai
+  - agents
+  - context
+  - semantic-search
+home: https://github.com/yourusername/contex
+sources:
+  - https://github.com/yourusername/contex
+maintainers:
+  - name: Contex Team
+    email: team@contex.example.com
+dependencies:
+  - name: redis
+    version: "18.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

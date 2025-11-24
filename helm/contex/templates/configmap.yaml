@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "contex.fullname" . }}
+  labels:
+    {{- include "contex.labels" . | nindent 4 }}
+data:
+  REDIS_URL: {{ .Values.contex.redis.url | quote }}
+  SIMILARITY_THRESHOLD: {{ .Values.contex.similarity.threshold | quote }}
+  MAX_MATCHES: {{ .Values.contex.similarity.maxMatches | quote }}
+  MAX_CONTEXT_SIZE: {{ .Values.contex.similarity.maxContextSize | quote }}
+  LOG_LEVEL: {{ .Values.contex.logging.level | quote }}
+  LOG_JSON: {{ .Values.contex.logging.json | quote }}

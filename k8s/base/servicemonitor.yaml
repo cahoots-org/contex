@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: contex
+  labels:
+    app: contex
+spec:
+  selector:
+    matchLabels:
+      app: contex
+  endpoints:
+  - port: http
+    path: /api/metrics
+    interval: 15s
+    scrapeTimeout: 10s

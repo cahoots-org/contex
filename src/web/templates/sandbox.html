@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="sandbox" x-data="{
+    activeTab: 'query',
+    queryText: '',
+    queryLength: 0,
+    threshold: 0.5,
+    topK: 10,
+    maxTokens: 51200,
+    selectedProject: '{{ projects[0] if projects else '' }}',
+    subscribed: false,
+    subscribedProject: '',
+    dataNeeds: '',
+    updates: [],
+    eventSource: null,
+    projectData: [],
+    dataFormat: 'json',
+    expandAll() {
+        this.projectData.forEach(item => item.expanded = true);
+    },
+    collapseAll() {
+        this.projectData.forEach(item => item.expanded = false);
+    },
+    toggleFormat() {
+        this.dataFormat = this.dataFormat === 'json' ? 'toon' : 'json';
+    },
+    projectConfigs: {
+        'saas-app': {
+            placeholder: 'e.g., authentication security OAuth JWT...',
+            examples: [
+                'authentication security OAuth JWT',
+                'database schemas migrations',
+                'API endpoints routes documentation',
+                'payment integrations Stripe PayPal'
+            ],
+            dataNeeds: 'authentication and security\ndatabase schemas\nAPI endpoints'
+        },
+        'music-rec': {
+            placeholder: 'e.g., recommendation algorithm collaborative filtering...',
+            examples: [
+                'recommendation algorithm collaborative filtering',
+                'audio feature extraction pipeline',
+                'personalization ranking user preferences',
+                'A/B testing experiment strategies'
+            ],
+            dataNeeds: 'recommendation algorithms\naudio processing\npersonalization'
+        }
+    },
+    get currentConfig() {
+        return this.projectConfigs[this.selectedProject] || {
+            placeholder: 'e.g., system architecture microservices...',
+            examples: [
+                'technologies stack frameworks libraries',
+                'system architecture components',
+                'database storage Redis PostgreSQL',
+                'services APIs microservices'
+            ],
+            dataNeeds: 'system architecture\ntechnologies\ncomponents'
+        };
+    }
+}">
+    <div class="sandbox-header">
+        <h2>Search Sandbox</h2>
+    </div>
+
+    {% if not projects %}
+    <div class="empty-state">
+        <h3>No Projects Yet</h3>
+        <p>Publish some data first using the API:</p>
+        <pre><code>POST /data/publish
+{
+  "project_id": "my-project",
+  "data_key": "example",
+  "data": {"your": "data"}
+}</code></pre>
+    </div>
+    {% else %}
+
+    <!-- Project Selection -->
+    <div class="project-selector">
+        <label for="project_select">Project:</label>
+        <select id="project_select" x-model="selectedProject" @change="loadProjectData()">
+            {% for project in projects %}
+            <option value="{{ project }}">{{ project }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Split View Container -->
+    <div class="split-view">
+        <!-- Query Panel: Query & Updates -->
+        <div class="query-panel">
+            <!-- Tab Navigation -->
+            <div class="tab-navigation">
+                <button
+                    class="tab-button"
+                    :class="{ 'active': activeTab === 'query' }"
+                    @click="activeTab = 'query'"
+                >
+                    Search
+                </button>
+                <button
+                    class="tab-button"
+                    :class="{ 'active': activeTab === 'updates' }"
+                    @click="activeTab = 'updates'"
+                >
+                    Real-time Updates
+                    <span x-show="subscribed" class="notification-badge"></span>
+                </button>
+            </div>
+
+            <!-- Query Tab Content -->
+            <div class="tab-content" x-show="activeTab === 'query'">
+                <form
+                    hx-post="/sandbox/query"
+                    hx-target="#results"
+                    hx-indicator="#loading"
+                    class="query-form"
+                    @submit="$event.target.querySelector('button').disabled = true"
+                >
+                <input type="hidden" name="project_id" :value="selectedProject">
+
+        <div class="form-group">
+            <p>Enter search terms to find matching project data</p>
+            <label for="query">Search Terms</label>
+            <textarea
+                name="query"
+                id="query"
+                rows="3"
+                :placeholder="currentConfig.placeholder"
+                required
+                x-model="queryText"
+                @input="queryLength = $event.target.value.length"
+            ></textarea>
+            <small x-text="`${queryLength} characters`"></small>
+        </div>
+
+        <div class="query-controls">
+            <div class="form-group inline">
+                <label for="top_k">Max Results</label>
+                <input
+                    type="number"
+                    name="top_k"
+                    id="top_k"
+                    min="1"
+                    max="50"
+                    value="10"
+                    x-model="topK"
+                >
+                <small x-text="`${topK} results`"></small>
+            </div>
+
+            <div class="form-group inline">
+                <label for="threshold">Similarity Threshold</label>
+                <input
+                    type="range"
+                    name="threshold"
+                    id="threshold"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value="0.5"
+                    x-model="threshold"
+                >
+                <small x-text="`${(threshold * 100).toFixed(0)}%`"></small>
+            </div>
+
+            <div class="form-group inline">
+                <label for="max_tokens">Max Tokens</label>
+                <input
+                    type="number"
+                    name="max_tokens"
+                    id="max_tokens"
+                    min="1000"
+                    max="128000"
+                    step="1000"
+                    value="51200"
+                    x-model="maxTokens"
+                >
+                <small x-text="`${(maxTokens / 1000).toFixed(0)}k tokens`"></small>
+            </div>
+        </div>
+
+            <button type="submit" class="btn-primary">
+                <span class="htmx-indicator" id="loading">Searching...</span>
+                <span>Find Matches</span>
+            </button>
+        </form>
+
+        <div id="results" class="results-container">
+            <div class="placeholder">
+                <div class="example-queries">
+                    <h4>Example Searches:</h4>
+                    <ul>
+                        <template x-for="(example, idx) in currentConfig.examples" :key="idx">
+                            <li x-text="example"></li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-time Updates Tab Content -->
+    <div class="tab-content" x-show="activeTab === 'updates'">
+        <div class="subscription-panel">
+        <h3>Real-time Updates</h3>
+        <p>Subscribe to live data changes in your project (like an agent)</p>
+
+        <div x-show="!subscribed">
+            <div class="form-group">
+                <label for="data_needs">What data do you need? (one per line)</label>
+                <textarea
+                    x-model="dataNeeds"
+                    rows="3"
+                    :placeholder="currentConfig.dataNeeds"
+                ></textarea>
+            </div>
+            <button
+                @click="subscribeToUpdates()"
+                class="btn-secondary"
+                :disabled="!dataNeeds.trim()"
+            >
+                Subscribe to Updates
+            </button>
+        </div>
+
+        <div x-show="subscribed" class="subscription-active">
+            <div class="subscription-status">
+                <span class="status-badge">Subscribed to <strong x-text="subscribedProject"></strong></span>
+                <button @click="unsubscribe()" class="btn-small">Unsubscribe</button>
+            </div>
+
+            <div class="updates-feed">
+                <h4>Live Updates (<span x-text="updates.length"></span>)</h4>
+                <div x-show="updates.length === 0" class="no-updates">
+                    Waiting for updates...
+                </div>
+                <template x-for="(update, index) in updates.slice().reverse()" :key="index">
+                    <div class="update-item">
+                        <div class="update-header">
+                            <span class="update-type" x-text="update.type"></span>
+                            <span class="update-time" x-text="update.time"></span>
+                        </div>
+                        <div class="update-content">
+                            <strong x-text="update.data_key"></strong>
+                            <template x-if="update.similarity">
+                                <span class="similarity-badge" x-text="`${(update.similarity * 100).toFixed(0)}% match`"></span>
+                            </template>
+                        </div>
+                        <pre x-show="update.data" x-text="JSON.stringify(update.data, null, 2)" class="update-data"></pre>
+                    </div>
+                </template>
+            </div>
+        </div>
+        </div>
+        </div>
+        </div>
+
+        <!-- Data Panel: Project Data -->
+        <div class="data-panel">
+            <div class="data-panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: nowrap;">
+                <h3 style="margin: 0; white-space: nowrap;">Project Data</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: nowrap; flex-shrink: 0;">
+                    <button
+                        @click="loadProjectData()"
+                        title="Refresh data"
+                        style="background: transparent; color: #667eea; width: 32px; height: 32px; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
+                        @mouseenter="$el.style.background='#f8fafc'; $el.style.borderColor='#667eea'"
+                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='#e2e8f0'">
+                        ↻
+                    </button>
+                    <button
+                        @click="expandAll()"
+                        title="Expand all items"
+                        style="background: transparent; color: #10b981; width: 32px; height: 32px; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
+                        @mouseenter="$el.style.background='#f8fafc'; $el.style.borderColor='#10b981'"
+                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='#e2e8f0'">
+                        ⊕
+                    </button>
+                    <button
+                        @click="collapseAll()"
+                        title="Collapse all items"
+                        style="background: transparent; color: #f59e0b; width: 32px; height: 32px; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
+                        @mouseenter="$el.style.background='#f8fafc'; $el.style.borderColor='#f59e0b'"
+                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='#e2e8f0'">
+                        ⊖
+                    </button>
+                    <div @click="toggleFormat()" title="Toggle between JSON and TOON format" style="display: flex; align-items: center; gap: 0.5rem; background: #f8fafc; padding: 0.375rem 0.75rem; border-radius: 1.5rem; cursor: pointer; border: 1px solid #e2e8f0; white-space: nowrap;">
+                        <span :style="{ color: dataFormat === 'json' ? '#2563eb' : '#64748b', fontWeight: dataFormat === 'json' ? '700' : '600', fontSize: '0.7rem' }">JSON</span>
+                        <div style="position: relative; width: 36px; height: 20px; background: #e2e8f0; border-radius: 10px;">
+                            <div :style="{ position: 'absolute', top: '2px', left: dataFormat === 'toon' ? '18px' : '2px', width: '16px', height: '16px', background: dataFormat === 'toon' ? '#2563eb' : 'white', borderRadius: '50%', transition: 'all 0.3s ease', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }"></div>
+                        </div>
+                        <span :style="{ color: dataFormat === 'toon' ? '#2563eb' : '#64748b', fontWeight: dataFormat === 'toon' ? '700' : '600', fontSize: '0.7rem' }">TOON</span>
+                    </div>
+                </div>
+            </div>
+            <div class="data-panel-content">
+                <div x-show="!projectData || projectData.length === 0" class="no-data">
+                    Loading project data...
+                </div>
+                <div x-show="projectData && projectData.length > 0" class="data-items">
+                    <template x-for="(item, index) in projectData" :key="index">
+                        <div class="data-item">
+                            <div class="data-item-header" @click="item.expanded = !item.expanded">
+                                <strong x-text="item.data_key"></strong>
+                                <span class="expand-icon" x-text="item.expanded ? '▼' : '▶'"></span>
+                            </div>
+                            <div x-show="item.expanded" class="data-item-body">
+                                <pre x-show="dataFormat === 'json'" x-text="JSON.stringify(item.data, null, 2)"></pre>
+                                <pre x-show="dataFormat === 'toon'" x-text="item.toon || 'TOON format not available'"></pre>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load project data function
+    window.loadProjectData = async function() {
+        const app = Alpine.$data(document.querySelector('.sandbox'));
+        if (!app.selectedProject) return;
+
+        console.log('Loading data for project:', app.selectedProject);
+
+        try {
+            const response = await fetch(`/api/projects/${app.selectedProject}/data`);
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Loaded project data:', data);
+                app.projectData = data.map(item => ({
+                    ...item,
+                    expanded: false
+                }));
+            }
+        } catch (error) {
+            console.error('Failed to load project data:', error);
+        }
+    }
+
+    // Auto-focus query input
+    document.addEventListener('DOMContentLoaded', () => {
+        const queryInput = document.getElementById('query');
+        if (queryInput) queryInput.focus();
+
+        // Load initial project data
+        setTimeout(loadProjectData, 100);
+    });
+
+    // Re-enable submit button after results load
+    document.body.addEventListener('htmx:afterSwap', (event) => {
+        const form = document.querySelector('.query-form');
+        if (form) {
+            form.querySelector('button').disabled = false;
+        }
+    });
+
+    // Subscription functions
+    function subscribeToUpdates() {
+        const app = Alpine.$data(document.querySelector('.sandbox'));
+        const needs = app.dataNeeds.split('\n').filter(n => n.trim()).map(n => n.trim());
+
+        if (needs.length === 0) return;
+
+        // Generate unique session ID
+        const sessionId = 'sandbox-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+
+        // Build SSE URL with parameters
+        const params = new URLSearchParams({
+            project_id: app.selectedProject,
+            data_needs: JSON.stringify(needs),
+            session_id: sessionId
+        });
+
+        // Create EventSource for SSE
+        app.eventSource = new EventSource(`/sandbox/subscribe?${params}`);
+
+        app.eventSource.onopen = () => {
+            app.subscribed = true;
+            app.subscribedProject = app.selectedProject;
+            console.log('Connected to updates stream');
+        };
+
+        app.eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            // Add timestamp
+            data.time = new Date().toLocaleTimeString();
+
+            // Add to updates feed
+            app.updates.push(data);
+
+            // Keep only last 50 updates
+            if (app.updates.length > 50) {
+                app.updates.shift();
+            }
+
+            console.log('Received update:', data);
+        };
+
+        app.eventSource.onerror = (error) => {
+            console.error('SSE error:', error);
+            if (app.eventSource.readyState === EventSource.CLOSED) {
+                app.subscribed = false;
+                app.eventSource = null;
+            }
+        };
+    }
+
+    function unsubscribe() {
+        const app = Alpine.$data(document.querySelector('.sandbox'));
+
+        if (app.eventSource) {
+            app.eventSource.close();
+            app.eventSource = null;
+        }
+
+        app.subscribed = false;
+        app.subscribedProject = '';
+        app.updates = [];
+        console.log('Unsubscribed from updates');
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        const app = Alpine.$data(document.querySelector('.sandbox'));
+        if (app && app.eventSource) {
+            app.eventSource.close();
+        }
+    });
+</script>
+{% endblock %}

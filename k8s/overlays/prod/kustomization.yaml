@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: contex-prod
+
+bases:
+- ../../base
+
+patchesStrategicMerge:
+- deployment-patch.yaml
+
+configMapGenerator:
+- name: contex-config
+  behavior: merge
+  literals:
+  - log_level=INFO
+  - redis_url=redis://redis-prod:6379
+
+replicas:
+- name: contex
+  count: 3

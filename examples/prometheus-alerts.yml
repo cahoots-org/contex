@@ -1,0 +1,143 @@
+# Prometheus alerting rules for Contex
+groups:
+  - name: contex_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(contex_http_requests_total{status_code=~"5.."}[5m])) 
+          / sum(rate(contex_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "High error rate detected in Contex"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+      
+      # High latency
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(contex_http_request_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "High latency detected in Contex"
+          description: "P95 latency is {{ $value }}s (threshold: 1s)"
+      
+      # Critical latency
+      - alert: CriticalLatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(contex_http_request_duration_seconds_bucket[5m])
+          ) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          service: contex
+        annotations:
+          summary: "Critical latency detected in Contex"
+          description: "P95 latency is {{ $value }}s (threshold: 5s)"
+      
+      # Rate limit exceeded frequently
+      - alert: FrequentRateLimits
+        expr: |
+          rate(contex_rate_limit_exceeded_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: info
+          service: contex
+        annotations:
+          summary: "Frequent rate limit exceeded in Contex"
+          description: "Rate limits exceeded {{ $value }} times/sec"
+      
+      # No active agents
+      - alert: NoActiveAgents
+        expr: sum(contex_registered_agents) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "No active agents in Contex"
+          description: "No agents registered for 10 minutes"
+      
+      # High authentication failure rate
+      - alert: HighAuthFailureRate
+        expr: |
+          sum(rate(contex_auth_attempts_total{status="failure"}[5m])) 
+          / sum(rate(contex_auth_attempts_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "High authentication failure rate in Contex"
+          description: "Auth failure rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+      
+      # RBAC denials spike
+      - alert: RBACDenialsSpike
+        expr: |
+          rate(contex_rbac_denials_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: info
+          service: contex
+        annotations:
+          summary: "RBAC denials spike in Contex"
+          description: "RBAC denials at {{ $value }} per second"
+      
+      # Slow publish operations
+      - alert: SlowPublishOperations
+        expr: |
+          histogram_quantile(0.95, 
+            rate(contex_publish_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "Slow publish operations in Contex"
+          description: "P95 publish duration is {{ $value }}s (threshold: 2s)"
+      
+      # Slow query operations
+      - alert: SlowQueryOperations
+        expr: |
+          histogram_quantile(0.95, 
+            rate(contex_query_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "Slow query operations in Contex"
+          description: "P95 query duration is {{ $value }}s (threshold: 1s)"
+      
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: contex_memory_usage_bytes > 2147483648  # 2GB
+        for: 5m
+        labels:
+          severity: warning
+          service: contex
+        annotations:
+          summary: "High memory usage in Contex"
+          description: "Memory usage is {{ $value | humanize1024 }} (threshold: 2GB)"
+      
+      # Service down
+      - alert: ContexDown
+        expr: up{job="contex"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: contex
+        annotations:
+          summary: "Contex service is down"
+          description: "Contex has been down for more than 1 minute"
