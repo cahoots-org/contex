@@ -1,5 +1,5 @@
 # Core dependencies
-redis==5.0.1
+redis==7.1.0
 pydantic==2.12.4
 fastapi==0.121.3
 uvicorn[standard]==0.24.0
