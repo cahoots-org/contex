@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from sentence_transformers import SentenceTransformer
 from redis.asyncio import Redis
 from redis.commands.search.field import VectorField, TextField, TagField
-from redis.commands.search.indexDefinition import IndexDefinition, IndexType
+from redis.commands.search.index_definition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 
 from .data_normalizer import DataNormalizer
