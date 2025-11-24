@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.2.1)'
-        required: true
+        description: 'Version to release (e.g., 0.2.1) - leave empty to auto-bump patch'
+        required: false
         type: string
 
 permissions:
@@ -16,8 +16,51 @@ permissions:
   packages: write
 
 jobs:
+  determine-version:
+    name: Determine Release Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Calculate version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          if [ -n "${{ inputs.version }}" ]; then
+            # User provided version
+            VERSION="${{ inputs.version }}"
+          else
+            # Auto-bump patch version
+            LATEST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -1)
+            if [ -z "$LATEST_TAG" ]; then
+              VERSION="0.1.0"
+            else
+              # Extract version and bump patch
+              LATEST_VERSION=${LATEST_TAG#v}
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+              PATCH=$((PATCH + 1))
+              VERSION="$MAJOR.$MINOR.$PATCH"
+            fi
+            echo "Auto-bumped version to $VERSION"
+          fi
+        else
+          # Tag push
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        fi
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+        echo "Releasing version: $VERSION"
+
   test:
-    name: Test Before Release
+    name: Run Test Suite
     runs-on: ubuntu-latest
 
     services:
@@ -46,15 +89,15 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run tests
+    - name: Run pytest
       env:
         REDIS_URL: redis://localhost:6379
       run: |
-        pytest tests/ -v
+        pytest tests/ -v --tb=short
 
   publish-sdk:
-    name: Build and Publish Python SDK
-    needs: test
+    name: Publish Python SDK to PyPI
+    needs: [determine-version, test]
     runs-on: ubuntu-latest
 
     steps:
@@ -66,39 +109,27 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install build dependencies
+    - name: Install build tools
       run: |
         python -m pip install --upgrade pip
         pip install build twine
 
-    - name: Extract version from tag
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
-        else
-          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Update SDK version
+    - name: Update SDK version in pyproject.toml
       working-directory: sdk/python
       run: |
-        VERSION="${{ steps.get_version.outputs.VERSION }}"
+        VERSION="${{ needs.determine-version.outputs.version }}"
         sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add pyproject.toml
-        git diff --staged --quiet || git commit -m "Bump SDK version to $VERSION"
+        cat pyproject.toml | grep version
 
-    - name: Build package
+    - name: Build Python package
       working-directory: sdk/python
       run: python -m build
 
-    - name: Check package
+    - name: Verify package
       working-directory: sdk/python
       run: python -m twine check dist/*
 
-    - name: Publish to TestPyPI
+    - name: Publish to TestPyPI (optional)
       working-directory: sdk/python
       env:
         TWINE_USERNAME: __token__
@@ -113,39 +144,23 @@ jobs:
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: python -m twine upload dist/*
 
-    - name: Upload SDK artifacts
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: python-sdk-dist
+        name: python-sdk
         path: sdk/python/dist/*
 
-  docker:
+  build-docker:
     name: Build and Push Docker Images
-    needs: test
+    needs: [determine-version, test]
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Extract version from tag
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
-        else
-          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        fi
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-      continue-on-error: true
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3
@@ -154,7 +169,15 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build and push Docker image
+    - name: Log in to Docker Hub (optional)
+      if: secrets.DOCKER_USERNAME != ''
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+      continue-on-error: true
+
+    - name: Build and push to GHCR
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -162,11 +185,11 @@ jobs:
         platforms: linux/amd64
         tags: |
           ghcr.io/${{ github.repository }}:latest
-          ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+          ghcr.io/${{ github.repository }}:${{ needs.determine-version.outputs.version }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Build and push to Docker Hub
+    - name: Build and push to Docker Hub (optional)
       if: secrets.DOCKER_USERNAME != ''
       uses: docker/build-push-action@v5
       with:
@@ -175,13 +198,13 @@ jobs:
         platforms: linux/amd64
         tags: |
           ${{ secrets.DOCKER_USERNAME }}/contex:latest
-          ${{ secrets.DOCKER_USERNAME }}/contex:${{ steps.version.outputs.VERSION }}
+          ${{ secrets.DOCKER_USERNAME }}/contex:${{ needs.determine-version.outputs.version }}
         cache-from: type=gha
       continue-on-error: true
 
-  release:
+  create-release:
     name: Create GitHub Release
-    needs: [test, publish-sdk, docker]
+    needs: [determine-version, test, publish-sdk, build-docker]
     runs-on: ubuntu-latest
 
     steps:
@@ -190,65 +213,55 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Extract version
-      id: version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          echo "TAG=v${{ inputs.version }}" >> $GITHUB_OUTPUT
-        else
-          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        fi
-
     - name: Download SDK artifacts
       uses: actions/download-artifact@v4
       with:
-        name: python-sdk-dist
+        name: python-sdk
         path: dist
 
-    - name: Create or update tag
+    - name: Create or update git tag
       if: github.event_name == 'workflow_dispatch'
       run: |
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git tag -f ${{ steps.version.outputs.TAG }} -m "Release ${{ steps.version.outputs.VERSION }}"
-        git push -f origin ${{ steps.version.outputs.TAG }}
+        git tag -f ${{ needs.determine-version.outputs.tag }} -m "Release ${{ needs.determine-version.outputs.version }}"
+        git push -f origin ${{ needs.determine-version.outputs.tag }}
 
     - name: Generate release notes
-      id: release_notes
       run: |
         cat > release_notes.md << 'EOF'
-        ## Contex ${{ steps.version.outputs.VERSION }}
+        ## Contex ${{ needs.determine-version.outputs.version }}
 
-        ### Python SDK
+        ### 🐍 Python SDK
 
-        Install the Python SDK:
+        Install via pip:
         ```bash
-        pip install contex-python==${{ steps.version.outputs.VERSION }}
+        pip install contex-python==${{ needs.determine-version.outputs.version }}
         ```
 
-        📦 **PyPI Package:** https://pypi.org/project/contex-python/${{ steps.version.outputs.VERSION }}/
+        **PyPI**: https://pypi.org/project/contex-python/${{ needs.determine-version.outputs.version }}/
 
-        ### Docker Images
+        ### 🐳 Docker Images
 
-        Pull the Docker image:
+        Pull from GitHub Container Registry:
         ```bash
-        docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+        docker pull ghcr.io/${{ github.repository }}:${{ needs.determine-version.outputs.version }}
         ```
 
-        🐳 **GitHub Container Registry:** ghcr.io/${{ github.repository }}
+        Or use the latest tag:
+        ```bash
+        docker pull ghcr.io/${{ github.repository }}:latest
+        ```
 
-        ### What's Changed
+        ### 📝 Changes
 
         EOF
-        echo "NOTES_FILE=release_notes.md" >> $GITHUB_OUTPUT
 
-    - name: Create Release
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.version.outputs.TAG }}
-        name: Release ${{ steps.version.outputs.VERSION }}
+        tag_name: ${{ needs.determine-version.outputs.tag }}
+        name: v${{ needs.determine-version.outputs.version }}
         body_path: release_notes.md
         files: dist/*
         draft: false

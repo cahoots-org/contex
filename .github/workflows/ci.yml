@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Run Test Suite
     runs-on: ubuntu-latest
 
     services:
@@ -44,21 +44,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run tests
+    - name: Run pytest
       env:
         REDIS_URL: redis://localhost:6379
       run: |
-        pytest tests/ -v
+        pytest tests/ -v --tb=short
 
   docker:
-    name: Docker Build and Test
+    name: Verify Docker Build
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
 
     steps:
-    - name: Free Disk Space
+    - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /opt/ghc
@@ -72,36 +72,23 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to GitHub Container Registry
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/${{ github.repository }}
-        tags: |
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=sha,prefix={{branch}}-
-
-    - name: Build and push Docker image
+    - name: Build Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        push: false
+        tags: contex:test
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Test Docker Compose
+    - name: Start services with docker compose
       run: |
         docker compose up -d
-        sleep 15
-        curl -f http://localhost:8001/health || exit 1
-        docker compose down
+        sleep 20
+
+    - name: Verify API is responding
+      run: |
+        curl -f http://localhost:8001/api/health || exit 1
+
+    - name: Stop services
+      run: docker compose down
