@@ -200,7 +200,7 @@ class ContexAsyncClient:
             data_format=data_format,
             metadata=metadata,
         )
-        return await self._request("POST", "/api/v1/v1/data/publish", json=event.model_dump())
+        return await self._request("POST", "/api/v1/data/publish", json=event.model_dump())
     
     # ========================================================================
     # Agent Management
