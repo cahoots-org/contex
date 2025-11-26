@@ -150,16 +150,19 @@ class TestExportImportManager:
         assert isinstance(data, dict)
 
     @pytest.mark.asyncio
-    async def test_export_toon_format_fallback(self, redis, export_import_manager, sample_project_data):
-        """Test TOON format falls back to JSON when not implemented"""
+    async def test_export_toon_format(self, redis, export_import_manager, sample_project_data):
+        """Test TOON format export works"""
         result = await export_import_manager.export_project(
             sample_project_data,
             format="toon"
         )
 
-        # Should fall back to JSON (TOON not yet implemented)
-        data = json.loads(result)
-        assert isinstance(data, dict)
+        # TOON format is implemented and returns TOON string (not JSON)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        # TOON format contains key-value pairs with colons
+        assert ":" in result
+        assert "test_project" in result
 
 
 class TestImportValidation:

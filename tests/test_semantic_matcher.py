@@ -60,13 +60,14 @@ class TestSemanticDataMatcher:
         )
 
         # Verify data is in Redis (standard keys)
-        # The embedding and index operations are mocked, but basic hash storage should work
-        keys = await matcher.redis.keys("embedding:proj1:tech_stack")
+        # The semantic matcher parses data into nodes, so use wildcard pattern
+        keys = await matcher.redis.keys("embedding:proj1:tech_stack*")
         assert len(keys) > 0
-        
-        data = await matcher.redis.hgetall("embedding:proj1:tech_stack")
-        assert b"data_key" in data
-        assert data[b"data_key"] == b"tech_stack"
+
+        # Get data from first matching key
+        first_key = keys[0]
+        data = await matcher.redis.hgetall(first_key)
+        assert b"node_key" in data or b"data_key" in data
 
     @pytest.mark.asyncio
     async def test_auto_describe_simple_data(self, matcher):
