@@ -12,10 +12,29 @@ from src.core.models import (
 )
 from src.core.auth import create_api_key, revoke_api_key, list_api_keys, APIKey
 from src.core.logging import get_logger
+from src.core.audit import (
+    audit_log,
+    AuditEventType,
+    AuditEventSeverity,
+)
+from src.core.webhooks import emit_webhook, WebhookEventType
 from typing import List
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def _get_request_context(request: Request) -> dict:
+    """Extract common audit context from request"""
+    return {
+        "actor_id": getattr(request.state, 'api_key_id', None),
+        "actor_type": "api_key" if getattr(request.state, 'api_key_id', None) else None,
+        "actor_ip": request.client.host if request.client else None,
+        "tenant_id": getattr(request.state, 'tenant_id', None),
+        "request_id": getattr(request.state, 'request_id', None),
+        "endpoint": str(request.url.path),
+        "method": request.method,
+    }
 
 
 @router.get("/")
@@ -86,15 +105,35 @@ async def metrics():
 @router.post("/auth/keys", response_model=dict)
 async def create_key(name: str, request: Request):
     """Create a new API key"""
+    ctx = _get_request_context(request)
     try:
         redis = request.app.state.redis
         raw_key, api_key = await create_api_key(redis, name)
+
+        # Audit log API key creation
+        await audit_log(
+            event_type=AuditEventType.AUTH_API_KEY_CREATED,
+            action=f"Created API key '{name}'",
+            resource_type="api_key",
+            resource_id=api_key.key_id,
+            details={"key_name": name},
+            **ctx
+        )
+
         return {
             "api_key": raw_key,
             "key_id": api_key.key_id,
             "name": api_key.name
         }
     except Exception as e:
+        await audit_log(
+            event_type=AuditEventType.AUTH_API_KEY_CREATED,
+            action=f"Failed to create API key '{name}'",
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"key_name": name, "error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -111,15 +150,45 @@ async def list_keys(request: Request):
 @router.delete("/auth/keys/{key_id}")
 async def revoke_key(key_id: str, request: Request):
     """Revoke an API key"""
+    ctx = _get_request_context(request)
     try:
         redis = request.app.state.redis
         success = await revoke_api_key(redis, key_id)
         if not success:
+            await audit_log(
+                event_type=AuditEventType.AUTH_API_KEY_REVOKED,
+                action=f"Failed to revoke API key (not found)",
+                resource_type="api_key",
+                resource_id=key_id,
+                result="failure",
+                severity=AuditEventSeverity.WARNING,
+                **ctx
+            )
             raise HTTPException(status_code=404, detail="Key not found")
+
+        # Audit log successful revocation
+        await audit_log(
+            event_type=AuditEventType.AUTH_API_KEY_REVOKED,
+            action=f"Revoked API key",
+            resource_type="api_key",
+            resource_id=key_id,
+            **ctx
+        )
+
         return {"status": "revoked", "key_id": key_id}
     except HTTPException:
         raise
     except Exception as e:
+        await audit_log(
+            event_type=AuditEventType.AUTH_API_KEY_REVOKED,
+            action=f"Failed to revoke API key",
+            resource_type="api_key",
+            resource_id=key_id,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -148,10 +217,11 @@ async def assign_role_endpoint(
     request: Request = None
 ):
     """Assign a role to an API key"""
+    ctx = _get_request_context(request)
     try:
         from src.core.rbac import assign_role, Role
         redis = request.app.state.redis
-        
+
         # Validate role
         try:
             role_enum = Role(role)
@@ -160,8 +230,19 @@ async def assign_role_endpoint(
                 status_code=400,
                 detail=f"Invalid role. Must be one of: {[r.value for r in Role]}"
             )
-        
+
         role_assignment = await assign_role(redis, key_id, role_enum, projects)
+
+        # Audit log role assignment
+        await audit_log(
+            event_type=AuditEventType.AUTHZ_ROLE_ASSIGNED,
+            action=f"Assigned role '{role}' to API key",
+            resource_type="api_key",
+            resource_id=key_id,
+            details={"role": role, "projects": projects},
+            **ctx
+        )
+
         return {
             "key_id": role_assignment.key_id,
             "role": role_assignment.role.value,
@@ -170,6 +251,16 @@ async def assign_role_endpoint(
     except HTTPException:
         raise
     except Exception as e:
+        await audit_log(
+            event_type=AuditEventType.AUTHZ_ROLE_ASSIGNED,
+            action=f"Failed to assign role '{role}'",
+            resource_type="api_key",
+            resource_id=key_id,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"role": role, "error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -218,18 +309,38 @@ async def get_role_endpoint(key_id: str, request: Request):
 @router.delete("/auth/roles/{key_id}")
 async def revoke_role_endpoint(key_id: str, request: Request):
     """Revoke role assignment for an API key"""
+    ctx = _get_request_context(request)
     try:
         from src.core.rbac import revoke_role
         redis = request.app.state.redis
-        
+
         success = await revoke_role(redis, key_id)
         if not success:
             raise HTTPException(status_code=404, detail="Role not found")
-        
+
+        # Audit log role revocation
+        await audit_log(
+            event_type=AuditEventType.AUTHZ_ROLE_REVOKED,
+            action=f"Revoked role from API key",
+            resource_type="api_key",
+            resource_id=key_id,
+            **ctx
+        )
+
         return {"status": "revoked", "key_id": key_id}
     except HTTPException:
         raise
     except Exception as e:
+        await audit_log(
+            event_type=AuditEventType.AUTHZ_ROLE_REVOKED,
+            action=f"Failed to revoke role",
+            resource_type="api_key",
+            resource_id=key_id,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -287,41 +398,93 @@ async def publish_data(event: DataPublishEvent, request: Request):
             "data": "We use a microservices architecture with Redis for caching"
         }
     """
+    ctx = _get_request_context(request)
     try:
         from src.core.metrics import record_event_published, publish_duration_seconds
         import time
-        
+
         logger.info("Publishing data",
                    project_id=event.project_id,
                    data_key=event.data_key,
                    data_format=event.data_format)
-        
+
         start_time = time.time()
         engine = request.app.state.context_engine
         sequence = await engine.publish_data(event)
         duration = time.time() - start_time
-        
+
         # Record metrics
         record_event_published(event.project_id, event.data_format or "json")
         publish_duration_seconds.labels(project_id=event.project_id).observe(duration)
-        
+
+        # Data versioning now built on event sourcing - no separate version creation needed
+
+        # Audit log data publication
+        audit_details = {
+            "data_format": event.data_format or "json",
+            "sequence": sequence,
+            "duration_ms": round(duration * 1000, 2),
+        }
+
+        await audit_log(
+            event_type=AuditEventType.DATA_PUBLISHED,
+            action=f"Published data '{event.data_key}'",
+            project_id=event.project_id,
+            resource_type="data",
+            resource_id=event.data_key,
+            details=audit_details,
+            **ctx
+        )
+
         logger.info("Data published successfully",
                    project_id=event.project_id,
                    data_key=event.data_key,
                    sequence=sequence,
+                   version=version_info.get("version") if version_info else None,
                    duration_ms=round(duration * 1000, 2))
-        
-        return {
+
+        # Emit webhook event
+        webhook_data = {
+            "project_id": event.project_id,
+            "data_key": event.data_key,
+            "sequence": sequence,
+            "data_format": event.data_format or "json",
+        }
+        if version_info:
+            webhook_data["version"] = version_info["version"]
+        await emit_webhook(
+            WebhookEventType.DATA_PUBLISHED,
+            webhook_data,
+            tenant_id=ctx.get("tenant_id"),
+            project_id=event.project_id,
+        )
+
+        response = {
             "status": "published",
             "project_id": event.project_id,
             "data_key": event.data_key,
             "sequence": sequence
         }
+        if version_info:
+            response["version"] = version_info["version"]
+            response["data_hash"] = version_info["data_hash"]
+        return response
     except Exception as e:
         logger.error("Failed to publish data",
                     project_id=event.project_id,
                     data_key=event.data_key,
                     error=str(e))
+        await audit_log(
+            event_type=AuditEventType.DATA_PUBLISHED,
+            action=f"Failed to publish data '{event.data_key}'",
+            project_id=event.project_id,
+            resource_type="data",
+            resource_id=event.data_key,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"data_format": event.data_format or "json", "error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -342,48 +505,107 @@ async def register_agent(registration: AgentRegistration, request: Request):
             "last_seen_sequence": "0"
         }
     """
+    ctx = _get_request_context(request)
     try:
         from src.core.metrics import record_agent_registered, registration_duration_seconds
         import time
-        
+
         logger.info("Registering agent",
                    agent_id=registration.agent_id,
                    project_id=registration.project_id,
                    needs_count=len(registration.data_needs),
                    notification_method=registration.notification_method)
-        
+
         start_time = time.time()
         engine = request.app.state.context_engine
         response = await engine.register_agent(registration)
         duration = time.time() - start_time
-        
+
         # Record metrics
         record_agent_registered(
             registration.project_id,
             registration.notification_method or "redis"
         )
         registration_duration_seconds.labels(project_id=registration.project_id).observe(duration)
-        
+
+        # Audit log agent registration
+        await audit_log(
+            event_type=AuditEventType.AGENT_REGISTERED,
+            action=f"Registered agent '{registration.agent_id}'",
+            project_id=registration.project_id,
+            resource_type="agent",
+            resource_id=registration.agent_id,
+            details={
+                "data_needs_count": len(registration.data_needs),
+                "notification_method": registration.notification_method or "redis",
+                "matched_data_count": len(response.matched_data),
+                "duration_ms": round(duration * 1000, 2),
+            },
+            **ctx
+        )
+
         logger.info("Agent registered successfully",
                    agent_id=registration.agent_id,
                    project_id=registration.project_id,
                    matched_data_count=len(response.matched_data),
                    duration_ms=round(duration * 1000, 2))
-        
+
+        # Emit webhook event
+        await emit_webhook(
+            WebhookEventType.AGENT_REGISTERED,
+            {
+                "agent_id": registration.agent_id,
+                "project_id": registration.project_id,
+                "data_needs": registration.data_needs,
+                "matched_data_count": len(response.matched_data),
+            },
+            tenant_id=ctx.get("tenant_id"),
+            project_id=registration.project_id,
+        )
+
         return response
     except Exception as e:
         logger.error("Failed to register agent",
                     agent_id=registration.agent_id,
                     project_id=registration.project_id,
                     error=str(e))
+        await audit_log(
+            event_type=AuditEventType.AGENT_REGISTERED,
+            action=f"Failed to register agent '{registration.agent_id}'",
+            project_id=registration.project_id,
+            resource_type="agent",
+            resource_id=registration.agent_id,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"error": str(e)},
+            **ctx
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/agents/{agent_id}")
 async def unregister_agent(agent_id: str, request: Request):
     """Unregister an agent"""
+    ctx = _get_request_context(request)
     engine = request.app.state.context_engine
     await engine.unregister_agent(agent_id)
+
+    # Audit log agent unregistration
+    await audit_log(
+        event_type=AuditEventType.AGENT_UNREGISTERED,
+        action=f"Unregistered agent '{agent_id}'",
+        resource_type="agent",
+        resource_id=agent_id,
+        **ctx
+    )
+
+    # Emit webhook event
+    await emit_webhook(
+        WebhookEventType.AGENT_UNREGISTERED,
+        {"agent_id": agent_id},
+        tenant_id=ctx.get("tenant_id"),
+    )
+
     return {"status": "unregistered", "agent_id": agent_id}
 
 
@@ -418,9 +640,96 @@ async def get_project_events(project_id: str, request: Request, since: str = "0"
 
 
 @router.get("/projects/{project_id}/data")
-async def get_project_data(project_id: str, request: Request, include_content: bool = True):
-    """Get all registered data for a project"""
+async def get_project_data(
+    project_id: str,
+    request: Request,
+    include_content: bool = True,
+    format: str = "json",
+    include_events: bool = False,
+    include_embeddings: bool = False,
+    include_agents: bool = False,
+):
+    """
+    Get all registered data for a project.
+
+    Enhanced to replace /export endpoint functionality.
+
+    Args:
+        project_id: Project identifier
+        include_content: Include full data content
+        format: Output format (json, yaml, toml, csv, xml, markdown, toon, text)
+        include_events: Include event stream data
+        include_embeddings: Include embeddings data
+        include_agents: Include agent registrations
+    """
+    ctx = _get_request_context(request)
     engine = request.app.state.context_engine
+
+    # If requesting full export with events/embeddings/agents, use export manager
+    if include_events or include_embeddings or include_agents:
+        try:
+            from src.core.export_import import ExportImportManager
+
+            if format not in ["json", "toon", "yaml", "toml", "csv", "xml", "markdown", "text"]:
+                raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+            redis = request.app.state.redis
+            export_manager = ExportImportManager(redis)
+
+            exported_data = await export_manager.export_project(
+                project_id=project_id,
+                format=format if format in ["json", "toon"] else "json",  # ExportManager only supports json/toon
+                include_events=include_events,
+                include_embeddings=include_embeddings,
+                include_agents=include_agents,
+            )
+
+            # Audit log data export
+            await audit_log(
+                event_type=AuditEventType.DATA_EXPORTED,
+                action=f"Exported project data via /data endpoint",
+                project_id=project_id,
+                resource_type="project",
+                resource_id=project_id,
+                details={
+                    "format": format,
+                    "include_events": include_events,
+                    "include_embeddings": include_embeddings,
+                    "include_agents": include_agents,
+                },
+                **ctx
+            )
+
+            # Return as response with appropriate content type
+            content_type_map = {
+                "json": "application/json",
+                "yaml": "application/x-yaml",
+                "toml": "application/toml",
+                "csv": "text/csv",
+                "xml": "application/xml",
+                "markdown": "text/markdown",
+                "toon": "text/plain",
+                "text": "text/plain",
+            }
+            from fastapi.responses import Response
+            return Response(content=exported_data, media_type=content_type_map.get(format, "application/json"))
+
+        except Exception as e:
+            logger.error("Project export failed", project_id=project_id, error=str(e))
+            await audit_log(
+                event_type=AuditEventType.DATA_EXPORTED,
+                action=f"Failed to export project data",
+                project_id=project_id,
+                resource_type="project",
+                resource_id=project_id,
+                result="failure",
+                severity=AuditEventSeverity.ERROR,
+                details={"format": format, "error": str(e)},
+                **ctx
+            )
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # Standard data listing
     data_keys = await engine.semantic_matcher.get_registered_data(project_id)
 
     if not include_content:
@@ -519,11 +828,16 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
 
         matched_sources = []
         for match in matches:
+            # Ensure data is a dict (nodes can have string content)
+            data = match["data"]
+            if not isinstance(data, dict):
+                data = {"content": data}
+
             # Calculate token count
             token_count = None
             if enc:
                 try:
-                    data_str = json.dumps(match["data"])
+                    data_str = json.dumps(data)
                     token_count = len(enc.encode(data_str))
                 except:
                     pass
@@ -531,7 +845,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
             # Generate preview
             preview = None
             try:
-                data_str = json.dumps(match["data"], indent=2)
+                data_str = json.dumps(data, indent=2)
                 preview = data_str[:200] + "..." if len(data_str) > 200 else data_str
             except:
                 pass
@@ -540,7 +854,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
                 MatchedDataSource(
                     data_key=match["data_key"],
                     similarity=match["similarity"],
-                    data=match["data"],
+                    data=data,
                     description=match.get("description"),
                     token_count=token_count,
                     preview=preview
@@ -662,63 +976,8 @@ async def get_retention_stats(project_id: str, request: Request):
 
 
 # ========================================================================
-# Export/Import Endpoints
+# Import Endpoints
 # ========================================================================
-
-@router.get("/projects/{project_id}/export")
-async def export_project(
-    project_id: str,
-    request: Request,
-    format: str = "json",
-    include_events: bool = True,
-    include_embeddings: bool = True,
-    include_agents: bool = True,
-):
-    """
-    Export all project data.
-
-    Args:
-        project_id: Project identifier
-        format: Export format (json or toon)
-        include_events: Include event stream data
-        include_embeddings: Include embeddings data
-        include_agents: Include agent registrations
-
-    Returns:
-        Serialized project data
-    """
-    try:
-        from src.core.export_import import ExportImportManager
-
-        if format not in ["json", "toon"]:
-            raise HTTPException(status_code=400, detail="Format must be 'json' or 'toon'")
-
-        redis = request.app.state.redis
-        export_manager = ExportImportManager(redis)
-
-        exported_data = await export_manager.export_project(
-            project_id=project_id,
-            format=format,
-            include_events=include_events,
-            include_embeddings=include_embeddings,
-            include_agents=include_agents,
-        )
-
-        logger.info("Project exported",
-                   project_id=project_id,
-                   format=format)
-
-        # Return as plain text with appropriate content type
-        content_type = "application/json" if format == "json" else "text/plain"
-        from fastapi.responses import Response
-        return Response(content=exported_data, media_type=content_type)
-
-    except Exception as e:
-        logger.error("Project export failed",
-                    project_id=project_id,
-                    error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/projects/{project_id}/import")
 async def import_project(
@@ -740,6 +999,7 @@ async def import_project(
     Returns:
         Import statistics and validation results
     """
+    ctx = _get_request_context(request)
     try:
         from src.core.export_import import ExportImportManager
 
@@ -769,6 +1029,22 @@ async def import_project(
                     detail=f"Project ID mismatch: URL has '{project_id}' but data has '{import_project_id}'"
                 )
 
+        # Audit log data import
+        await audit_log(
+            event_type=AuditEventType.DATA_IMPORTED,
+            action=f"Imported project data" + (" (validation only)" if validate_only else ""),
+            project_id=project_id,
+            resource_type="project",
+            resource_id=project_id,
+            details={
+                "format": format,
+                "validate_only": validate_only,
+                "overwrite": overwrite,
+                "status": result.get("status"),
+            },
+            **ctx
+        )
+
         logger.info("Project import processed",
                    project_id=project_id,
                    status=result.get("status"))
@@ -784,4 +1060,195 @@ async def import_project(
         logger.error("Project import failed",
                     project_id=project_id,
                     error=str(e))
+        await audit_log(
+            event_type=AuditEventType.DATA_IMPORTED,
+            action=f"Failed to import project data",
+            project_id=project_id,
+            resource_type="project",
+            resource_id=project_id,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"format": format, "error": str(e)},
+            **ctx
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# BATCH OPERATIONS - Phase 2 Performance Enhancement
+# ============================================================================
+
+@router.post("/batch/publish", response_model=dict)
+async def batch_publish_data(events: List[DataPublishEvent], request: Request):
+    """
+    Batch publish multiple data items in a single request.
+
+    Reduces round-trip overhead for bulk operations.
+
+    Example:
+        POST /batch/publish
+        [
+            {
+                "project_id": "proj_123",
+                "data_key": "config_1",
+                "data": {"setting": "value1"}
+            },
+            {
+                "project_id": "proj_123",
+                "data_key": "config_2",
+                "data": {"setting": "value2"}
+            }
+        ]
+
+    Returns:
+        {
+            "status": "completed",
+            "total": 2,
+            "successful": 2,
+            "failed": 0,
+            "results": [...]
+        }
+    """
+    try:
+        import time
+        from src.core.metrics import record_event_published, publish_duration_seconds
+
+        logger.info(f"Batch publishing {len(events)} items")
+        start_time = time.time()
+        engine = request.app.state.context_engine
+
+        results = []
+        successful = 0
+        failed = 0
+
+        for event in events:
+            try:
+                sequence = await engine.publish_data(event)
+                record_event_published(event.project_id, event.data_format or "json")
+                results.append({
+                    "status": "success",
+                    "project_id": event.project_id,
+                    "data_key": event.data_key,
+                    "sequence": sequence
+                })
+                successful += 1
+            except Exception as e:
+                results.append({
+                    "status": "failed",
+                    "project_id": event.project_id,
+                    "data_key": event.data_key,
+                    "error": str(e)
+                })
+                failed += 1
+                logger.error(f"Failed to publish {event.data_key}: {e}")
+
+        duration = time.time() - start_time
+
+        logger.info(f"Batch publish completed",
+                   total=len(events),
+                   successful=successful,
+                   failed=failed,
+                   duration_ms=round(duration * 1000, 2))
+
+        return {
+            "status": "completed",
+            "total": len(events),
+            "successful": successful,
+            "failed": failed,
+            "duration_ms": round(duration * 1000, 2),
+            "results": results
+        }
+
+    except Exception as e:
+        logger.error(f"Batch publish failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/batch/register", response_model=dict)
+async def batch_register_agents(registrations: List[AgentRegistration], request: Request):
+    """
+    Batch register multiple agents in a single request.
+
+    Reduces round-trip overhead for bulk agent registrations.
+
+    Example:
+        POST /batch/register
+        [
+            {
+                "agent_id": "agent_1",
+                "project_id": "proj_123",
+                "data_needs": ["api endpoints", "authentication"]
+            },
+            {
+                "agent_id": "agent_2",
+                "project_id": "proj_123",
+                "data_needs": ["database schema", "models"]
+            }
+        ]
+
+    Returns:
+        {
+            "status": "completed",
+            "total": 2,
+            "successful": 2,
+            "failed": 0,
+            "results": [...]
+        }
+    """
+    try:
+        import time
+        from src.core.metrics import record_agent_registered, registration_duration_seconds
+
+        logger.info(f"Batch registering {len(registrations)} agents")
+        start_time = time.time()
+        engine = request.app.state.context_engine
+
+        results = []
+        successful = 0
+        failed = 0
+
+        for registration in registrations:
+            try:
+                response = await engine.register_agent(registration)
+                record_agent_registered(
+                    registration.project_id,
+                    registration.notification_method
+                )
+                results.append({
+                    "status": "success",
+                    "agent_id": registration.agent_id,
+                    "project_id": registration.project_id,
+                    "matches": response.matches,
+                    "notification_method": response.notification_method
+                })
+                successful += 1
+            except Exception as e:
+                results.append({
+                    "status": "failed",
+                    "agent_id": registration.agent_id,
+                    "project_id": registration.project_id,
+                    "error": str(e)
+                })
+                failed += 1
+                logger.error(f"Failed to register {registration.agent_id}: {e}")
+
+        duration = time.time() - start_time
+
+        logger.info(f"Batch registration completed",
+                   total=len(registrations),
+                   successful=successful,
+                   failed=failed,
+                   duration_ms=round(duration * 1000, 2))
+
+        return {
+            "status": "completed",
+            "total": len(registrations),
+            "successful": successful,
+            "failed": failed,
+            "duration_ms": round(duration * 1000, 2),
+            "results": results
+        }
+
+    except Exception as e:
+        logger.error(f"Batch registration failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

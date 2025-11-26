@@ -20,22 +20,25 @@ class Permission(str, Enum):
     # Data operations
     PUBLISH_DATA = "publish_data"
     QUERY_DATA = "query_data"
-    
+
     # Agent operations
     REGISTER_AGENT = "register_agent"
     LIST_AGENTS = "list_agents"
     DELETE_AGENT = "delete_agent"
-    
+
     # Admin operations
     CREATE_API_KEY = "create_api_key"
     LIST_API_KEYS = "list_api_keys"
     REVOKE_API_KEY = "revoke_api_key"
     MANAGE_ROLES = "manage_roles"
     VIEW_RATE_LIMITS = "view_rate_limits"
-    
+
     # Project operations
     VIEW_PROJECT_DATA = "view_project_data"
     VIEW_PROJECT_EVENTS = "view_project_events"
+
+    # System operations (cross-project)
+    SYSTEM_CLEANUP = "system_cleanup"
 
 
 # Role to permissions mapping
@@ -54,6 +57,7 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.VIEW_RATE_LIMITS,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
+        Permission.SYSTEM_CLEANUP,
     },
     Role.PUBLISHER: {
         # Publishers can publish data and view project info

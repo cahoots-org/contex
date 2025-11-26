@@ -8,6 +8,37 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
+def _record_rate_limited_event(
+    api_key_id: str,
+    endpoint: str,
+    limit: int,
+    actor_ip: str,
+    tenant_id: str = None,
+):
+    """Record rate limit event in audit log (async fire-and-forget)"""
+    import asyncio
+    try:
+        from src.core.audit import audit_log, AuditEventType, AuditEventSeverity
+
+        async def _log():
+            await audit_log(
+                event_type=AuditEventType.SECURITY_RATE_LIMITED,
+                action=f"Rate limit exceeded on {endpoint}",
+                actor_id=api_key_id,
+                actor_type="api_key" if api_key_id != "anonymous" else None,
+                actor_ip=actor_ip,
+                tenant_id=tenant_id,
+                endpoint=endpoint,
+                severity=AuditEventSeverity.WARNING,
+                details={"limit": limit, "endpoint": endpoint},
+            )
+
+        # Create task to run async without blocking
+        asyncio.create_task(_log())
+    except Exception:
+        pass  # Don't fail request if audit fails
+
+
 class RateLimitConfig:
     """Rate limit configuration for different operations"""
     
@@ -137,6 +168,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         allowed, info = await limiter.check_rate_limit(rate_key, limit)
 
         if not allowed:
+            # Record audit event for rate limiting
+            actor_ip = request.client.host if request.client else None
+            tenant_id = getattr(request.state, 'tenant_id', None)
+            _record_rate_limited_event(
+                api_key_id=api_key if api_key != "anonymous" else None,
+                endpoint=path,
+                limit=limit,
+                actor_ip=actor_ip,
+                tenant_id=tenant_id,
+            )
+
             # Return 429 Too Many Requests
             return JSONResponse(
                 status_code=429,

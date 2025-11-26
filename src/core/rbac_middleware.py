@@ -13,23 +13,26 @@ ENDPOINT_PERMISSIONS = {
     # Data operations
     "/api/data/publish": Permission.PUBLISH_DATA,
     "/api/publish": Permission.PUBLISH_DATA,
-    
+
     # Agent operations
     "/api/agents/register": Permission.REGISTER_AGENT,
     "/api/register": Permission.REGISTER_AGENT,
     "/api/agents": Permission.LIST_AGENTS,  # GET
-    
+
     # Query operations
     "/api/query": Permission.QUERY_DATA,
     "/api/projects/*/query": Permission.QUERY_DATA,
-    
+
     # Project data
     "/api/projects/*/data": Permission.VIEW_PROJECT_DATA,
     "/api/projects/*/events": Permission.VIEW_PROJECT_EVENTS,
-    
+
     # Admin operations
     "/api/auth/keys": Permission.CREATE_API_KEY,  # POST
     "/api/admin/rate-limits": Permission.VIEW_RATE_LIMITS,
+    "/api/admin/cleanup": Permission.SYSTEM_CLEANUP,
+    "/api/admin/cleanup/*": Permission.SYSTEM_CLEANUP,
+    "/api/admin/retention/*": Permission.SYSTEM_CLEANUP,
 }
 
 # Method-specific permissions
@@ -140,11 +143,20 @@ class RBACMiddleware(BaseHTTPMiddleware):
         project_id = None
         if request.method in ["POST", "PUT", "PATCH"]:
             try:
-                body = await request.json()
+                import json as json_module
+                # Read raw body once
+                body_bytes = await request.body()
+                body = json_module.loads(body_bytes)
                 project_id = self.extract_project_id(request.url.path, body)
-                # Re-create request with body (since we consumed it)
-                request._body = None
-            except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
+
+                # Store parsed body in state for endpoint to reuse
+                request.state.json_body = body
+
+                # Restore body stream for downstream handlers
+                async def receive():
+                    return {"type": "http.request", "body": body_bytes}
+                request._receive = receive
+            except (json_module.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
                 # Body is not JSON or couldn't be decoded, extract from URL instead
                 print(f"[RBAC] Could not decode request body: {type(e).__name__}, extracting project_id from URL")
                 project_id = self.extract_project_id(request.url.path)

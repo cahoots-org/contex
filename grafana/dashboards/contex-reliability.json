@@ -1,0 +1,399 @@
+{
+  "dashboard": {
+    "title": "Contex - Reliability & Errors",
+    "description": "Monitor system reliability, circuit breakers, and error tracking",
+    "tags": ["contex", "reliability", "errors"],
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "refresh": "1m",
+    "rows": [
+      {
+        "title": "Circuit Breakers",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Circuit Breaker States",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "contex_circuit_breaker_state",
+                "legendFormat": "{{name}} (0=closed, 1=half-open, 2=open)"
+              }
+            ],
+            "alert": {
+              "name": "Circuit Breaker Open",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [1]
+                  },
+                  "query": {
+                    "model": "A",
+                    "datasourceId": 1
+                  }
+                }
+              ],
+              "message": "Circuit breaker {{name}} is OPEN - webhooks are failing"
+            }
+          },
+          {
+            "id": 2,
+            "title": "Circuit Breaker Failures",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_circuit_breaker_failures_total[5m])",
+                "legendFormat": "{{name}}"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Circuit Breaker Transitions",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_circuit_breaker_transitions_total[5m])",
+                "legendFormat": "{{name}}: {{from_state}} → {{to_state}}"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Circuit Breaker Success Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_circuit_breaker_successes_total[5m]) / (rate(contex_circuit_breaker_successes_total[5m]) + rate(contex_circuit_breaker_failures_total[5m])) * 100",
+                "legendFormat": "{{name}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "percentage",
+                "format": "percent",
+                "min": 0,
+                "max": 100
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Webhooks",
+        "panels": [
+          {
+            "id": 10,
+            "title": "Webhook Success Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_webhooks_sent_total{status=\"success\"}[5m]) / rate(contex_webhooks_sent_total[5m]) * 100",
+                "legendFormat": "Success Rate"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "percentage",
+                "format": "percent"
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "title": "Webhook Status Distribution",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum(contex_webhooks_sent_total) by (status)",
+                "legendFormat": "{{status}}"
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "title": "Webhook Send Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_webhooks_sent_total{status=\"success\"}[5m])",
+                "legendFormat": "Success"
+              },
+              {
+                "expr": "rate(contex_webhooks_sent_total{status=\"failed\"}[5m])",
+                "legendFormat": "Failed"
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "title": "Webhook Retries",
+            "type": "graph",
+            "description": "Retry attempts for webhook delivery with exponential backoff",
+            "targets": [
+              {
+                "expr": "rate(contex_webhook_retries_total[5m])",
+                "legendFormat": "Retry Rate"
+              }
+            ]
+          },
+          {
+            "id": 14,
+            "title": "Webhook Retry Delay (p95)",
+            "type": "graph",
+            "description": "95th percentile of webhook retry delays",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_webhook_retry_delay_seconds_bucket[5m]))",
+                "legendFormat": "p95 Delay"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(contex_webhook_retry_delay_seconds_bucket[5m]))",
+                "legendFormat": "p50 Delay"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Retry Operations",
+        "panels": [
+          {
+            "id": 15,
+            "title": "Retry Attempts by Operation",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_retries_total[5m])",
+                "legendFormat": "{{operation}}"
+              }
+            ]
+          },
+          {
+            "id": 16,
+            "title": "Retry Exhaustions",
+            "type": "graph",
+            "description": "Operations where all retry attempts failed",
+            "targets": [
+              {
+                "expr": "rate(contex_retry_exhausted_total[5m])",
+                "legendFormat": "{{operation}}"
+              }
+            ],
+            "alert": {
+              "name": "High Retry Exhaustion Rate",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [0.1]
+                  }
+                }
+              ],
+              "message": "High retry exhaustion rate for {{operation}} - operations are failing permanently"
+            }
+          },
+          {
+            "id": 17,
+            "title": "Retry Success Ratio",
+            "type": "gauge",
+            "description": "Percentage of retried operations that eventually succeeded",
+            "targets": [
+              {
+                "expr": "1 - (sum(rate(contex_retry_exhausted_total[1h])) / sum(rate(contex_retries_total[1h])))",
+                "legendFormat": "Success Ratio"
+              }
+            ],
+            "options": {
+              "minValue": 0,
+              "maxValue": 1,
+              "thresholds": [
+                {"value": 0.8, "color": "red"},
+                {"value": 0.95, "color": "yellow"},
+                {"value": 1, "color": "green"}
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "title": "Authentication & Security",
+        "panels": [
+          {
+            "id": 20,
+            "title": "Auth Attempts",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_auth_attempts_total{status=\"success\"}[5m])",
+                "legendFormat": "Successful"
+              },
+              {
+                "expr": "rate(contex_auth_attempts_total{status=\"failed\"}[5m])",
+                "legendFormat": "Failed"
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "title": "Rate Limit Exceeded",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_rate_limit_exceeded_total[5m])",
+                "legendFormat": "{{endpoint}}"
+              }
+            ],
+            "alert": {
+              "name": "High Rate Limit Violations",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [5]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": 22,
+            "title": "RBAC Denials",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_rbac_denials_total[5m])",
+                "legendFormat": "{{role}} - {{permission}}"
+              }
+            ]
+          },
+          {
+            "id": 23,
+            "title": "Auth Success Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(contex_auth_attempts_total{status=\"success\"}[5m]) / rate(contex_auth_attempts_total[5m]) * 100"
+              }
+            ],
+            "options": {
+              "unit": "percent"
+            }
+          }
+        ]
+      },
+      {
+        "title": "Redis Operations",
+        "panels": [
+          {
+            "id": 30,
+            "title": "Redis Operation Duration (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_redis_operation_duration_seconds_bucket[5m]))",
+                "legendFormat": "{{operation}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          },
+          {
+            "id": 31,
+            "title": "Redis Connections",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "contex_redis_connections"
+              }
+            ],
+            "alert": {
+              "name": "Redis Connection Pool Exhausted",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [45]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": 32,
+            "title": "Memory Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "contex_memory_usage_bytes / 1024 / 1024",
+                "legendFormat": "Memory (MB)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Error Tracking",
+        "panels": [
+          {
+            "id": 40,
+            "title": "HTTP Errors by Endpoint",
+            "type": "heatmap",
+            "targets": [
+              {
+                "expr": "sum(rate(contex_http_requests_total{status_code=~\"5..\"}[5m])) by (endpoint)",
+                "legendFormat": "{{endpoint}}"
+              }
+            ]
+          },
+          {
+            "id": 41,
+            "title": "Failed Queries",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_queries_total{status=\"failed\"}[5m])",
+                "legendFormat": "{{project_id}}"
+              }
+            ]
+          },
+          {
+            "id": 42,
+            "title": "Error Rate (All Sources)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_http_requests_total{status_code=~\"5..\"}[5m])",
+                "legendFormat": "HTTP 5xx"
+              },
+              {
+                "expr": "rate(contex_queries_total{status=\"failed\"}[5m])",
+                "legendFormat": "Query failures"
+              },
+              {
+                "expr": "rate(contex_webhooks_sent_total{status=\"failed\"}[5m])",
+                "legendFormat": "Webhook failures"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

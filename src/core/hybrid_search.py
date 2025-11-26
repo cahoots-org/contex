@@ -19,35 +19,31 @@ from .semantic_matcher import SemanticDataMatcher
 
 class RankFusionSearch:
     """
-    Hybrid search using Reciprocal Rank Fusion (RRF) algorithm.
+    Hybrid search combining keyword (BM25) and semantic (vector) search.
 
-    RRF combines multiple ranked lists by computing reciprocal ranks,
-    which is more robust than score-based fusion and doesn't require
-    score normalization or weight tuning.
-
-    Formula: RRF_score = Σ 1/(k + rank_i)
-    where k is a constant (typically 60) and rank_i is the rank in list i.
+    Returns documents that match EITHER keyword OR semantic search above their
+    respective thresholds. This is simpler and more intuitive than score fusion.
     """
 
     def __init__(
         self,
         semantic_matcher: SemanticDataMatcher,
         opensearch_url: Optional[str] = None,
-        rrf_k: int = 60,  # Standard RRF constant
-        vector_boost: float = 1.0,  # Boost factor for vector results
+        keyword_threshold: float = 5.0,  # BM25 score threshold
+        vector_threshold: float = 0.7,   # Cosine similarity threshold
     ):
         """
-        Initialize rank fusion search.
+        Initialize hybrid search.
 
         Args:
             semantic_matcher: Semantic matcher for vector embeddings
             opensearch_url: OpenSearch connection URL
-            rrf_k: RRF constant (default: 60, standard value)
-            vector_boost: Multiplier for vector rank contributions (default: 1.0)
+            keyword_threshold: Minimum BM25 score for keyword matches
+            vector_threshold: Minimum cosine similarity for vector matches
         """
         self.semantic_matcher = semantic_matcher
-        self.rrf_k = rrf_k
-        self.vector_boost = vector_boost
+        self.keyword_threshold = keyword_threshold
+        self.vector_threshold = vector_threshold
 
         # Initialize OpenSearch connection
         os_url = opensearch_url or os.getenv("OPENSEARCH_URL", "http://localhost:9200")
@@ -64,8 +60,8 @@ class RankFusionSearch:
         # Initialize index
         self._initialize_index()
 
-        print(f"[RankFusionSearch] Connected to OpenSearch at {os_url}")
-        print(f"[RankFusionSearch] RRF constant k={rrf_k}, vector_boost={vector_boost}")
+        print(f"[HybridSearch] Connected to OpenSearch at {os_url}")
+        print(f"[HybridSearch] Keyword threshold: {keyword_threshold}, Vector threshold: {vector_threshold}")
 
     def _initialize_index(self) -> None:
         """Initialize OpenSearch index with appropriate mappings."""
@@ -165,44 +161,109 @@ class RankFusionSearch:
         self,
         project_id: str,
         query: str,
-        top_k: int = 10
+        top_k: int = 10,
+        keyword_threshold: Optional[float] = None,
+        vector_threshold: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
-        Perform hybrid search using RRF algorithm.
+        Perform hybrid search using union of keyword and vector results.
+
+        Returns documents that match EITHER keyword search OR semantic search.
 
         Args:
             project_id: Project to search within
             query: Search query
             top_k: Number of results to return
+            keyword_threshold: Minimum BM25 score for keyword matches (uses class default if None)
+            vector_threshold: Minimum cosine similarity for vector matches (uses class default if None)
 
         Returns:
-            Ranked list of results with RRF scores
+            Union of keyword and vector matches, sorted by best score
         """
+        # Use class defaults if not specified
+        if keyword_threshold is None:
+            keyword_threshold = self.keyword_threshold
+        if vector_threshold is None:
+            vector_threshold = self.vector_threshold
+
         # Generate query embedding
         query_vector = self.semantic_matcher.model.encode(query).tolist()
 
-        # Execute both searches in parallel
-        lexical_results = self._lexical_search(project_id, query, top_k * 2)
-        vector_results = self._vector_search(project_id, query_vector, top_k * 2)
+        # Execute both searches
+        lexical_results = self._lexical_search_with_scores(project_id, query, top_k * 2)
+        vector_results = self._vector_search_with_scores(project_id, query_vector, top_k * 2)
 
-        # Apply Reciprocal Rank Fusion
-        fused_results = self._reciprocal_rank_fusion(
-            lexical_results,
-            vector_results,
-            top_k
-        )
+        # Union: take documents that pass EITHER threshold
+        results_map = {}
 
-        print(f"[RankFusionSearch] Fused {len(fused_results)} results for: {query}")
-        return fused_results
+        # Add keyword matches
+        for doc_id, bm25_score in lexical_results:
+            if bm25_score >= keyword_threshold:
+                results_map[doc_id] = {
+                    "keyword_score": bm25_score,
+                    "vector_score": 0.0,
+                    "match_type": "keyword"
+                }
 
-    def _lexical_search(
+        # Add vector matches
+        for doc_id, vector_score in vector_results:
+            if vector_score >= vector_threshold:
+                if doc_id in results_map:
+                    # Document matched both - update with vector score
+                    results_map[doc_id]["vector_score"] = vector_score
+                    results_map[doc_id]["match_type"] = "both"
+                else:
+                    results_map[doc_id] = {
+                        "keyword_score": 0.0,
+                        "vector_score": vector_score,
+                        "match_type": "vector"
+                    }
+
+        # Sort by best score from either method
+        sorted_docs = sorted(
+            results_map.items(),
+            key=lambda x: max(x[1]["keyword_score"] / 10.0, x[1]["vector_score"]),  # Normalize BM25 to ~0-1
+            reverse=True
+        )[:top_k]
+
+        # Retrieve full documents
+        results = []
+        for doc_id, scores in sorted_docs:
+            try:
+                doc = self.client.get(index=self.index_name, id=doc_id)
+                source = doc["_source"]
+
+                # Use the better of the two scores, normalized to 0-1
+                # BM25 scores: 0-3 = weak, 3-6 = good, 6+ = excellent
+                # Map to: 0.5-0.7 = weak, 0.7-0.9 = good, 0.9-1.0 = excellent
+                normalized_keyword = min(0.5 + (scores["keyword_score"] / 12.0), 1.0)
+                normalized_vector = scores["vector_score"]
+                final_score = max(normalized_keyword, normalized_vector)
+
+                print(f"[HybridSearch]   {source['data_key']}: {scores['match_type']} - keyword={scores['keyword_score']:.2f}, vector={scores['vector_score']:.3f}, final={final_score:.3f}")
+
+                results.append({
+                    "data_key": source["data_key"],
+                    "keyword_score": float(scores["keyword_score"]),
+                    "vector_score": float(scores["vector_score"]),
+                    "match_type": scores["match_type"],
+                    "similarity": float(final_score),
+                })
+            except Exception as e:
+                print(f"[HybridSearch] Error retrieving doc {doc_id}: {e}")
+                continue
+
+        print(f"[HybridSearch] Found {len(results)} results for: {query}")
+        return results
+
+    def _lexical_search_with_scores(
         self,
         project_id: str,
         query: str,
         size: int
-    ) -> List[Tuple[str, int]]:
+    ) -> List[Tuple[str, float]]:
         """
-        Perform lexical (BM25) search.
+        Perform lexical (BM25) search with scores.
 
         Args:
             project_id: Project filter
@@ -210,7 +271,7 @@ class RankFusionSearch:
             size: Number of results
 
         Returns:
-            List of (doc_id, rank) tuples
+            List of (doc_id, bm25_score) tuples
         """
         query_body = {
             "query": {
@@ -233,23 +294,23 @@ class RankFusionSearch:
 
         response = self.client.search(index=self.index_name, body=query_body)
 
-        # Return (doc_id, rank) tuples
+        # Return (doc_id, bm25_score) tuples
         results = [
-            (hit["_id"], idx)
-            for idx, hit in enumerate(response["hits"]["hits"])
+            (hit["_id"], hit["_score"])
+            for hit in response["hits"]["hits"]
         ]
 
-        print(f"[RankFusionSearch] Lexical search: {len(results)} results")
+        print(f"[HybridSearch] Keyword search: {len(results)} results")
         return results
 
-    def _vector_search(
+    def _vector_search_with_scores(
         self,
         project_id: str,
         query_vector: List[float],
         size: int
-    ) -> List[Tuple[str, int]]:
+    ) -> List[Tuple[str, float]]:
         """
-        Perform vector similarity search.
+        Perform vector similarity search with cosine scores.
 
         Args:
             project_id: Project filter
@@ -257,7 +318,7 @@ class RankFusionSearch:
             size: Number of results
 
         Returns:
-            List of (doc_id, rank) tuples
+            List of (doc_id, cosine_similarity) tuples
         """
         query_body = {
             "size": size,
@@ -280,84 +341,14 @@ class RankFusionSearch:
 
         response = self.client.search(index=self.index_name, body=query_body)
 
-        # Return (doc_id, rank) tuples
+        # OpenSearch kNN returns scores, need to convert to similarity
+        # The score is already cosine similarity (1 = identical, 0 = orthogonal)
         results = [
-            (hit["_id"], idx)
-            for idx, hit in enumerate(response["hits"]["hits"])
+            (hit["_id"], hit["_score"])
+            for hit in response["hits"]["hits"]
         ]
 
-        print(f"[RankFusionSearch] Vector search: {len(results)} results")
-        return results
-
-    def _reciprocal_rank_fusion(
-        self,
-        lexical_ranks: List[Tuple[str, int]],
-        vector_ranks: List[Tuple[str, int]],
-        top_k: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Combine rankings using Reciprocal Rank Fusion algorithm.
-
-        RRF Score = Σ 1/(k + rank_i)
-
-        This approach is more robust than weighted score combinations
-        as it doesn't require score normalization or parameter tuning.
-
-        Args:
-            lexical_ranks: List of (doc_id, rank) from lexical search
-            vector_ranks: List of (doc_id, rank) from vector search
-            top_k: Number of top results to return
-
-        Returns:
-            Fused and ranked results
-        """
-        # Build rank maps
-        lexical_map = {doc_id: rank for doc_id, rank in lexical_ranks}
-        vector_map = {doc_id: rank for doc_id, rank in vector_ranks}
-
-        # Get all unique document IDs
-        all_doc_ids = set(lexical_map.keys()) | set(vector_map.keys())
-
-        # Calculate RRF scores
-        rrf_scores = {}
-        for doc_id in all_doc_ids:
-            score = 0.0
-
-            # Lexical contribution
-            if doc_id in lexical_map:
-                score += 1.0 / (self.rrf_k + lexical_map[doc_id])
-
-            # Vector contribution (with boost)
-            if doc_id in vector_map:
-                score += self.vector_boost / (self.rrf_k + vector_map[doc_id])
-
-            rrf_scores[doc_id] = score
-
-        # Sort by RRF score (descending)
-        sorted_docs = sorted(
-            rrf_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:top_k]
-
-        # Retrieve full documents
-        results = []
-        for doc_id, rrf_score in sorted_docs:
-            try:
-                doc = self.client.get(index=self.index_name, id=doc_id)
-                source = doc["_source"]
-
-                results.append({
-                    "data_key": source["data_key"],
-                    "rrf_score": float(rrf_score),
-                    "lexical_rank": lexical_map.get(doc_id, -1),
-                    "vector_rank": vector_map.get(doc_id, -1),
-                    "similarity": float(rrf_score),  # For compatibility
-                })
-            except Exception as e:
-                print(f"[RankFusionSearch] Error retrieving doc {doc_id}: {e}")
-                continue
-
+        print(f"[HybridSearch] Vector search: {len(results)} results")
         return results
 
     def get_index_stats(self) -> Dict[str, Any]:

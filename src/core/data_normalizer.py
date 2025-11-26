@@ -97,35 +97,42 @@ class DataNormalizer:
         """
 
         if is_structured:
-            # For structured data: embed data_key + field structure + sample content
-            fields = self._extract_field_paths(normalized_data)
-
-            # Get a JSON representation of the data for content
+            # For structured data: prioritize actual content over structure
             import json
             try:
                 # Remove metadata fields for cleaner representation
                 data_copy = {k: v for k, v in normalized_data.items()
                            if not k.startswith('_') and k not in ['content_type', 'structure', 'schema']}
-                content = json.dumps(data_copy, ensure_ascii=False, indent=None)
+
+                # Convert to readable text format instead of JSON
+                content_parts = []
+                for key, value in data_copy.items():
+                    if isinstance(value, (list, dict)):
+                        value_str = json.dumps(value, ensure_ascii=False)
+                    else:
+                        value_str = str(value)
+                    content_parts.append(f"{key}: {value_str}")
+
+                content = " | ".join(content_parts)
+
             except (TypeError, ValueError) as e:
-                # If JSON serialization fails, fallback to string representation
-                print(f"[DataNormalizer] Warning: Failed to JSON serialize data: {type(e).__name__}, using str() fallback")
+                print(f"[DataNormalizer] Warning: Failed to serialize data: {type(e).__name__}, using str() fallback")
                 content = str(normalized_data)
 
-            # Build embedding text
-            parts = [data_key]
+            # For chunks, focus on content. Only include data_key if it's meaningful
+            # Strip array indices and path separators that add noise
+            clean_key = data_key.split('[')[0].split('.')[-1] if '[' in data_key or '.' in data_key else data_key
 
-            if fields:
-                fields_text = ", ".join(fields[:20])  # Limit to first 20 fields
-                parts.append(f"with fields: {fields_text}")
-
-            # Add content sample
-            max_content_chars = 400
+            # Truncate if needed
+            max_content_chars = 500
             if len(content) > max_content_chars:
                 content = content[:max_content_chars] + "..."
-            parts.append(f"content: {content}")
 
-            return " | ".join(parts)
+            # Put content first for better matching
+            if clean_key and clean_key != data_key:
+                return f"{content} ({clean_key})"
+            else:
+                return f"{data_key}: {content}"
 
         else:
             # For unstructured data: embed data_key + actual content

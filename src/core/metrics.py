@@ -182,6 +182,214 @@ active_requests = Gauge(
     registry=registry
 )
 
+# Circuit breaker state (0=closed, 1=half_open, 2=open)
+circuit_breaker_state = Gauge(
+    'contex_circuit_breaker_state',
+    'Circuit breaker state (0=closed, 1=half_open, 2=open)',
+    ['name'],
+    registry=registry
+)
+
+# Circuit breaker failures
+circuit_breaker_failures_total = Counter(
+    'contex_circuit_breaker_failures_total',
+    'Total circuit breaker failures',
+    ['name'],
+    registry=registry
+)
+
+# Circuit breaker successes
+circuit_breaker_successes_total = Counter(
+    'contex_circuit_breaker_successes_total',
+    'Total circuit breaker successes',
+    ['name'],
+    registry=registry
+)
+
+# Circuit breaker state transitions
+circuit_breaker_transitions_total = Counter(
+    'contex_circuit_breaker_transitions_total',
+    'Total circuit breaker state transitions',
+    ['name', 'from_state', 'to_state'],
+    registry=registry
+)
+
+# Embedding cache hits
+embedding_cache_hits_total = Counter(
+    'contex_embedding_cache_hits_total',
+    'Total embedding cache hits',
+    registry=registry
+)
+
+# Embedding cache misses
+embedding_cache_misses_total = Counter(
+    'contex_embedding_cache_misses_total',
+    'Total embedding cache misses',
+    registry=registry
+)
+
+# Embedding cache size
+embedding_cache_size = Gauge(
+    'contex_embedding_cache_size',
+    'Number of entries in embedding cache',
+    registry=registry
+)
+
+# ============================================================================
+# RETRY METRICS
+# ============================================================================
+
+# Webhook retry counter
+webhook_retries_total = Counter(
+    'contex_webhook_retries_total',
+    'Total number of webhook retry attempts',
+    registry=registry
+)
+
+# Webhook retry delay histogram
+webhook_retry_delay_seconds = Histogram(
+    'contex_webhook_retry_delay_seconds',
+    'Webhook retry delay in seconds',
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0),
+    registry=registry
+)
+
+# Generic retry counter (for other operations)
+retries_total = Counter(
+    'contex_retries_total',
+    'Total number of retry attempts',
+    ['operation'],
+    registry=registry
+)
+
+# Retry exhaustion counter
+retry_exhausted_total = Counter(
+    'contex_retry_exhausted_total',
+    'Total number of retry exhaustions (all attempts failed)',
+    ['operation'],
+    registry=registry
+)
+
+# ============================================================================
+# GRACEFUL DEGRADATION METRICS
+# ============================================================================
+
+# Degradation mode gauge (0=normal, 1=degraded, 2=readonly, 3=unavailable)
+degradation_mode = Gauge(
+    'contex_degradation_mode',
+    'Current degradation mode (0=normal, 1=degraded, 2=readonly, 3=unavailable)',
+    registry=registry
+)
+
+# Degradation events counter
+degradation_events_total = Counter(
+    'contex_degradation_events_total',
+    'Total degradation mode transitions',
+    ['from_mode', 'to_mode'],
+    registry=registry
+)
+
+# Fallback cache stats
+fallback_cache_hits_total = Counter(
+    'contex_fallback_cache_hits_total',
+    'Total fallback cache hits during degradation',
+    registry=registry
+)
+
+fallback_cache_misses_total = Counter(
+    'contex_fallback_cache_misses_total',
+    'Total fallback cache misses during degradation',
+    registry=registry
+)
+
+# ============================================================================
+# TENANT METRICS
+# ============================================================================
+
+# Tenant request counter
+tenant_requests_total = Counter(
+    'contex_tenant_requests_total',
+    'Total requests per tenant',
+    ['tenant_id', 'method', 'endpoint'],
+    registry=registry
+)
+
+# Tenant error counter
+tenant_errors_total = Counter(
+    'contex_tenant_errors_total',
+    'Total errors per tenant',
+    ['tenant_id', 'error_type'],
+    registry=registry
+)
+
+# Tenant quota usage gauge
+tenant_quota_usage = Gauge(
+    'contex_tenant_quota_usage',
+    'Tenant quota usage as percentage',
+    ['tenant_id', 'resource'],
+    registry=registry
+)
+
+# Tenant resource usage counters
+tenant_projects_total = Gauge(
+    'contex_tenant_projects_total',
+    'Number of projects per tenant',
+    ['tenant_id'],
+    registry=registry
+)
+
+tenant_agents_total = Gauge(
+    'contex_tenant_agents_total',
+    'Number of agents per tenant',
+    ['tenant_id'],
+    registry=registry
+)
+
+tenant_api_keys_total = Gauge(
+    'contex_tenant_api_keys_total',
+    'Number of API keys per tenant',
+    ['tenant_id'],
+    registry=registry
+)
+
+tenant_events_this_month = Gauge(
+    'contex_tenant_events_month',
+    'Events published this month per tenant',
+    ['tenant_id'],
+    registry=registry
+)
+
+tenant_storage_used_mb = Gauge(
+    'contex_tenant_storage_mb',
+    'Storage used in MB per tenant',
+    ['tenant_id'],
+    registry=registry
+)
+
+# Tenant quota exceeded counter
+tenant_quota_exceeded_total = Counter(
+    'contex_tenant_quota_exceeded_total',
+    'Total quota exceeded events per tenant',
+    ['tenant_id', 'resource'],
+    registry=registry
+)
+
+# Tenant plan gauge (for plan distribution)
+tenant_plan = Gauge(
+    'contex_tenant_plan',
+    'Tenant plan (1=free, 2=starter, 3=pro, 4=enterprise)',
+    ['tenant_id', 'plan'],
+    registry=registry
+)
+
+# Total tenants gauge
+tenants_total = Gauge(
+    'contex_tenants_total',
+    'Total number of tenants',
+    ['plan', 'active'],
+    registry=registry
+)
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -319,3 +527,87 @@ def increment_active_requests():
 def decrement_active_requests():
     """Decrement active requests counter"""
     active_requests.dec()
+
+
+def record_retry(operation: str):
+    """Record a retry attempt for an operation"""
+    retries_total.labels(operation=operation).inc()
+
+
+def record_retry_exhausted(operation: str):
+    """Record when all retry attempts have been exhausted"""
+    retry_exhausted_total.labels(operation=operation).inc()
+
+
+# ============================================================================
+# TENANT METRIC RECORDING FUNCTIONS
+# ============================================================================
+
+def record_tenant_request(tenant_id: str, method: str, endpoint: str):
+    """Record a request for a tenant"""
+    tenant_requests_total.labels(
+        tenant_id=tenant_id,
+        method=method,
+        endpoint=endpoint
+    ).inc()
+
+
+def record_tenant_error(tenant_id: str, error_type: str):
+    """Record an error for a tenant"""
+    tenant_errors_total.labels(
+        tenant_id=tenant_id,
+        error_type=error_type
+    ).inc()
+
+
+def update_tenant_quota_usage(tenant_id: str, resource: str, percentage: float):
+    """Update tenant quota usage percentage"""
+    tenant_quota_usage.labels(
+        tenant_id=tenant_id,
+        resource=resource
+    ).set(percentage)
+
+
+def update_tenant_resource_usage(
+    tenant_id: str,
+    projects: int = None,
+    agents: int = None,
+    api_keys: int = None,
+    events_month: int = None,
+    storage_mb: float = None,
+):
+    """Update tenant resource usage metrics"""
+    if projects is not None:
+        tenant_projects_total.labels(tenant_id=tenant_id).set(projects)
+    if agents is not None:
+        tenant_agents_total.labels(tenant_id=tenant_id).set(agents)
+    if api_keys is not None:
+        tenant_api_keys_total.labels(tenant_id=tenant_id).set(api_keys)
+    if events_month is not None:
+        tenant_events_this_month.labels(tenant_id=tenant_id).set(events_month)
+    if storage_mb is not None:
+        tenant_storage_used_mb.labels(tenant_id=tenant_id).set(storage_mb)
+
+
+def record_tenant_quota_exceeded(tenant_id: str, resource: str):
+    """Record a quota exceeded event for a tenant"""
+    tenant_quota_exceeded_total.labels(
+        tenant_id=tenant_id,
+        resource=resource
+    ).inc()
+
+
+def update_tenant_plan_metric(tenant_id: str, plan: str):
+    """Update tenant plan metric"""
+    # Reset all plans for this tenant, then set the current one
+    for p in ['free', 'starter', 'pro', 'enterprise']:
+        tenant_plan.labels(tenant_id=tenant_id, plan=p).set(0)
+    tenant_plan.labels(tenant_id=tenant_id, plan=plan).set(1)
+
+
+def update_tenants_total(plan: str, active: bool, count: int):
+    """Update total tenants count"""
+    tenants_total.labels(
+        plan=plan,
+        active=str(active).lower()
+    ).set(count)

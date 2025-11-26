@@ -1,0 +1,378 @@
+{
+  "dashboard": {
+    "title": "Contex - Business Metrics",
+    "description": "Track usage, adoption, and business KPIs",
+    "tags": ["contex", "business", "usage"],
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "refresh": "5m",
+    "rows": [
+      {
+        "title": "Usage Overview",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Total Agents Registered (24h)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_agents_registered_total[24h]))"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value_and_name"
+            }
+          },
+          {
+            "id": 2,
+            "title": "Total Events Published (24h)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_events_published_total[24h]))"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            }
+          },
+          {
+            "id": 3,
+            "title": "Total Queries (24h)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_queries_total[24h]))"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            }
+          },
+          {
+            "id": 4,
+            "title": "Active Projects",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(count by (project_id) (contex_registered_agents))"
+              }
+            ],
+            "options": {
+              "colorMode": "value"
+            }
+          }
+        ]
+      },
+      {
+        "title": "Agent Activity",
+        "panels": [
+          {
+            "id": 10,
+            "title": "Agent Registrations Over Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_agents_registered_total[5m]) * 60",
+                "legendFormat": "{{project_id}} - {{notification_method}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "registrations/min"
+              }
+            ]
+          },
+          {
+            "id": 11,
+            "title": "Active Agents by Project",
+            "type": "bargraph",
+            "targets": [
+              {
+                "expr": "sum(contex_registered_agents) by (project_id)"
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "title": "Agent Unregistrations",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_agents_unregistered_total[5m])",
+                "legendFormat": "{{project_id}}"
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "title": "Agent Notification Methods",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum(contex_agents_registered_total) by (notification_method)",
+                "legendFormat": "{{notification_method}}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Data Publishing",
+        "panels": [
+          {
+            "id": 20,
+            "title": "Events Published by Format",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_events_published_total[5m]) * 60",
+                "legendFormat": "{{data_format}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "events/min"
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "title": "Data Format Distribution",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_events_published_total[24h])) by (data_format)",
+                "legendFormat": "{{data_format}}"
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "title": "Top Publishing Projects",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "topk(10, sum(increase(contex_events_published_total[24h])) by (project_id))"
+              }
+            ]
+          },
+          {
+            "id": 23,
+            "title": "Publishing Rate Trend",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(contex_events_published_total[5m]))"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Query Activity",
+        "panels": [
+          {
+            "id": 30,
+            "title": "Query Success Rate",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "sum(rate(contex_queries_total{status=\"success\"}[5m])) / sum(rate(contex_queries_total[5m])) * 100"
+              }
+            ],
+            "options": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"value": 0, "color": "red"},
+                  {"value": 90, "color": "yellow"},
+                  {"value": 95, "color": "green"}
+                ]
+              }
+            }
+          },
+          {
+            "id": 31,
+            "title": "Queries by Project",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_queries_total{status=\"success\"}[5m]) * 60",
+                "legendFormat": "{{project_id}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "queries/min"
+              }
+            ]
+          },
+          {
+            "id": 32,
+            "title": "Average Query Latency",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_query_duration_seconds_sum[5m]) / rate(contex_query_duration_seconds_count[5m])",
+                "legendFormat": "{{project_id}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          },
+          {
+            "id": 33,
+            "title": "Top Querying Projects",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "topk(10, sum(increase(contex_queries_total[24h])) by (project_id))"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Performance KPIs",
+        "panels": [
+          {
+            "id": 40,
+            "title": "Embedding Cache Hit Rate",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "rate(contex_embedding_cache_hits_total[5m]) / (rate(contex_embedding_cache_hits_total[5m]) + rate(contex_embedding_cache_misses_total[5m])) * 100"
+              }
+            ],
+            "options": {
+              "unit": "percent",
+              "thresholds": {
+                "steps": [
+                  {"value": 0, "color": "red"},
+                  {"value": 50, "color": "yellow"},
+                  {"value": 80, "color": "green"}
+                ]
+              }
+            }
+          },
+          {
+            "id": 41,
+            "title": "p95 Query Latency (Target: <50ms)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_query_duration_seconds_bucket[5m])) * 1000"
+              }
+            ],
+            "options": {
+              "unit": "ms",
+              "thresholds": {
+                "steps": [
+                  {"value": 0, "color": "green"},
+                  {"value": 50, "color": "yellow"},
+                  {"value": 100, "color": "red"}
+                ]
+              }
+            }
+          },
+          {
+            "id": 42,
+            "title": "Webhook Reliability",
+            "type": "gauge",
+            "targets": [
+              {
+                "expr": "rate(contex_webhooks_sent_total{status=\"success\"}[5m]) / rate(contex_webhooks_sent_total[5m]) * 100"
+              }
+            ],
+            "options": {
+              "unit": "percent",
+              "thresholds": {
+                "steps": [
+                  {"value": 0, "color": "red"},
+                  {"value": 95, "color": "yellow"},
+                  {"value": 99, "color": "green"}
+                ]
+              }
+            }
+          },
+          {
+            "id": 43,
+            "title": "System Availability",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "(sum(rate(contex_http_requests_total{status_code!~\"5..\"}[5m])) / sum(rate(contex_http_requests_total[5m]))) * 100"
+              }
+            ],
+            "options": {
+              "unit": "percent",
+              "decimals": 2
+            }
+          }
+        ]
+      },
+      {
+        "title": "Growth Metrics",
+        "panels": [
+          {
+            "id": 50,
+            "title": "Daily Agent Registrations (7d trend)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_agents_registered_total[1d]))"
+              }
+            ]
+          },
+          {
+            "id": 51,
+            "title": "Daily Events Published (7d trend)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_events_published_total[1d]))"
+              }
+            ]
+          },
+          {
+            "id": 52,
+            "title": "Daily Queries (7d trend)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(increase(contex_queries_total[1d]))"
+              }
+            ]
+          },
+          {
+            "id": 53,
+            "title": "Project Growth",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "count(count by (project_id) (contex_registered_agents))"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

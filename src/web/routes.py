@@ -62,12 +62,18 @@ async def execute_query(
     engine.semantic_matcher.threshold = threshold
 
     try:
-        # Execute query
+        # Execute query (get more candidates for threshold filtering)
         matches = await engine.query_project_data(
             project_id=project_id,
             query=query,
-            top_k=top_k
+            top_k=top_k * 3
         )
+
+        # Filter by threshold (scores are normalized to 0-1 range)
+        matches = [m for m in matches if m["similarity"] >= threshold]
+
+        # Limit to top_k after filtering
+        matches = matches[:top_k]
 
         # Apply token limit truncation if specified
         if max_tokens and matches:
@@ -213,40 +219,58 @@ async def project_stats(request: Request, project_id: str):
 @router.get("/projects/{project_id}/data")
 async def get_project_data(request: Request, project_id: str):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
+    import json
+
     engine = request.app.state.context_engine
 
-    # Get all data for this project
+    # Get all unique data_keys for this project
     data_keys = await engine.semantic_matcher.get_registered_data(project_id)
 
     data_items = []
 
-    # Fetch data from Redis for each key
+    # For each data_key, find one node and get its data_original field
     for key in data_keys:
-        redis_key = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}"
-        data_info = await engine.semantic_matcher.redis.hgetall(redis_key)
+        # Find any node for this data_key using SCAN
+        pattern = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}*"
+        cursor = 0
+        found = False
 
-        if data_info:
-            # Decode bytes if needed
-            description = data_info.get(b"description") or data_info.get("description", "")
-            if isinstance(description, bytes):
-                description = description.decode()
+        while not found:
+            cursor, keys = await engine.semantic_matcher.redis.scan(
+                cursor, match=pattern, count=1
+            )
 
-            data_str = data_info.get(b"data") or data_info.get("data", "{}")
-            if isinstance(data_str, bytes):
-                data_str = data_str.decode()
+            if keys:
+                # Get first matching node
+                node_key = keys[0]
+                data_info = await engine.semantic_matcher.redis.hgetall(node_key)
 
-            # Parse the data JSON
-            import json
-            try:
-                data_obj = json.loads(data_str)
-            except (json.JSONDecodeError, ValueError):
-                data_obj = {}
+                if data_info:
+                    # Extract data_original (full original data before node splitting)
+                    data_original_str = data_info.get(b"data_original") or data_info.get("data_original")
+                    if isinstance(data_original_str, bytes):
+                        data_original_str = data_original_str.decode()
 
-            data_items.append({
-                "data_key": key,
-                "description": description,
-                "data": data_obj
-            })
+                    # Extract format
+                    data_format = data_info.get(b"data_format") or data_info.get("data_format", "unknown")
+                    if isinstance(data_format, bytes):
+                        data_format = data_format.decode()
+
+                    # Parse data
+                    try:
+                        data_obj = json.loads(data_original_str)
+                    except (json.JSONDecodeError, ValueError):
+                        data_obj = data_original_str
+
+                    data_items.append({
+                        "data_key": key,
+                        "description": f"{key} ({data_format})",
+                        "data": data_obj
+                    })
+                    found = True
+
+            if cursor == 0:
+                break
 
     return {"data": data_items}
 

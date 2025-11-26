@@ -2,12 +2,54 @@
 
 import secrets
 import hashlib
+import asyncio
 from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from redis.asyncio import Redis
+
+
+def _record_auth_event(
+    event_type: str,
+    action: str,
+    actor_ip: str = None,
+    api_key_prefix: str = None,
+    key_id: str = None,
+    endpoint: str = None,
+    success: bool = True,
+):
+    """Record authentication event in audit log (async fire-and-forget)"""
+    try:
+        from src.core.audit import audit_log, AuditEventType, AuditEventSeverity
+
+        async def _log():
+            if event_type == "failure":
+                await audit_log(
+                    event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+                    action=action,
+                    actor_ip=actor_ip,
+                    endpoint=endpoint,
+                    severity=AuditEventSeverity.WARNING,
+                    result="failure",
+                    details={"api_key_prefix": api_key_prefix},
+                )
+            elif event_type == "success":
+                await audit_log(
+                    event_type=AuditEventType.AUTH_API_KEY_USED,
+                    action=action,
+                    actor_id=key_id,
+                    actor_type="api_key",
+                    actor_ip=actor_ip,
+                    endpoint=endpoint,
+                    result="success",
+                )
+
+        asyncio.create_task(_log())
+    except Exception:
+        pass
+
 
 class APIKey(BaseModel):
     """API Key model"""
@@ -37,15 +79,41 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key")
+        actor_ip = request.client.host if request.client else None
+        endpoint = str(request.url.path)
+
         if not api_key:
+            _record_auth_event(
+                event_type="failure",
+                action="Authentication failed: Missing API Key",
+                actor_ip=actor_ip,
+                endpoint=endpoint,
+            )
             return JSONResponse(status_code=401, content={"detail": "Missing API Key"})
 
         key_id = await self.validate_key(request, api_key)
         if not key_id:
+            _record_auth_event(
+                event_type="failure",
+                action="Authentication failed: Invalid API Key",
+                actor_ip=actor_ip,
+                api_key_prefix=api_key[:10] if len(api_key) >= 10 else api_key,
+                endpoint=endpoint,
+            )
             return JSONResponse(status_code=401, content={"detail": "Invalid API Key"})
 
         # Store key_id in request state for RBAC middleware
         request.state.api_key_id = key_id
+
+        # Record successful authentication (only for state-changing operations to reduce noise)
+        if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+            _record_auth_event(
+                event_type="success",
+                action=f"API key authenticated for {request.method} {endpoint}",
+                actor_ip=actor_ip,
+                key_id=key_id,
+                endpoint=endpoint,
+            )
 
         return await call_next(request)
 

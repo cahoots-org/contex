@@ -1,0 +1,291 @@
+{
+  "dashboard": {
+    "title": "Contex - Overview",
+    "description": "Main operational dashboard for Contex semantic context routing",
+    "tags": ["contex", "overview"],
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "rows": [
+      {
+        "title": "Service Health",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_http_requests_total[5m])",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "requests/sec",
+                "format": "short"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_http_requests_total{status_code=~\"5..\"}[5m])",
+                "legendFormat": "5xx errors"
+              },
+              {
+                "expr": "rate(contex_http_requests_total{status_code=~\"4..\"}[5m])",
+                "legendFormat": "4xx errors"
+              }
+            ],
+            "alert": {
+              "name": "High Error Rate",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [10]
+                  },
+                  "query": {
+                    "model": "A",
+                    "datasourceId": 1
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": 3,
+            "title": "Active Requests",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "contex_active_requests"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            }
+          },
+          {
+            "id": 4,
+            "title": "Redis Connections",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "contex_redis_connections"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 40, "color": "yellow"},
+                {"value": 45, "color": "red"}
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "title": "Business Metrics",
+        "panels": [
+          {
+            "id": 10,
+            "title": "Agents Registered (Total)",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(contex_agents_registered_total)"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            }
+          },
+          {
+            "id": 11,
+            "title": "Events Published Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_events_published_total[5m])",
+                "legendFormat": "{{project_id}} - {{data_format}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "events/sec",
+                "format": "short"
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "title": "Query Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_queries_total{status=\"success\"}[5m])",
+                "legendFormat": "Successful"
+              },
+              {
+                "expr": "rate(contex_queries_total{status=\"failed\"}[5m])",
+                "legendFormat": "Failed"
+              }
+            ]
+          },
+          {
+            "id": 13,
+            "title": "Active Agents by Project",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "contex_registered_agents",
+                "legendFormat": "{{project_id}}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Performance",
+        "panels": [
+          {
+            "id": 20,
+            "title": "Query Latency (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_query_duration_seconds_bucket[5m]))",
+                "legendFormat": "p95 - {{project_id}}"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(contex_query_duration_seconds_bucket[5m]))",
+                "legendFormat": "p50 - {{project_id}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          },
+          {
+            "id": 21,
+            "title": "Publish Latency (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_publish_duration_seconds_bucket[5m]))",
+                "legendFormat": "p95 - {{project_id}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          },
+          {
+            "id": 22,
+            "title": "Embedding Duration (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_embedding_duration_seconds_bucket[5m]))",
+                "legendFormat": "{{operation}}"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "seconds",
+                "format": "s"
+              }
+            ]
+          },
+          {
+            "id": 23,
+            "title": "HTTP Request Duration (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(contex_http_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Cache Performance",
+        "panels": [
+          {
+            "id": 30,
+            "title": "Embedding Cache Hit Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_embedding_cache_hits_total[5m]) / (rate(contex_embedding_cache_hits_total[5m]) + rate(contex_embedding_cache_misses_total[5m])) * 100",
+                "legendFormat": "Hit Rate %"
+              }
+            ],
+            "yaxes": [
+              {
+                "label": "percentage",
+                "format": "percent",
+                "min": 0,
+                "max": 100
+              }
+            ]
+          },
+          {
+            "id": 31,
+            "title": "Cache Operations",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(contex_embedding_cache_hits_total[5m])",
+                "legendFormat": "Hits"
+              },
+              {
+                "expr": "rate(contex_embedding_cache_misses_total[5m])",
+                "legendFormat": "Misses"
+              }
+            ]
+          },
+          {
+            "id": 32,
+            "title": "Cache Size",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "contex_embedding_cache_size"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

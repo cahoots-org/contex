@@ -158,15 +158,29 @@ async def drain_connections(
 async def shutdown_cleanup(app_state):
     """
     Cleanup function for application shutdown.
-    
+
     Args:
         app_state: FastAPI app.state object
     """
     logger.info("Running shutdown cleanup...")
-    
+
+    # Stop graceful degradation monitoring
+    if hasattr(app_state, 'graceful_degradation') and app_state.graceful_degradation:
+        logger.info("Stopping graceful degradation monitoring...")
+        await app_state.graceful_degradation.stop_health_monitoring()
+
     # Close Redis connection
     if hasattr(app_state, 'redis') and app_state.redis:
         await drain_connections(app_state.redis)
-    
+
+    # Flush Sentry events
+    try:
+        from src.core.sentry_integration import flush as sentry_flush, is_initialized as sentry_is_initialized
+        if sentry_is_initialized():
+            logger.info("Flushing Sentry events...")
+            sentry_flush(timeout=5.0)
+    except ImportError:
+        pass
+
     # Any other cleanup tasks
     logger.info("Shutdown cleanup complete")

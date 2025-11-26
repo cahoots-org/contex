@@ -3,9 +3,47 @@ kind: ConfigMap
 metadata:
   name: contex-config
 data:
+  # Redis Configuration
+  # Mode: 'standalone' or 'sentinel'
+  redis_mode: "standalone"
+
+  # Standalone Redis Configuration
   redis_url: "redis://redis:6379"
+  redis_max_connections: "50"
+  redis_socket_timeout: "5"
+  redis_socket_connect_timeout: "5"
+  redis_socket_keepalive: "true"
+  redis_retry_on_timeout: "true"
+  redis_health_check_interval: "30"
+
+  # Sentinel Configuration (used when redis_mode=sentinel)
+  # redis_sentinel_hosts: "sentinel-0:26379,sentinel-1:26379,sentinel-2:26379"
+  # redis_sentinel_master: "mymaster"
+  # redis_db: "0"
+
+  # OpenSearch Configuration
+  opensearch_url: "http://opensearch:9200"
+
+  # Semantic Matching
   similarity_threshold: "0.5"
   max_matches: "10"
   max_context_size: "51200"
+
+  # Hybrid Search
+  hybrid_search_enabled: "true"
+  rrf_k: "60"
+  vector_boost: "1.0"
+
+  # Rate Limiting
+  rate_limit_enabled: "true"
+  rate_limit_requests: "100"
+
+  # CORS
+  cors_origins: "*"
+
+  # Logging
   log_level: "INFO"
   log_json: "true"
+
+  # Tracing
+  tracing_enabled: "false"

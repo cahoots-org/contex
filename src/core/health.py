@@ -42,10 +42,11 @@ class ComponentHealth:
 
 class HealthChecker:
     """Comprehensive health checker for Contex"""
-    
-    def __init__(self, redis, context_engine):
+
+    def __init__(self, redis, context_engine, graceful_degradation=None):
         self.redis = redis
         self.context_engine = context_engine
+        self.graceful_degradation = graceful_degradation
         self.startup_time = datetime.now(timezone.utc)
     
     async def check_redis(self) -> ComponentHealth:
@@ -212,17 +213,56 @@ class HealthChecker:
                 details={"error": str(e)}
             )
     
+    async def check_degradation(self) -> ComponentHealth:
+        """Check graceful degradation status"""
+        if not self.graceful_degradation:
+            return ComponentHealth(
+                status=HealthStatus.HEALTHY,
+                message="Graceful degradation not configured",
+                details={"enabled": False}
+            )
+
+        try:
+            status = self.graceful_degradation.get_status()
+            mode = status.get("mode", "unknown")
+
+            if mode == "normal":
+                return ComponentHealth(
+                    status=HealthStatus.HEALTHY,
+                    message="Service operating normally",
+                    details=status
+                )
+            elif mode in ("degraded", "readonly"):
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    message=f"Service in {mode} mode",
+                    details=status
+                )
+            else:  # unavailable
+                return ComponentHealth(
+                    status=HealthStatus.UNHEALTHY,
+                    message="Service unavailable",
+                    details=status
+                )
+        except Exception as e:
+            return ComponentHealth(
+                status=HealthStatus.UNHEALTHY,
+                message=f"Degradation check failed: {str(e)}",
+                details={"error": str(e)}
+            )
+
     async def get_full_health(self) -> Dict[str, Any]:
         """Get comprehensive health status"""
         # Run all checks in parallel
-        redis_health, embedding_health, redisearch_health, resources_health = await asyncio.gather(
+        redis_health, embedding_health, redisearch_health, resources_health, degradation_health = await asyncio.gather(
             self.check_redis(),
             self.check_embedding_model(),
             self.check_redisearch(),
             self.check_system_resources(),
+            self.check_degradation(),
             return_exceptions=True
         )
-        
+
         # Handle any exceptions
         def safe_health(result, component_name):
             if isinstance(result, Exception):
@@ -232,30 +272,32 @@ class HealthChecker:
                     details={"error": str(result)}
                 )
             return result
-        
+
         redis_health = safe_health(redis_health, "Redis")
         embedding_health = safe_health(embedding_health, "Embedding")
         redisearch_health = safe_health(redisearch_health, "RediSearch")
         resources_health = safe_health(resources_health, "Resources")
-        
+        degradation_health = safe_health(degradation_health, "Degradation")
+
         # Determine overall status
         statuses = [
             redis_health.status,
             embedding_health.status,
             redisearch_health.status,
-            resources_health.status
+            resources_health.status,
+            degradation_health.status
         ]
-        
+
         if any(s == HealthStatus.UNHEALTHY for s in statuses):
             overall_status = HealthStatus.UNHEALTHY
         elif any(s == HealthStatus.DEGRADED for s in statuses):
             overall_status = HealthStatus.DEGRADED
         else:
             overall_status = HealthStatus.HEALTHY
-        
+
         # Calculate uptime
         uptime_seconds = (datetime.now(timezone.utc) - self.startup_time).total_seconds()
-        
+
         return {
             "status": overall_status.value,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -265,7 +307,8 @@ class HealthChecker:
                 "redis": redis_health.to_dict(),
                 "embedding_model": embedding_health.to_dict(),
                 "redisearch": redisearch_health.to_dict(),
-                "system_resources": resources_health.to_dict()
+                "system_resources": resources_health.to_dict(),
+                "graceful_degradation": degradation_health.to_dict()
             }
         }
     

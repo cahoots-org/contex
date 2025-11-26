@@ -24,6 +24,12 @@ toon-format @ git+https://github.com/toon-format/toon-python.git
 pyyaml==6.0.1
 toml==0.10.2
 
+# Authentication (JWT for service accounts)
+PyJWT==2.8.0
+
+# Error tracking
+sentry-sdk[fastapi]==1.39.1
+
 # Distributed Tracing (OpenTelemetry)
 opentelemetry-api==1.22.0
 opentelemetry-sdk==1.22.0

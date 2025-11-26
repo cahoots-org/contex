@@ -24,9 +24,9 @@ class AgentRegistration(BaseModel):
     )
 
     # Response format preference
-    response_format: Literal["toon", "json"] = Field(
+    response_format: Literal["json", "yaml", "toml", "csv", "xml", "markdown", "toon", "text"] = Field(
         default="toon",
-        description="Preferred data format: 'toon' (40% fewer tokens) or 'json' (standard)",
+        description="Preferred data format: 'toon' (40% fewer tokens), 'json', 'yaml', 'toml', 'csv', 'xml', 'markdown', or 'text'",
     )
 
     # Notification method: redis or webhook
@@ -148,9 +148,9 @@ class QueryRequest(BaseModel):
         ge=1000,
         le=128000,
     )
-    response_format: Literal["toon", "json"] = Field(
+    response_format: Literal["json", "yaml", "toml", "csv", "xml", "markdown", "toon", "text"] = Field(
         default="toon",
-        description="Response format: 'toon' (token-optimized) or 'json' (standard)",
+        description="Response format: 'toon' (token-optimized), 'json', 'yaml', 'toml', 'csv', 'xml', 'markdown', or 'text'",
     )
 
 

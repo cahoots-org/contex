@@ -18,22 +18,98 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8001"
-        prometheus.io/path: "/api/metrics"
+        prometheus.io/path: "/api/v1/metrics"
     spec:
       containers:
       - name: contex
-        image: contex:0.2.0
+        image: ghcr.io/cahoots-org/contex:latest
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 8001
           protocol: TCP
         env:
+        - name: REDIS_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_mode
         - name: REDIS_URL
           valueFrom:
             configMapKeyRef:
               name: contex-config
               key: redis_url
+        - name: REDIS_MAX_CONNECTIONS
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_max_connections
+        - name: REDIS_SOCKET_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_socket_timeout
+              optional: true
+        - name: REDIS_SOCKET_CONNECT_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_socket_connect_timeout
+              optional: true
+        - name: REDIS_SOCKET_KEEPALIVE
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_socket_keepalive
+              optional: true
+        - name: REDIS_RETRY_ON_TIMEOUT
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_retry_on_timeout
+              optional: true
+        - name: REDIS_HEALTH_CHECK_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: redis_health_check_interval
+              optional: true
+        # Sentinel Configuration (uncomment when using redis_mode=sentinel)
+        # - name: REDIS_SENTINEL_HOSTS
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: contex-config
+        #       key: redis_sentinel_hosts
+        # - name: REDIS_SENTINEL_MASTER
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: contex-config
+        #       key: redis_sentinel_master
+        # - name: REDIS_SENTINEL_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: contex-secrets
+        #       key: redis_sentinel_password
+        # - name: REDIS_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: contex-secrets
+        #       key: redis_password
+        # - name: REDIS_DB
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: contex-config
+        #       key: redis_db
+        - name: OPENSEARCH_URL
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: opensearch_url
+        - name: API_KEY_SALT
+          valueFrom:
+            secretKeyRef:
+              name: contex-secrets
+              key: api_key_salt
         - name: SIMILARITY_THRESHOLD
           valueFrom:
             configMapKeyRef:
@@ -49,6 +125,36 @@ spec:
             configMapKeyRef:
               name: contex-config
               key: max_context_size
+        - name: HYBRID_SEARCH_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: hybrid_search_enabled
+        - name: RRF_K
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: rrf_k
+        - name: VECTOR_BOOST
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: vector_boost
+        - name: RATE_LIMIT_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: rate_limit_enabled
+        - name: RATE_LIMIT_REQUESTS
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: rate_limit_requests
+        - name: CORS_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: cors_origins
         - name: LOG_LEVEL
           valueFrom:
             configMapKeyRef:
@@ -59,22 +165,35 @@ spec:
             configMapKeyRef:
               name: contex-config
               key: log_json
+        - name: TRACING_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: contex-config
+              key: tracing_enabled
         livenessProbe:
           httpGet:
-            path: /api/health/live
+            path: /health
             port: http
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 3
+          timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /api/health/ready
+            path: /api/v1/health
             port: http
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
         resources:
           requests:
             memory: "512Mi"

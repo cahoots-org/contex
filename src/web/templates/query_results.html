@@ -56,10 +56,12 @@
             <pre class="scrollable-preview"><code>{{ match.data_toon }}</code></pre>
         </div>
 
+        <script type="application/json" id="toon-data-{{ loop.index }}">{{ match.data_toon }}</script>
+        <script type="application/json" id="json-data-{{ loop.index }}">{{ match.data_json }}</script>
         <div class="result-content" x-show="expandedItems[id]" x-cloak x-data="{
             viewMode: 'toon',
-            toonData: {{ match.data_toon|tojson }},
-            jsonData: {{ match.data_json|tojson }}
+            toonData: document.getElementById('toon-data-{{ loop.index }}').textContent,
+            jsonData: document.getElementById('json-data-{{ loop.index }}').textContent
         }">
             <div class="content-header">
                 <div class="view-toggle">
@@ -133,13 +135,16 @@
         {% endif %}
     </p>
 
+    <script type="application/json" id="all-matches-data">{{ matches|tojson }}</script>
     <div class="export-actions" x-data="{
-        exportData: {{ matches|tojson }},
-        toonExport: `{% for match in matches %}{{ match.data_key }}:\n{{ match.data_toon }}\n\n{% endfor %}`
+        exportData: JSON.parse(document.getElementById('all-matches-data').textContent),
+        getToonExport() {
+            return this.exportData.map(m => m.data_key + ':\n' + m.data_toon).join('\n\n');
+        }
     }">
         <button
             class="btn-secondary"
-            @click="navigator.clipboard.writeText(toonExport).then(() => {
+            @click="navigator.clipboard.writeText(getToonExport()).then(() => {
                 $event.target.innerHTML = '✓ Copied!';
                 setTimeout(() => $event.target.innerHTML = '📋 Export All as TOON', 2000);
             })"

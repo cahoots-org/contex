@@ -7,6 +7,34 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from src.core.logging import get_logger
 
+# Import metrics (lazy import to avoid circular dependencies)
+_metrics_imported = False
+_circuit_breaker_state = None
+_circuit_breaker_failures_total = None
+_circuit_breaker_successes_total = None
+_circuit_breaker_transitions_total = None
+
+def _import_metrics():
+    """Lazy import metrics to avoid circular dependencies"""
+    global _metrics_imported, _circuit_breaker_state, _circuit_breaker_failures_total
+    global _circuit_breaker_successes_total, _circuit_breaker_transitions_total
+
+    if not _metrics_imported:
+        try:
+            from src.core.metrics import (
+                circuit_breaker_state,
+                circuit_breaker_failures_total,
+                circuit_breaker_successes_total,
+                circuit_breaker_transitions_total
+            )
+            _circuit_breaker_state = circuit_breaker_state
+            _circuit_breaker_failures_total = circuit_breaker_failures_total
+            _circuit_breaker_successes_total = circuit_breaker_successes_total
+            _circuit_breaker_transitions_total = circuit_breaker_transitions_total
+            _metrics_imported = True
+        except ImportError:
+            pass
+
 logger = get_logger(__name__)
 
 
@@ -105,12 +133,16 @@ class CircuitBreaker:
     
     def record_success(self):
         """Record a successful execution"""
+        _import_metrics()
+        if _circuit_breaker_successes_total:
+            _circuit_breaker_successes_total.labels(name=self.name).inc()
+
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
             logger.debug(f"Circuit breaker '{self.name}' success in HALF_OPEN",
                         success_count=self.success_count,
                         threshold=self.config.success_threshold)
-            
+
             if self.success_count >= self.config.success_threshold:
                 self._transition_to_closed()
         elif self.state == CircuitState.CLOSED:
@@ -122,14 +154,18 @@ class CircuitBreaker:
     
     def record_failure(self):
         """Record a failed execution"""
+        _import_metrics()
+        if _circuit_breaker_failures_total:
+            _circuit_breaker_failures_total.labels(name=self.name).inc()
+
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         logger.warning(f"Circuit breaker '{self.name}' failure recorded",
                       failure_count=self.failure_count,
                       threshold=self.config.failure_threshold,
                       state=self.state.value)
-        
+
         if self.state == CircuitState.HALF_OPEN:
             # Failure in half-open immediately opens circuit
             self._transition_to_open()
@@ -139,30 +175,63 @@ class CircuitBreaker:
     
     def _transition_to_open(self):
         """Transition to OPEN state"""
+        old_state = self.state
         self.state = CircuitState.OPEN
         self.last_state_change = time.time()
         self.success_count = 0
-        
+
+        _import_metrics()
+        if _circuit_breaker_state:
+            _circuit_breaker_state.labels(name=self.name).set(2)  # 2 = OPEN
+        if _circuit_breaker_transitions_total:
+            _circuit_breaker_transitions_total.labels(
+                name=self.name,
+                from_state=old_state.value,
+                to_state='open'
+            ).inc()
+
         logger.error(f"Circuit breaker '{self.name}' OPENED",
                     failure_count=self.failure_count,
                     timeout=self.config.timeout)
     
     def _transition_to_half_open(self):
         """Transition to HALF_OPEN state"""
+        old_state = self.state
         self.state = CircuitState.HALF_OPEN
         self.last_state_change = time.time()
         self.failure_count = 0
         self.success_count = 0
-        
+
+        _import_metrics()
+        if _circuit_breaker_state:
+            _circuit_breaker_state.labels(name=self.name).set(1)  # 1 = HALF_OPEN
+        if _circuit_breaker_transitions_total:
+            _circuit_breaker_transitions_total.labels(
+                name=self.name,
+                from_state=old_state.value,
+                to_state='half_open'
+            ).inc()
+
         logger.info(f"Circuit breaker '{self.name}' transitioned to HALF_OPEN")
     
     def _transition_to_closed(self):
         """Transition to CLOSED state"""
+        old_state = self.state
         self.state = CircuitState.CLOSED
         self.last_state_change = time.time()
         self.failure_count = 0
         self.success_count = 0
-        
+
+        _import_metrics()
+        if _circuit_breaker_state:
+            _circuit_breaker_state.labels(name=self.name).set(0)  # 0 = CLOSED
+        if _circuit_breaker_transitions_total:
+            _circuit_breaker_transitions_total.labels(
+                name=self.name,
+                from_state=old_state.value,
+                to_state='closed'
+            ).inc()
+
         logger.info(f"Circuit breaker '{self.name}' CLOSED (recovered)")
     
     def reset(self):

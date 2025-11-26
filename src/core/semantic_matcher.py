@@ -10,7 +10,8 @@ from redis.commands.search.field import VectorField, TextField, TagField
 from redis.commands.search.index_definition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 
-from .data_normalizer import DataNormalizer
+from .node_converter import NodeConverter
+from .embedding_cache import EmbeddingCache
 
 
 class SemanticDataMatcher:
@@ -34,7 +35,7 @@ class SemanticDataMatcher:
         self,
         redis: Redis,
         model_name: str = "all-MiniLM-L6-v2",
-        similarity_threshold: float = 0.5,
+        similarity_threshold: float = 0.35,
         max_matches: int = 10,
     ):
         """
@@ -52,7 +53,12 @@ class SemanticDataMatcher:
         self.threshold = similarity_threshold
         self.max_matches = max_matches
         self.embedding_dim = 384  # all-MiniLM-L6-v2 embedding dimension
-        self.normalizer = DataNormalizer()
+        self.node_converter = NodeConverter()
+
+        # Initialize embedding cache
+        cache_ttl = int(os.getenv("EMBEDDING_CACHE_TTL", "3600"))
+        self.embedding_cache = EmbeddingCache(redis, ttl=cache_ttl)
+        print(f"[SemanticMatcher] Embedding cache enabled (TTL: {cache_ttl}s)")
 
         # Initialize hybrid search if enabled
         self.hybrid_search = None
@@ -60,13 +66,13 @@ class SemanticDataMatcher:
             try:
                 from .hybrid_search import RankFusionSearch
 
-                rrf_k = int(os.getenv("RRF_K", "60"))
-                vector_boost = float(os.getenv("VECTOR_BOOST", "1.0"))
+                keyword_threshold = float(os.getenv("KEYWORD_THRESHOLD", "5.0"))
+                vector_threshold = float(os.getenv("VECTOR_THRESHOLD", "0.7"))
 
                 self.hybrid_search = RankFusionSearch(
                     semantic_matcher=self,
-                    rrf_k=rrf_k,
-                    vector_boost=vector_boost
+                    keyword_threshold=keyword_threshold,
+                    vector_threshold=vector_threshold
                 )
                 print(f"[SemanticMatcher] ✓ Hybrid search enabled")
             except Exception as e:
@@ -124,64 +130,87 @@ class SemanticDataMatcher:
         """
         Register new project data for matching (supports any format).
 
+        Data is automatically parsed into Nodes for granular matching:
+        - JSON/YAML: Each object in arrays becomes a node
+        - Markdown: Headings, paragraphs, code blocks become nodes
+        - CSV: Each row becomes a node
+        - Plain text: Sentences or paragraphs become nodes
+
         Args:
             project_id: Project identifier
             data_key: Data identifier (e.g., "tech_stack", "event_model")
             data: The actual data in any format (dict, YAML string, text, etc.)
-            format_hint: Optional format hint ("json", "yaml", "toml", "text")
+            format_hint: Optional format hint ("json", "yaml", "markdown", "text")
         """
-        # Normalize data from any format
-        normalized_data, detected_format, is_structured = self.normalizer.normalize(
-            data, format_hint
-        )
+        # Parse data into nodes
+        parse_result = self.node_converter.parse(data, format_hint)
 
-        # Generate embedding text based on data type
-        embedding_text = self.normalizer.generate_embedding_text(
-            data_key, normalized_data, is_structured
-        )
+        if not parse_result.success:
+            print(f"[SemanticMatcher] ⚠ Failed to parse {project_id}:{data_key}: {parse_result.error}")
+            return
 
-        # Generate embedding (5-10ms)
-        embedding = self.model.encode(embedding_text)
+        nodes = parse_result.nodes
+        if not nodes:
+            print(f"[SemanticMatcher] ⚠ No nodes extracted from {project_id}:{data_key}")
+            return
 
-        # Store in Redis with metadata
-        redis_key = f"{self.KEY_PREFIX}{project_id}:{data_key}"
+        print(f"[SemanticMatcher] Parsed {project_id}:{data_key} into {len(nodes)} nodes [{parse_result.format_name}]")
 
-        # Store original data as string if not already
+        # Store original data for context
         data_original = data if isinstance(data, str) else json.dumps(data)
 
-        await self.redis.hset(
-            redis_key,
-            mapping={
-                "project_id": project_id,
-                "data_key": data_key,
-                "description": embedding_text,  # What was embedded
-                "data": json.dumps(normalized_data),  # Normalized form
-                "data_original": data_original,  # Original input
-                "data_format": detected_format,  # Detected format
-                "is_structured": "true" if is_structured else "false",
-                "embedding": embedding.astype(np.float32).tobytes(),
-            },
-        )
+        # Index each node separately
+        for node in nodes:
+            # Generate node key (combine data_key with node path)
+            node_key = f"{data_key}.{node.path}" if node.path else data_key
 
-        # Also index into OpenSearch if hybrid search is enabled
-        if self.hybrid_search:
-            try:
-                await self.hybrid_search.index_document(
-                    project_id=project_id,
-                    data_key=data_key,
-                    content=embedding_text,
-                    metadata=json.dumps(normalized_data),
-                    vector=embedding.tolist(),
-                    data_format=detected_format,
-                    is_structured=is_structured
-                )
-                print(f"[SemanticMatcher] ✓ Indexed in OpenSearch: {project_id}:{data_key}")
-            except Exception as e:
-                print(f"[SemanticMatcher] ⚠ Failed to index in OpenSearch: {e}")
+            # Get embedding text from node
+            embedding_text = node.get_text_content()
 
-        format_label = f"{detected_format} ({'structured' if is_structured else 'unstructured'})"
-        print(f"[SemanticMatcher] Registered: {project_id}:{data_key} [{format_label}]")
-        print(f"[SemanticMatcher]   Embedding text: {embedding_text[:100]}...")
+            # Try cache first, then generate embedding
+            embedding = await self.embedding_cache.get(embedding_text)
+            if embedding is None:
+                embedding = self.model.encode(embedding_text)
+                await self.embedding_cache.set(embedding_text, embedding)
+
+            # Store in Redis
+            redis_key = f"{self.KEY_PREFIX}{project_id}:{node_key}"
+
+            await self.redis.hset(
+                redis_key,
+                mapping={
+                    "project_id": project_id,
+                    "data_key": data_key,  # Original data_key
+                    "node_key": node_key,  # Node-specific key
+                    "node_path": node.path,  # Path within data
+                    "node_type": node.node_type.value,  # Type of node
+                    "description": embedding_text,  # Text used for embedding
+                    "data": json.dumps(node.content),  # Just this node's content
+                    "data_original": data_original,  # Full original for context
+                    "data_format": parse_result.format_name,
+                    "embedding": embedding.astype(np.float32).tobytes(),
+                },
+            )
+
+            # Also index into OpenSearch if hybrid search is enabled
+            if self.hybrid_search:
+                try:
+                    await self.hybrid_search.index_document(
+                        project_id=project_id,
+                        data_key=node_key,
+                        content=embedding_text,
+                        metadata=json.dumps(node.metadata),
+                        vector=embedding.tolist(),
+                        data_format=parse_result.format_name,
+                        is_structured=node.node_type in [node.node_type.OBJECT, node.node_type.ROW]
+                    )
+                except Exception as e:
+                    print(f"[SemanticMatcher] ⚠ Failed to index node in OpenSearch: {e}")
+
+        print(f"[SemanticMatcher] ✓ Registered: {project_id}:{data_key} ({len(nodes)} nodes)")
+        if nodes and len(nodes) <= 5:
+            for node in nodes:
+                print(f"[SemanticMatcher]   - {node.path} ({node.node_type.value})")
 
     def _escape_tag_value(self, value: str) -> str:
         """
@@ -286,8 +315,11 @@ class SemanticDataMatcher:
 
             # Fall back to vector-only search (original implementation)
             if not self.hybrid_search:
-                # Embed agent need (5-10ms)
-                need_embedding = self.model.encode(need)
+                # Try cache first, then embed agent need (5-10ms without cache, <1ms with cache)
+                need_embedding = await self.embedding_cache.get(need)
+                if need_embedding is None:
+                    need_embedding = self.model.encode(need)
+                    await self.embedding_cache.set(need, need_embedding)
 
                 # Use RediSearch KNN query for vector similarity search
                 query_embedding = need_embedding.astype(np.float32).tobytes()
@@ -386,14 +418,16 @@ class SemanticDataMatcher:
         return items
 
     async def get_registered_data(self, project_id: str) -> List[str]:
-        """Get all registered data keys for a project"""
+        """Get all registered data keys for a project (unique data_key values)"""
         # Search for all documents with this project_id
         escaped_project_id = self._escape_tag_value(project_id)
         q = Query(f"@project_id:{{{escaped_project_id}}}").return_fields("data_key").paging(0, 1000)
 
         try:
             results = await self.redis.ft(self.INDEX_NAME).search(q)
-            return [doc.data_key for doc in results.docs]
+            # Return unique data_key values (deduplicate since we have multiple nodes per data_key)
+            data_keys = list(set(doc.data_key for doc in results.docs))
+            return sorted(data_keys)
         except Exception as e:
             # Log error but return empty list (index may not exist yet)
             print(f"[SemanticMatcher] Warning: Failed to list keys for project {project_id}: {type(e).__name__}: {e}")

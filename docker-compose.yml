@@ -48,8 +48,8 @@ services:
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
       - HYBRID_SEARCH_ENABLED=true
-      - RRF_K=60
-      - VECTOR_BOOST=1.0
+      - KEYWORD_THRESHOLD=1.0
+      - VECTOR_THRESHOLD=0.75
     depends_on:
       redis:
         condition: service_healthy

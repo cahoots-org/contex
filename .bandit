@@ -1,0 +1,25 @@
+[bandit]
+# Bandit configuration for Contex
+
+# Exclude test files from security scanning
+exclude_dirs = tests,examples,sdk
+
+# Skip certain tests that are known false positives or acceptable
+skips = B101,B104,B311
+
+# B101: assert_used - We use assert in tests
+# B104: hardcoded_bind_all_interfaces - Required for Docker
+# B311: random - We use random for jitter, not security
+
+# Confidence level threshold (LOW, MEDIUM, HIGH)
+# Only report issues with HIGH confidence for cleaner output
+# confidence_level = MEDIUM
+
+# Severity level threshold (LOW, MEDIUM, HIGH)
+# severity_level = MEDIUM
+
+# Report format options
+format = txt
+
+# Target Python version
+targets = src

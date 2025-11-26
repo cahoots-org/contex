@@ -6,20 +6,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from redis.asyncio import Redis, ConnectionPool
-
 from src.core import ContextEngine
 from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
+from src.core.redis_connection import create_redis_connection
+from src.core.sentry_integration import init_sentry, flush as sentry_flush
 
 # Environment variables
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
-REDIS_MAX_CONNECTIONS = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
-REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "5"))
-REDIS_SOCKET_CONNECT_TIMEOUT = int(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5"))
-REDIS_SOCKET_KEEPALIVE = os.getenv("REDIS_SOCKET_KEEPALIVE", "true").lower() == "true"
+REDIS_MODE = os.getenv("REDIS_MODE", "standalone")
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
 MAX_MATCHES = int(os.getenv("MAX_MATCHES", "10"))
 MAX_CONTEXT_SIZE = int(os.getenv("MAX_CONTEXT_SIZE", "51200"))  # ~40% of 128k tokens
@@ -36,45 +32,79 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
     logger.info("Contex starting", version="0.2.0")
     logger.info("Configuration loaded",
-                redis_url=REDIS_URL,
-                redis_max_connections=REDIS_MAX_CONNECTIONS,
-                redis_socket_timeout=REDIS_SOCKET_TIMEOUT,
-                redis_socket_keepalive=REDIS_SOCKET_KEEPALIVE,
+                redis_mode=REDIS_MODE,
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
                 max_context_size=MAX_CONTEXT_SIZE,
                 log_level=LOG_LEVEL,
                 log_json=LOG_JSON)
 
-    # Connect to Redis with connection pooling
+    # Initialize Sentry for error tracking (if configured)
+    sentry_enabled = init_sentry(
+        release="contex@0.2.0",
+        enable_tracing=os.getenv("SENTRY_ENABLE_TRACING", "true").lower() == "true"
+    )
+    if sentry_enabled:
+        logger.info("Sentry error tracking enabled")
+
+    # Connect to Redis (supports both standalone and Sentinel modes)
     try:
-        # Create connection pool with optimized settings
-        pool = ConnectionPool.from_url(
-            REDIS_URL,
-            max_connections=REDIS_MAX_CONNECTIONS,
-            socket_timeout=REDIS_SOCKET_TIMEOUT,
-            socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
-            socket_keepalive=REDIS_SOCKET_KEEPALIVE,
-            # Note: socket_keepalive_options removed for platform compatibility
-            # socket_keepalive=True is sufficient for most use cases
-            retry_on_timeout=True,
-            health_check_interval=30,  # Check connection health every 30 seconds
-            decode_responses=False
-        )
-
-        redis = Redis(connection_pool=pool)
-
-        # Test connection
-        await redis.ping()
-
-        logger.info("Connected to Redis with connection pooling",
-                   redis_url=REDIS_URL,
-                   max_connections=REDIS_MAX_CONNECTIONS,
-                   socket_timeout=REDIS_SOCKET_TIMEOUT,
-                   socket_keepalive=REDIS_SOCKET_KEEPALIVE)
+        redis = await create_redis_connection()
+        logger.info("Redis connection established successfully", mode=REDIS_MODE)
     except Exception as e:
-        logger.error("Failed to connect to Redis", error=str(e), redis_url=REDIS_URL)
+        logger.error("Failed to connect to Redis", error=str(e), mode=REDIS_MODE)
         raise
+
+    # Bootstrap admin account if needed
+    from src.core.auth import list_api_keys, create_api_key
+    from src.core.rbac import assign_role, Role
+    try:
+        existing_keys = await list_api_keys(redis)
+        if not existing_keys:
+            # No API keys exist - bootstrap admin
+            bootstrap_key = os.getenv("BOOTSTRAP_ADMIN_KEY")
+            bootstrap_name = os.getenv("BOOTSTRAP_ADMIN_NAME", "root")
+
+            if bootstrap_key:
+                # Use provided bootstrap key
+                logger.info("Bootstrapping admin account with provided key", name=bootstrap_name)
+                from src.core.auth import _hash_key
+                import secrets
+                key_id = secrets.token_hex(16)
+                key_hash = _hash_key(bootstrap_key)
+                # Store the key
+                await redis.hset(f"contex:api_key:{key_id}", mapping={
+                    "key_id": key_id,
+                    "name": bootstrap_name,
+                    "key_hash": key_hash,
+                    "created_at": os.getenv("BOOTSTRAP_ADMIN_EMAIL", "bootstrap@contex.local"),
+                })
+                await redis.sadd("contex:api_keys", key_id)
+                # Assign admin role
+                await assign_role(redis, key_id, Role.ADMIN, projects=[])
+                logger.warning("⚠️  Bootstrap admin created with provided key", key_id=key_id, name=bootstrap_name)
+            else:
+                # Auto-generate admin key
+                raw_key, api_key = await create_api_key(redis, bootstrap_name)
+                # Assign admin role
+                await assign_role(redis, api_key.key_id, Role.ADMIN, projects=[])
+                logger.warning("=" * 60)
+                logger.warning("🚨 BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
+                logger.warning(f"   API Key: {raw_key}")
+                logger.warning(f"   Key ID: {api_key.key_id}")
+                logger.warning(f"   Name: {api_key.name}")
+                logger.warning("=" * 60)
+                print("\n" + "=" * 60)
+                print("🚨 BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
+                print(f"   API Key: {raw_key}")
+                print(f"   Key ID: {api_key.key_id}")
+                print(f"   Name: {api_key.name}")
+                print("=" * 60 + "\n")
+        else:
+            logger.info("API keys already exist, skipping bootstrap", count=len(existing_keys))
+    except Exception as e:
+        logger.error("Failed to bootstrap admin account", error=str(e))
+        # Don't fail startup, but log the error
 
     # Initialize Context Engine
     try:
@@ -95,11 +125,39 @@ async def lifespan(app: FastAPI):
         logger.info("RediSearch index initialized")
     except Exception as e:
         logger.warning("RediSearch index initialization failed (may already exist)", error=str(e))
-    
+
     # Initialize health checker
     from src.core.health import HealthChecker
     health_checker = HealthChecker(redis, context_engine)
     logger.info("Health checker initialized")
+
+    # Initialize audit logging
+    from src.core.audit import init_audit_logger
+    audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
+    audit_logger = init_audit_logger(redis, retention_days=audit_retention_days)
+    app.state.audit_logger = audit_logger
+    logger.info("Audit logging initialized", retention_days=audit_retention_days)
+
+    # Data versioning removed - now built on event sourcing (see /api/v1/versions endpoint)
+    app.state.version_manager = None
+    logger.info("Data versioning via event sourcing")
+
+    # Initialize webhooks
+    webhooks_enabled = os.getenv("WEBHOOKS_ENABLED", "true").lower() == "true"
+    if webhooks_enabled:
+        from src.core.webhooks import init_webhook_manager
+        webhook_timeout = int(os.getenv("WEBHOOK_TIMEOUT", "30"))
+        webhook_retries = int(os.getenv("WEBHOOK_MAX_RETRIES", "3"))
+        webhook_manager = init_webhook_manager(
+            redis,
+            default_timeout=webhook_timeout,
+            max_retries=webhook_retries
+        )
+        app.state.webhook_manager = webhook_manager
+        logger.info("Webhooks initialized", timeout=webhook_timeout, max_retries=webhook_retries)
+    else:
+        app.state.webhook_manager = None
+        logger.info("Webhooks disabled")
 
     # Initialize distributed tracing
     try:
@@ -182,6 +240,7 @@ from src.core.auth import APIKeyMiddleware
 from src.core.rbac_middleware import RBACMiddleware
 from src.core.rate_limiter import RateLimitMiddleware
 from src.core.tracing_middleware import TracingMiddleware
+from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, MULTI_TENANT_ENABLED
 
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
@@ -199,6 +258,12 @@ logger.info("RBAC middleware enabled")
 app.add_middleware(APIKeyMiddleware)
 logger.info("Authentication middleware enabled")
 
+# Tenant middleware (identifies tenant, enforces quotas)
+if MULTI_TENANT_ENABLED:
+    app.add_middleware(TenantQuotaMiddleware)
+    app.add_middleware(TenantMiddleware)
+    logger.info("Multi-tenant middleware enabled")
+
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -206,9 +271,29 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Mount API routes
 from src.api import router as api_router
+from src.api.tenant_routes import router as tenant_router
+from src.api.audit_routes import router as audit_router
+from src.api.service_account_routes import router as service_account_router
+from src.api.webhook_routes import router as webhook_router
+from src.api.version_routes import router as version_router
 
 # Mount v1 API (primary)
 app.include_router(api_router, prefix="/api/v1", tags=["API v1"])
+
+# Mount tenant management API
+app.include_router(tenant_router)
+
+# Mount audit API
+app.include_router(audit_router)
+
+# Mount Service Account API
+app.include_router(service_account_router)
+
+# Mount Webhook API
+app.include_router(webhook_router)
+
+# Mount Versioning API (built on event sourcing)
+app.include_router(version_router)
 
 # Mount legacy /api for backward compatibility (with deprecation warning)
 from fastapi import Response

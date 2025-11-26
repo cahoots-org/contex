@@ -2,7 +2,7 @@
 
 **Semantic context routing for AI agent systems**
 
-[![Tests](https://img.shields.io/badge/tests-154%20passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-227%20passing-success)](tests/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -11,12 +11,17 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 ## Features
 
 - **Semantic Matching** - AI-powered filtering using sentence transformers
+- **Hybrid Search** - Combines BM25 lexical search with semantic vector search for better accuracy
 - **Real-time Updates** - Redis pub/sub or webhooks for instant notifications
-- **Schema-Free** - Publish JSON, YAML, TOML, or plain text
+- **High Availability** - Redis Sentinel support with automatic failover
+- **Schema-Free** - Publish JSON, YAML, CSV, XML, or plain text
 - **Event Sourcing** - Complete audit trail for time-travel queries and compliance
-- **Security** - API key auth, RBAC, and rate limiting
+- **Data Management** - Automatic retention policies, export/import, and backup
+- **Security** - API key auth, RBAC, rate limiting, and security headers
+- **Observability** - Structured logging, Prometheus metrics, and distributed tracing
 - **Multi-Project** - Isolated namespaces with project-level permissions
 - **Sandbox UI** - Interactive web interface for testing
+- **API Versioning** - Stable /api/v1 endpoints with backward compatibility
 
 ---
 
@@ -41,6 +46,12 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - OPENSEARCH_URL=http://opensearch:9200
+      - SIMILARITY_THRESHOLD=0.5
+      - MAX_MATCHES=10
+      - MAX_CONTEXT_SIZE=51200
+      - HYBRID_SEARCH_ENABLED=true  # Enable BM25 + semantic hybrid search
+      - RRF_K=60
+      - VECTOR_BOOST=1.0
     depends_on:
       - redis
       - opensearch
@@ -49,14 +60,23 @@ services:
     image: redis/redis-stack:latest
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
 
   opensearch:
     image: opensearchproject/opensearch:2.11.0
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+
+volumes:
+  redis-data:
+  opensearch-data:
 ```
 
 Then run:
@@ -193,6 +213,16 @@ await client.assign_role(
 - ⏱️ Rate limiting (100-200 req/min per key)
 - 🔒 Project-level permissions
 
+**Production Configuration:**
+```bash
+# REQUIRED: Set API key salt for secure hashing
+export API_KEY_SALT=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Optional: Configure rate limiting
+export RATE_LIMIT_ENABLED=true
+export RATE_LIMIT_REQUESTS=100  # requests per minute
+```
+
 **[Security Overview](docs/SECURITY.md)** | **[RBAC Guide](docs/RBAC.md)**
 
 ---
@@ -219,18 +249,103 @@ events = await httpx.get(
 
 ## API Reference
 
-**Core Endpoints:**
-- `POST /api/data/publish` - Publish data
-- `POST /api/agents/register` - Register agent
-- `POST /api/data/query` - Query data
-- `GET /api/projects/{id}/events` - Get event stream
+**Core Endpoints (v1):**
+- `POST /api/v1/data/publish` - Publish data
+- `POST /api/v1/agents/register` - Register agent
+- `POST /api/v1/query` - Query data (ad-hoc, no registration needed)
+- `GET /api/v1/projects/{id}/events` - Get event stream
+- `GET /api/v1/projects/{id}/export` - Export project data
+- `POST /api/v1/projects/{id}/import` - Import project data
 
 **Auth Endpoints:**
-- `POST /api/auth/keys` - Create API key
-- `POST /api/auth/roles` - Assign role
-- `DELETE /api/auth/keys/{id}` - Revoke key
+- `POST /api/v1/auth/keys` - Create API key
+- `POST /api/v1/auth/roles` - Assign role
+- `DELETE /api/v1/auth/keys/{id}` - Revoke key
+
+**Monitoring:**
+- `GET /health` - Basic health check
+- `GET /api/v1/health` - Detailed health check with dependencies
+- `GET /api/v1/metrics` - Prometheus metrics
 
 **Interactive API Docs:** http://localhost:8001/docs
+
+**Note:** Legacy `/api/*` endpoints (without `/v1`) are deprecated but still supported for backward compatibility.
+
+---
+
+## Hybrid Search
+
+Contex supports hybrid search that combines:
+- **BM25 Lexical Search** - Traditional keyword matching for exact terms
+- **Semantic Vector Search** - AI-powered understanding of meaning
+- **Reciprocal Rank Fusion (RRF)** - Intelligent merging of both approaches
+
+Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. This requires OpenSearch to be running.
+
+**Benefits:**
+- Better accuracy for queries with specific technical terms
+- Handles both exact matches and semantic similarity
+- Improves results for domain-specific terminology
+
+**Example:**
+```python
+# Query with hybrid search finds both semantic matches AND exact keyword matches
+response = await client.query(
+    project_id="my-app",
+    queries=["authentication with JWT tokens"]
+)
+# Returns: Matches that contain "JWT" OR are semantically similar to authentication
+```
+
+---
+
+## Data Management
+
+**Automatic Retention Policies:**
+- Events auto-expire after 30 days (configurable)
+- Redis streams auto-trim to prevent unbounded growth
+- Agent registrations expire after 7 days of inactivity
+
+**Export/Import:**
+```python
+# Export project data (includes events, embeddings, and metadata)
+export_data = await httpx.get(f"http://localhost:8001/api/v1/projects/my-app/export")
+
+# Import to new environment
+await httpx.post(
+    f"http://localhost:8001/api/v1/projects/my-app-backup/import",
+    json=export_data.json()
+)
+```
+
+**Backup Strategy:**
+- Redis AOF (append-only file) for persistence
+- Automated export via API for cross-region backup
+- Point-in-time recovery using event sourcing
+
+---
+
+## Observability
+
+**Structured Logging:**
+- JSON-formatted logs for production
+- Request IDs for correlation
+- Contextual fields (project_id, agent_id)
+
+**Prometheus Metrics:**
+```bash
+# Available at http://localhost:8001/api/v1/metrics
+contex_agents_registered_total
+contex_events_published_total
+contex_queries_total
+contex_query_duration_seconds
+contex_redis_connections
+```
+
+**Distributed Tracing:**
+- OpenTelemetry instrumentation
+- Trace IDs in responses and logs
+- Compatible with Jaeger, Tempo, and other collectors
 
 ---
 
@@ -280,11 +395,18 @@ pip install -e ".[dev]"
 
 - **[Python SDK](sdk/python/README.md)** - Client library documentation
 - **[Security](docs/SECURITY.md)** - Authentication, RBAC, rate limiting
+- **[Redis Sentinel](docs/REDIS_SENTINEL.md)** - High availability with automatic failover
 - **[Event Sourcing](docs/EVENT_SOURCING.md)** - Time-travel queries and compliance
 - **[RBAC](docs/RBAC.md)** - Role-based access control guide
 - **[Rate Limiting](docs/RATE_LIMITING.md)** - Protection and limits
-- **[Metrics](docs/METRICS.md)** - Prometheus metrics
+- **[Metrics](docs/METRICS.md)** - Prometheus metrics and monitoring
+- **[Logging](docs/LOGGING.md)** - Structured logging and observability
+- **[Golden Tests](tests/README_GOLDEN_TESTS.md)** - Integration tests and git bisect
+- **[Operational Runbooks](docs/RUNBOOKS.md)** - Incident response and operations
 - **[API Docs](http://localhost:8001/docs)** - Interactive API reference
+
+**Configuration:**
+- **[.env.example](.env.example)** - All environment variables documented
 
 ---
 
