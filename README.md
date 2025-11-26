@@ -215,13 +215,18 @@ await client.assign_role(
 
 **Production Configuration:**
 ```bash
-# REQUIRED: Set API key salt for secure hashing
+# Enable authentication (disabled by default for easy development)
+export AUTH_ENABLED=true
+
+# REQUIRED when AUTH_ENABLED=true: Set API key salt for secure hashing
 export API_KEY_SALT=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # Optional: Configure rate limiting
 export RATE_LIMIT_ENABLED=true
 export RATE_LIMIT_REQUESTS=100  # requests per minute
 ```
+
+> ⚠️ **Note:** Authentication is **opt-in** (disabled by default). This allows easy local development without API keys. Always set `AUTH_ENABLED=true` for production deployments.
 
 **[Security Overview](docs/SECURITY.md)** | **[RBAC Guide](docs/RBAC.md)**
 

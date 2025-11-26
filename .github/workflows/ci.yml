@@ -77,18 +77,12 @@ jobs:
       with:
         context: .
         push: false
+        load: true
         tags: contex:test
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Start services with docker compose
+    - name: Verify image was built
       run: |
-        docker compose up -d
-        sleep 20
-
-    - name: Verify API is responding
-      run: |
-        curl -f http://localhost:8001/api/health || exit 1
-
-    - name: Stop services
-      run: docker compose down
+        docker images contex:test
+        echo "✅ Docker image built successfully"

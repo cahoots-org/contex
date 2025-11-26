@@ -184,7 +184,12 @@ async def lifespan(app: FastAPI):
     print("📚 API Docs: http://localhost:8001/api/docs")
     print("❤️  Health: http://localhost:8001/api/health")
     print("📊 Metrics: http://localhost:8001/api/metrics")
-    print("🔐 Security: API Key Auth + RBAC + Rate Limiting ENABLED")
+
+    auth_enabled = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+    if auth_enabled:
+        print("🔐 Security: API Key Auth + RBAC + Rate Limiting ENABLED")
+    else:
+        print("⚠️  Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
     print()
 
     # Store in app state
@@ -246,17 +251,22 @@ from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, 
 app.add_middleware(TracingMiddleware)
 logger.info("Tracing middleware enabled")
 
-# Rate limiting (checks limits)
-app.add_middleware(RateLimitMiddleware)
-logger.info("Rate limit middleware enabled")
+# Authentication & Authorization (opt-in via AUTH_ENABLED)
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+if AUTH_ENABLED:
+    # Rate limiting (checks limits)
+    app.add_middleware(RateLimitMiddleware)
+    logger.info("Rate limit middleware enabled")
 
-# RBAC (checks permissions after auth)
-app.add_middleware(RBACMiddleware)
-logger.info("RBAC middleware enabled")
+    # RBAC (checks permissions after auth)
+    app.add_middleware(RBACMiddleware)
+    logger.info("RBAC middleware enabled")
 
-# Authentication (validates API keys)
-app.add_middleware(APIKeyMiddleware)
-logger.info("Authentication middleware enabled")
+    # Authentication (validates API keys)
+    app.add_middleware(APIKeyMiddleware)
+    logger.info("Authentication middleware enabled")
+else:
+    logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
 
 # Tenant middleware (identifies tenant, enforces quotas)
 if MULTI_TENANT_ENABLED:
