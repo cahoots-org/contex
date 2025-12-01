@@ -531,7 +531,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
             details={
                 "data_needs_count": len(registration.data_needs),
                 "notification_method": registration.notification_method or "redis",
-                "matched_data_count": len(response.matched_data),
+                "matched_needs_count": sum(response.matched_needs.values()),
                 "duration_ms": round(duration * 1000, 2),
             },
             **ctx
@@ -540,7 +540,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
         logger.info("Agent registered successfully",
                    agent_id=registration.agent_id,
                    project_id=registration.project_id,
-                   matched_data_count=len(response.matched_data),
+                   matched_needs_count=sum(response.matched_needs.values()),
                    duration_ms=round(duration * 1000, 2))
 
         # Emit webhook event
@@ -550,7 +550,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
                 "agent_id": registration.agent_id,
                 "project_id": registration.project_id,
                 "data_needs": registration.data_needs,
-                "matched_data_count": len(response.matched_data),
+                "matched_needs_count": sum(response.matched_needs.values()),
             },
             tenant_id=ctx.get("tenant_id"),
             project_id=registration.project_id,
