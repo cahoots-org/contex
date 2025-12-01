@@ -440,7 +440,6 @@ async def publish_data(event: DataPublishEvent, request: Request):
                    project_id=event.project_id,
                    data_key=event.data_key,
                    sequence=sequence,
-                   version=version_info.get("version") if version_info else None,
                    duration_ms=round(duration * 1000, 2))
 
         # Emit webhook event
@@ -450,8 +449,6 @@ async def publish_data(event: DataPublishEvent, request: Request):
             "sequence": sequence,
             "data_format": event.data_format or "json",
         }
-        if version_info:
-            webhook_data["version"] = version_info["version"]
         await emit_webhook(
             WebhookEventType.DATA_PUBLISHED,
             webhook_data,
@@ -459,16 +456,12 @@ async def publish_data(event: DataPublishEvent, request: Request):
             project_id=event.project_id,
         )
 
-        response = {
+        return {
             "status": "published",
             "project_id": event.project_id,
             "data_key": event.data_key,
             "sequence": sequence
         }
-        if version_info:
-            response["version"] = version_info["version"]
-            response["data_hash"] = version_info["data_hash"]
-        return response
     except Exception as e:
         logger.error("Failed to publish data",
                     project_id=event.project_id,
