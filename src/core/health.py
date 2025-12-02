@@ -126,8 +126,8 @@ class HealthChecker:
     async def check_redisearch(self) -> ComponentHealth:
         """Check RediSearch index health"""
         try:
-            # Check if index exists
-            index_name = "contex:semantic_data"
+            # Check if index exists - use the same name as SemanticDataMatcher
+            index_name = "context_embeddings_idx"
             
             # Try to get index info
             try:

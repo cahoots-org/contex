@@ -49,6 +49,7 @@ class SemanticDataMatcher:
         """
         print(f"[SemanticMatcher] Loading model: {model_name}")
         self.redis = redis
+        self.model_name = model_name  # Store for health checks
         self.model = SentenceTransformer(model_name)
         self.threshold = similarity_threshold
         self.max_matches = max_matches
