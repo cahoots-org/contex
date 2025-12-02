@@ -171,9 +171,11 @@ class QueryResponse(BaseModel):
     Response from semantic query.
 
     Contains matched data items sorted by relevance.
+    Matches server's QueryResponse in src/core/models.py.
     """
-    results: List[MatchedData] = Field(..., description="Matched data items")
-    total: int = Field(..., description="Total number of matches")
+    query: str = Field(..., description="The query that was executed")
+    matches: List[MatchedDataSource] = Field(..., description="Matched data sources")
+    total_matches: int = Field(..., description="Total number of matches found")
 
 
 class APIKeyResponse(BaseModel):

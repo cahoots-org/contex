@@ -309,7 +309,7 @@ class ContexAsyncClient:
             query=query,
             max_results=max_results,
         )
-        result = await self._request("POST", "/api/v1/query", json=request.model_dump())
+        result = await self._request("POST", f"/api/v1/projects/{project_id}/query", json=request.model_dump())
         return QueryResponse(**result)
     
     # ========================================================================
@@ -350,7 +350,11 @@ class ContexAsyncClient:
     # ========================================================================
     
     async def health(self) -> Dict[str, Any]:
-        """Get comprehensive health status"""
+        """Get basic health status (always returns healthy if server is running)"""
+        return await self._request("GET", "/health")
+
+    async def health_detailed(self) -> Dict[str, Any]:
+        """Get comprehensive health status with component details (may return unhealthy for degraded components)"""
         return await self._request("GET", "/api/v1/health")
     
     async def ready(self) -> Dict[str, Any]:

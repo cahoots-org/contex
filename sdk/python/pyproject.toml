@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "contex-python"
-version = "0.2.1"
+version = "0.1.8"
 description = "Official Python SDK for Contex - Semantic context routing for AI agents"
 readme = "README.md"
 authors = [
