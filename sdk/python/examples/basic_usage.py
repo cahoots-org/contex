@@ -51,9 +51,9 @@ async def main():
             ]
         )
         
-        print(f"✅ Agent registered! Matched {len(response.matched_data)} items:")
-        for match in response.matched_data:
-            print(f"  • {match.data_key} (score: {match.similarity_score:.2f})")
+        print(f"✅ Agent registered!")
+        print(f"  • Matched needs: {response.matched_needs}")
+        print(f"  • Notification channel: {response.notification_channel}")
         
         # 4. Query for data
         print("\n🔍 Querying for data...")

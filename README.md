@@ -106,9 +106,9 @@ async with ContexAsyncClient(url="http://localhost:8001") as client:
         data_needs=["API configuration and endpoints"]
     )
 
-    # Agent receives matched data automatically
-    for match in response.matched_data:
-        print(f"Matched: {match.data_key} (score: {match.similarity_score:.2f})")
+    # Agent receives registration response with matched needs
+    print(f"Matched needs: {response.matched_needs}")
+    print(f"Notification channel: {response.notification_channel}")
 ```
 
 **[Python SDK Documentation](sdk/python/README.md)** | **[PyPI Package](https://pypi.org/project/contex-python/)**
@@ -152,9 +152,8 @@ response = await client.register_agent(
     ]
 )
 
-# Contex returns semantically matched data
-for match in response.matched_data:
-    print(f"{match.data_key}: {match.similarity_score:.2f}")
+# Contex returns registration with matched needs count
+print(f"Matched needs: {response.matched_needs}")
 ```
 
 ### 3. Receive Updates

@@ -1211,8 +1211,8 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
                     "status": "success",
                     "agent_id": registration.agent_id,
                     "project_id": registration.project_id,
-                    "matches": response.matches,
-                    "notification_method": response.notification_method
+                    "matched_needs": response.matched_needs,
+                    "notification_channel": response.notification_channel
                 })
                 successful += 1
             except Exception as e:

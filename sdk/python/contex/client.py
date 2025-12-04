@@ -229,15 +229,15 @@ class ContexAsyncClient:
             last_seen_sequence: Last seen sequence number
         
         Returns:
-            Registration response with matched data
-        
+            Registration response with matched needs count
+
         Example:
             >>> response = await client.register_agent(
             ...     agent_id="code-reviewer",
             ...     project_id="my-app",
             ...     data_needs=["coding standards", "test requirements"]
             ... )
-            >>> print(f"Matched {len(response.matched_data)} items")
+            >>> print(f"Matched needs: {response.matched_needs}")
         """
         registration = AgentRegistration(
             agent_id=agent_id,
