@@ -1,9 +1,8 @@
-"""Tests for Audit Logging"""
+"""Tests for Audit Logging with PostgreSQL"""
 
 import pytest
 import pytest_asyncio
 from datetime import datetime, timedelta, UTC
-from fakeredis import FakeAsyncRedis
 
 from src.core.audit import (
     AuditLogger,
@@ -80,17 +79,9 @@ class TestAuditLogger:
     """Test AuditLogger functionality"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def logger(self, redis):
+    async def logger(self, db):
         """Create an audit logger"""
-        return AuditLogger(redis, retention_days=30)
+        return AuditLogger(db, retention_days=30)
 
     @pytest.mark.asyncio
     async def test_log_event(self, logger):
@@ -156,7 +147,9 @@ class TestAuditLogger:
     @pytest.mark.asyncio
     async def test_get_nonexistent_event(self, logger):
         """Test getting event that doesn't exist"""
-        result = await logger.get_event("nonexistent")
+        import uuid
+        # Use a valid UUID that doesn't exist in the database
+        result = await logger.get_event(str(uuid.uuid4()))
         assert result is None
 
     @pytest.mark.asyncio
@@ -262,17 +255,9 @@ class TestAuditEventTypes:
     """Test specific audit event type scenarios"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def logger(self, redis):
+    async def logger(self, db):
         """Create an audit logger"""
-        return AuditLogger(redis)
+        return AuditLogger(db)
 
     @pytest.mark.asyncio
     async def test_log_auth_events(self, logger):
@@ -381,17 +366,9 @@ class TestAuditEventTypes:
 class TestAuditGlobalInstance:
     """Test global instance management"""
 
-    @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    def test_init_audit_logger(self, redis):
+    def test_init_audit_logger(self, db):
         """Test initializing global audit logger"""
-        logger = init_audit_logger(redis, retention_days=60)
+        logger = init_audit_logger(db, retention_days=60)
 
         assert logger is not None
         assert logger.retention_days == 60
@@ -401,19 +378,11 @@ class TestAuditGlobalInstance:
 class TestAuditConvenienceFunction:
     """Test the audit_log convenience function"""
 
-    @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
     @pytest.mark.asyncio
-    async def test_audit_log_function(self, redis):
+    async def test_audit_log_function(self, db):
         """Test the audit_log convenience function"""
         # Initialize global logger
-        init_audit_logger(redis)
+        init_audit_logger(db)
 
         # Use convenience function
         event_id = await audit_log(
@@ -431,7 +400,7 @@ class TestAuditConvenienceFunction:
         assert event.resource_id == "agent_123"
 
     @pytest.mark.asyncio
-    async def test_audit_log_no_logger(self, redis):
+    async def test_audit_log_no_logger(self, db):
         """Test audit_log when logger not initialized"""
         # Reset global logger
         import src.core.audit
@@ -450,17 +419,9 @@ class TestAuditEventDiff:
     """Test audit events with before/after diffs"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def logger(self, redis):
+    async def logger(self, db):
         """Create an audit logger"""
-        return AuditLogger(redis)
+        return AuditLogger(db)
 
     @pytest.mark.asyncio
     async def test_log_update_with_diff(self, logger):

@@ -8,12 +8,32 @@ from src.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+class DatabaseConfig(BaseModel):
+    """PostgreSQL database configuration"""
+    url: str = Field(
+        default="postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
+        description="PostgreSQL connection URL"
+    )
+    pool_size: int = Field(default=5, ge=1, le=100, description="Connection pool size")
+    max_overflow: int = Field(default=10, ge=0, le=100, description="Max overflow connections")
+    pool_timeout: float = Field(default=30.0, ge=1, le=300, description="Pool timeout in seconds")
+    pool_recycle: int = Field(default=1800, ge=60, le=7200, description="Recycle connections after seconds")
+    echo: bool = Field(default=False, description="Echo SQL statements")
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v):
+        if not v.startswith(('postgresql+asyncpg://', 'postgresql://', 'sqlite+aiosqlite://')):
+            raise ValueError("Database URL must start with postgresql+asyncpg://, postgresql://, or sqlite+aiosqlite://")
+        return v
+
+
 class RedisConfig(BaseModel):
-    """Redis configuration"""
+    """Redis configuration (for pub/sub only)"""
     url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
     max_connections: int = Field(default=50, ge=1, le=1000, description="Maximum Redis connections")
     timeout: int = Field(default=5, ge=1, le=60, description="Redis timeout in seconds")
-    
+
     @field_validator('url')
     @classmethod
     def validate_url(cls, v):
@@ -76,15 +96,24 @@ class FeaturesConfig(BaseModel):
 
 class ContexConfig(BaseModel):
     """Main Contex configuration"""
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
-    
+
     @classmethod
     def from_env(cls) -> 'ContexConfig':
         """Load configuration from environment variables"""
         return cls(
+            database=DatabaseConfig(
+                url=os.getenv('DATABASE_URL', 'postgresql+asyncpg://contex:contex_password@localhost:5432/contex'),
+                pool_size=int(os.getenv('DATABASE_POOL_SIZE', '5')),
+                max_overflow=int(os.getenv('DATABASE_MAX_OVERFLOW', '10')),
+                pool_timeout=float(os.getenv('DATABASE_POOL_TIMEOUT', '30.0')),
+                pool_recycle=int(os.getenv('DATABASE_POOL_RECYCLE', '1800')),
+                echo=os.getenv('DATABASE_ECHO', 'false').lower() == 'true',
+            ),
             redis=RedisConfig(
                 url=os.getenv('REDIS_URL', 'redis://localhost:6379'),
                 max_connections=int(os.getenv('REDIS_MAX_CONNECTIONS', '50')),
@@ -151,7 +180,10 @@ class ContexConfig(BaseModel):
     
     def log_config(self):
         """Log configuration (without sensitive data)"""
+        # Mask password in database URL
+        db_url_masked = self.database.url.split("@")[-1] if "@" in self.database.url else self.database.url
         logger.info("Configuration loaded",
+                   database_url=db_url_masked,
                    redis_url=self.redis.url,
                    log_level=self.observability.log_level,
                    metrics_enabled=self.observability.metrics_enabled,

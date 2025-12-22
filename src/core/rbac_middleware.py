@@ -3,7 +3,6 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from redis.asyncio import Redis
 from src.core.rbac import get_role, Permission
 from typing import Optional
 
@@ -123,11 +122,11 @@ class RBACMiddleware(BaseHTTPMiddleware):
             # Try to get from header (fallback)
             key_id = api_key_header[:16] if len(api_key_header) >= 16 else api_key_header
 
-        # Get Redis from app state
-        redis = request.app.state.redis
+        # Get database from app state
+        db = request.app.state.db
 
         # Get role for this API key
-        role_assignment = await get_role(redis, key_id)
+        role_assignment = await get_role(db, key_id)
 
         # Get required permission for this endpoint
         required_permission = self.get_required_permission(

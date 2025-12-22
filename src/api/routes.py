@@ -107,8 +107,8 @@ async def create_key(name: str, request: Request):
     """Create a new API key"""
     ctx = _get_request_context(request)
     try:
-        redis = request.app.state.redis
-        raw_key, api_key = await create_api_key(redis, name)
+        db = request.app.state.db
+        raw_key, api_key = await create_api_key(db, name)
 
         # Audit log API key creation
         await audit_log(
@@ -141,8 +141,8 @@ async def create_key(name: str, request: Request):
 async def list_keys(request: Request):
     """List all API keys"""
     try:
-        redis = request.app.state.redis
-        return await list_api_keys(redis)
+        db = request.app.state.db
+        return await list_api_keys(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -152,8 +152,8 @@ async def revoke_key(key_id: str, request: Request):
     """Revoke an API key"""
     ctx = _get_request_context(request)
     try:
-        redis = request.app.state.redis
-        success = await revoke_api_key(redis, key_id)
+        db = request.app.state.db
+        success = await revoke_api_key(db, key_id)
         if not success:
             await audit_log(
                 event_type=AuditEventType.AUTH_API_KEY_REVOKED,
@@ -197,10 +197,10 @@ async def get_rate_limits(request: Request):
     """Get current rate limit status for the authenticated API key"""
     try:
         from src.core.rate_limiter import get_rate_limit_status
-        redis = request.app.state.redis
+        db = request.app.state.db
         api_key = request.headers.get("X-API-Key", "anonymous")
-        
-        status = await get_rate_limit_status(redis, api_key)
+
+        status = await get_rate_limit_status(db, api_key)
         return {
             "api_key_prefix": api_key[:7] if len(api_key) > 7 else api_key,
             "limits": status
@@ -220,7 +220,7 @@ async def assign_role_endpoint(
     ctx = _get_request_context(request)
     try:
         from src.core.rbac import assign_role, Role
-        redis = request.app.state.redis
+        db = request.app.state.db
 
         # Validate role
         try:
@@ -231,7 +231,7 @@ async def assign_role_endpoint(
                 detail=f"Invalid role. Must be one of: {[r.value for r in Role]}"
             )
 
-        role_assignment = await assign_role(redis, key_id, role_enum, projects)
+        role_assignment = await assign_role(db, key_id, role_enum, projects)
 
         # Audit log role assignment
         await audit_log(
@@ -269,9 +269,9 @@ async def list_roles_endpoint(request: Request):
     """List all role assignments"""
     try:
         from src.core.rbac import list_roles
-        redis = request.app.state.redis
-        
-        roles = await list_roles(redis)
+        db = request.app.state.db
+
+        roles = await list_roles(db)
         return [
             {
                 "key_id": r.key_id,
@@ -289,12 +289,12 @@ async def get_role_endpoint(key_id: str, request: Request):
     """Get role assignment for a specific API key"""
     try:
         from src.core.rbac import get_role
-        redis = request.app.state.redis
-        
-        role_assignment = await get_role(redis, key_id)
+        db = request.app.state.db
+
+        role_assignment = await get_role(db, key_id)
         if not role_assignment:
             raise HTTPException(status_code=404, detail="Role not found")
-        
+
         return {
             "key_id": role_assignment.key_id,
             "role": role_assignment.role.value,
@@ -312,9 +312,9 @@ async def revoke_role_endpoint(key_id: str, request: Request):
     ctx = _get_request_context(request)
     try:
         from src.core.rbac import revoke_role
-        redis = request.app.state.redis
+        db = request.app.state.db
 
-        success = await revoke_role(redis, key_id)
+        success = await revoke_role(db, key_id)
         if not success:
             raise HTTPException(status_code=404, detail="Role not found")
 
@@ -666,8 +666,8 @@ async def get_project_data(
             if format not in ["json", "toon", "yaml", "toml", "csv", "xml", "markdown", "text"]:
                 raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
 
-            redis = request.app.state.redis
-            export_manager = ExportImportManager(redis)
+            db = request.app.state.db
+            export_manager = ExportImportManager(db)
 
             exported_data = await export_manager.export_project(
                 project_id=project_id,
@@ -728,43 +728,40 @@ async def get_project_data(
     if not include_content:
         return {"project_id": project_id, "data_keys": data_keys, "count": len(data_keys)}
 
-    # Fetch full data for each key
+    # Fetch full data for each key from PostgreSQL
+    from src.core.db_models import Embedding
+    from sqlalchemy import select
+
     result = []
-    for key in data_keys:
-        redis_key = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}"
-        data_info = await engine.semantic_matcher.redis.hgetall(redis_key)
+    db = request.app.state.db
+    async with db.session() as session:
+        for key in data_keys:
+            # Fetch embedding data from PostgreSQL
+            stmt = select(Embedding).where(
+                Embedding.project_id == project_id,
+                Embedding.data_key == key
+            )
+            query_result = await session.execute(stmt)
+            rows = query_result.scalars().all()
 
-        if data_info:
-            # Helper to decode bytes
-            def decode(val):
-                return val.decode() if isinstance(val, bytes) else val
+            for row in rows:
+                data_obj = row.data if isinstance(row.data, dict) else {}
 
-            description = decode(data_info.get(b"description") or data_info.get("description", ""))
-            data_str = decode(data_info.get(b"data") or data_info.get("data", "{}"))
-            data_format = decode(data_info.get(b"data_format") or data_info.get("data_format", "json"))
-            is_structured = decode(data_info.get(b"is_structured") or data_info.get("is_structured", "true"))
+                # Generate TOON format
+                try:
+                    import toon_format as toon
+                    toon_str = toon.encode(data_obj)
+                except:
+                    toon_str = "TOON format not available"
 
-            try:
-                import json
-                data_obj = json.loads(data_str)
-            except:
-                data_obj = {}
-
-            # Generate TOON format
-            try:
-                import toon_format as toon
-                toon_str = toon.encode(data_obj)
-            except:
-                toon_str = "TOON format not available"
-
-            result.append({
-                "data_key": key,
-                "description": description,
-                "data": data_obj,
-                "data_format": data_format,
-                "is_structured": is_structured == "true",
-                "toon": toon_str
-            })
+                result.append({
+                    "data_key": row.node_key or key,
+                    "description": row.description,
+                    "data": data_obj,
+                    "data_format": row.data_format or "json",
+                    "is_structured": row.node_type in ["object", "row"],
+                    "toon": toon_str
+                })
 
     return result
 
@@ -884,7 +881,7 @@ async def cleanup_all_projects(request: Request):
 
     Applies retention policies:
     - TTL for events
-    - Stream trimming
+    - Event count limits
     - Stale agent cleanup
 
     Returns:
@@ -893,8 +890,8 @@ async def cleanup_all_projects(request: Request):
     try:
         from src.core.retention import get_retention_manager_from_env
 
-        redis = request.app.state.redis
-        retention_manager = get_retention_manager_from_env(redis)
+        db = request.app.state.db
+        retention_manager = get_retention_manager_from_env(db)
 
         stats = await retention_manager.cleanup_all_projects()
 
@@ -923,8 +920,8 @@ async def cleanup_project(project_id: str, request: Request):
     try:
         from src.core.retention import get_retention_manager_from_env
 
-        redis = request.app.state.redis
-        retention_manager = get_retention_manager_from_env(redis)
+        db = request.app.state.db
+        retention_manager = get_retention_manager_from_env(db)
 
         stats = await retention_manager.cleanup_project(project_id)
 
@@ -955,8 +952,8 @@ async def get_retention_stats(project_id: str, request: Request):
     try:
         from src.core.retention import get_retention_manager_from_env
 
-        redis = request.app.state.redis
-        retention_manager = get_retention_manager_from_env(redis)
+        db = request.app.state.db
+        retention_manager = get_retention_manager_from_env(db)
 
         stats = await retention_manager.get_retention_stats(project_id)
 
@@ -1003,8 +1000,8 @@ async def import_project(
         body = await request.body()
         data = body.decode("utf-8")
 
-        redis = request.app.state.redis
-        import_manager = ExportImportManager(redis)
+        db = request.app.state.db
+        import_manager = ExportImportManager(db)
 
         result = await import_manager.import_project(
             data=data,

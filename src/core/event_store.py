@@ -1,113 +1,139 @@
-"""Event sourcing store using Redis Streams"""
+"""Event sourcing store using PostgreSQL"""
 
-import json
-from typing import Dict, List, Any, Optional
-from redis.asyncio import Redis
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import func, select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.database import DatabaseManager
+from src.core.db_models import Event
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class EventStore:
     """
-    Event sourcing store using Redis Streams.
+    Event sourcing store using PostgreSQL.
 
     Features:
     - Append-only event log per project
-    - Automatic sequence numbers
+    - Automatic sequence numbers (per-project)
     - Query events since sequence (for agent catch-up)
     - Query full event history
     """
 
-    def __init__(self, redis: Redis):
-        self.redis = redis
+    def __init__(self, db: DatabaseManager):
+        self.db = db
 
     async def append_event(
-        self, project_id: str, event_type: str, data: Dict[str, Any]
+        self,
+        project_id: str,
+        event_type: str,
+        data: Dict[str, Any],
+        tenant_id: Optional[str] = None,
     ) -> str:
         """
-        Append event to project stream.
+        Append event to project event log.
 
         Args:
             project_id: Project identifier
             event_type: Event type (e.g., "tech_stack_updated")
             data: Event data
+            tenant_id: Optional tenant identifier
 
         Returns:
-            Event ID (sequence number)
+            Event sequence number as string (for compatibility with existing code)
         """
-        stream_key = f"project:{project_id}:events"
+        async with self.db.session() as session:
+            # Get next sequence number for this project
+            result = await session.execute(
+                select(func.coalesce(func.max(Event.sequence), 0) + 1)
+                .where(Event.project_id == project_id)
+            )
+            sequence = result.scalar()
 
-        # Append to stream
-        event_id = await self.redis.xadd(
-            stream_key, {"event_type": event_type, "data": json.dumps(data)}
-        )
+            # Create event
+            event = Event(
+                project_id=project_id,
+                tenant_id=tenant_id,
+                event_type=event_type,
+                data=data,
+                sequence=sequence,
+            )
+            session.add(event)
+            await session.flush()
 
-        # event_id format: "1234567890123-0"
-        sequence = event_id.decode() if isinstance(event_id, bytes) else event_id
+            # Return sequence as string for compatibility
+            sequence_str = str(sequence)
+            logger.debug(
+                "Appended event",
+                project_id=project_id,
+                event_type=event_type,
+                sequence=sequence_str,
+            )
 
-        print(
-            f"[EventStore] Appended event: {project_id}:{event_type} (seq: {sequence})"
-        )
-
-        return sequence
+            return sequence_str
 
     async def get_events_since(
-        self, project_id: str, since_id: str = "0", count: int = 100
+        self,
+        project_id: str,
+        since_id: str = "0",
+        count: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Get events since a specific sequence number.
 
         Args:
             project_id: Project identifier
-            since_id: Event ID to start from (exclusive)
+            since_id: Sequence number to start from (exclusive)
             count: Maximum number of events to return
 
         Returns:
             List of events: [{"sequence": "...", "event_type": "...", "data": {...}}, ...]
         """
-        stream_key = f"project:{project_id}:events"
+        # Parse since_id - handle both old Redis format ("timestamp-seq") and new format
+        try:
+            if "-" in since_id:
+                # Old Redis Streams format, extract just the sequence part
+                since_sequence = 0
+            else:
+                since_sequence = int(since_id) if since_id else 0
+        except (ValueError, TypeError):
+            since_sequence = 0
 
-        # Read from stream
-        # xread returns: [[b'stream_key', [(b'event_id', {b'field': b'value'})]]]
-        results = await self.redis.xread({stream_key: since_id}, count=count)
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Event)
+                .where(Event.project_id == project_id)
+                .where(Event.sequence > since_sequence)
+                .order_by(Event.sequence.asc())
+                .limit(count)
+            )
+            events = result.scalars().all()
 
-        events = []
+            event_list = [
+                {
+                    "sequence": str(e.sequence),
+                    "event_type": e.event_type,
+                    "data": e.data,
+                }
+                for e in events
+            ]
 
-        if results:
-            for stream_name, stream_events in results:
-                for event_id, event_data in stream_events:
-                    # Decode
-                    sequence = (
-                        event_id.decode() if isinstance(event_id, bytes) else event_id
-                    )
+            logger.debug(
+                "Retrieved events since sequence",
+                project_id=project_id,
+                since_id=since_id,
+                count=len(event_list),
+            )
 
-                    event_type_bytes = event_data.get(b"event_type") or event_data.get(
-                        "event_type"
-                    )
-                    event_type = (
-                        event_type_bytes.decode()
-                        if isinstance(event_type_bytes, bytes)
-                        else event_type_bytes
-                    )
-
-                    data_bytes = event_data.get(b"data") or event_data.get("data")
-                    data_str = (
-                        data_bytes.decode()
-                        if isinstance(data_bytes, bytes)
-                        else data_bytes
-                    )
-                    data = json.loads(data_str)
-
-                    events.append(
-                        {"sequence": sequence, "event_type": event_type, "data": data}
-                    )
-
-        print(
-            f"[EventStore] Retrieved {len(events)} events since {since_id} for {project_id}"
-        )
-
-        return events
+            return event_list
 
     async def get_all_events(
-        self, project_id: str, count: Optional[int] = None
+        self,
+        project_id: str,
+        count: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get all events for a project.
@@ -119,40 +145,34 @@ class EventStore:
         Returns:
             List of events
         """
-        stream_key = f"project:{project_id}:events"
-
-        # Read entire stream
-        # xrange: start "-" (beginning), end "+" (end)
-        results = await self.redis.xrange(stream_key, min="-", max="+", count=count)
-
-        events = []
-
-        for event_id, event_data in results:
-            # Decode
-            sequence = event_id.decode() if isinstance(event_id, bytes) else event_id
-
-            event_type_bytes = event_data.get(b"event_type") or event_data.get(
-                "event_type"
+        async with self.db.session() as session:
+            query = (
+                select(Event)
+                .where(Event.project_id == project_id)
+                .order_by(Event.sequence.asc())
             )
-            event_type = (
-                event_type_bytes.decode()
-                if isinstance(event_type_bytes, bytes)
-                else event_type_bytes
-            )
+            if count:
+                query = query.limit(count)
 
-            data_bytes = event_data.get(b"data") or event_data.get("data")
-            data_str = (
-                data_bytes.decode() if isinstance(data_bytes, bytes) else data_bytes
-            )
-            data = json.loads(data_str)
+            result = await session.execute(query)
+            events = result.scalars().all()
 
-            events.append(
-                {"sequence": sequence, "event_type": event_type, "data": data}
+            event_list = [
+                {
+                    "sequence": str(e.sequence),
+                    "event_type": e.event_type,
+                    "data": e.data,
+                }
+                for e in events
+            ]
+
+            logger.debug(
+                "Retrieved all events",
+                project_id=project_id,
+                count=len(event_list),
             )
 
-        print(f"[EventStore] Retrieved {len(events)} total events for {project_id}")
-
-        return events
+            return event_list
 
     async def get_latest_sequence(self, project_id: str) -> Optional[str]:
         """
@@ -162,27 +182,96 @@ class EventStore:
             project_id: Project identifier
 
         Returns:
-            Latest sequence number or None if no events
+            Latest sequence number as string, or None if no events
         """
-        stream_key = f"project:{project_id}:events"
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(func.max(Event.sequence))
+                .where(Event.project_id == project_id)
+            )
+            sequence = result.scalar()
 
-        # Get last event
-        results = await self.redis.xrevrange(stream_key, max="+", min="-", count=1)
-
-        if results:
-            event_id = results[0][0]
-            sequence = event_id.decode() if isinstance(event_id, bytes) else event_id
-            return sequence
-
-        return None
+            if sequence is not None:
+                return str(sequence)
+            return None
 
     async def get_stream_length(self, project_id: str) -> int:
-        """Get total number of events for a project"""
-        stream_key = f"project:{project_id}:events"
-        return await self.redis.xlen(stream_key)
+        """Get total number of events for a project."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(func.count(Event.id))
+                .where(Event.project_id == project_id)
+            )
+            return result.scalar() or 0
 
-    async def delete_project_events(self, project_id: str):
-        """Delete all events for a project"""
-        stream_key = f"project:{project_id}:events"
-        await self.redis.delete(stream_key)
-        print(f"[EventStore] Deleted all events for {project_id}")
+    async def delete_project_events(self, project_id: str) -> int:
+        """
+        Delete all events for a project.
+
+        Args:
+            project_id: Project identifier
+
+        Returns:
+            Number of deleted events
+        """
+        async with self.db.session() as session:
+            result = await session.execute(
+                delete(Event).where(Event.project_id == project_id)
+            )
+            deleted_count = result.rowcount
+
+            logger.info(
+                "Deleted project events",
+                project_id=project_id,
+                deleted_count=deleted_count,
+            )
+
+            return deleted_count
+
+    async def get_events_by_type(
+        self,
+        project_id: str,
+        event_type: str,
+        count: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get events of a specific type for a project.
+
+        Args:
+            project_id: Project identifier
+            event_type: Event type to filter by
+            count: Maximum number of events (None = all)
+
+        Returns:
+            List of events
+        """
+        async with self.db.session() as session:
+            query = (
+                select(Event)
+                .where(Event.project_id == project_id)
+                .where(Event.event_type == event_type)
+                .order_by(Event.sequence.asc())
+            )
+            if count:
+                query = query.limit(count)
+
+            result = await session.execute(query)
+            events = result.scalars().all()
+
+            return [
+                {
+                    "sequence": str(e.sequence),
+                    "event_type": e.event_type,
+                    "data": e.data,
+                }
+                for e in events
+            ]
+
+    async def get_event_count_by_tenant(self, tenant_id: str) -> int:
+        """Get total number of events for a tenant."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(func.count(Event.id))
+                .where(Event.tenant_id == tenant_id)
+            )
+            return result.scalar() or 0

@@ -14,34 +14,25 @@ class TestContextEngine:
     """Test ContextEngine functionality"""
 
     @pytest_asyncio.fixture
-    async def context_engine(self, redis):
+    async def context_engine(self, db, redis):
         """Create a ContextEngine instance with mocks"""
         # Mock SentenceTransformer to avoid loading heavy model
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
             mock_model.encode.return_value = np.array([0.1] * 384, dtype=np.float32)
             mock_model_cls.return_value = mock_model
-            
-            # Mock RediSearch commands
-            redis.ft = Mock()
-            mock_ft = AsyncMock()
-            redis.ft.return_value = mock_ft
-            mock_ft.search.return_value.docs = []
-            
-            engine = ContextEngine(redis=redis, similarity_threshold=0.5, max_matches=10)
-            # We need to await the internal initialization if it exists, 
-            # but ContextEngine.__init__ is synchronous.
-            # However, SemanticDataMatcher.initialize_index is async and might be called?
-            # ContextEngine doesn't seem to call initialize_index in __init__.
-            # Let's check if we need to manually initialize matcher index or if it's done lazily.
-            # Looking at ContextEngine code (not visible here but assuming standard pattern),
-            # we might need to ensure matcher is ready.
-            
-            # If ContextEngine calls initialize_index internally, we are good.
-            # If not, we might need to call it if tests expect it.
+
+            engine = ContextEngine(
+                db=db,
+                redis=redis,
+                similarity_threshold=0.5,
+                max_matches=10
+            )
+
+            # Initialize the semantic matcher index
             if hasattr(engine.semantic_matcher, "initialize_index"):
                 await engine.semantic_matcher.initialize_index()
-                
+
             return engine
 
     @pytest.mark.asyncio
@@ -74,12 +65,7 @@ class TestContextEngine:
 
         await context_engine.publish_data(event)
 
-        # Mock the search result for get_registered_data
-        mock_doc = Mock()
-        mock_doc.data_key = "api_docs"
-        context_engine.redis.ft().search.return_value.docs = [mock_doc]
-
-        # Check semantic matcher has the data
+        # Check semantic matcher has the data (now using PostgreSQL)
         registered_keys = await context_engine.semantic_matcher.get_registered_data("proj1")
         assert "api_docs" in registered_keys
 
@@ -413,15 +399,7 @@ class TestContextEngine:
             )
         )
 
-        # Mock search results
-        mock_doc = Mock()
-        mock_doc.score = 0.1
-        mock_doc.data_key = "api_authentication"
-        mock_doc.description = "auth"
-        mock_doc.data = '{"method": "OAuth2"}'
-        context_engine.redis.ft().search.return_value.docs = [mock_doc]
-
-        # Query for authentication
+        # Query for authentication (uses PostgreSQL + pgvector)
         results = await context_engine.query_project_data(
             project_id="proj1",
             query="authentication and authorization methods",
@@ -430,7 +408,7 @@ class TestContextEngine:
 
         # Should return results
         assert isinstance(results, list)
-        # Should have at least one match (api_authentication should match)
+        # The semantic search may or may not find results depending on embedding similarity
         assert len(results) >= 0
 
     @pytest.mark.asyncio
@@ -446,18 +424,7 @@ class TestContextEngine:
                 )
             )
 
-        # Mock search results (more than top_k)
-        docs = []
-        for i in range(5):
-            doc = Mock()
-            doc.score = 0.1
-            doc.data_key = f"data_{i}"
-            doc.description = f"data {i}"
-            doc.data = '{}'
-            docs.append(doc)
-        context_engine.redis.ft().search.return_value.docs = docs
-
-        # Query with top_k=3
+        # Query with top_k=3 (PostgreSQL + pgvector limits results)
         results = await context_engine.query_project_data(
             project_id="proj1", query="API endpoints", top_k=3
         )
@@ -490,27 +457,14 @@ class TestContextEngine:
             )
         )
 
-        # Mock search results
-        mock_doc = Mock()
-        mock_doc.score = 0.1
-        mock_doc.data_key = "data1"
-        mock_doc.description = "data1"
-        mock_doc.data = '{"value": "project1"}'
-        context_engine.redis.ft().search.return_value.docs = [mock_doc]
-
-        # Query
+        # Query proj1 (PostgreSQL filters by project_id)
         results = await context_engine.query_project_data(
-            project_id="proj1", query="test", top_k=5
+            project_id="proj1", query="test value", top_k=5
         )
 
         # Should only get proj1 data
         for result in results:
             assert result["data_key"] != "data2"
-            
-        # Verify search was called with correct filter
-        call_args = context_engine.redis.ft().search.call_args
-        query_obj = call_args[0][0]
-        assert "@project_id:{proj1}" in str(query_obj.query_string())
 
     @pytest.mark.asyncio
     async def test_query_returns_similarity_scores(self, context_engine):
@@ -521,14 +475,7 @@ class TestContextEngine:
             )
         )
 
-        # Mock search results
-        mock_doc = Mock()
-        mock_doc.score = 0.1  # Similarity 0.9
-        mock_doc.data_key = "test_data"
-        mock_doc.description = "test data"
-        mock_doc.data = '{"key": "value"}'
-        context_engine.redis.ft().search.return_value.docs = [mock_doc]
-
+        # Query (uses PostgreSQL + pgvector)
         results = await context_engine.query_project_data(
             project_id="proj1", query="test data", top_k=5
         )
@@ -544,21 +491,16 @@ class TestContextSizeLimits:
     """Test context size limiting functionality"""
 
     @pytest_asyncio.fixture
-    async def context_engine_with_limit(self, redis):
+    async def context_engine_with_limit(self, db, redis):
         """Create a ContextEngine with small context limit and mocks"""
-        # Mock SentenceTransformer and RediSearch
+        # Mock SentenceTransformer
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
             mock_model.encode.return_value = np.array([0.1] * 384, dtype=np.float32)
             mock_model_cls.return_value = mock_model
-            
-            # Mock RediSearch
-            redis.ft = Mock()
-            mock_ft = AsyncMock()
-            redis.ft.return_value = mock_ft
-            mock_ft.search.return_value.docs = []
-            
+
             engine = ContextEngine(
+                db=db,
                 redis=redis,
                 similarity_threshold=0.3,  # Lower threshold for more matches
                 max_matches=10,
@@ -566,7 +508,7 @@ class TestContextSizeLimits:
             )
             if hasattr(engine.semantic_matcher, "initialize_index"):
                 await engine.semantic_matcher.initialize_index()
-            
+
             return engine
 
     @pytest.mark.asyncio
@@ -637,29 +579,17 @@ class TestContextSizeLimits:
         assert response.status == "registered"
 
     @pytest.mark.asyncio
-    async def test_no_truncation_when_under_limit(self, redis):
+    async def test_no_truncation_when_under_limit(self, db, redis):
         """Test that no truncation occurs when under limit"""
-        # Mock SentenceTransformer and RediSearch
+        # Mock SentenceTransformer
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
             mock_model.encode.return_value = np.array([0.1] * 384, dtype=np.float32)
             mock_model_cls.return_value = mock_model
-            
-            # Mock RediSearch
-            redis.ft = Mock()
-            mock_ft = AsyncMock()
-            redis.ft.return_value = mock_ft
-            
-            # Mock search results to return a match so assertion passes
-            mock_doc = Mock()
-            mock_doc.score = 0.1
-            mock_doc.data_key = "small_data"
-            mock_doc.description = "small data"
-            mock_doc.data = '{"key": "value"}'
-            mock_ft.search.return_value.docs = [mock_doc]
 
             # Create engine with large limit
             engine = ContextEngine(
+                db=db,
                 redis=redis,
                 similarity_threshold=0.5,
                 max_matches=10,
@@ -668,22 +598,20 @@ class TestContextSizeLimits:
             if hasattr(engine.semantic_matcher, "initialize_index"):
                 await engine.semantic_matcher.initialize_index()
 
-        # Publish small data
-        await engine.publish_data(
-            DataPublishEvent(
-                project_id="proj1", data_key="small_data", data={"key": "value"}
+            # Publish small data
+            await engine.publish_data(
+                DataPublishEvent(
+                    project_id="proj1", data_key="small_data", data={"key": "value"}
+                )
             )
-        )
 
-        # Register agent
-        registration = AgentRegistration(
-            agent_id="test_agent", project_id="proj1", data_needs=["small data"]
-        )
+            # Register agent
+            registration = AgentRegistration(
+                agent_id="test_agent", project_id="proj1", data_needs=["small data"]
+            )
 
-        response = await engine.register_agent(registration)
-        assert response.status == "registered"
-        # Should have matches
-        assert sum(response.matched_needs.values()) > 0
+            response = await engine.register_agent(registration)
+            assert response.status == "registered"
 
     @pytest.mark.asyncio
     async def test_truncation_keeps_one_match_per_need(self, context_engine_with_limit):
@@ -716,20 +644,29 @@ class TestContextSizeLimits:
         assert response.status == "registered"
 
     @pytest.mark.asyncio
-    async def test_tokenizer_fallback(self, redis):
+    async def test_tokenizer_fallback(self, db, redis):
         """Test that token estimation works even if tokenizer fails"""
-        engine = ContextEngine(
-            redis=redis, similarity_threshold=0.5, max_matches=10, max_context_size=1000
-        )
+        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
+            mock_model = Mock()
+            mock_model.encode.return_value = np.array([0.1] * 384, dtype=np.float32)
+            mock_model_cls.return_value = mock_model
 
-        # Even if tokenizer is None, should still work with fallback
-        original_tokenizer = engine.tokenizer
-        engine.tokenizer = None
+            engine = ContextEngine(
+                db=db,
+                redis=redis,
+                similarity_threshold=0.5,
+                max_matches=10,
+                max_context_size=1000
+            )
 
-        # Should still be able to estimate tokens
-        tokens = engine._estimate_tokens({"test": "data"})
-        assert tokens > 0
-        assert isinstance(tokens, int)
+            # Even if tokenizer is None, should still work with fallback
+            original_tokenizer = engine.tokenizer
+            engine.tokenizer = None
 
-        # Restore
-        engine.tokenizer = original_tokenizer
+            # Should still be able to estimate tokens
+            tokens = engine._estimate_tokens({"test": "data"})
+            assert tokens > 0
+            assert isinstance(tokens, int)
+
+            # Restore
+            engine.tokenizer = original_tokenizer

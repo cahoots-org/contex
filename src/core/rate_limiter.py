@@ -1,11 +1,19 @@
-"""Rate limiting using Redis sliding window algorithm"""
+"""Rate limiting using PostgreSQL sliding window algorithm"""
 
-import time
+import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from redis.asyncio import Redis
-from fastapi import Request, HTTPException
+
+from fastapi import Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import delete, func, select
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from src.core.database import DatabaseManager
+from src.core.db_models import RateLimitEntry
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _record_rate_limited_event(
@@ -16,7 +24,6 @@ def _record_rate_limited_event(
     tenant_id: str = None,
 ):
     """Record rate limit event in audit log (async fire-and-forget)"""
-    import asyncio
     try:
         from src.core.audit import audit_log, AuditEventType, AuditEventSeverity
 
@@ -41,24 +48,24 @@ def _record_rate_limited_event(
 
 class RateLimitConfig:
     """Rate limit configuration for different operations"""
-    
+
     # Default limits (requests per minute)
     PUBLISH_DATA = 100
     REGISTER_AGENT = 50
     QUERY = 200
     ADMIN = 20
     DEFAULT = 60
-    
+
     # Window size in seconds
     WINDOW_SIZE = 60
 
 
 class RateLimiter:
-    """Redis-based rate limiter using sliding window algorithm"""
-    
-    def __init__(self, redis: Redis):
-        self.redis = redis
-        
+    """PostgreSQL-based rate limiter using sliding window algorithm"""
+
+    def __init__(self, db: DatabaseManager):
+        self.db = db
+
     async def check_rate_limit(
         self,
         key: str,
@@ -67,56 +74,83 @@ class RateLimiter:
     ) -> tuple[bool, dict]:
         """
         Check if request is within rate limit.
-        
+
         Args:
             key: Unique identifier for rate limit (e.g., "api_key:publish:project_id")
             limit: Maximum requests allowed in window
             window: Time window in seconds
-            
+
         Returns:
             Tuple of (allowed, info_dict) where info_dict contains:
             - remaining: Requests remaining in window
             - reset: Unix timestamp when window resets
             - limit: The rate limit
         """
-        now = time.time()
-        window_start = now - window
-        
-        # Redis key for this rate limit
-        redis_key = f"ratelimit:{key}"
-        
-        # Use Redis sorted set with timestamps as scores
-        pipe = self.redis.pipeline()
-        
-        # Remove old entries outside the window
-        pipe.zremrangebyscore(redis_key, 0, window_start)
-        
-        # Count requests in current window
-        pipe.zcard(redis_key)
-        
-        # Add current request
-        pipe.zadd(redis_key, {str(now): now})
-        
-        # Set expiry on the key
-        pipe.expire(redis_key, window + 1)
-        
-        results = await pipe.execute()
-        current_count = results[1]  # Count before adding current request
-        
-        # Calculate remaining and reset time
-        remaining = max(0, limit - current_count - 1)
-        reset = int(now + window)
-        
-        allowed = current_count < limit
-        
-        info = {
-            "limit": limit,
-            "remaining": remaining,
-            "reset": reset,
-            "retry_after": window if not allowed else None
-        }
-        
-        return allowed, info
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=window)
+
+        async with self.db.session() as session:
+            # Remove old entries outside the window (cleanup)
+            await session.execute(
+                delete(RateLimitEntry)
+                .where(RateLimitEntry.rate_key == key)
+                .where(RateLimitEntry.request_time < window_start)
+            )
+
+            # Count requests in current window
+            result = await session.execute(
+                select(func.count(RateLimitEntry.id))
+                .where(RateLimitEntry.rate_key == key)
+                .where(RateLimitEntry.request_time >= window_start)
+            )
+            current_count = result.scalar() or 0
+
+            # Check if allowed
+            allowed = current_count < limit
+
+            if allowed:
+                # Add current request
+                entry = RateLimitEntry(
+                    rate_key=key,
+                    request_time=now,
+                )
+                session.add(entry)
+
+            # Calculate remaining and reset time
+            remaining = max(0, limit - current_count - (1 if allowed else 0))
+            reset = int(now.timestamp() + window)
+
+            info = {
+                "limit": limit,
+                "remaining": remaining,
+                "reset": reset,
+                "retry_after": window if not allowed else None
+            }
+
+            return allowed, info
+
+    async def cleanup_old_entries(self, older_than_seconds: int = 300):
+        """
+        Clean up old rate limit entries.
+
+        This should be called periodically (e.g., every 5 minutes) to prevent
+        table growth from accumulating old entries.
+
+        Args:
+            older_than_seconds: Delete entries older than this many seconds
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                delete(RateLimitEntry).where(RateLimitEntry.request_time < cutoff)
+            )
+            deleted_count = result.rowcount
+
+            if deleted_count > 0:
+                logger.debug("Cleaned up rate limit entries", deleted_count=deleted_count)
+
+            return deleted_count
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -146,9 +180,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/", "/docs", "/openapi.json", "/redoc"]:
             return await call_next(request)
 
-        # Get Redis from app state
-        redis = request.app.state.redis
-        limiter = RateLimiter(redis)
+        # Get database from app state
+        db: DatabaseManager = request.app.state.db
+        limiter = RateLimiter(db)
 
         # Get API key from request (set by APIKeyMiddleware)
         api_key = request.headers.get("X-API-Key", "anonymous")
@@ -205,20 +239,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
-async def get_rate_limit_status(redis: Redis, api_key: str) -> dict:
+async def get_rate_limit_status(db: DatabaseManager, api_key: str) -> dict:
     """Get current rate limit status for an API key"""
-    limiter = RateLimiter(redis)
-    
+    limiter = RateLimiter(db)
+
+    endpoint_limits = {
+        "/api/publish": RateLimitConfig.PUBLISH_DATA,
+        "/api/register": RateLimitConfig.REGISTER_AGENT,
+        "/api/query": RateLimitConfig.QUERY,
+        "/auth/": RateLimitConfig.ADMIN,
+        "/admin/": RateLimitConfig.ADMIN,
+    }
+
     status = {}
-    for endpoint, limit in RateLimitMiddleware(None, redis).endpoint_limits.items():
+    for endpoint, limit in endpoint_limits.items():
         rate_key = f"{api_key}:{endpoint}"
-        allowed, info = await limiter.check_rate_limit(rate_key, limit)
-        
+        # Just check status without adding a new entry
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=RateLimitConfig.WINDOW_SIZE)
+
+        async with db.session() as session:
+            result = await session.execute(
+                select(func.count(RateLimitEntry.id))
+                .where(RateLimitEntry.rate_key == rate_key)
+                .where(RateLimitEntry.request_time >= window_start)
+            )
+            current_count = result.scalar() or 0
+
+        remaining = max(0, limit - current_count)
+        reset = int(now.timestamp() + RateLimitConfig.WINDOW_SIZE)
+
         status[endpoint] = {
-            "limit": info["limit"],
-            "remaining": info["remaining"],
-            "reset": info["reset"],
-            "allowed": allowed
+            "limit": limit,
+            "remaining": remaining,
+            "reset": reset,
+            "allowed": remaining > 0
         }
-    
+
     return status

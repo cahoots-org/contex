@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from enum import Enum
 import asyncio
 
+from src.core.database import DatabaseManager
+
 
 class HealthStatus(str, Enum):
     """Health check status"""
@@ -15,7 +17,7 @@ class HealthStatus(str, Enum):
 
 class ComponentHealth:
     """Health status for a component"""
-    
+
     def __init__(
         self,
         status: HealthStatus,
@@ -26,7 +28,7 @@ class ComponentHealth:
         self.message = message
         self.details = details or {}
         self.timestamp = datetime.now(timezone.utc).isoformat()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         result = {
@@ -43,23 +45,54 @@ class ComponentHealth:
 class HealthChecker:
     """Comprehensive health checker for Contex"""
 
-    def __init__(self, redis, context_engine, graceful_degradation=None):
+    def __init__(self, db: DatabaseManager, redis, context_engine, graceful_degradation=None):
+        self.db = db
         self.redis = redis
         self.context_engine = context_engine
         self.graceful_degradation = graceful_degradation
         self.startup_time = datetime.now(timezone.utc)
     
+    async def check_postgres(self) -> ComponentHealth:
+        """Check PostgreSQL connectivity and performance"""
+        try:
+            health = await self.db.health_check()
+
+            if health["status"] == "unhealthy":
+                return ComponentHealth(
+                    status=HealthStatus.UNHEALTHY,
+                    message=f"PostgreSQL connection failed: {health.get('error', 'Unknown error')}",
+                    details=health
+                )
+            elif health["status"] == "degraded":
+                return ComponentHealth(
+                    status=HealthStatus.DEGRADED,
+                    message=f"High PostgreSQL latency: {health.get('latency_ms', 0):.2f}ms",
+                    details=health
+                )
+
+            return ComponentHealth(
+                status=HealthStatus.HEALTHY,
+                message="PostgreSQL is healthy",
+                details=health
+            )
+        except Exception as e:
+            return ComponentHealth(
+                status=HealthStatus.UNHEALTHY,
+                message=f"PostgreSQL check failed: {str(e)}",
+                details={"error": str(e)}
+            )
+
     async def check_redis(self) -> ComponentHealth:
-        """Check Redis connectivity and performance"""
+        """Check Redis connectivity and performance (pub/sub only)"""
         try:
             # Test basic connectivity
             start = asyncio.get_event_loop().time()
             await self.redis.ping()
             latency = (asyncio.get_event_loop().time() - start) * 1000
-            
+
             # Get Redis info
             info = await self.redis.info()
-            
+
             # Check if latency is acceptable
             if latency > 100:
                 return ComponentHealth(
@@ -68,17 +101,19 @@ class HealthChecker:
                     details={
                         "latency_ms": round(latency, 2),
                         "connected_clients": info.get("connected_clients", 0),
-                        "used_memory_human": info.get("used_memory_human", "unknown")
+                        "used_memory_human": info.get("used_memory_human", "unknown"),
+                        "purpose": "pub/sub"
                     }
                 )
-            
+
             return ComponentHealth(
                 status=HealthStatus.HEALTHY,
-                message="Redis is healthy",
+                message="Redis is healthy (pub/sub)",
                 details={
                     "latency_ms": round(latency, 2),
                     "connected_clients": info.get("connected_clients", 0),
-                    "used_memory_human": info.get("used_memory_human", "unknown")
+                    "used_memory_human": info.get("used_memory_human", "unknown"),
+                    "purpose": "pub/sub"
                 }
             )
         except Exception as e:
@@ -123,47 +158,42 @@ class HealthChecker:
                 details={"error": str(e)}
             )
     
-    async def check_redisearch(self) -> ComponentHealth:
-        """Check RediSearch index health"""
+    async def check_pgvector(self) -> ComponentHealth:
+        """Check pgvector extension health"""
         try:
-            # Check if index exists - use the same name as SemanticDataMatcher
-            index_name = "context_embeddings_idx"
-            
-            # Try to get index info
-            try:
-                info = await self.redis.execute_command("FT.INFO", index_name)
-                
-                # Parse info (it's a list of key-value pairs)
-                info_dict = {}
-                for i in range(0, len(info), 2):
-                    key = info[i].decode() if isinstance(info[i], bytes) else info[i]
-                    value = info[i+1]
-                    if isinstance(value, bytes):
-                        value = value.decode()
-                    info_dict[key] = value
-                
-                num_docs = int(info_dict.get("num_docs", 0))
-                
+            from sqlalchemy import text
+
+            async with self.db.session() as session:
+                # Verify pgvector extension exists
+                result = await session.execute(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))
+                row = result.fetchone()
+
+                if not row:
+                    return ComponentHealth(
+                        status=HealthStatus.UNHEALTHY,
+                        message="pgvector extension not installed",
+                        details={"error": "Extension 'vector' not found"}
+                    )
+
+                # Count embeddings
+                from src.core.db_models import Embedding
+                from sqlalchemy import select, func
+
+                result = await session.execute(select(func.count(Embedding.id)))
+                embedding_count = result.scalar() or 0
+
                 return ComponentHealth(
                     status=HealthStatus.HEALTHY,
-                    message="RediSearch index is healthy",
+                    message="pgvector is healthy",
                     details={
-                        "num_docs": num_docs,
-                        "index_name": index_name
+                        "extension_version": row[0],
+                        "embedding_count": embedding_count
                     }
                 )
-            except Exception as e:
-                if "Unknown index name" in str(e):
-                    return ComponentHealth(
-                        status=HealthStatus.DEGRADED,
-                        message="RediSearch index not initialized",
-                        details={"index_name": index_name}
-                    )
-                raise
         except Exception as e:
             return ComponentHealth(
                 status=HealthStatus.UNHEALTHY,
-                message=f"RediSearch check failed: {str(e)}",
+                message=f"pgvector check failed: {str(e)}",
                 details={"error": str(e)}
             )
     
@@ -254,10 +284,11 @@ class HealthChecker:
     async def get_full_health(self) -> Dict[str, Any]:
         """Get comprehensive health status"""
         # Run all checks in parallel
-        redis_health, embedding_health, redisearch_health, resources_health, degradation_health = await asyncio.gather(
+        postgres_health, redis_health, embedding_health, pgvector_health, resources_health, degradation_health = await asyncio.gather(
+            self.check_postgres(),
             self.check_redis(),
             self.check_embedding_model(),
-            self.check_redisearch(),
+            self.check_pgvector(),
             self.check_system_resources(),
             self.check_degradation(),
             return_exceptions=True
@@ -273,17 +304,19 @@ class HealthChecker:
                 )
             return result
 
+        postgres_health = safe_health(postgres_health, "PostgreSQL")
         redis_health = safe_health(redis_health, "Redis")
         embedding_health = safe_health(embedding_health, "Embedding")
-        redisearch_health = safe_health(redisearch_health, "RediSearch")
+        pgvector_health = safe_health(pgvector_health, "pgvector")
         resources_health = safe_health(resources_health, "Resources")
         degradation_health = safe_health(degradation_health, "Degradation")
 
         # Determine overall status
         statuses = [
+            postgres_health.status,
             redis_health.status,
             embedding_health.status,
-            redisearch_health.status,
+            pgvector_health.status,
             resources_health.status,
             degradation_health.status
         ]
@@ -304,9 +337,10 @@ class HealthChecker:
             "uptime_seconds": round(uptime_seconds, 2),
             "version": "0.2.0",
             "components": {
+                "postgresql": postgres_health.to_dict(),
                 "redis": redis_health.to_dict(),
                 "embedding_model": embedding_health.to_dict(),
-                "redisearch": redisearch_health.to_dict(),
+                "pgvector": pgvector_health.to_dict(),
                 "system_resources": resources_health.to_dict(),
                 "graceful_degradation": degradation_health.to_dict()
             }
@@ -315,18 +349,23 @@ class HealthChecker:
     async def get_readiness(self) -> Dict[str, Any]:
         """Get readiness status (can accept traffic)"""
         # Check critical components only
-        redis_health = await self.check_redis()
-        embedding_health = await self.check_embedding_model()
-        
+        postgres_health, redis_health, embedding_health = await asyncio.gather(
+            self.check_postgres(),
+            self.check_redis(),
+            self.check_embedding_model(),
+        )
+
         ready = (
+            postgres_health.status != HealthStatus.UNHEALTHY and
             redis_health.status != HealthStatus.UNHEALTHY and
             embedding_health.status != HealthStatus.UNHEALTHY
         )
-        
+
         return {
             "ready": ready,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "checks": {
+                "postgresql": postgres_health.status.value,
                 "redis": redis_health.status.value,
                 "embedding_model": embedding_health.status.value
             }

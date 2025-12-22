@@ -11,13 +11,19 @@ import asyncio
 import hashlib
 import hmac
 import json
-import httpx
-from typing import Optional, Dict, Any, List
-from datetime import datetime, UTC, timedelta
+import time
+import uuid
+from datetime import UTC, datetime
 from enum import Enum
-from pydantic import BaseModel, Field, HttpUrl
-from redis.asyncio import Redis
+from typing import Any, Dict, List, Optional
 
+import httpx
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+
+from src.core.database import DatabaseManager
+from src.core.db_models import WebhookDelivery as WebhookDeliveryModel
+from src.core.db_models import WebhookEndpoint as WebhookEndpointModel
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -387,8 +393,8 @@ class WebhookEndpoint(BaseModel):
     secret: str  # For HMAC signature
 
     # Event filtering
-    events: List[WebhookEventType] = Field(default_factory=list)  # Empty = all events
-    categories: List[WebhookEventCategory] = Field(default_factory=list)  # Empty = all categories
+    events: List[str] = Field(default_factory=list)  # Empty = all events
+    categories: List[str] = Field(default_factory=list)  # Empty = all categories
 
     # Optional filters
     project_ids: List[str] = Field(default_factory=list)  # Empty = all projects
@@ -458,19 +464,18 @@ class WebhookManager:
     - Delivery logging
     """
 
-    KEY_PREFIX = "contex:webhook:"
     MAX_DELIVERY_LOG_SIZE = 100  # Per endpoint
 
-    def __init__(self, redis: Redis, default_timeout: int = 30, max_retries: int = 3):
+    def __init__(self, db: DatabaseManager, default_timeout: int = 30, max_retries: int = 3):
         """
         Initialize webhook manager.
 
         Args:
-            redis: Redis connection
+            db: Database manager
             default_timeout: Default request timeout in seconds
             max_retries: Default max retry attempts
         """
-        self.redis = redis
+        self.db = db
         self.default_timeout = default_timeout
         self.max_retries = max_retries
         self._client: Optional[httpx.AsyncClient] = None
@@ -492,10 +497,22 @@ class WebhookManager:
 
     async def create_endpoint(self, endpoint: WebhookEndpoint) -> WebhookEndpoint:
         """Create a new webhook endpoint"""
-        await self.redis.set(
-            f"{self.KEY_PREFIX}endpoint:{endpoint.endpoint_id}",
-            endpoint.model_dump_json()
-        )
+        async with self.db.session() as session:
+            record = WebhookEndpointModel(
+                endpoint_id=endpoint.endpoint_id,
+                tenant_id=endpoint.tenant_id,
+                url=endpoint.url,
+                secret=endpoint.secret,
+                events=endpoint.events,
+                categories=endpoint.categories,
+                project_ids=endpoint.project_ids,
+                is_active=endpoint.is_active,
+                timeout_seconds=endpoint.timeout_seconds,
+                max_retries=endpoint.max_retries,
+                name=endpoint.name,
+                description=endpoint.description,
+            )
+            session.add(record)
 
         logger.info("Webhook endpoint created",
                    endpoint_id=endpoint.endpoint_id,
@@ -506,10 +523,16 @@ class WebhookManager:
 
     async def get_endpoint(self, endpoint_id: str) -> Optional[WebhookEndpoint]:
         """Get endpoint by ID"""
-        data = await self.redis.get(f"{self.KEY_PREFIX}endpoint:{endpoint_id}")
-        if not data:
-            return None
-        return WebhookEndpoint.model_validate_json(data)
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(WebhookEndpointModel).where(WebhookEndpointModel.endpoint_id == endpoint_id)
+            )
+            record = result.scalar_one_or_none()
+
+            if not record:
+                return None
+
+            return self._record_to_endpoint(record)
 
     async def update_endpoint(
         self,
@@ -517,29 +540,41 @@ class WebhookManager:
         **updates
     ) -> Optional[WebhookEndpoint]:
         """Update an endpoint"""
-        endpoint = await self.get_endpoint(endpoint_id)
-        if not endpoint:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(WebhookEndpointModel).where(WebhookEndpointModel.endpoint_id == endpoint_id)
+            )
+            record = result.scalar_one_or_none()
 
-        for key, value in updates.items():
-            if hasattr(endpoint, key) and value is not None:
-                setattr(endpoint, key, value)
+            if not record:
+                return None
 
-        endpoint.updated_at = datetime.now(UTC).isoformat()
+            for key, value in updates.items():
+                if hasattr(record, key) and value is not None:
+                    setattr(record, key, value)
 
-        await self.redis.set(
-            f"{self.KEY_PREFIX}endpoint:{endpoint_id}",
-            endpoint.model_dump_json()
-        )
+            record.updated_at = datetime.now(UTC)
 
-        return endpoint
+            return self._record_to_endpoint(record)
 
     async def delete_endpoint(self, endpoint_id: str) -> bool:
         """Delete an endpoint"""
-        result = await self.redis.delete(f"{self.KEY_PREFIX}endpoint:{endpoint_id}")
-        if result:
-            logger.warning("Webhook endpoint deleted", endpoint_id=endpoint_id)
-        return bool(result)
+        async with self.db.session() as session:
+            # Delete deliveries first
+            await session.execute(
+                delete(WebhookDeliveryModel).where(WebhookDeliveryModel.endpoint_id == endpoint_id)
+            )
+
+            # Delete endpoint
+            result = await session.execute(
+                delete(WebhookEndpointModel).where(WebhookEndpointModel.endpoint_id == endpoint_id)
+            )
+
+            if result.rowcount > 0:
+                logger.warning("Webhook endpoint deleted", endpoint_id=endpoint_id)
+                return True
+
+        return False
 
     async def list_endpoints(
         self,
@@ -547,22 +582,18 @@ class WebhookManager:
         is_active: Optional[bool] = None,
     ) -> List[WebhookEndpoint]:
         """List all endpoints with optional filtering"""
-        endpoints = []
+        async with self.db.session() as session:
+            query = select(WebhookEndpointModel)
 
-        async for key in self.redis.scan_iter(f"{self.KEY_PREFIX}endpoint:*"):
-            data = await self.redis.get(key)
-            if data:
-                endpoint = WebhookEndpoint.model_validate_json(data)
+            if tenant_id:
+                query = query.where(WebhookEndpointModel.tenant_id == tenant_id)
+            if is_active is not None:
+                query = query.where(WebhookEndpointModel.is_active == is_active)
 
-                # Apply filters
-                if tenant_id and endpoint.tenant_id != tenant_id:
-                    continue
-                if is_active is not None and endpoint.is_active != is_active:
-                    continue
+            result = await session.execute(query)
+            records = result.scalars().all()
 
-                endpoints.append(endpoint)
-
-        return endpoints
+            return [self._record_to_endpoint(r) for r in records]
 
     # ========================================
     # Event Delivery
@@ -587,8 +618,6 @@ class WebhookManager:
         Returns:
             Event ID
         """
-        import uuid
-
         event = WebhookEvent(
             event_id=str(uuid.uuid4()),
             event_type=event_type,
@@ -628,6 +657,7 @@ class WebhookManager:
         matching = []
 
         event_category = EVENT_CATALOG.get(event.event_type, {}).get("category")
+        event_category_value = event_category.value if event_category else None
 
         for endpoint in endpoints:
             # Check tenant match
@@ -635,11 +665,11 @@ class WebhookManager:
                 continue
 
             # Check event type filter
-            if endpoint.events and event.event_type not in endpoint.events:
+            if endpoint.events and event.event_type.value not in endpoint.events:
                 continue
 
             # Check category filter
-            if endpoint.categories and event_category not in endpoint.categories:
+            if endpoint.categories and event_category_value not in endpoint.categories:
                 continue
 
             # Check project filter
@@ -657,9 +687,6 @@ class WebhookManager:
         attempt: int = 1,
     ):
         """Deliver event to an endpoint with retries"""
-        import uuid
-        import time
-
         delivery = WebhookDelivery(
             delivery_id=str(uuid.uuid4()),
             event_id=event.event_id,
@@ -669,7 +696,7 @@ class WebhookManager:
 
         # Prepare payload
         payload = event.model_dump()
-        payload_json = json.dumps(payload, sort_keys=True)
+        payload_json = json.dumps(payload, sort_keys=True, default=str)
 
         # Generate HMAC signature
         signature = self._generate_signature(payload_json, endpoint.secret)
@@ -760,13 +787,20 @@ class WebhookManager:
 
     async def _log_delivery(self, delivery: WebhookDelivery):
         """Log delivery attempt"""
-        key = f"{self.KEY_PREFIX}delivery:{delivery.endpoint_id}"
-
-        # Add to list (newest first)
-        await self.redis.lpush(key, delivery.model_dump_json())
-
-        # Trim to max size
-        await self.redis.ltrim(key, 0, self.MAX_DELIVERY_LOG_SIZE - 1)
+        async with self.db.session() as session:
+            record = WebhookDeliveryModel(
+                delivery_id=delivery.delivery_id,
+                event_id=delivery.event_id,
+                endpoint_id=delivery.endpoint_id,
+                attempt=delivery.attempt,
+                status=delivery.status,
+                status_code=delivery.status_code,
+                response_body=delivery.response_body,
+                error=delivery.error,
+                delivered_at=datetime.fromisoformat(delivery.delivered_at) if delivery.delivered_at else None,
+                duration_ms=delivery.duration_ms,
+            )
+            session.add(record)
 
     async def get_delivery_log(
         self,
@@ -774,14 +808,31 @@ class WebhookManager:
         limit: int = 50,
     ) -> List[WebhookDelivery]:
         """Get delivery log for an endpoint"""
-        key = f"{self.KEY_PREFIX}delivery:{endpoint_id}"
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(WebhookDeliveryModel)
+                .where(WebhookDeliveryModel.endpoint_id == endpoint_id)
+                .order_by(WebhookDeliveryModel.created_at.desc())
+                .limit(limit)
+            )
+            records = result.scalars().all()
 
-        entries = await self.redis.lrange(key, 0, limit - 1)
-
-        return [
-            WebhookDelivery.model_validate_json(entry)
-            for entry in entries
-        ]
+            return [
+                WebhookDelivery(
+                    delivery_id=r.delivery_id,
+                    event_id=r.event_id,
+                    endpoint_id=r.endpoint_id,
+                    attempt=r.attempt,
+                    status=r.status,
+                    status_code=r.status_code,
+                    response_body=r.response_body,
+                    error=r.error,
+                    created_at=r.created_at.isoformat() if r.created_at else "",
+                    delivered_at=r.delivered_at.isoformat() if r.delivered_at else None,
+                    duration_ms=r.duration_ms,
+                )
+                for r in records
+            ]
 
     # ========================================
     # Event Catalog
@@ -818,6 +869,25 @@ class WebhookManager:
 
         return events
 
+    def _record_to_endpoint(self, record: WebhookEndpointModel) -> WebhookEndpoint:
+        """Convert database record to Pydantic model"""
+        return WebhookEndpoint(
+            endpoint_id=record.endpoint_id,
+            tenant_id=record.tenant_id,
+            url=record.url,
+            secret=record.secret,
+            events=record.events or [],
+            categories=record.categories or [],
+            project_ids=record.project_ids or [],
+            is_active=record.is_active,
+            timeout_seconds=record.timeout_seconds,
+            max_retries=record.max_retries,
+            name=record.name,
+            description=record.description,
+            created_at=record.created_at.isoformat() if record.created_at else "",
+            updated_at=record.updated_at.isoformat() if record.updated_at else None,
+        )
+
 
 # ============================================================================
 # GLOBAL INSTANCE
@@ -827,13 +897,13 @@ _webhook_manager: Optional[WebhookManager] = None
 
 
 def init_webhook_manager(
-    redis: Redis,
+    db: DatabaseManager,
     default_timeout: int = 30,
     max_retries: int = 3,
 ) -> WebhookManager:
     """Initialize global webhook manager"""
     global _webhook_manager
-    _webhook_manager = WebhookManager(redis, default_timeout, max_retries)
+    _webhook_manager = WebhookManager(db, default_timeout, max_retries)
     return _webhook_manager
 
 

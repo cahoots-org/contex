@@ -4,13 +4,17 @@ Provides tenant isolation, quotas, and management capabilities for
 supporting multiple organizations/workspaces on a single Contex instance.
 """
 
-import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select, update
+
+from src.core.database import DatabaseManager
+from src.core.db_models import Tenant as TenantModel
+from src.core.db_models import TenantProject as TenantProjectModel
+from src.core.db_models import TenantUsage as TenantUsageModel
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -109,19 +113,16 @@ class TenantManager:
     """
     Manages tenant lifecycle and operations.
 
-    All tenant data is stored in Redis with the following key patterns:
-    - tenant:{tenant_id} - Tenant configuration (hash)
-    - tenant:{tenant_id}:usage - Usage counters (hash)
-    - tenant:{tenant_id}:projects - Set of project IDs
-    - tenant:{tenant_id}:api_keys - Set of API key IDs
-    - tenant_index - Set of all tenant IDs
+    All tenant data is stored in PostgreSQL with the following tables:
+    - tenants - Tenant configuration
+    - tenant_usage - Usage counters
+    - tenant_projects - Project associations
 
-    Project isolation is enforced by prefixing all project data with tenant_id:
-    - {tenant_id}:project:{project_id}:* - All project data
+    Project isolation is enforced through tenant_id foreign keys.
     """
 
-    def __init__(self, redis: Redis):
-        self.redis = redis
+    def __init__(self, db: DatabaseManager):
+        self.db = db
 
     # ============================================================
     # Tenant CRUD Operations
@@ -153,48 +154,53 @@ class TenantManager:
         Raises:
             ValueError: If tenant already exists
         """
-        # Check if tenant exists
-        if await self.redis.exists(f"tenant:{tenant_id}"):
-            raise ValueError(f"Tenant '{tenant_id}' already exists")
+        quotas = TenantQuotas.for_plan(plan)
+        now = datetime.now(UTC)
 
-        # Create tenant with plan-specific quotas
+        async with self.db.session() as session:
+            # Check if tenant exists
+            result = await session.execute(
+                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
+            )
+            if result.scalar_one_or_none():
+                raise ValueError(f"Tenant '{tenant_id}' already exists")
+
+            # Create tenant record
+            tenant_record = TenantModel(
+                tenant_id=tenant_id,
+                name=name,
+                plan=plan.value,
+                quotas=quotas.model_dump(),
+                settings=settings or {},
+                metadata=metadata or {},
+                owner_email=owner_email,
+                created_at=now,
+            )
+            session.add(tenant_record)
+
+            # Create usage record
+            usage_record = TenantUsageModel(
+                tenant_id=tenant_id,
+                projects_count=0,
+                agents_count=0,
+                api_keys_count=0,
+                events_this_month=0,
+                storage_used_mb=0.0,
+                last_updated=now,
+            )
+            session.add(usage_record)
+
+        # Build response model
         tenant = Tenant(
             tenant_id=tenant_id,
             name=name,
             plan=plan,
-            quotas=TenantQuotas.for_plan(plan),
+            quotas=quotas,
             owner_email=owner_email,
             settings=settings or {},
             metadata=metadata or {},
+            created_at=now.isoformat(),
         )
-
-        # Store tenant in Redis
-        tenant_data = tenant.model_dump()
-        tenant_data['quotas'] = json.dumps(tenant_data['quotas'])
-        tenant_data['settings'] = json.dumps(tenant_data['settings'])
-        tenant_data['metadata'] = json.dumps(tenant_data['metadata'])
-
-        # Convert booleans to strings and remove None values (Redis only accepts bytes, strings, int, float)
-        tenant_data = {
-            k: str(v) if isinstance(v, bool) else v
-            for k, v in tenant_data.items()
-            if v is not None
-        }
-
-        await self.redis.hset(f"tenant:{tenant_id}", mapping=tenant_data)
-
-        # Add to tenant index
-        await self.redis.sadd("tenant_index", tenant_id)
-
-        # Initialize usage counters
-        await self.redis.hset(f"tenant:{tenant_id}:usage", mapping={
-            "projects_count": 0,
-            "agents_count": 0,
-            "api_keys_count": 0,
-            "events_this_month": 0,
-            "storage_used_mb": 0.0,
-            "last_updated": datetime.now(UTC).isoformat(),
-        })
 
         logger.info("Tenant created",
                    tenant_id=tenant_id,
@@ -213,18 +219,16 @@ class TenantManager:
         Returns:
             Tenant object if found, None otherwise
         """
-        data = await self.redis.hgetall(f"tenant:{tenant_id}")
-        if not data:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Decode and parse
-        decoded = {k.decode(): v.decode() for k, v in data.items()}
-        decoded['quotas'] = json.loads(decoded.get('quotas', '{}'))
-        decoded['settings'] = json.loads(decoded.get('settings', '{}'))
-        decoded['metadata'] = json.loads(decoded.get('metadata', '{}'))
-        decoded['is_active'] = decoded.get('is_active', 'True').lower() == 'true'
+            if not record:
+                return None
 
-        return Tenant(**decoded)
+            return self._record_to_model(record)
 
     async def update_tenant(
         self,
@@ -249,44 +253,35 @@ class TenantManager:
         Returns:
             Updated Tenant object, None if not found
         """
-        tenant = await self.get_tenant(tenant_id)
-        if not tenant:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Update fields
-        if name is not None:
-            tenant.name = name
-        if plan is not None:
-            tenant.plan = plan
-            if quotas is None:
-                tenant.quotas = TenantQuotas.for_plan(plan)
-        if quotas is not None:
-            tenant.quotas = quotas
-        if settings is not None:
-            tenant.settings.update(settings)
-        if is_active is not None:
-            tenant.is_active = is_active
+            if not record:
+                return None
 
-        tenant.updated_at = datetime.now(UTC).isoformat()
+            if name is not None:
+                record.name = name
+            if plan is not None:
+                record.plan = plan.value
+                if quotas is None:
+                    record.quotas = TenantQuotas.for_plan(plan).model_dump()
+            if quotas is not None:
+                record.quotas = quotas.model_dump()
+            if settings is not None:
+                current_settings = record.settings or {}
+                current_settings.update(settings)
+                record.settings = current_settings
+            if is_active is not None:
+                record.is_active = is_active
 
-        # Store updates
-        tenant_data = tenant.model_dump()
-        tenant_data['quotas'] = json.dumps(tenant_data['quotas'])
-        tenant_data['settings'] = json.dumps(tenant_data['settings'])
-        tenant_data['metadata'] = json.dumps(tenant_data['metadata'])
+            record.updated_at = datetime.now(UTC)
 
-        # Convert booleans to strings and remove None values (Redis only accepts bytes, strings, int, float)
-        tenant_data = {
-            k: str(v) if isinstance(v, bool) else v
-            for k, v in tenant_data.items()
-            if v is not None
-        }
+            logger.info("Tenant updated", tenant_id=tenant_id)
 
-        await self.redis.hset(f"tenant:{tenant_id}", mapping=tenant_data)
-
-        logger.info("Tenant updated", tenant_id=tenant_id)
-
-        return tenant
+            return self._record_to_model(record)
 
     async def delete_tenant(self, tenant_id: str, force: bool = False) -> bool:
         """
@@ -302,35 +297,42 @@ class TenantManager:
         Raises:
             ValueError: If tenant has data and force=False
         """
-        tenant = await self.get_tenant(tenant_id)
-        if not tenant:
-            return False
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Check for data if not forcing
-        if not force:
-            usage = await self.get_usage(tenant_id)
-            if usage and (usage.projects_count > 0 or usage.api_keys_count > 0):
-                raise ValueError(
-                    f"Tenant has {usage.projects_count} projects and "
-                    f"{usage.api_keys_count} API keys. Use force=True to delete."
-                )
+            if not record:
+                return False
 
-        # Delete all tenant data
-        # This would need to cascade delete projects, agents, etc.
-        # For now, just delete the tenant record
+            # Check for data if not forcing
+            if not force:
+                usage = await self.get_usage(tenant_id)
+                if usage and (usage.projects_count > 0 or usage.api_keys_count > 0):
+                    raise ValueError(
+                        f"Tenant has {usage.projects_count} projects and "
+                        f"{usage.api_keys_count} API keys. Use force=True to delete."
+                    )
 
-        # Remove from index
-        await self.redis.srem("tenant_index", tenant_id)
+            # Delete tenant projects
+            await session.execute(
+                delete(TenantProjectModel).where(TenantProjectModel.tenant_id == tenant_id)
+            )
 
-        # Delete tenant records
-        await self.redis.delete(f"tenant:{tenant_id}")
-        await self.redis.delete(f"tenant:{tenant_id}:usage")
-        await self.redis.delete(f"tenant:{tenant_id}:projects")
-        await self.redis.delete(f"tenant:{tenant_id}:api_keys")
+            # Delete usage record
+            await session.execute(
+                delete(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
+            )
 
-        logger.warning("Tenant deleted", tenant_id=tenant_id, force=force)
+            # Delete tenant record (cascades will handle related records)
+            await session.execute(
+                delete(TenantModel).where(TenantModel.tenant_id == tenant_id)
+            )
 
-        return True
+            logger.warning("Tenant deleted", tenant_id=tenant_id, force=force)
+
+            return True
 
     async def list_tenants(
         self,
@@ -351,30 +353,21 @@ class TenantManager:
         Returns:
             List of Tenant objects
         """
-        # Get all tenant IDs
-        tenant_ids = await self.redis.smembers("tenant_index")
+        async with self.db.session() as session:
+            query = select(TenantModel)
 
-        tenants = []
-        for tid in tenant_ids:
-            if isinstance(tid, bytes):
-                tid = tid.decode()
-            tenant = await self.get_tenant(tid)
-            if not tenant:
-                continue
+            if plan is not None:
+                query = query.where(TenantModel.plan == plan.value)
+            if is_active is not None:
+                query = query.where(TenantModel.is_active == is_active)
 
-            # Apply filters
-            if plan is not None and tenant.plan != plan:
-                continue
-            if is_active is not None and tenant.is_active != is_active:
-                continue
+            query = query.order_by(TenantModel.created_at.desc())
+            query = query.offset(offset).limit(limit)
 
-            tenants.append(tenant)
+            result = await session.execute(query)
+            records = result.scalars().all()
 
-        # Sort by creation date
-        tenants.sort(key=lambda t: t.created_at, reverse=True)
-
-        # Apply pagination
-        return tenants[offset:offset + limit]
+            return [self._record_to_model(r) for r in records]
 
     # ============================================================
     # Usage Tracking
@@ -390,20 +383,23 @@ class TenantManager:
         Returns:
             TenantUsage object if tenant exists
         """
-        data = await self.redis.hgetall(f"tenant:{tenant_id}:usage")
-        if not data:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        decoded = {k.decode(): v.decode() for k, v in data.items()}
+            if not record:
+                return None
 
-        return TenantUsage(
-            projects_count=int(decoded.get('projects_count', 0)),
-            agents_count=int(decoded.get('agents_count', 0)),
-            api_keys_count=int(decoded.get('api_keys_count', 0)),
-            events_this_month=int(decoded.get('events_this_month', 0)),
-            storage_used_mb=float(decoded.get('storage_used_mb', 0.0)),
-            last_updated=decoded.get('last_updated'),
-        )
+            return TenantUsage(
+                projects_count=record.projects_count or 0,
+                agents_count=record.agents_count or 0,
+                api_keys_count=record.api_keys_count or 0,
+                events_this_month=record.events_this_month or 0,
+                storage_used_mb=record.storage_used_mb or 0.0,
+                last_updated=record.last_updated.isoformat() if record.last_updated else None,
+            )
 
     async def increment_usage(
         self,
@@ -422,20 +418,21 @@ class TenantManager:
         Returns:
             New value after increment
         """
-        new_value = await self.redis.hincrby(
-            f"tenant:{tenant_id}:usage",
-            field,
-            amount
-        )
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Update timestamp
-        await self.redis.hset(
-            f"tenant:{tenant_id}:usage",
-            "last_updated",
-            datetime.now(UTC).isoformat()
-        )
+            if not record:
+                return 0
 
-        return new_value
+            current_value = getattr(record, field, 0) or 0
+            new_value = current_value + amount
+            setattr(record, field, new_value)
+            record.last_updated = datetime.now(UTC)
+
+            return new_value
 
     async def reset_monthly_usage(self, tenant_id: str) -> None:
         """
@@ -444,15 +441,17 @@ class TenantManager:
         Args:
             tenant_id: Tenant identifier
         """
-        await self.redis.hset(
-            f"tenant:{tenant_id}:usage",
-            mapping={
-                "events_this_month": 0,
-                "last_updated": datetime.now(UTC).isoformat(),
-            }
-        )
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
+            )
+            record = result.scalar_one_or_none()
 
-        logger.info("Monthly usage reset", tenant_id=tenant_id)
+            if record:
+                record.events_this_month = 0
+                record.last_updated = datetime.now(UTC)
+
+                logger.info("Monthly usage reset", tenant_id=tenant_id)
 
     # ============================================================
     # Quota Enforcement
@@ -548,8 +547,13 @@ class TenantManager:
         """
         await self.enforce_quota(tenant_id, "projects")
 
-        # Add to tenant's project set
-        await self.redis.sadd(f"tenant:{tenant_id}:projects", project_id)
+        async with self.db.session() as session:
+            # Add to tenant projects
+            project_record = TenantProjectModel(
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
+            session.add(project_record)
 
         # Increment usage
         await self.increment_usage(tenant_id, "projects_count")
@@ -568,10 +572,18 @@ class TenantManager:
         Returns:
             True if removed, False if not found
         """
-        removed = await self.redis.srem(f"tenant:{tenant_id}:projects", project_id)
-        if removed:
-            await self.increment_usage(tenant_id, "projects_count", -1)
-        return bool(removed)
+        async with self.db.session() as session:
+            result = await session.execute(
+                delete(TenantProjectModel)
+                .where(TenantProjectModel.tenant_id == tenant_id)
+                .where(TenantProjectModel.project_id == project_id)
+            )
+
+            if result.rowcount > 0:
+                await self.increment_usage(tenant_id, "projects_count", -1)
+                return True
+
+        return False
 
     async def list_projects(self, tenant_id: str) -> List[str]:
         """
@@ -583,15 +595,16 @@ class TenantManager:
         Returns:
             List of project IDs
         """
-        projects = await self.redis.smembers(f"tenant:{tenant_id}:projects")
-        return [p.decode() if isinstance(p, bytes) else p for p in projects]
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantProjectModel.project_id)
+                .where(TenantProjectModel.tenant_id == tenant_id)
+            )
+            return [row[0] for row in result]
 
     async def get_project_tenant(self, project_id: str) -> Optional[str]:
         """
         Get the tenant ID for a project.
-
-        This searches through all tenants to find which one owns the project.
-        For production, consider maintaining a reverse index.
 
         Args:
             project_id: Project identifier
@@ -599,13 +612,13 @@ class TenantManager:
         Returns:
             Tenant ID if found, None otherwise
         """
-        tenant_ids = await self.redis.smembers("tenant_index")
-        for tid in tenant_ids:
-            if isinstance(tid, bytes):
-                tid = tid.decode()
-            if await self.redis.sismember(f"tenant:{tid}:projects", project_id):
-                return tid
-        return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(TenantProjectModel.tenant_id)
+                .where(TenantProjectModel.project_id == project_id)
+            )
+            row = result.first()
+            return row[0] if row else None
 
     # ============================================================
     # API Key Association
@@ -622,17 +635,27 @@ class TenantManager:
         Raises:
             ValueError: If quota exceeded
         """
+        from src.core.db_models import APIKey as APIKeyModel
+
         await self.enforce_quota(tenant_id, "api_keys")
 
-        await self.redis.sadd(f"tenant:{tenant_id}:api_keys", key_id)
-        await self.increment_usage(tenant_id, "api_keys_count")
+        # Update the API key's tenant_id
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(APIKeyModel).where(APIKeyModel.key_id == key_id)
+            )
+            api_key = result.scalar_one_or_none()
+            if api_key:
+                api_key.tenant_id = tenant_id
 
-        # Store reverse mapping
-        await self.redis.set(f"api_key_tenant:{key_id}", tenant_id)
+        await self.increment_usage(tenant_id, "api_keys_count")
 
     async def remove_api_key(self, tenant_id: str, key_id: str) -> bool:
         """
         Remove API key association from a tenant.
+
+        Note: This just updates the usage counter.
+        The actual API key record should be updated separately.
 
         Args:
             tenant_id: Tenant identifier
@@ -641,11 +664,8 @@ class TenantManager:
         Returns:
             True if removed
         """
-        removed = await self.redis.srem(f"tenant:{tenant_id}:api_keys", key_id)
-        if removed:
-            await self.increment_usage(tenant_id, "api_keys_count", -1)
-            await self.redis.delete(f"api_key_tenant:{key_id}")
-        return bool(removed)
+        await self.increment_usage(tenant_id, "api_keys_count", -1)
+        return True
 
     async def get_api_key_tenant(self, key_id: str) -> Optional[str]:
         """
@@ -657,10 +677,34 @@ class TenantManager:
         Returns:
             Tenant ID if found
         """
-        tenant_id = await self.redis.get(f"api_key_tenant:{key_id}")
-        if tenant_id:
-            return tenant_id.decode() if isinstance(tenant_id, bytes) else tenant_id
-        return None
+        from src.core.db_models import APIKey as APIKeyModel
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(APIKeyModel.tenant_id).where(APIKeyModel.key_id == key_id)
+            )
+            row = result.first()
+            return row[0] if row else None
+
+    # ============================================================
+    # Helper Methods
+    # ============================================================
+
+    def _record_to_model(self, record: TenantModel) -> Tenant:
+        """Convert database record to Pydantic model"""
+        return Tenant(
+            tenant_id=record.tenant_id,
+            name=record.name,
+            plan=TenantPlan(record.plan),
+            quotas=TenantQuotas(**(record.quotas or {})),
+            settings=record.settings or {},
+            metadata=record.metadata_ or {},  # Use metadata_ to avoid SQLAlchemy conflict
+            owner_email=record.owner_email,
+            billing_email=record.billing_email,
+            is_active=record.is_active,
+            created_at=record.created_at.isoformat() if record.created_at else "",
+            updated_at=record.updated_at.isoformat() if record.updated_at else None,
+        )
 
 
 # ============================================================
@@ -669,7 +713,7 @@ class TenantManager:
 
 def get_tenant_project_key(tenant_id: str, project_id: str) -> str:
     """
-    Get the full Redis key prefix for tenant-scoped project data.
+    Get the full key prefix for tenant-scoped project data.
 
     Args:
         tenant_id: Tenant identifier
@@ -704,7 +748,7 @@ def parse_tenant_project_key(key: str) -> tuple[Optional[str], Optional[str]]:
 DEFAULT_TENANT_ID = "default"
 
 
-async def ensure_default_tenant(redis: Redis) -> Tenant:
+async def ensure_default_tenant(db: DatabaseManager) -> Tenant:
     """
     Ensure the default tenant exists for backward compatibility.
 
@@ -712,12 +756,12 @@ async def ensure_default_tenant(redis: Redis) -> Tenant:
     allowing existing single-tenant deployments to continue working.
 
     Args:
-        redis: Redis connection
+        db: Database manager
 
     Returns:
         Default Tenant object
     """
-    manager = TenantManager(redis)
+    manager = TenantManager(db)
 
     tenant = await manager.get_tenant(DEFAULT_TENANT_ID)
     if tenant:

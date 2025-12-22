@@ -2,10 +2,14 @@
 
 import json
 import time
-from typing import Dict, List, Any, Optional, Literal
-from redis.asyncio import Redis
-from .logging import get_logger
+from typing import Dict, List, Any, Literal
+
 import toon_format as toon
+from sqlalchemy import select
+
+from src.core.database import DatabaseManager
+from src.core.db_models import Event, Embedding, AgentRegistration
+from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -21,14 +25,14 @@ class ExportImportManager:
     - Maintains data integrity
     """
 
-    def __init__(self, redis: Redis):
+    def __init__(self, db: DatabaseManager):
         """
         Initialize export/import manager.
 
         Args:
-            redis: Redis connection
+            db: Database manager
         """
-        self.redis = redis
+        self.db = db
         logger.info("ExportImportManager initialized")
 
     async def export_project(
@@ -61,7 +65,7 @@ class ExportImportManager:
             "data": {}
         }
 
-        # Export events from stream
+        # Export events from PostgreSQL
         if include_events:
             events = await self._export_events(project_id)
             export_data["data"]["events"] = events
@@ -90,37 +94,25 @@ class ExportImportManager:
             return json.dumps(export_data, indent=2)
 
     async def _export_events(self, project_id: str) -> List[Dict[str, Any]]:
-        """Export all events from Redis stream"""
-        stream_key = f"events:{project_id}"
+        """Export all events from PostgreSQL"""
         events = []
 
         try:
-            # Check if stream exists
-            exists = await self.redis.exists(stream_key)
-            if not exists:
-                return events
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(Event)
+                    .where(Event.project_id == project_id)
+                    .order_by(Event.sequence.asc())
+                )
+                rows = result.scalars().all()
 
-            # Read all events from stream (using XREAD with - to get all)
-            # Get stream info first
-            stream_info = await self.redis.xinfo_stream(stream_key)
-            if stream_info.get("length", 0) == 0:
-                return events
-
-            # Read all entries
-            stream_data = await self.redis.xrange(stream_key, "-", "+")
-
-            for event_id, event_data in stream_data:
-                # Decode bytes if necessary
-                decoded_data = {}
-                for key, value in event_data.items():
-                    key_str = key.decode() if isinstance(key, bytes) else key
-                    value_str = value.decode() if isinstance(value, bytes) else value
-                    decoded_data[key_str] = value_str
-
-                events.append({
-                    "event_id": event_id.decode() if isinstance(event_id, bytes) else event_id,
-                    "data": decoded_data
-                })
+                for row in rows:
+                    events.append({
+                        "event_id": str(row.sequence),
+                        "event_type": row.event_type,
+                        "data": row.data,
+                        "created_at": row.created_at.isoformat() if row.created_at else None
+                    })
 
         except Exception as e:
             logger.error("Failed to export events", project_id=project_id, error=str(e))
@@ -132,33 +124,24 @@ class ExportImportManager:
         embeddings = []
 
         try:
-            # Scan for embedding keys matching this project
-            pattern = f"embedding:{project_id}:*"
-            cursor = 0
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(Embedding)
+                    .where(Embedding.project_id == project_id)
+                )
+                rows = result.scalars().all()
 
-            while True:
-                cursor, keys = await self.redis.scan(cursor, match=pattern, count=100)
-
-                for key in keys:
-                    # Get the embedding data
-                    embedding_data = await self.redis.hgetall(key)
-
-                    if embedding_data:
-                        # Decode all fields
-                        decoded = {}
-                        for field, value in embedding_data.items():
-                            field_str = field.decode() if isinstance(field, bytes) else field
-                            value_str = value.decode() if isinstance(value, bytes) else value
-                            decoded[field_str] = value_str
-
-                        key_str = key.decode() if isinstance(key, bytes) else key
-                        embeddings.append({
-                            "key": key_str,
-                            "data": decoded
-                        })
-
-                if cursor == 0:
-                    break
+                for row in rows:
+                    embeddings.append({
+                        "key": row.node_key,
+                        "data_key": row.data_key,
+                        "node_path": row.node_path,
+                        "node_type": row.node_type,
+                        "description": row.description,
+                        "data": row.data,
+                        "data_format": row.data_format,
+                        # Don't include embedding vectors (large binary data)
+                    })
 
         except Exception as e:
             logger.error("Failed to export embeddings", project_id=project_id, error=str(e))
@@ -170,49 +153,29 @@ class ExportImportManager:
         agents = []
 
         try:
-            # Scan for agent keys
-            cursor = 0
-            agent_ids = set()
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(AgentRegistration)
+                    .where(AgentRegistration.project_id == project_id)
+                )
+                rows = result.scalars().all()
 
-            while True:
-                cursor, keys = await self.redis.scan(cursor, match="agent:*:data", count=100)
-
-                for key in keys:
-                    key_str = key.decode() if isinstance(key, bytes) else key
-                    # Extract agent_id from key (agent:{agent_id}:data)
-                    agent_id = key_str.replace("agent:", "").replace(":data", "")
-                    agent_ids.add(agent_id)
-
-                if cursor == 0:
-                    break
-
-            # Get data for each agent
-            for agent_id in agent_ids:
-                agent_data = await self.redis.get(f"agent:{agent_id}:data")
-                last_seen = await self.redis.get(f"agent:{agent_id}:last_seen")
-                needs = await self.redis.get(f"agent:{agent_id}:needs")
-
-                if agent_data:
-                    # Decode and parse
-                    agent_data_str = agent_data.decode() if isinstance(agent_data, bytes) else agent_data
-                    parsed_data = json.loads(agent_data_str)
-
-                    # Only include agents for this project
-                    if parsed_data.get("project_id") == project_id:
-                        agent_export = {
-                            "agent_id": agent_id,
-                            "data": parsed_data,
-                        }
-
-                        if last_seen:
-                            last_seen_str = last_seen.decode() if isinstance(last_seen, bytes) else last_seen
-                            agent_export["last_seen"] = last_seen_str
-
-                        if needs:
-                            needs_str = needs.decode() if isinstance(needs, bytes) else needs
-                            agent_export["needs"] = needs_str
-
-                        agents.append(agent_export)
+                for row in rows:
+                    agents.append({
+                        "agent_id": row.agent_id,
+                        "data": {
+                            "project_id": row.project_id,
+                            "tenant_id": row.tenant_id,
+                            "needs": row.needs,
+                            "notification_method": row.notification_method,
+                            "response_format": row.response_format,
+                            "notification_channel": row.notification_channel,
+                            "webhook_url": row.webhook_url,
+                            "data_keys": row.data_keys,
+                        },
+                        "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+                        "last_sequence": row.last_sequence,
+                    })
 
         except Exception as e:
             logger.error("Failed to export agents", project_id=project_id, error=str(e))
@@ -266,15 +229,19 @@ class ExportImportManager:
                 "message": "Validation passed (no data imported)"
             }
 
-        # Check if project exists
+        # Check if project has existing data
         project_id = parsed_data["project_id"]
-        stream_key = f"events:{project_id}"
-        exists = await self.redis.exists(stream_key)
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Event).where(Event.project_id == project_id).limit(1)
+            )
+            exists = result.scalar_one_or_none() is not None
 
         if exists and not overwrite:
             return {
                 "status": "error",
-                "message": f"Project {project_id} already exists. Use overwrite=True to replace."
+                "message": f"Project {project_id} already has data. Use overwrite=True to replace."
             }
 
         # Import data
@@ -296,6 +263,7 @@ class ExportImportManager:
         # Import embeddings
         if "embeddings" in parsed_data["data"]:
             stats["embeddings_imported"] = await self._import_embeddings(
+                project_id,
                 parsed_data["data"]["embeddings"],
                 overwrite
             )
@@ -303,6 +271,7 @@ class ExportImportManager:
         # Import agents
         if "agents" in parsed_data["data"]:
             stats["agents_imported"] = await self._import_agents(
+                project_id,
                 parsed_data["data"]["agents"],
                 overwrite
             )
@@ -359,7 +328,8 @@ class ExportImportManager:
         return {
             "valid": len(errors) == 0,
             "errors": errors,
-            "warnings": warnings
+            "warnings": warnings,
+            "project_id": data.get("project_id"),
         }
 
     async def _import_events(
@@ -368,21 +338,38 @@ class ExportImportManager:
         events: List[Dict[str, Any]],
         overwrite: bool = False
     ) -> int:
-        """Import events to Redis stream"""
-        stream_key = f"events:{project_id}"
+        """Import events to PostgreSQL"""
+        from sqlalchemy import delete, func
 
         try:
-            # If overwriting, delete existing stream
-            if overwrite:
-                await self.redis.delete(stream_key)
+            async with self.db.session() as session:
+                # If overwriting, delete existing events
+                if overwrite:
+                    await session.execute(
+                        delete(Event).where(Event.project_id == project_id)
+                    )
 
-            # Add events to stream
-            imported = 0
-            for event in events:
-                event_data = event.get("data", {})
-                # Add to stream (let Redis generate new IDs)
-                await self.redis.xadd(stream_key, event_data)
-                imported += 1
+                # Get starting sequence number
+                result = await session.execute(
+                    select(func.coalesce(func.max(Event.sequence), 0) + 1)
+                    .where(Event.project_id == project_id)
+                )
+                next_sequence = result.scalar()
+
+                # Add events
+                imported = 0
+                for event in events:
+                    event_data = event.get("data", {})
+                    event_type = event.get("event_type", "imported")
+
+                    new_event = Event(
+                        project_id=project_id,
+                        event_type=event_type,
+                        data=event_data,
+                        sequence=next_sequence + imported,
+                    )
+                    session.add(new_event)
+                    imported += 1
 
             logger.info("Imported events", project_id=project_id, count=imported)
             return imported
@@ -393,24 +380,50 @@ class ExportImportManager:
 
     async def _import_embeddings(
         self,
+        project_id: str,
         embeddings: List[Dict[str, Any]],
         overwrite: bool = False
     ) -> int:
-        """Import embeddings to Redis"""
-        try:
-            imported = 0
-            for embedding in embeddings:
-                key = embedding.get("key")
-                data = embedding.get("data", {})
+        """Import embeddings to PostgreSQL"""
+        from sqlalchemy import delete
 
-                if key:
-                    # Check if exists
-                    exists = await self.redis.exists(key)
-                    if exists and not overwrite:
+        try:
+            async with self.db.session() as session:
+                # If overwriting, delete existing embeddings for this project
+                if overwrite:
+                    await session.execute(
+                        delete(Embedding).where(Embedding.project_id == project_id)
+                    )
+
+                imported = 0
+                for embedding in embeddings:
+                    node_key = embedding.get("key") or embedding.get("node_key")
+                    if not node_key:
                         continue
 
-                    # Store as hash
-                    await self.redis.hset(key, mapping=data)
+                    # Check if exists (when not overwriting)
+                    if not overwrite:
+                        result = await session.execute(
+                            select(Embedding)
+                            .where(Embedding.project_id == project_id)
+                            .where(Embedding.node_key == node_key)
+                        )
+                        if result.scalar_one_or_none():
+                            continue
+
+                    # Create embedding (note: we don't import the actual vector)
+                    new_embedding = Embedding(
+                        project_id=project_id,
+                        data_key=embedding.get("data_key", node_key),
+                        node_key=node_key,
+                        node_path=embedding.get("node_path"),
+                        node_type=embedding.get("node_type"),
+                        description=embedding.get("description", ""),
+                        data=embedding.get("data", {}),
+                        data_format=embedding.get("data_format", "json"),
+                        embedding=[0.0] * 384,  # Placeholder - needs re-embedding
+                    )
+                    session.add(new_embedding)
                     imported += 1
 
             logger.info("Imported embeddings", count=imported)
@@ -422,33 +435,53 @@ class ExportImportManager:
 
     async def _import_agents(
         self,
+        project_id: str,
         agents: List[Dict[str, Any]],
         overwrite: bool = False
     ) -> int:
         """Import agent registrations"""
-        try:
-            imported = 0
-            for agent in agents:
-                agent_id = agent.get("agent_id")
-                data = agent.get("data", {})
-                last_seen = agent.get("last_seen")
-                needs = agent.get("needs")
+        from sqlalchemy import delete
 
-                if agent_id:
-                    # Check if exists
-                    exists = await self.redis.exists(f"agent:{agent_id}:data")
-                    if exists and not overwrite:
+        try:
+            async with self.db.session() as session:
+                # If overwriting, delete existing agents for this project
+                if overwrite:
+                    await session.execute(
+                        delete(AgentRegistration).where(AgentRegistration.project_id == project_id)
+                    )
+
+                imported = 0
+                for agent in agents:
+                    agent_id = agent.get("agent_id")
+                    if not agent_id:
                         continue
 
-                    # Store agent data
-                    await self.redis.set(f"agent:{agent_id}:data", json.dumps(data))
+                    data = agent.get("data", {})
 
-                    if last_seen:
-                        await self.redis.set(f"agent:{agent_id}:last_seen", last_seen)
+                    # Check if exists (when not overwriting)
+                    if not overwrite:
+                        result = await session.execute(
+                            select(AgentRegistration)
+                            .where(AgentRegistration.agent_id == agent_id)
+                        )
+                        if result.scalar_one_or_none():
+                            continue
 
-                    if needs:
-                        await self.redis.set(f"agent:{agent_id}:needs", needs)
-
+                    # Create agent registration
+                    new_agent = AgentRegistration(
+                        agent_id=agent_id,
+                        project_id=data.get("project_id", project_id),
+                        tenant_id=data.get("tenant_id"),
+                        needs=data.get("needs", []),
+                        notification_method=data.get("notification_method", "redis"),
+                        response_format=data.get("response_format", "json"),
+                        notification_channel=data.get("notification_channel"),
+                        webhook_url=data.get("webhook_url"),
+                        data_keys=data.get("data_keys", []),
+                        last_sequence=agent.get("last_sequence"),
+                        data=data,
+                    )
+                    session.add(new_agent)
                     imported += 1
 
             logger.info("Imported agents", count=imported)

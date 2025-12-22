@@ -11,7 +11,8 @@ from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
-from src.core.redis_connection import create_redis_connection
+from src.core.database import init_database
+from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 
 # Environment variables
@@ -47,10 +48,18 @@ async def lifespan(app: FastAPI):
     if sentry_enabled:
         logger.info("Sentry error tracking enabled")
 
-    # Connect to Redis (supports both standalone and Sentinel modes)
+    # Connect to PostgreSQL
+    try:
+        db = await init_database()
+        logger.info("PostgreSQL connection established successfully")
+    except Exception as e:
+        logger.error("Failed to connect to PostgreSQL", error=str(e))
+        raise
+
+    # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)
     try:
         redis = await create_redis_connection()
-        logger.info("Redis connection established successfully", mode=REDIS_MODE)
+        logger.info("Redis connection established successfully (pub/sub)", mode=REDIS_MODE)
     except Exception as e:
         logger.error("Failed to connect to Redis", error=str(e), mode=REDIS_MODE)
         raise
@@ -59,7 +68,7 @@ async def lifespan(app: FastAPI):
     from src.core.auth import list_api_keys, create_api_key
     from src.core.rbac import assign_role, Role
     try:
-        existing_keys = await list_api_keys(redis)
+        existing_keys = await list_api_keys(db)
         if not existing_keys:
             # No API keys exist - bootstrap admin
             bootstrap_key = os.getenv("BOOTSTRAP_ADMIN_KEY")
@@ -68,34 +77,42 @@ async def lifespan(app: FastAPI):
             if bootstrap_key:
                 # Use provided bootstrap key
                 logger.info("Bootstrapping admin account with provided key", name=bootstrap_name)
-                from src.core.auth import _hash_key
+                import hashlib
                 import secrets
-                key_id = secrets.token_hex(16)
-                key_hash = _hash_key(bootstrap_key)
-                # Store the key
-                await redis.hset(f"contex:api_key:{key_id}", mapping={
-                    "key_id": key_id,
-                    "name": bootstrap_name,
-                    "key_hash": key_hash,
-                    "created_at": os.getenv("BOOTSTRAP_ADMIN_EMAIL", "bootstrap@contex.local"),
-                })
-                await redis.sadd("contex:api_keys", key_id)
+                from src.core.db_models import APIKey as APIKeyModel
+                from datetime import datetime, timezone
+
+                key_id = secrets.token_hex(8)
+                key_hash = hashlib.sha256(bootstrap_key.encode()).hexdigest()
+
+                # Store the key in PostgreSQL
+                async with db.session() as session:
+                    api_key_record = APIKeyModel(
+                        key_id=key_id,
+                        key_hash=key_hash,
+                        name=bootstrap_name,
+                        prefix=bootstrap_key[:7] if len(bootstrap_key) >= 7 else bootstrap_key,
+                        scopes=[],
+                        created_at=datetime.now(timezone.utc),
+                    )
+                    session.add(api_key_record)
+
                 # Assign admin role
-                await assign_role(redis, key_id, Role.ADMIN, projects=[])
-                logger.warning("⚠️  Bootstrap admin created with provided key", key_id=key_id, name=bootstrap_name)
+                await assign_role(db, key_id, Role.ADMIN, projects=[])
+                logger.warning("Bootstrap admin created with provided key", key_id=key_id, name=bootstrap_name)
             else:
                 # Auto-generate admin key
-                raw_key, api_key = await create_api_key(redis, bootstrap_name)
+                raw_key, api_key = await create_api_key(db, bootstrap_name)
                 # Assign admin role
-                await assign_role(redis, api_key.key_id, Role.ADMIN, projects=[])
+                await assign_role(db, api_key.key_id, Role.ADMIN, projects=[])
                 logger.warning("=" * 60)
-                logger.warning("🚨 BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
+                logger.warning("BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
                 logger.warning(f"   API Key: {raw_key}")
                 logger.warning(f"   Key ID: {api_key.key_id}")
                 logger.warning(f"   Name: {api_key.name}")
                 logger.warning("=" * 60)
                 print("\n" + "=" * 60)
-                print("🚨 BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
+                print("BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
                 print(f"   API Key: {raw_key}")
                 print(f"   Key ID: {api_key.key_id}")
                 print(f"   Name: {api_key.name}")
@@ -109,6 +126,7 @@ async def lifespan(app: FastAPI):
     # Initialize Context Engine
     try:
         context_engine = ContextEngine(
+            db=db,
             redis=redis,
             similarity_threshold=SIMILARITY_THRESHOLD,
             max_matches=MAX_MATCHES,
@@ -119,22 +137,22 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize context engine", error=str(e))
         raise
 
-    # Initialize RediSearch index
+    # Initialize pgvector index
     try:
         await context_engine.semantic_matcher.initialize_index()
-        logger.info("RediSearch index initialized")
+        logger.info("pgvector index initialized")
     except Exception as e:
-        logger.warning("RediSearch index initialization failed (may already exist)", error=str(e))
+        logger.warning("pgvector index initialization failed", error=str(e))
 
     # Initialize health checker
     from src.core.health import HealthChecker
-    health_checker = HealthChecker(redis, context_engine)
+    health_checker = HealthChecker(db, redis, context_engine)
     logger.info("Health checker initialized")
 
     # Initialize audit logging
     from src.core.audit import init_audit_logger
     audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
-    audit_logger = init_audit_logger(redis, retention_days=audit_retention_days)
+    audit_logger = init_audit_logger(db, retention_days=audit_retention_days)
     app.state.audit_logger = audit_logger
     logger.info("Audit logging initialized", retention_days=audit_retention_days)
 
@@ -149,7 +167,7 @@ async def lifespan(app: FastAPI):
         webhook_timeout = int(os.getenv("WEBHOOK_TIMEOUT", "30"))
         webhook_retries = int(os.getenv("WEBHOOK_MAX_RETRIES", "3"))
         webhook_manager = init_webhook_manager(
-            redis,
+            db,
             default_timeout=webhook_timeout,
             max_retries=webhook_retries
         )
@@ -173,26 +191,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Failed to initialize tracing", error=str(e))
         app.state.tracing_manager = None
-    
+
     logger.info("Contex is ready!")
     print("=" * 60)
     print()
     print("Contex is ready!")
     print("=" * 60)
     print()
-    print("🌐 Web UI: http://localhost:8001/")
-    print("📚 API Docs: http://localhost:8001/api/docs")
-    print("❤️  Health: http://localhost:8001/api/health")
-    print("📊 Metrics: http://localhost:8001/api/metrics")
+    print("Web UI: http://localhost:8001/")
+    print("API Docs: http://localhost:8001/api/docs")
+    print("Health: http://localhost:8001/api/health")
+    print("Metrics: http://localhost:8001/api/metrics")
 
     auth_enabled = os.getenv("AUTH_ENABLED", "false").lower() == "true"
     if auth_enabled:
-        print("🔐 Security: API Key Auth + RBAC + Rate Limiting ENABLED")
+        print("Security: API Key Auth + RBAC + Rate Limiting ENABLED")
     else:
-        print("⚠️  Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
+        print("Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
     print()
 
     # Store in app state
+    app.state.db = db
     app.state.context_engine = context_engine
     app.state.redis = redis
     app.state.health_checker = health_checker

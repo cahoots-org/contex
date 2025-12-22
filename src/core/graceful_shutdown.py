@@ -169,6 +169,15 @@ async def shutdown_cleanup(app_state):
         logger.info("Stopping graceful degradation monitoring...")
         await app_state.graceful_degradation.stop_health_monitoring()
 
+    # Close PostgreSQL connection
+    if hasattr(app_state, 'db') and app_state.db:
+        logger.info("Closing PostgreSQL connection...")
+        try:
+            await app_state.db.disconnect()
+            logger.info("PostgreSQL connection closed")
+        except Exception as e:
+            logger.error("Error closing PostgreSQL connection", error=str(e))
+
     # Close Redis connection
     if hasattr(app_state, 'redis') and app_state.redis:
         await drain_connections(app_state.redis)

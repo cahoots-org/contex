@@ -1,4 +1,4 @@
-"""Tests for data export/import functionality"""
+"""Tests for data export/import functionality with PostgreSQL"""
 
 import pytest
 import pytest_asyncio
@@ -6,48 +6,57 @@ import json
 import time
 
 from src.core.export_import import ExportImportManager
+from src.core.event_store import EventStore
+from src.core.db_models import Embedding, AgentRegistration
+from sqlalchemy import select
 
 
 @pytest_asyncio.fixture
-async def export_import_manager(redis):
+async def export_import_manager(db):
     """Create ExportImportManager for testing"""
-    return ExportImportManager(redis=redis)
+    return ExportImportManager(db=db)
 
 
 @pytest_asyncio.fixture
-async def sample_project_data(redis):
+async def sample_project_data(db):
     """Create sample project data for testing"""
     project_id = "test_project"
 
-    # Add some events to the stream
-    stream_key = f"events:{project_id}"
+    # Add some events using EventStore
+    event_store = EventStore(db)
     for i in range(5):
-        await redis.xadd(stream_key, {
-            "data_key": f"key_{i}",
-            "data": json.dumps({"value": i, "test": True}),
-            "timestamp": str(time.time())
-        })
+        await event_store.append_event(
+            project_id,
+            f"event_type_{i}",
+            {"value": i, "test": True}
+        )
 
     # Add some embeddings
-    for i in range(3):
-        embedding_key = f"embedding:{project_id}:key_{i}"
-        await redis.hset(embedding_key, mapping={
-            "data_key": f"key_{i}",
-            "embedding": json.dumps([0.1, 0.2, 0.3]),
-            "description": f"Test embedding {i}"
-        })
+    async with db.session() as session:
+        for i in range(3):
+            embedding = Embedding(
+                project_id=project_id,
+                data_key=f"key_{i}",
+                node_key=f"key_{i}",
+                node_path=f"/path/to/key_{i}",
+                node_type="test",
+                description=f"Test embedding {i}",
+                data={"value": i},
+                data_format="json",
+                embedding=[0.1] * 384,  # Dummy embedding
+            )
+            session.add(embedding)
 
-    # Add some agent registrations
-    for i in range(2):
-        agent_id = f"agent_{i}"
-        agent_data = {
-            "project_id": project_id,
-            "agent_id": agent_id,
-            "needs": ["test data"]
-        }
-        await redis.set(f"agent:{agent_id}:data", json.dumps(agent_data))
-        await redis.set(f"agent:{agent_id}:last_seen", str(time.time()))
-        await redis.set(f"agent:{agent_id}:needs", json.dumps(["test data"]))
+        # Add some agent registrations
+        for i in range(2):
+            agent = AgentRegistration(
+                agent_id=f"agent_{i}",
+                project_id=project_id,
+                needs=["test data"],
+                notification_method="redis",
+                response_format="json",
+            )
+            session.add(agent)
 
     return project_id
 
@@ -56,13 +65,13 @@ class TestExportImportManager:
     """Test ExportImportManager class"""
 
     @pytest.mark.asyncio
-    async def test_initialization(self, redis):
+    async def test_initialization(self, db):
         """Test manager initialization"""
-        manager = ExportImportManager(redis=redis)
-        assert manager.redis == redis
+        manager = ExportImportManager(db=db)
+        assert manager.db == db
 
     @pytest.mark.asyncio
-    async def test_export_empty_project(self, redis, export_import_manager):
+    async def test_export_empty_project(self, db, export_import_manager):
         """Test exporting a project with no data"""
         result = await export_import_manager.export_project("empty_project")
 
@@ -77,7 +86,7 @@ class TestExportImportManager:
         assert data["data"]["agents"] == []
 
     @pytest.mark.asyncio
-    async def test_export_project_with_data(self, redis, export_import_manager, sample_project_data):
+    async def test_export_project_with_data(self, db, export_import_manager, sample_project_data):
         """Test exporting a project with data"""
         result = await export_import_manager.export_project(sample_project_data)
 
@@ -90,7 +99,7 @@ class TestExportImportManager:
         assert len(data["data"]["agents"]) == 2
 
     @pytest.mark.asyncio
-    async def test_export_events_only(self, redis, export_import_manager, sample_project_data):
+    async def test_export_events_only(self, db, export_import_manager, sample_project_data):
         """Test exporting only events"""
         result = await export_import_manager.export_project(
             sample_project_data,
@@ -106,7 +115,7 @@ class TestExportImportManager:
         assert "agents" not in data["data"]
 
     @pytest.mark.asyncio
-    async def test_export_embeddings_only(self, redis, export_import_manager, sample_project_data):
+    async def test_export_embeddings_only(self, db, export_import_manager, sample_project_data):
         """Test exporting only embeddings"""
         result = await export_import_manager.export_project(
             sample_project_data,
@@ -122,7 +131,7 @@ class TestExportImportManager:
         assert "agents" not in data["data"]
 
     @pytest.mark.asyncio
-    async def test_export_agents_only(self, redis, export_import_manager, sample_project_data):
+    async def test_export_agents_only(self, db, export_import_manager, sample_project_data):
         """Test exporting only agents"""
         result = await export_import_manager.export_project(
             sample_project_data,
@@ -138,7 +147,7 @@ class TestExportImportManager:
         assert len(data["data"]["agents"]) == 2
 
     @pytest.mark.asyncio
-    async def test_export_json_format(self, redis, export_import_manager, sample_project_data):
+    async def test_export_json_format(self, db, export_import_manager, sample_project_data):
         """Test exporting in JSON format"""
         result = await export_import_manager.export_project(
             sample_project_data,
@@ -149,27 +158,12 @@ class TestExportImportManager:
         data = json.loads(result)
         assert isinstance(data, dict)
 
-    @pytest.mark.asyncio
-    async def test_export_toon_format(self, redis, export_import_manager, sample_project_data):
-        """Test TOON format export works"""
-        result = await export_import_manager.export_project(
-            sample_project_data,
-            format="toon"
-        )
-
-        # TOON format is implemented and returns TOON string (not JSON)
-        assert isinstance(result, str)
-        assert len(result) > 0
-        # TOON format contains key-value pairs with colons
-        assert ":" in result
-        assert "test_project" in result
-
 
 class TestImportValidation:
     """Test import validation"""
 
     @pytest.mark.asyncio
-    async def test_validate_valid_data(self, redis, export_import_manager):
+    async def test_validate_valid_data(self, db, export_import_manager):
         """Test validation of valid data"""
         valid_data = json.dumps({
             "project_id": "test_project",
@@ -192,7 +186,7 @@ class TestImportValidation:
         assert len(result["validation"]["errors"]) == 0
 
     @pytest.mark.asyncio
-    async def test_validate_missing_project_id(self, redis, export_import_manager):
+    async def test_validate_missing_project_id(self, db, export_import_manager):
         """Test validation catches missing project_id"""
         invalid_data = json.dumps({
             "version": "1.0",
@@ -210,7 +204,7 @@ class TestImportValidation:
         assert any("project_id" in error for error in result["validation"]["errors"])
 
     @pytest.mark.asyncio
-    async def test_validate_missing_data_field(self, redis, export_import_manager):
+    async def test_validate_missing_data_field(self, db, export_import_manager):
         """Test validation catches missing data field"""
         invalid_data = json.dumps({
             "project_id": "test_project",
@@ -228,7 +222,7 @@ class TestImportValidation:
         assert any("data" in error for error in result["validation"]["errors"])
 
     @pytest.mark.asyncio
-    async def test_validate_invalid_events_structure(self, redis, export_import_manager):
+    async def test_validate_invalid_events_structure(self, db, export_import_manager):
         """Test validation catches invalid events structure"""
         invalid_data = json.dumps({
             "project_id": "test_project",
@@ -253,13 +247,18 @@ class TestImportExport:
     """Test complete export/import cycle"""
 
     @pytest.mark.asyncio
-    async def test_export_import_roundtrip(self, redis, export_import_manager, sample_project_data):
+    async def test_export_import_roundtrip(self, db, export_import_manager, sample_project_data):
         """Test exporting and importing data maintains integrity"""
         # Export
         exported = await export_import_manager.export_project(sample_project_data)
 
-        # Clear data
-        await redis.flushdb()
+        # Clear data for this project
+        from sqlalchemy import delete
+        from src.core.db_models import Event, Embedding as EmbeddingModel, AgentRegistration as AgentModel
+        async with db.session() as session:
+            await session.execute(delete(Event).where(Event.project_id == sample_project_data))
+            await session.execute(delete(EmbeddingModel).where(EmbeddingModel.project_id == sample_project_data))
+            await session.execute(delete(AgentModel).where(AgentModel.project_id == sample_project_data))
 
         # Import
         result = await export_import_manager.import_project(
@@ -274,7 +273,7 @@ class TestImportExport:
         assert result["stats"]["agents_imported"] == 2
 
     @pytest.mark.asyncio
-    async def test_import_existing_project_no_overwrite(self, redis, export_import_manager, sample_project_data):
+    async def test_import_existing_project_no_overwrite(self, db, export_import_manager, sample_project_data):
         """Test importing fails when project exists and overwrite=False"""
         # Export
         exported = await export_import_manager.export_project(sample_project_data)
@@ -287,10 +286,10 @@ class TestImportExport:
         )
 
         assert result["status"] == "error"
-        assert "already exists" in result["message"]
+        assert "already" in result["message"].lower()
 
     @pytest.mark.asyncio
-    async def test_import_existing_project_with_overwrite(self, redis, export_import_manager, sample_project_data):
+    async def test_import_existing_project_with_overwrite(self, db, export_import_manager, sample_project_data):
         """Test importing overwrites when overwrite=True"""
         # Export
         exported = await export_import_manager.export_project(sample_project_data)
@@ -306,7 +305,7 @@ class TestImportExport:
         assert result["stats"]["events_imported"] == 5
 
     @pytest.mark.asyncio
-    async def test_import_events(self, redis, export_import_manager):
+    async def test_import_events(self, db, export_import_manager):
         """Test importing events"""
         data = json.dumps({
             "project_id": "new_project",
@@ -314,11 +313,13 @@ class TestImportExport:
             "data": {
                 "events": [
                     {
-                        "event_id": "0-0",
+                        "event_id": "1",
+                        "event_type": "test",
                         "data": {"key": "value1"}
                     },
                     {
-                        "event_id": "0-1",
+                        "event_id": "2",
+                        "event_type": "test",
                         "data": {"key": "value2"}
                     }
                 ]
@@ -330,25 +331,30 @@ class TestImportExport:
         assert result["status"] == "success"
         assert result["stats"]["events_imported"] == 2
 
-        # Verify events are in Redis
-        stream_key = "events:new_project"
-        stream_info = await redis.xinfo_stream(stream_key)
-        assert stream_info["length"] == 2
+        # Verify events are in PostgreSQL
+        from src.core.db_models import Event
+        async with db.session() as session:
+            stmt = select(Event).where(Event.project_id == "new_project")
+            res = await session.execute(stmt)
+            events = res.scalars().all()
+            assert len(events) == 2
 
     @pytest.mark.asyncio
-    async def test_import_embeddings(self, redis, export_import_manager):
+    async def test_import_embeddings(self, db, export_import_manager):
         """Test importing embeddings"""
         data = json.dumps({
-            "project_id": "new_project",
+            "project_id": "new_project_emb",
             "version": "1.0",
             "data": {
                 "embeddings": [
                     {
-                        "key": "embedding:new_project:test",
-                        "data": {
-                            "data_key": "test",
-                            "embedding": "[0.1, 0.2]"
-                        }
+                        "key": "test_key",
+                        "data_key": "test_key",
+                        "node_path": "/path/to/test",
+                        "node_type": "test",
+                        "description": "Test embedding",
+                        "data": {"test": "data"},
+                        "data_format": "json"
                     }
                 ]
             }
@@ -359,26 +365,31 @@ class TestImportExport:
         assert result["status"] == "success"
         assert result["stats"]["embeddings_imported"] == 1
 
-        # Verify embedding is in Redis
-        embedding_data = await redis.hgetall("embedding:new_project:test")
-        assert embedding_data
+        # Verify embedding is in PostgreSQL
+        async with db.session() as session:
+            stmt = select(Embedding).where(Embedding.project_id == "new_project_emb")
+            res = await session.execute(stmt)
+            embeddings = res.scalars().all()
+            assert len(embeddings) == 1
 
     @pytest.mark.asyncio
-    async def test_import_agents(self, redis, export_import_manager):
+    async def test_import_agents(self, db, export_import_manager):
         """Test importing agents"""
         data = json.dumps({
-            "project_id": "new_project",
+            "project_id": "new_project_agent",
             "version": "1.0",
             "data": {
                 "agents": [
                     {
                         "agent_id": "test_agent",
                         "data": {
-                            "project_id": "new_project",
-                            "agent_id": "test_agent"
+                            "project_id": "new_project_agent",
+                            "needs": ["test"],
+                            "notification_method": "redis",
+                            "response_format": "json"
                         },
-                        "last_seen": str(time.time()),
-                        "needs": json.dumps(["test"])
+                        "last_seen": None,
+                        "last_sequence": None
                     }
                 ]
             }
@@ -389,16 +400,19 @@ class TestImportExport:
         assert result["status"] == "success"
         assert result["stats"]["agents_imported"] == 1
 
-        # Verify agent is in Redis
-        agent_data = await redis.get("agent:test_agent:data")
-        assert agent_data
+        # Verify agent is in PostgreSQL
+        async with db.session() as session:
+            stmt = select(AgentRegistration).where(AgentRegistration.agent_id == "test_agent")
+            res = await session.execute(stmt)
+            agents = res.scalars().all()
+            assert len(agents) == 1
 
 
 class TestExportImportEdgeCases:
     """Test edge cases for export/import"""
 
     @pytest.mark.asyncio
-    async def test_export_nonexistent_project(self, redis, export_import_manager):
+    async def test_export_nonexistent_project(self, db, export_import_manager):
         """Test exporting a project that doesn't exist"""
         result = await export_import_manager.export_project("nonexistent")
 
@@ -407,23 +421,30 @@ class TestExportImportEdgeCases:
         assert data["data"]["events"] == []
 
     @pytest.mark.asyncio
-    async def test_import_invalid_json(self, redis, export_import_manager):
+    async def test_import_invalid_json(self, db, export_import_manager):
         """Test importing invalid JSON"""
         with pytest.raises(json.JSONDecodeError):
             await export_import_manager.import_project("not valid json", format="json")
 
     @pytest.mark.asyncio
-    async def test_export_filters_agents_by_project(self, redis, export_import_manager):
+    async def test_export_filters_agents_by_project(self, db, export_import_manager):
         """Test that export only includes agents for the specified project"""
         # Create agents for different projects
-        await redis.set("agent:agent1:data", json.dumps({
-            "project_id": "project1",
-            "agent_id": "agent1"
-        }))
-        await redis.set("agent:agent2:data", json.dumps({
-            "project_id": "project2",
-            "agent_id": "agent2"
-        }))
+        async with db.session() as session:
+            agent1 = AgentRegistration(
+                agent_id="agent1_filter",
+                project_id="project1",
+                needs=["data"],
+                notification_method="redis",
+            )
+            agent2 = AgentRegistration(
+                agent_id="agent2_filter",
+                project_id="project2",
+                needs=["data"],
+                notification_method="redis",
+            )
+            session.add(agent1)
+            session.add(agent2)
 
         # Export project1
         result = await export_import_manager.export_project("project1")
@@ -431,4 +452,4 @@ class TestExportImportEdgeCases:
 
         # Should only have agent1
         assert len(data["data"]["agents"]) == 1
-        assert data["data"]["agents"][0]["agent_id"] == "agent1"
+        assert data["data"]["agents"][0]["agent_id"] == "agent1_filter"

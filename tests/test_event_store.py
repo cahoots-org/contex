@@ -1,20 +1,18 @@
-
-"""Tests for event store"""
+"""Tests for event store with PostgreSQL"""
 
 import pytest
 import pytest_asyncio
-from fakeredis import FakeAsyncRedis
 from src.core.event_store import EventStore
 from src.core.models import DataPublishEvent
 
 
 class TestEventStore:
-    """Test EventStore functionality"""
+    """Test EventStore functionality with PostgreSQL"""
 
     @pytest_asyncio.fixture
-    async def event_store(self, redis):
+    async def event_store(self, db):
         """Create an EventStore instance"""
-        return EventStore(redis)
+        return EventStore(db)
 
     @pytest.mark.asyncio
     async def test_append_event(self, event_store):
@@ -33,8 +31,8 @@ class TestEventStore:
         seq2 = await event_store.append_event("proj1", "event2", {"data": 2})
 
         assert seq1 != seq2
-        # Sequences should be ordered
-        assert seq1 < seq2
+        # Sequences should be ordered (as integers in strings)
+        assert int(seq1) < int(seq2)
 
     @pytest.mark.asyncio
     async def test_get_events_since_beginning(self, event_store):
@@ -189,12 +187,9 @@ class TestEventStore:
 
     @pytest.mark.asyncio
     async def test_sequence_format(self, event_store):
-        """Test that sequence IDs have correct format"""
+        """Test that sequence IDs are numeric strings (PostgreSQL sequences)"""
         seq = await event_store.append_event("proj1", "test", {})
 
-        # Redis stream ID format: timestamp-sequence
-        assert "-" in seq
-        parts = seq.split("-")
-        assert len(parts) == 2
-        assert parts[0].isdigit()  # Timestamp
-        assert parts[1].isdigit()  # Sequence within timestamp
+        # PostgreSQL uses integer sequences
+        assert seq.isdigit()
+        assert int(seq) > 0

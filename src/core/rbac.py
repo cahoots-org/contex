@@ -2,9 +2,15 @@
 
 from enum import Enum
 from typing import List, Optional, Set
+
 from pydantic import BaseModel
-from redis.asyncio import Redis
-import json
+from sqlalchemy import delete, select
+
+from src.core.database import DatabaseManager
+from src.core.db_models import APIKeyRole as APIKeyRoleModel
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class Role(str, Enum):
@@ -89,40 +95,40 @@ class APIKeyRole(BaseModel):
     key_id: str
     role: Role
     projects: List[str]  # Empty list means all projects
-    
+
     def has_permission(self, permission: Permission, project_id: Optional[str] = None) -> bool:
         """Check if this role has a specific permission for a project"""
         # Check if permission is granted to this role
         if permission not in ROLE_PERMISSIONS[self.role]:
             return False
-        
+
         # If no project restriction, allow
         if not self.projects:
             return True
-        
+
         # If project_id is None, we're checking a global permission
         if project_id is None:
             return True
-        
+
         # Check if this specific project is allowed
         return project_id in self.projects
 
 
 async def assign_role(
-    redis: Redis,
+    db: DatabaseManager,
     key_id: str,
     role: Role,
     projects: Optional[List[str]] = None
 ) -> APIKeyRole:
     """
     Assign a role to an API key.
-    
+
     Args:
-        redis: Redis connection
+        db: Database manager
         key_id: API key ID
         role: Role to assign
         projects: List of project IDs this role applies to (empty = all projects)
-    
+
     Returns:
         APIKeyRole object
     """
@@ -131,85 +137,108 @@ async def assign_role(
         role=role,
         projects=projects or []
     )
-    
-    # Store in Redis
-    await redis.hset(
-        f"api_key_role:{key_id}",
-        mapping={
-            "role": role.value,
-            "projects": json.dumps(projects or [])
-        }
-    )
-    
+
+    async with db.session() as session:
+        # Check if role already exists
+        result = await session.execute(
+            select(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing role
+            existing.role = role.value
+            existing.projects = projects or []
+        else:
+            # Create new role assignment
+            role_record = APIKeyRoleModel(
+                key_id=key_id,
+                role=role.value,
+                projects=projects or [],
+            )
+            session.add(role_record)
+
+    logger.info("Role assigned", key_id=key_id, role=role.value)
     return role_assignment
 
 
-async def get_role(redis: Redis, key_id: str) -> Optional[APIKeyRole]:
+async def get_role(db: DatabaseManager, key_id: str) -> Optional[APIKeyRole]:
     """
     Get the role assignment for an API key.
-    
+
     Args:
-        redis: Redis connection
+        db: Database manager
         key_id: API key ID
-    
+
     Returns:
         APIKeyRole if found, None otherwise
     """
-    data = await redis.hgetall(f"api_key_role:{key_id}")
-    
-    if not data:
-        # Default to readonly if no role assigned
+    async with db.session() as session:
+        result = await session.execute(
+            select(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
+        )
+        role_record = result.scalar_one_or_none()
+
+        if not role_record:
+            # Default to readonly if no role assigned
+            return APIKeyRole(
+                key_id=key_id,
+                role=Role.READONLY,
+                projects=[]
+            )
+
         return APIKeyRole(
             key_id=key_id,
-            role=Role.READONLY,
-            projects=[]
+            role=Role(role_record.role),
+            projects=role_record.projects or []
         )
-    
-    return APIKeyRole(
-        key_id=key_id,
-        role=Role(data[b"role"].decode()),
-        projects=json.loads(data[b"projects"].decode())
-    )
 
 
-async def revoke_role(redis: Redis, key_id: str) -> bool:
+async def revoke_role(db: DatabaseManager, key_id: str) -> bool:
     """
     Revoke role assignment for an API key.
-    
+
     Args:
-        redis: Redis connection
+        db: Database manager
         key_id: API key ID
-    
+
     Returns:
         True if role was revoked, False if no role existed
     """
-    result = await redis.delete(f"api_key_role:{key_id}")
-    return result > 0
+    async with db.session() as session:
+        result = await session.execute(
+            delete(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
+        )
+
+        if result.rowcount > 0:
+            logger.info("Role revoked", key_id=key_id)
+            return True
+
+    return False
 
 
-async def list_roles(redis: Redis) -> List[APIKeyRole]:
+async def list_roles(db: DatabaseManager) -> List[APIKeyRole]:
     """
     List all role assignments.
-    
+
     Args:
-        redis: Redis connection
-    
+        db: Database manager
+
     Returns:
         List of APIKeyRole objects
     """
-    # Get all role keys
-    keys = []
-    async for key in redis.scan_iter(match="api_key_role:*"):
-        keys.append(key)
-    
-    roles = []
-    for key in keys:
-        key_id = key.decode().split(":", 1)[1]
-        role = await get_role(redis, key_id)
-        if role:
-            roles.append(role)
-    
-    return roles
+    async with db.session() as session:
+        result = await session.execute(select(APIKeyRoleModel))
+        role_records = result.scalars().all()
+
+        return [
+            APIKeyRole(
+                key_id=r.key_id,
+                role=Role(r.role),
+                projects=r.projects or []
+            )
+            for r in role_records
+        ]
 
 
 def get_role_permissions(role: Role) -> Set[Permission]:

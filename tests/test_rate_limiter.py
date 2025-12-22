@@ -1,4 +1,4 @@
-"""Tests for rate limiting"""
+"""Tests for rate limiting with PostgreSQL"""
 
 import pytest
 import pytest_asyncio
@@ -9,96 +9,96 @@ from src.core.rate_limiter import RateLimiter, RateLimitMiddleware, RateLimitCon
 
 
 class TestRateLimiter:
-    """Test RateLimiter functionality"""
+    """Test RateLimiter functionality with PostgreSQL"""
 
     @pytest_asyncio.fixture
-    async def limiter(self, redis):
+    async def limiter(self, db):
         """Create a RateLimiter instance"""
-        return RateLimiter(redis)
+        return RateLimiter(db)
 
     @pytest.mark.asyncio
     async def test_rate_limit_allows_within_limit(self, limiter):
         """Test that requests within limit are allowed"""
         key = "test:endpoint:user1"
         limit = 5
-        
+
         # Make 5 requests (all should be allowed)
         for i in range(5):
             allowed, info = await limiter.check_rate_limit(key, limit)
             assert allowed
             assert info["limit"] == limit
             assert info["remaining"] >= 0
-    
+
     @pytest.mark.asyncio
     async def test_rate_limit_blocks_over_limit(self, limiter):
         """Test that requests over limit are blocked"""
         key = "test:endpoint:user2"
         limit = 3
-        
+
         # Make 3 requests (should be allowed)
         for i in range(3):
             allowed, info = await limiter.check_rate_limit(key, limit)
             assert allowed
-        
+
         # 4th request should be blocked
         allowed, info = await limiter.check_rate_limit(key, limit)
         assert not allowed
         assert info["remaining"] == 0
         assert info["retry_after"] is not None
-    
+
     @pytest.mark.asyncio
     async def test_rate_limit_resets_after_window(self, limiter):
         """Test that rate limit resets after window expires"""
         key = "test:endpoint:user3"
         limit = 2
         window = 1  # 1 second window
-        
+
         # Use up the limit
         for i in range(2):
             allowed, info = await limiter.check_rate_limit(key, limit, window)
             assert allowed
-        
+
         # Should be blocked
         allowed, info = await limiter.check_rate_limit(key, limit, window)
         assert not allowed
-        
+
         # Wait for window to expire
         time.sleep(1.1)
-        
+
         # Should be allowed again
         allowed, info = await limiter.check_rate_limit(key, limit, window)
         assert allowed
-    
+
     @pytest.mark.asyncio
     async def test_rate_limit_different_keys_independent(self, limiter):
         """Test that different keys have independent limits"""
         limit = 2
-        
+
         # Use up limit for user1
         for i in range(2):
             allowed, _ = await limiter.check_rate_limit("test:user1", limit)
             assert allowed
-        
+
         # user1 should be blocked
         allowed, _ = await limiter.check_rate_limit("test:user1", limit)
         assert not allowed
-        
+
         # user2 should still be allowed
         allowed, _ = await limiter.check_rate_limit("test:user2", limit)
         assert allowed
-    
+
     @pytest.mark.asyncio
     async def test_rate_limit_info_accurate(self, limiter):
         """Test that rate limit info is accurate"""
         key = "test:endpoint:user4"
         limit = 5
-        
+
         # First request
         allowed, info = await limiter.check_rate_limit(key, limit)
         assert allowed
         assert info["limit"] == 5
         assert info["remaining"] == 4
-        
+
         # Second request
         allowed, info = await limiter.check_rate_limit(key, limit)
         assert allowed
@@ -109,10 +109,10 @@ class TestRateLimitMiddleware:
     """Test RateLimitMiddleware functionality"""
 
     @pytest_asyncio.fixture
-    async def app_with_rate_limit(self, redis):
+    async def app_with_rate_limit(self, db):
         """Create a test app with rate limiting"""
         app = FastAPI()
-        app.state.redis = redis  # Make Redis available via app state
+        app.state.db = db  # Make DB available via app state
 
         # Add rate limit middleware
         app.add_middleware(RateLimitMiddleware)
@@ -147,10 +147,10 @@ class TestRateLimitMiddleware:
                 assert "X-RateLimit-Reset" in response.headers
 
     @pytest.mark.asyncio
-    async def test_middleware_blocks_over_limit(self, redis):
+    async def test_middleware_blocks_over_limit(self, db):
         """Test that middleware blocks requests over limit"""
         # Test the limiter directly to verify rate limit blocking
-        limiter = RateLimiter(redis)
+        limiter = RateLimiter(db)
         key = "test-key-2:/api/query"
         limit = 2
 
@@ -176,24 +176,24 @@ class TestRateLimitMiddleware:
                 assert "X-RateLimit-Limit" not in response.headers
 
     @pytest.mark.asyncio
-    async def test_middleware_different_endpoints_independent(self, redis):
+    async def test_middleware_different_endpoints_independent(self, db):
         """Test that different endpoints have independent rate limits"""
         # Test the limiter directly for different endpoints
-        limiter = RateLimiter(redis)
-        
+        limiter = RateLimiter(db)
+
         publish_key = "test-key-3:/api/publish"
         query_key = "test-key-3:/api/query"
         limit = 2
-        
+
         # Use up publish limit
         for i in range(2):
             allowed, _ = await limiter.check_rate_limit(publish_key, limit)
             assert allowed
-        
+
         # Publish should be blocked
         allowed, _ = await limiter.check_rate_limit(publish_key, limit)
         assert not allowed
-        
+
         # Query should still work (different key)
         allowed, _ = await limiter.check_rate_limit(query_key, limit)
         assert allowed

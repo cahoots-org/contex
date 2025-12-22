@@ -10,17 +10,20 @@ Features:
 - Audit logging
 """
 
+import hashlib
 import os
 import secrets
-import hashlib
-import json
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
-import jwt
+from typing import Any, Dict, List, Optional
 
+import jwt
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select, update
+
+from src.core.database import DatabaseManager
+from src.core.db_models import ServiceAccount as ServiceAccountModel
+from src.core.db_models import ServiceAccountKey as ServiceAccountKeyModel
 from src.core.logging import get_logger
 from src.core.rbac import Role
 
@@ -96,16 +99,14 @@ class ServiceAccountManager:
     - Validate tokens
     """
 
-    KEY_PREFIX = "contex:service_account:"
-
-    def __init__(self, redis: Redis):
+    def __init__(self, db: DatabaseManager):
         """
         Initialize service account manager.
 
         Args:
-            redis: Redis connection
+            db: Database manager
         """
-        self.redis = redis
+        self.db = db
 
     async def create_account(
         self,
@@ -147,6 +148,34 @@ class ServiceAccountManager:
             description="Initial key",
         )
 
+        now = datetime.now(UTC)
+
+        async with self.db.session() as session:
+            # Create account record
+            account_record = ServiceAccountModel(
+                account_id=account_id,
+                name=name,
+                description=description,
+                account_type=account_type.value,
+                tenant_id=tenant_id,
+                role=role.value,
+                allowed_projects=allowed_projects or [],
+                scopes=scopes or [],
+                keys=[initial_key.model_dump()],
+                created_at=now,
+                created_by=created_by,
+            )
+            session.add(account_record)
+
+            # Create key mapping record
+            key_record = ServiceAccountKeyModel(
+                key_hash=key_hash,
+                account_id=account_id,
+                key_id=key_id,
+            )
+            session.add(key_record)
+
+        # Build response model
         account = ServiceAccount(
             account_id=account_id,
             name=name,
@@ -157,20 +186,8 @@ class ServiceAccountManager:
             allowed_projects=allowed_projects or [],
             scopes=scopes or [],
             keys=[initial_key],
-            created_at=datetime.now(UTC).isoformat(),
+            created_at=now.isoformat(),
             created_by=created_by,
-        )
-
-        # Store account
-        await self._save_account(account)
-
-        # Store key mapping
-        await self.redis.hset(
-            f"{self.KEY_PREFIX}key:{key_hash}",
-            mapping={
-                "account_id": account_id,
-                "key_id": key_id,
-            }
         )
 
         logger.info("Service account created",
@@ -183,10 +200,16 @@ class ServiceAccountManager:
 
     async def get_account(self, account_id: str) -> Optional[ServiceAccount]:
         """Get service account by ID"""
-        data = await self.redis.get(f"{self.KEY_PREFIX}account:{account_id}")
-        if not data:
-            return None
-        return ServiceAccount.model_validate_json(data)
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
+            record = result.scalar_one_or_none()
+
+            if not record:
+                return None
+
+            return self._record_to_model(record)
 
     async def update_account(
         self,
@@ -199,60 +222,54 @@ class ServiceAccountManager:
         is_active: Optional[bool] = None,
     ) -> Optional[ServiceAccount]:
         """Update service account"""
-        account = await self.get_account(account_id)
-        if not account:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
+            record = result.scalar_one_or_none()
 
-        if name is not None:
-            account.name = name
-        if description is not None:
-            account.description = description
-        if role is not None:
-            account.role = role
-        if allowed_projects is not None:
-            account.allowed_projects = allowed_projects
-        if scopes is not None:
-            account.scopes = scopes
-        if is_active is not None:
-            account.is_active = is_active
+            if not record:
+                return None
 
-        account.updated_at = datetime.now(UTC).isoformat()
+            if name is not None:
+                record.name = name
+            if description is not None:
+                record.description = description
+            if role is not None:
+                record.role = role.value
+            if allowed_projects is not None:
+                record.allowed_projects = allowed_projects
+            if scopes is not None:
+                record.scopes = scopes
+            if is_active is not None:
+                record.is_active = is_active
 
-        await self._save_account(account)
+            record.updated_at = datetime.now(UTC)
 
-        logger.info("Service account updated",
-                   account_id=account_id,
-                   is_active=account.is_active)
+            logger.info("Service account updated",
+                       account_id=account_id,
+                       is_active=record.is_active)
 
-        return account
+            return self._record_to_model(record)
 
     async def delete_account(self, account_id: str) -> bool:
         """Delete service account and all its keys"""
-        account = await self.get_account(account_id)
-        if not account:
-            return False
-
-        # Delete all key mappings
-        for key in account.keys:
-            # We need to find the hash for each key
-            async for redis_key in self.redis.scan_iter(f"{self.KEY_PREFIX}key:*"):
-                data = await self.redis.hgetall(redis_key)
-                if data.get(b"account_id", b"").decode() == account_id:
-                    await self.redis.delete(redis_key)
-
-        # Delete account
-        await self.redis.delete(f"{self.KEY_PREFIX}account:{account_id}")
-
-        # Remove from tenant index
-        if account.tenant_id:
-            await self.redis.srem(
-                f"{self.KEY_PREFIX}tenant:{account.tenant_id}",
-                account_id
+        async with self.db.session() as session:
+            # Delete keys first (foreign key constraint)
+            await session.execute(
+                delete(ServiceAccountKeyModel).where(ServiceAccountKeyModel.account_id == account_id)
             )
 
-        logger.warning("Service account deleted", account_id=account_id)
+            # Delete account
+            result = await session.execute(
+                delete(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
 
-        return True
+            if result.rowcount > 0:
+                logger.warning("Service account deleted", account_id=account_id)
+                return True
+
+        return False
 
     async def list_accounts(
         self,
@@ -262,33 +279,22 @@ class ServiceAccountManager:
         limit: int = 100,
     ) -> List[ServiceAccount]:
         """List service accounts with optional filtering"""
-        accounts = []
+        async with self.db.session() as session:
+            query = select(ServiceAccountModel)
 
-        if tenant_id:
-            # Get from tenant index
-            account_ids = await self.redis.smembers(
-                f"{self.KEY_PREFIX}tenant:{tenant_id}"
-            )
-            for aid in account_ids:
-                aid_str = aid.decode() if isinstance(aid, bytes) else aid
-                account = await self.get_account(aid_str)
-                if account:
-                    accounts.append(account)
-        else:
-            # Scan all accounts
-            async for key in self.redis.scan_iter(f"{self.KEY_PREFIX}account:*"):
-                data = await self.redis.get(key)
-                if data:
-                    account = ServiceAccount.model_validate_json(data)
-                    accounts.append(account)
+            if tenant_id:
+                query = query.where(ServiceAccountModel.tenant_id == tenant_id)
+            if account_type:
+                query = query.where(ServiceAccountModel.account_type == account_type.value)
+            if is_active is not None:
+                query = query.where(ServiceAccountModel.is_active == is_active)
 
-        # Apply filters
-        if account_type:
-            accounts = [a for a in accounts if a.account_type == account_type]
-        if is_active is not None:
-            accounts = [a for a in accounts if a.is_active == is_active]
+            query = query.limit(limit)
 
-        return accounts[:limit]
+            result = await session.execute(query)
+            records = result.scalars().all()
+
+            return [self._record_to_model(r) for r in records]
 
     async def create_key(
         self,
@@ -307,78 +313,87 @@ class ServiceAccountManager:
         Returns:
             Tuple of (raw_key, key_info) or None if account not found
         """
-        account = await self.get_account(account_id)
-        if not account:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Generate key
-        raw_key = f"sak_{secrets.token_urlsafe(32)}"
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-        key_id = secrets.token_hex(8)
+            if not record:
+                return None
 
-        expires_at = None
-        if expires_in_days:
-            expires_at = (datetime.now(UTC) + timedelta(days=expires_in_days)).isoformat()
+            # Generate key
+            raw_key = f"sak_{secrets.token_urlsafe(32)}"
+            key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+            key_id = secrets.token_hex(8)
 
-        key_info = ServiceAccountKey(
-            key_id=key_id,
-            created_at=datetime.now(UTC).isoformat(),
-            expires_at=expires_at,
-            description=description,
-        )
+            expires_at = None
+            if expires_in_days:
+                expires_at = (datetime.now(UTC) + timedelta(days=expires_in_days)).isoformat()
 
-        # Add to account
-        account.keys.append(key_info)
-        account.updated_at = datetime.now(UTC).isoformat()
-        await self._save_account(account)
+            key_info = ServiceAccountKey(
+                key_id=key_id,
+                created_at=datetime.now(UTC).isoformat(),
+                expires_at=expires_at,
+                description=description,
+            )
 
-        # Store key mapping
-        await self.redis.hset(
-            f"{self.KEY_PREFIX}key:{key_hash}",
-            mapping={
-                "account_id": account_id,
-                "key_id": key_id,
-            }
-        )
+            # Add to account keys
+            keys = list(record.keys or [])
+            keys.append(key_info.model_dump())
+            record.keys = keys
+            record.updated_at = datetime.now(UTC)
 
-        logger.info("Service account key created",
-                   account_id=account_id,
-                   key_id=key_id)
+            # Create key mapping record
+            key_record = ServiceAccountKeyModel(
+                key_hash=key_hash,
+                account_id=account_id,
+                key_id=key_id,
+            )
+            session.add(key_record)
 
-        return raw_key, key_info
+            logger.info("Service account key created",
+                       account_id=account_id,
+                       key_id=key_id)
+
+            return raw_key, key_info
 
     async def revoke_key(self, account_id: str, key_id: str) -> bool:
         """Revoke a service account key"""
-        account = await self.get_account(account_id)
-        if not account:
-            return False
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
+            record = result.scalar_one_or_none()
 
-        # Find and remove key
-        key_found = False
-        for key in account.keys:
-            if key.key_id == key_id:
-                account.keys.remove(key)
-                key_found = True
-                break
+            if not record:
+                return False
 
-        if not key_found:
-            return False
+            # Find and remove key from account keys
+            keys = list(record.keys or [])
+            key_found = False
+            for i, key in enumerate(keys):
+                if key.get("key_id") == key_id:
+                    keys.pop(i)
+                    key_found = True
+                    break
 
-        account.updated_at = datetime.now(UTC).isoformat()
-        await self._save_account(account)
+            if not key_found:
+                return False
 
-        # Remove key mapping
-        async for redis_key in self.redis.scan_iter(f"{self.KEY_PREFIX}key:*"):
-            data = await self.redis.hgetall(redis_key)
-            if data.get(b"key_id", b"").decode() == key_id:
-                await self.redis.delete(redis_key)
-                break
+            record.keys = keys
+            record.updated_at = datetime.now(UTC)
 
-        logger.info("Service account key revoked",
-                   account_id=account_id,
-                   key_id=key_id)
+            # Delete key mapping
+            await session.execute(
+                delete(ServiceAccountKeyModel).where(ServiceAccountKeyModel.key_id == key_id)
+            )
 
-        return True
+            logger.info("Service account key revoked",
+                       account_id=account_id,
+                       key_id=key_id)
+
+            return True
 
     async def authenticate(self, raw_key: str) -> Optional[ServiceAccount]:
         """
@@ -395,45 +410,57 @@ class ServiceAccountManager:
 
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
-        # Look up key
-        data = await self.redis.hgetall(f"{self.KEY_PREFIX}key:{key_hash}")
-        if not data:
-            return None
+        async with self.db.session() as session:
+            # Look up key
+            key_result = await session.execute(
+                select(ServiceAccountKeyModel).where(ServiceAccountKeyModel.key_hash == key_hash)
+            )
+            key_record = key_result.scalar_one_or_none()
 
-        account_id = data.get(b"account_id", b"").decode()
-        key_id = data.get(b"key_id", b"").decode()
-
-        # Get account
-        account = await self.get_account(account_id)
-        if not account or not account.is_active:
-            return None
-
-        # Find key and check expiration
-        key_info = None
-        for key in account.keys:
-            if key.key_id == key_id:
-                key_info = key
-                break
-
-        if not key_info:
-            return None
-
-        # Check expiration
-        if key_info.expires_at:
-            expires = datetime.fromisoformat(key_info.expires_at)
-            if datetime.now(UTC) > expires:
-                logger.warning("Service account key expired",
-                             account_id=account_id,
-                             key_id=key_id)
+            if not key_record:
                 return None
 
-        # Update last used
-        key_info.last_used = datetime.now(UTC).isoformat()
-        account.last_active = datetime.now(UTC).isoformat()
-        account.total_requests += 1
-        await self._save_account(account)
+            account_id = key_record.account_id
+            key_id = key_record.key_id
 
-        return account
+            # Get account
+            account_result = await session.execute(
+                select(ServiceAccountModel).where(ServiceAccountModel.account_id == account_id)
+            )
+            record = account_result.scalar_one_or_none()
+
+            if not record or not record.is_active:
+                return None
+
+            # Find key and check expiration
+            key_info = None
+            key_index = -1
+            keys = list(record.keys or [])
+            for i, key in enumerate(keys):
+                if key.get("key_id") == key_id:
+                    key_info = key
+                    key_index = i
+                    break
+
+            if not key_info:
+                return None
+
+            # Check expiration
+            if key_info.get("expires_at"):
+                expires = datetime.fromisoformat(key_info["expires_at"])
+                if datetime.now(UTC) > expires:
+                    logger.warning("Service account key expired",
+                                 account_id=account_id,
+                                 key_id=key_id)
+                    return None
+
+            # Update last used
+            keys[key_index]["last_used"] = datetime.now(UTC).isoformat()
+            record.keys = keys
+            record.last_active = datetime.now(UTC)
+            record.total_requests += 1
+
+            return self._record_to_model(record)
 
     async def issue_token(
         self,
@@ -499,19 +526,35 @@ class ServiceAccountManager:
             logger.warning("Invalid service account token", error=str(e))
             return None
 
-    async def _save_account(self, account: ServiceAccount):
-        """Save account to Redis"""
-        await self.redis.set(
-            f"{self.KEY_PREFIX}account:{account.account_id}",
-            account.model_dump_json()
-        )
+    def _record_to_model(self, record: ServiceAccountModel) -> ServiceAccount:
+        """Convert database record to Pydantic model"""
+        keys = []
+        for key_data in (record.keys or []):
+            keys.append(ServiceAccountKey(
+                key_id=key_data.get("key_id", ""),
+                created_at=key_data.get("created_at", ""),
+                expires_at=key_data.get("expires_at"),
+                last_used=key_data.get("last_used"),
+                description=key_data.get("description"),
+            ))
 
-        # Add to tenant index
-        if account.tenant_id:
-            await self.redis.sadd(
-                f"{self.KEY_PREFIX}tenant:{account.tenant_id}",
-                account.account_id
-            )
+        return ServiceAccount(
+            account_id=record.account_id,
+            name=record.name,
+            description=record.description,
+            account_type=ServiceAccountType(record.account_type),
+            tenant_id=record.tenant_id,
+            role=Role(record.role),
+            allowed_projects=record.allowed_projects or [],
+            scopes=record.scopes or [],
+            keys=keys,
+            created_at=record.created_at.isoformat() if record.created_at else "",
+            updated_at=record.updated_at.isoformat() if record.updated_at else None,
+            created_by=record.created_by,
+            is_active=record.is_active,
+            last_active=record.last_active.isoformat() if record.last_active else None,
+            total_requests=record.total_requests or 0,
+        )
 
 
 # ============================================================================
@@ -521,10 +564,10 @@ class ServiceAccountManager:
 _service_account_manager: Optional[ServiceAccountManager] = None
 
 
-def init_service_account_manager(redis: Redis) -> ServiceAccountManager:
+def init_service_account_manager(db: DatabaseManager) -> ServiceAccountManager:
     """Initialize global service account manager"""
     global _service_account_manager
-    _service_account_manager = ServiceAccountManager(redis)
+    _service_account_manager = ServiceAccountManager(db)
     return _service_account_manager
 
 

@@ -1,14 +1,27 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: contex-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=contex
+      - POSTGRES_USER=contex
+      - POSTGRES_PASSWORD=contex_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   redis:
-    image: redis/redis-stack:latest
+    image: redis:7-alpine
     container_name: contex-redis
     ports:
       - "6379:6379"
-      - "8002:8001"  # RedisInsight (optional web UI)
-    volumes:
-      - redis-data:/data
-    environment:
-      - REDIS_ARGS=--appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -37,11 +50,15 @@ services:
     restart: unless-stopped
 
   contex:
-    build: .
+    build:
+      context: .
+      platforms:
+        - linux/amd64
     container_name: contex-app
     ports:
       - "8001:8001"
     environment:
+      - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
       - REDIS_URL=redis://redis:6379
       - OPENSEARCH_URL=http://opensearch:9200
       - SIMILARITY_THRESHOLD=0.5
@@ -51,6 +68,8 @@ services:
       - KEYWORD_THRESHOLD=1.0
       - VECTOR_THRESHOLD=0.75
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       opensearch:
@@ -71,7 +90,7 @@ services:
           cpus: '1.0'
 
 volumes:
-  redis-data:
+  postgres-data:
     driver: local
   opensearch-data:
     driver: local

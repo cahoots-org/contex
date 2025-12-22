@@ -5,8 +5,8 @@ import pytest_asyncio
 import json
 import hmac
 import hashlib
+import asyncio
 from unittest.mock import Mock, AsyncMock, patch
-from fakeredis import FakeAsyncRedis
 from src.core.context_engine import ContextEngine
 from src.core.webhook_dispatcher import WebhookDispatcher, verify_webhook_signature
 from src.core.models import AgentRegistration, DataPublishEvent
@@ -163,9 +163,14 @@ class TestWebhookIntegration:
     """Test webhook integration with ContextEngine"""
 
     @pytest_asyncio.fixture
-    async def context_engine(self, redis):
+    async def context_engine(self, db, redis):
         """Create a ContextEngine instance"""
-        return ContextEngine(redis=redis, similarity_threshold=0.5, max_matches=10)
+        return ContextEngine(
+            db=db,
+            redis=redis,
+            similarity_threshold=0.5,
+            max_matches=10
+        )
 
     @pytest.mark.asyncio
     async def test_register_agent_with_webhook(self, context_engine):
@@ -213,48 +218,6 @@ class TestWebhookIntegration:
 
         with pytest.raises(ValueError, match="webhook_url is required"):
             await context_engine.register_agent(registration)
-
-    @pytest.mark.asyncio
-    async def test_publish_data_notifies_webhook_agent(self, context_engine):
-        """Test that publishing data triggers webhook notification"""
-        # Register webhook agent first
-        registration = AgentRegistration(
-            agent_id="webhook-agent",
-            project_id="proj1",
-            data_needs=["API documentation"],
-            notification_method="webhook",
-            webhook_url="https://example.com/webhook",
-            webhook_secret="my-secret",
-        )
-
-        with patch.object(
-            context_engine.webhook_dispatcher,
-            "send_initial_context",
-            new_callable=AsyncMock,
-        ):
-            await context_engine.register_agent(registration)
-
-        # Publish matching data
-        with patch.object(
-            context_engine.webhook_dispatcher,
-            "send_data_update",
-            new_callable=AsyncMock,
-        ) as mock_send:
-            mock_send.return_value = True
-
-            await context_engine.publish_data(
-                DataPublishEvent(
-                    project_id="proj1",
-                    data_key="api_docs",
-                    data={"endpoints": ["/api/v1/users"]},
-                )
-            )
-
-            # Give async task time to execute
-            await asyncio.sleep(0.1)
-
-            # Should have sent webhook (if agent matched the data)
-            # Note: Might not be called if semantic similarity too low
 
     @pytest.mark.asyncio
     async def test_webhook_and_redis_agents_coexist(self, context_engine):
@@ -332,7 +295,3 @@ class TestWebhookIntegration:
 
             # Should have event type header
             assert "X-Contex-Event" in captured_headers
-
-
-# Import asyncio for sleep in tests
-import asyncio

@@ -7,14 +7,16 @@ authentication events, and authorization decisions. Critical for:
 - Change tracking and accountability
 """
 
-import json
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
-from redis.asyncio import Redis
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field
+from sqlalchemy import and_, delete, select
+
+from src.core.database import DatabaseManager
+from src.core.db_models import AuditEvent as AuditEventModel
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -118,35 +120,25 @@ class AuditLogger:
     """
     Audit logger for recording and querying audit events.
 
-    Events are stored in Redis with the following structure:
-    - audit:events:{event_id} - Individual event (hash)
-    - audit:stream - Event stream for real-time processing
-    - audit:index:tenant:{tenant_id} - Index by tenant
-    - audit:index:actor:{actor_id} - Index by actor
-    - audit:index:type:{event_type} - Index by type
-    - audit:index:date:{date} - Index by date
+    Events are stored in PostgreSQL in the audit_events table.
 
     Retention: Events are retained based on configuration (default 90 days).
     """
 
     def __init__(
         self,
-        redis: Redis,
+        db: DatabaseManager,
         retention_days: int = 90,
-        max_stream_length: int = 100000,
     ):
         """
         Initialize audit logger.
 
         Args:
-            redis: Redis connection
+            db: Database manager
             retention_days: How long to retain audit events
-            max_stream_length: Maximum events in the stream
         """
-        self.redis = redis
+        self.db = db
         self.retention_days = retention_days
-        self.max_stream_length = max_stream_length
-        self.retention_seconds = retention_days * 24 * 60 * 60
 
     async def log(self, event: AuditEvent) -> str:
         """
@@ -158,40 +150,31 @@ class AuditLogger:
         Returns:
             Event ID
         """
-        event_data = event.model_dump()
-
-        # Serialize complex fields
-        event_data['details'] = json.dumps(event_data['details'])
-        if event_data['before']:
-            event_data['before'] = json.dumps(event_data['before'])
-        if event_data['after']:
-            event_data['after'] = json.dumps(event_data['after'])
-
-        # Remove None values (Redis doesn't accept None)
-        event_data = {k: v for k, v in event_data.items() if v is not None}
-
-        # Store event
-        event_key = f"audit:events:{event.event_id}"
-        await self.redis.hset(event_key, mapping=event_data)
-        await self.redis.expire(event_key, self.retention_seconds)
-
-        # Add to stream for real-time processing
-        await self.redis.xadd(
-            "audit:stream",
-            {"event_id": event.event_id, "type": event.event_type.value},
-            maxlen=self.max_stream_length,
-            approximate=True,
-        )
-
-        # Add to indices
-        if event.tenant_id:
-            await self._add_to_index(f"audit:index:tenant:{event.tenant_id}", event.event_id)
-        if event.actor_id:
-            await self._add_to_index(f"audit:index:actor:{event.actor_id}", event.event_id)
-        await self._add_to_index(f"audit:index:type:{event.event_type.value}", event.event_id)
-
-        date_str = event.timestamp[:10]  # YYYY-MM-DD
-        await self._add_to_index(f"audit:index:date:{date_str}", event.event_id)
+        async with self.db.session() as session:
+            # Create audit event record
+            record = AuditEventModel(
+                event_id=event.event_id,
+                timestamp=datetime.fromisoformat(event.timestamp) if isinstance(event.timestamp, str) else event.timestamp,
+                event_type=event.event_type.value,
+                severity=event.severity.value,
+                actor_id=event.actor_id,
+                actor_type=event.actor_type,
+                actor_ip=event.actor_ip,
+                actor_user_agent=event.actor_user_agent,
+                tenant_id=event.tenant_id,
+                project_id=event.project_id,
+                resource_type=event.resource_type,
+                resource_id=event.resource_id,
+                action=event.action,
+                details=event.details or {},
+                result=event.result,
+                request_id=event.request_id,
+                endpoint=event.endpoint,
+                method=event.method,
+                before_state=event.before,
+                after_state=event.after,
+            )
+            session.add(record)
 
         # Log to structured logging as well
         logger.info("Audit event recorded",
@@ -204,14 +187,6 @@ class AuditLogger:
 
         return event.event_id
 
-    async def _add_to_index(self, index_key: str, event_id: str):
-        """Add event to an index"""
-        await self.redis.zadd(
-            index_key,
-            {event_id: datetime.now(UTC).timestamp()},
-        )
-        await self.redis.expire(index_key, self.retention_seconds)
-
     async def get_event(self, event_id: str) -> Optional[AuditEvent]:
         """
         Get a single audit event by ID.
@@ -222,11 +197,16 @@ class AuditLogger:
         Returns:
             AuditEvent if found
         """
-        data = await self.redis.hgetall(f"audit:events:{event_id}")
-        if not data:
-            return None
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(AuditEventModel).where(AuditEventModel.event_id == event_id)
+            )
+            record = result.scalar_one_or_none()
 
-        return self._parse_event(data)
+            if not record:
+                return None
+
+            return self._record_to_model(record)
 
     async def query_events(
         self,
@@ -253,60 +233,29 @@ class AuditLogger:
         Returns:
             List of AuditEvent objects
         """
-        # Determine which index to use
-        if tenant_id:
-            index_key = f"audit:index:tenant:{tenant_id}"
-        elif actor_id:
-            index_key = f"audit:index:actor:{actor_id}"
-        elif event_type:
-            index_key = f"audit:index:type:{event_type.value}"
-        else:
-            # No filter, use date index for recent events
-            date_str = datetime.now(UTC).strftime("%Y-%m-%d")
-            index_key = f"audit:index:date:{date_str}"
+        async with self.db.session() as session:
+            query = select(AuditEventModel)
 
-        # Get event IDs from index (sorted by timestamp, newest first)
-        min_score = start_time.timestamp() if start_time else "-inf"
-        max_score = end_time.timestamp() if end_time else "+inf"
+            # Apply filters
+            if tenant_id:
+                query = query.where(AuditEventModel.tenant_id == tenant_id)
+            if actor_id:
+                query = query.where(AuditEventModel.actor_id == actor_id)
+            if event_type:
+                query = query.where(AuditEventModel.event_type == event_type.value)
+            if start_time:
+                query = query.where(AuditEventModel.timestamp >= start_time)
+            if end_time:
+                query = query.where(AuditEventModel.timestamp <= end_time)
 
-        event_ids = await self.redis.zrevrangebyscore(
-            index_key,
-            max=max_score,
-            min=min_score,
-            start=offset,
-            num=limit,
-        )
+            # Order by timestamp descending (newest first)
+            query = query.order_by(AuditEventModel.timestamp.desc())
+            query = query.offset(offset).limit(limit)
 
-        # Fetch events
-        events = []
-        for event_id in event_ids:
-            if isinstance(event_id, bytes):
-                event_id = event_id.decode()
-            event = await self.get_event(event_id)
-            if event:
-                # Apply additional filters
-                if tenant_id and event.tenant_id != tenant_id:
-                    continue
-                if actor_id and event.actor_id != actor_id:
-                    continue
-                if event_type and event.event_type != event_type:
-                    continue
-                events.append(event)
+            result = await session.execute(query)
+            records = result.scalars().all()
 
-        return events
-
-    def _parse_event(self, data: Dict[bytes, bytes]) -> AuditEvent:
-        """Parse event data from Redis"""
-        decoded = {k.decode(): v.decode() for k, v in data.items()}
-
-        # Parse JSON fields
-        decoded['details'] = json.loads(decoded.get('details', '{}'))
-        if decoded.get('before'):
-            decoded['before'] = json.loads(decoded['before'])
-        if decoded.get('after'):
-            decoded['after'] = json.loads(decoded['after'])
-
-        return AuditEvent(**decoded)
+            return [self._record_to_model(r) for r in records]
 
     async def export_events(
         self,
@@ -334,6 +283,53 @@ class AuditLogger:
 
         return [event.model_dump() for event in events]
 
+    async def cleanup_old_events(self) -> int:
+        """
+        Delete audit events older than retention period.
+
+        Returns:
+            Number of deleted events
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=self.retention_days)
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                delete(AuditEventModel).where(AuditEventModel.timestamp < cutoff)
+            )
+            deleted_count = result.rowcount
+
+            if deleted_count > 0:
+                logger.info("Cleaned up old audit events",
+                           deleted_count=deleted_count,
+                           retention_days=self.retention_days)
+
+            return deleted_count
+
+    def _record_to_model(self, record: AuditEventModel) -> AuditEvent:
+        """Convert database record to Pydantic model"""
+        return AuditEvent(
+            event_id=record.event_id,
+            timestamp=record.timestamp.isoformat() if record.timestamp else "",
+            event_type=AuditEventType(record.event_type),
+            severity=AuditEventSeverity(record.severity),
+            actor_id=record.actor_id,
+            actor_type=record.actor_type,
+            actor_ip=record.actor_ip,
+            actor_user_agent=record.actor_user_agent,
+            tenant_id=record.tenant_id,
+            project_id=record.project_id,
+            resource_type=record.resource_type,
+            resource_id=record.resource_id,
+            action=record.action,
+            details=record.details or {},
+            result=record.result,
+            request_id=record.request_id,
+            endpoint=record.endpoint,
+            method=record.method,
+            before=record.before_state,
+            after=record.after_state,
+        )
+
 
 # ============================================================================
 # CONVENIENCE FUNCTIONS
@@ -343,10 +339,10 @@ class AuditLogger:
 _audit_logger: Optional[AuditLogger] = None
 
 
-def init_audit_logger(redis: Redis, retention_days: int = 90) -> AuditLogger:
+def init_audit_logger(db: DatabaseManager, retention_days: int = 90) -> AuditLogger:
     """Initialize global audit logger"""
     global _audit_logger
-    _audit_logger = AuditLogger(redis, retention_days=retention_days)
+    _audit_logger = AuditLogger(db, retention_days=retention_days)
     return _audit_logger
 
 

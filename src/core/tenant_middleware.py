@@ -100,9 +100,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         try:
-            # Get Redis and create manager
-            redis = request.app.state.redis
-            manager = TenantManager(redis)
+            # Get database and create manager
+            db = request.app.state.db
+            manager = TenantManager(db)
             request.state.tenant_manager = manager
 
             # Identify tenant
@@ -117,7 +117,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             # Use default tenant if none identified
             if not tenant_id:
                 tenant_id = DEFAULT_TENANT_ID
-                await ensure_default_tenant(redis)
+                await ensure_default_tenant(db)
 
             # Get and validate tenant
             tenant = await manager.get_tenant(tenant_id)
@@ -244,8 +244,8 @@ class TenantQuotaMiddleware(BaseHTTPMiddleware):
                 # Get manager
                 manager = getattr(request.state, 'tenant_manager', None)
                 if not manager:
-                    redis = request.app.state.redis
-                    manager = TenantManager(redis)
+                    db = request.app.state.db
+                    manager = TenantManager(db)
 
                 # Check quota
                 allowed, message = await manager.check_quota(

@@ -1,14 +1,22 @@
 """Authentication module for Contex"""
 
-import secrets
-import hashlib
 import asyncio
-from typing import Optional, List
-from pydantic import BaseModel
-from fastapi import Request, HTTPException
+import hashlib
+import secrets
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
-from redis.asyncio import Redis
+
+from src.core.database import DatabaseManager
+from src.core.db_models import APIKey as APIKeyModel
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _record_auth_event(
@@ -52,12 +60,14 @@ def _record_auth_event(
 
 
 class APIKey(BaseModel):
-    """API Key model"""
+    """API Key response model"""
     key_id: str
     name: str
     prefix: str
     scopes: List[str] = []
     created_at: str
+    tenant_id: Optional[str] = None
+
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to validate API keys"""
@@ -70,12 +80,14 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             "/api/openapi.json",
             "/sandbox",
             "/static",
-            "/favicon.ico"
+            "/favicon.ico",
         ]
 
     async def dispatch(self, request: Request, call_next):
         # Skip auth for public paths
-        if request.url.path == "/" or any(request.url.path.startswith(path) for path in self.public_paths):
+        if request.url.path == "/" or any(
+            request.url.path.startswith(path) for path in self.public_paths
+        ):
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key")
@@ -105,7 +117,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Store key_id in request state for RBAC middleware
         request.state.api_key_id = key_id
 
-        # Record successful authentication (only for state-changing operations to reduce noise)
+        # Record successful authentication (only for state-changing operations)
         if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
             _record_auth_event(
                 event_type="success",
@@ -118,7 +130,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
     async def validate_key(self, request: Request, api_key: str) -> Optional[str]:
-        """Validate API key against Redis and return key_id if valid"""
+        """Validate API key against database and return key_id if valid"""
         # Key format: ck_<random>
         if not api_key.startswith("ck_"):
             return None
@@ -126,88 +138,171 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         # Hash key for lookup
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
-        # Get Redis from app state
-        redis = request.app.state.redis
+        # Get database from app state
+        db: DatabaseManager = request.app.state.db
 
-        # Check if key exists in Redis and get key_id
-        data = await redis.hgetall(f"contex:apikey:{key_hash}")
-        if not data:
-            return None
+        async with db.session() as session:
+            result = await session.execute(
+                select(APIKeyModel).where(APIKeyModel.key_hash == key_hash)
+            )
+            api_key_record = result.scalar_one_or_none()
 
-        # Extract key_id
-        key_id = data.get(b"key_id")
-        if key_id:
-            return key_id.decode() if isinstance(key_id, bytes) else key_id
+            if api_key_record:
+                return api_key_record.key_id
 
         return None
 
-async def create_api_key(redis: Redis, name: str, scopes: List[str] = None) -> tuple[str, APIKey]:
-    """Create a new API key"""
-    import datetime
-    
+
+async def create_api_key(
+    db: DatabaseManager,
+    name: str,
+    scopes: List[str] = None,
+    tenant_id: Optional[str] = None,
+) -> tuple[str, APIKey]:
+    """
+    Create a new API key.
+
+    Args:
+        db: Database manager
+        name: Name for the API key
+        scopes: List of scopes/permissions
+        tenant_id: Optional tenant ID to associate with key
+
+    Returns:
+        Tuple of (raw_key, APIKey model)
+    """
     # Generate key
     raw_key = f"ck_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     key_id = secrets.token_hex(8)
-    
+    created_at = datetime.now(timezone.utc)
+
+    async with db.session() as session:
+        # Create database record
+        api_key_record = APIKeyModel(
+            key_id=key_id,
+            key_hash=key_hash,
+            name=name,
+            prefix=raw_key[:7],
+            scopes=scopes or [],
+            tenant_id=tenant_id,
+            created_at=created_at,
+        )
+        session.add(api_key_record)
+
+    # Return response model
     api_key = APIKey(
         key_id=key_id,
         name=name,
         prefix=raw_key[:7],
         scopes=scopes or [],
-        created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        created_at=created_at.isoformat(),
+        tenant_id=tenant_id,
     )
-    
-    # Store in Redis
-    data = api_key.model_dump()
-    data['scopes'] = str(data['scopes'])
-    
-    # Map hash -> metadata
-    await redis.hset(
-        f"contex:apikey:{key_hash}",
-        mapping=data
-    )
-    
-    # Map ID -> hash (for management)
-    await redis.set(f"contex:apikey_id:{key_id}", key_hash)
-    
+
+    logger.info("API key created", key_id=key_id, name=name)
+
     return raw_key, api_key
 
-async def revoke_api_key(redis: Redis, key_id: str) -> bool:
-    """Revoke an API key by ID"""
-    # Get hash from ID
-    key_hash = await redis.get(f"contex:apikey_id:{key_id}")
-    if not key_hash:
-        return False
-        
-    if isinstance(key_hash, bytes):
-        key_hash = key_hash.decode()
-        
-    # Delete both
-    await redis.delete(f"contex:apikey:{key_hash}")
-    await redis.delete(f"contex:apikey_id:{key_id}")
-    return True
 
-async def list_api_keys(redis: Redis) -> List[APIKey]:
-    """List all API keys"""
-    # Scan for ID mappings
-    keys = []
-    async for key in redis.scan_iter("contex:apikey_id:*"):
-        key_hash = await redis.get(key)
-        if isinstance(key_hash, bytes):
-            key_hash = key_hash.decode()
-            
-        data = await redis.hgetall(f"contex:apikey:{key_hash}")
-        if data:
-            # Decode bytes to strings
-            decoded = {k.decode(): v.decode() for k, v in data.items()}
-            # Handle scopes list (stored as string representation)
-            if 'scopes' in decoded:
-                import ast
-                try:
-                    decoded['scopes'] = ast.literal_eval(decoded['scopes'])
-                except:
-                    decoded['scopes'] = []
-            keys.append(APIKey(**decoded))
-            
-    return keys
+async def revoke_api_key(db: DatabaseManager, key_id: str) -> bool:
+    """
+    Revoke an API key by ID.
+
+    Args:
+        db: Database manager
+        key_id: Key ID to revoke
+
+    Returns:
+        True if key was revoked, False if not found
+    """
+    from sqlalchemy import delete
+
+    async with db.session() as session:
+        result = await session.execute(
+            delete(APIKeyModel).where(APIKeyModel.key_id == key_id)
+        )
+
+        if result.rowcount > 0:
+            logger.info("API key revoked", key_id=key_id)
+            return True
+
+    return False
+
+
+async def list_api_keys(db: DatabaseManager, tenant_id: Optional[str] = None) -> List[APIKey]:
+    """
+    List all API keys.
+
+    Args:
+        db: Database manager
+        tenant_id: Optional tenant ID to filter by
+
+    Returns:
+        List of API keys
+    """
+    async with db.session() as session:
+        query = select(APIKeyModel)
+        if tenant_id:
+            query = query.where(APIKeyModel.tenant_id == tenant_id)
+
+        result = await session.execute(query)
+        keys = result.scalars().all()
+
+        return [
+            APIKey(
+                key_id=k.key_id,
+                name=k.name,
+                prefix=k.prefix,
+                scopes=k.scopes or [],
+                created_at=k.created_at.isoformat() if k.created_at else "",
+            )
+            for k in keys
+        ]
+
+
+async def get_api_key(db: DatabaseManager, key_id: str) -> Optional[APIKey]:
+    """
+    Get an API key by ID.
+
+    Args:
+        db: Database manager
+        key_id: Key ID to look up
+
+    Returns:
+        APIKey if found, None otherwise
+    """
+    async with db.session() as session:
+        result = await session.execute(
+            select(APIKeyModel).where(APIKeyModel.key_id == key_id)
+        )
+        k = result.scalar_one_or_none()
+
+        if k:
+            return APIKey(
+                key_id=k.key_id,
+                name=k.name,
+                prefix=k.prefix,
+                scopes=k.scopes or [],
+                created_at=k.created_at.isoformat() if k.created_at else "",
+            )
+
+    return None
+
+
+async def get_api_key_by_hash(db: DatabaseManager, key_hash: str) -> Optional[APIKeyModel]:
+    """
+    Get an API key record by hash (internal use).
+
+    Args:
+        db: Database manager
+        key_hash: SHA256 hash of the raw key
+
+    Returns:
+        APIKeyModel if found, None otherwise
+    """
+    async with db.session() as session:
+        result = await session.execute(
+            select(APIKeyModel).where(APIKeyModel.key_hash == key_hash)
+        )
+        return result.scalar_one_or_none()

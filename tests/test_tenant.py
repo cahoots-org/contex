@@ -1,8 +1,7 @@
-"""Tests for Multi-Tenant Management"""
+"""Tests for Multi-Tenant Management with PostgreSQL"""
 
 import pytest
 import pytest_asyncio
-from fakeredis import FakeAsyncRedis
 
 from src.core.tenant import (
     TenantManager,
@@ -95,17 +94,9 @@ class TestTenantManager:
     """Test TenantManager functionality"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def manager(self, redis):
+    async def manager(self, db):
         """Create a tenant manager"""
-        return TenantManager(redis)
+        return TenantManager(db)
 
     @pytest.mark.asyncio
     async def test_create_tenant(self, manager):
@@ -262,21 +253,13 @@ class TestTenantManager:
         assert len(inactive_tenants) == 1
 
 
-class TestTenantQuotas:
+class TestTenantQuotasMgmt:
     """Test tenant quota management"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def manager(self, redis):
+    async def manager(self, db):
         """Create a tenant manager"""
-        return TenantManager(redis)
+        return TenantManager(db)
 
     @pytest.mark.asyncio
     async def test_default_quotas_by_plan(self, manager):
@@ -357,17 +340,9 @@ class TestTenantUsageTracking:
     """Test tenant usage tracking"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def manager(self, redis):
+    async def manager(self, db):
         """Create a tenant manager"""
-        return TenantManager(redis)
+        return TenantManager(db)
 
     @pytest.mark.asyncio
     async def test_get_usage(self, manager):
@@ -427,17 +402,9 @@ class TestTenantProjectManagement:
     """Test tenant project management"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def manager(self, redis):
+    async def manager(self, db):
         """Create a tenant manager"""
-        return TenantManager(redis)
+        return TenantManager(db)
 
     @pytest.mark.asyncio
     async def test_add_project(self, manager):
@@ -496,17 +463,9 @@ class TestTenantAPIKeyManagement:
     """Test tenant API key management"""
 
     @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
-    @pytest_asyncio.fixture
-    async def manager(self, redis):
+    async def manager(self, db):
         """Create a tenant manager"""
-        return TenantManager(redis)
+        return TenantManager(db)
 
     @pytest.mark.asyncio
     async def test_add_api_key(self, manager):
@@ -540,17 +499,24 @@ class TestTenantAPIKeyManagement:
         assert usage.api_keys_count == 0
 
     @pytest.mark.asyncio
-    async def test_get_api_key_tenant(self, manager):
+    async def test_get_api_key_tenant(self, manager, db):
         """Test getting tenant for API key"""
+        from src.core.auth import create_api_key
+
         tenant = await manager.create_tenant(
             tenant_id="find_key_tenant",
             name="Find Key Tenant",
             plan=TenantPlan.STARTER,
         )
 
-        await manager.add_api_key(tenant.tenant_id, "find_key_123")
+        # First create an API key (returns tuple of raw_key, APIKey model)
+        raw_key, api_key = await create_api_key(db, "Test Key", scopes=["read"])
+        key_id = api_key.key_id
 
-        found = await manager.get_api_key_tenant("find_key_123")
+        # Then associate it with the tenant
+        await manager.add_api_key(tenant.tenant_id, key_id)
+
+        found = await manager.get_api_key_tenant(key_id)
 
         assert found == tenant.tenant_id
 
@@ -579,27 +545,19 @@ class TestTenantUtilityFunctions:
 class TestDefaultTenant:
     """Test default tenant for backward compatibility"""
 
-    @pytest_asyncio.fixture
-    async def redis(self):
-        """Create a fake Redis client"""
-        client = FakeAsyncRedis(decode_responses=False)
-        yield client
-        await client.flushall()
-        await client.aclose()
-
     @pytest.mark.asyncio
-    async def test_ensure_default_tenant_creates(self, redis):
+    async def test_ensure_default_tenant_creates(self, db):
         """Test default tenant is created if not exists"""
-        tenant = await ensure_default_tenant(redis)
+        tenant = await ensure_default_tenant(db)
 
         assert tenant is not None
         assert tenant.tenant_id == DEFAULT_TENANT_ID
         assert tenant.plan == TenantPlan.ENTERPRISE
 
     @pytest.mark.asyncio
-    async def test_ensure_default_tenant_returns_existing(self, redis):
+    async def test_ensure_default_tenant_returns_existing(self, db):
         """Test default tenant returns existing if already created"""
-        tenant1 = await ensure_default_tenant(redis)
-        tenant2 = await ensure_default_tenant(redis)
+        tenant1 = await ensure_default_tenant(db)
+        tenant2 = await ensure_default_tenant(db)
 
         assert tenant1.tenant_id == tenant2.tenant_id
