@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: ankane/pgvector:latest
         ports:
           - 5432:5432
         env:
@@ -21,10 +21,10 @@ jobs:
           POSTGRES_USER: contex
           POSTGRES_PASSWORD: contex_password
         options: >-
-          --health-cmd "pg_isready -U contex"
+          --health-cmd "pg_isready -U contex -d contex_test"
           --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 20
 
       redis:
         image: redis:7-alpine
@@ -32,9 +32,9 @@ jobs:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     steps:
     - name: Checkout code
@@ -58,20 +58,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Wait for PostgreSQL
+    - name: Wait for services
       run: |
-        for i in {1..30}; do
-          pg_isready -h localhost -p 5432 -U contex && break
-          echo "Waiting for PostgreSQL... ($i/30)"
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h localhost -p 5432 -U contex; do
+          echo "PostgreSQL not ready, waiting..."
           sleep 2
         done
+        echo "PostgreSQL is ready!"
 
-    - name: Verify PostgreSQL connection
+    - name: Setup database
       env:
         PGPASSWORD: contex_password
       run: |
-        psql -h localhost -U contex -d contex_test -c "SELECT 1;"
         psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        echo "pgvector extension enabled"
 
     - name: Run pytest
       env:
