@@ -76,9 +76,10 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     try:
         await manager.connect_test(database_url)
 
-        # Create tables if they don't exist
+        # Enable pgvector extension and create tables
         from src.core.db_models import Base
         async with manager.engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
 
         yield manager

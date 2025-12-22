@@ -137,7 +137,56 @@ spec:
       key: contex/api-key-salt
 ```
 
-## Redis Setup
+## PostgreSQL Setup
+
+PostgreSQL with pgvector is the primary database for all persistent data.
+
+### Option 1: Bundled PostgreSQL (Helm)
+
+```yaml
+# values.yaml
+postgresql:
+  enabled: true
+  image:
+    repository: pgvector/pgvector
+    tag: pg16
+  auth:
+    database: contex
+    username: contex
+    password: contex_password
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+```
+
+### Option 2: External PostgreSQL
+
+```yaml
+# values.yaml
+postgresql:
+  enabled: false
+
+contex:
+  database:
+    url: "postgresql+asyncpg://user:pass@external-postgres:5432/contex"
+```
+
+### Option 3: Cloud-Managed PostgreSQL
+
+For production, use managed services (RDS, Cloud SQL, Azure Database) with pgvector:
+
+```yaml
+contex:
+  database:
+    url: "postgresql+asyncpg://user:pass@db.example.com:5432/contex?sslmode=require"
+```
+
+> **Note:** Ensure pgvector extension is enabled in your managed PostgreSQL instance.
+
+## Redis Setup (Pub/Sub Only)
+
+Redis is only used for pub/sub notifications. All persistent data is in PostgreSQL.
 
 ### Option 1: Bundled Redis (Helm)
 
@@ -164,15 +213,17 @@ contex:
     url: "redis://external-redis:6379"
 ```
 
-### Option 3: Redis Cluster
+### Option 3: Redis Cluster (Pub/Sub Only)
+
+Redis is only used for pub/sub notifications. For high availability:
 
 ```yaml
 contex:
   redis:
     url: "redis://redis-cluster:6379"
-    # Or use Redis Sentinel
-    # url: "redis-sentinel://sentinel:26379/mymaster"
 ```
+
+> **Note:** All persistent data is stored in PostgreSQL, not Redis. Redis is only used for real-time pub/sub notifications.
 
 ## Ingress Configuration
 
@@ -417,31 +468,33 @@ kubectl rollout undo deployment/contex -n contex
 
 ## Backup & Restore
 
-### Backup Redis Data
+All persistent data is stored in PostgreSQL. See [Database Setup](DATABASE.md) for full backup documentation.
+
+### Backup PostgreSQL Data
 
 ```bash
-# Exec into Redis pod
-kubectl exec -it redis-0 -n contex -- redis-cli BGSAVE
+# Using pg_dump
+kubectl exec -it postgres-0 -n contex -- pg_dump -U contex contex > backup.sql
 
-# Copy RDB file
-kubectl cp contex/redis-0:/data/dump.rdb ./backup/dump.rdb
+# Using compressed format
+kubectl exec -it postgres-0 -n contex -- pg_dump -U contex -Fc contex > backup.dump
 ```
 
-### Restore Redis Data
+### Restore PostgreSQL Data
 
 ```bash
-# Copy RDB file to pod
-kubectl cp ./backup/dump.rdb contex/redis-0:/data/dump.rdb
-
-# Restart Redis
-kubectl delete pod redis-0 -n contex
+# Copy backup to pod and restore
+kubectl cp backup.dump contex/postgres-0:/tmp/backup.dump
+kubectl exec -it postgres-0 -n contex -- pg_restore -U contex -d contex /tmp/backup.dump
 ```
+
+> **Note:** Redis is only used for pub/sub and does not require backup.
 
 ## Production Checklist
 
 - [ ] Resource limits configured
 - [ ] HPA enabled and tested
-- [ ] Redis persistence enabled
+- [ ] PostgreSQL persistence enabled
 - [ ] Secrets properly managed
 - [ ] Ingress with TLS configured
 - [ ] Monitoring and alerting set up
@@ -500,10 +553,10 @@ spec:
 
 ## Summary
 
-✅ **Multiple deployment options**: Helm, Kustomize, raw manifests  
-✅ **Production-ready**: Health checks, autoscaling, monitoring  
-✅ **Secure**: Secrets management, security contexts  
-✅ **Scalable**: HPA, resource limits, Redis persistence  
-✅ **Observable**: Prometheus metrics, structured logging  
+✅ **Multiple deployment options**: Helm, Kustomize, raw manifests
+✅ **Production-ready**: Health checks, autoscaling, monitoring
+✅ **Secure**: Secrets management, security contexts
+✅ **Scalable**: HPA, resource limits, PostgreSQL with pgvector
+✅ **Observable**: Prometheus metrics, structured logging
 
 Your Contex deployment is ready for production!

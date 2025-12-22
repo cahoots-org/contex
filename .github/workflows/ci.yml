@@ -12,6 +12,20 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: contex_test
+          POSTGRES_USER: contex
+          POSTGRES_PASSWORD: contex_password
+        options: >-
+          --health-cmd "pg_isready -U contex -d contex_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
@@ -46,6 +60,7 @@ jobs:
 
     - name: Run pytest
       env:
+        DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
         REDIS_URL: redis://localhost:6379
       run: |
         pytest tests/ -v --tb=short
