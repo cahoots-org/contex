@@ -58,6 +58,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Wait for PostgreSQL
+      run: |
+        for i in {1..30}; do
+          pg_isready -h localhost -p 5432 -U contex && break
+          echo "Waiting for PostgreSQL... ($i/30)"
+          sleep 2
+        done
+
+    - name: Verify PostgreSQL connection
+      env:
+        PGPASSWORD: contex_password
+      run: |
+        psql -h localhost -U contex -d contex_test -c "SELECT 1;"
+        psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
     - name: Run pytest
       env:
         DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
