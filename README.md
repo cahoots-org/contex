@@ -2,7 +2,7 @@
 
 **Semantic context routing for AI agent systems**
 
-[![Tests](https://img.shields.io/badge/tests-227%20passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-311%20passing-success)](tests/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -11,15 +11,15 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 ## Features
 
 - **Semantic Matching** - AI-powered filtering using sentence transformers
+- **Vector Search** - PostgreSQL + pgvector for efficient semantic similarity search
 - **Hybrid Search** - Combines BM25 lexical search with semantic vector search for better accuracy
 - **Real-time Updates** - Redis pub/sub or webhooks for instant notifications
-- **High Availability** - Redis Sentinel support with automatic failover
 - **Schema-Free** - Publish JSON, YAML, CSV, XML, or plain text
 - **Event Sourcing** - Complete audit trail for time-travel queries and compliance
 - **Data Management** - Automatic retention policies, export/import, and backup
 - **Security** - API key auth, RBAC, rate limiting, and security headers
 - **Observability** - Structured logging, Prometheus metrics, and distributed tracing
-- **Multi-Project** - Isolated namespaces with project-level permissions
+- **Multi-Tenancy** - Isolated tenants with project-level permissions and quotas
 - **Sandbox UI** - Interactive web interface for testing
 - **API Versioning** - Stable /api/v1 endpoints with backward compatibility
 
@@ -44,38 +44,65 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
       - REDIS_URL=redis://redis:6379
       - OPENSEARCH_URL=http://opensearch:9200
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
       - HYBRID_SEARCH_ENABLED=true  # Enable BM25 + semantic hybrid search
-      - RRF_K=60
-      - VECTOR_BOOST=1.0
     depends_on:
-      - redis
-      - opensearch
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=contex
+      - POSTGRES_USER=contex
+      - POSTGRES_PASSWORD=contex_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
-    image: redis/redis-stack:latest
+    image: redis:7-alpine  # Lightweight - only used for pub/sub
     ports:
       - "6379:6379"
-    volumes:
-      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   opensearch:
     image: opensearchproject/opensearch:2.11.0
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true
+      - plugins.security.disabled=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  redis-data:
+  postgres-data:
   opensearch-data:
 ```
 
@@ -307,7 +334,7 @@ response = await client.query(
 
 **Automatic Retention Policies:**
 - Events auto-expire after 30 days (configurable)
-- Redis streams auto-trim to prevent unbounded growth
+- Audit logs retained per compliance requirements
 - Agent registrations expire after 7 days of inactivity
 
 **Export/Import:**
@@ -323,7 +350,7 @@ await httpx.post(
 ```
 
 **Backup Strategy:**
-- Redis AOF (append-only file) for persistence
+- PostgreSQL WAL (Write-Ahead Logging) for durability
 - Automated export via API for cross-region backup
 - Point-in-time recovery using event sourcing
 
@@ -343,7 +370,7 @@ contex_agents_registered_total
 contex_events_published_total
 contex_queries_total
 contex_query_duration_seconds
-contex_redis_connections
+contex_db_connections
 ```
 
 **Distributed Tracing:**
@@ -399,7 +426,7 @@ pip install -e ".[dev]"
 
 - **[Python SDK](sdk/python/README.md)** - Client library documentation
 - **[Security](docs/SECURITY.md)** - Authentication, RBAC, rate limiting
-- **[Redis Sentinel](docs/REDIS_SENTINEL.md)** - High availability with automatic failover
+- **[Database Setup](docs/DATABASE.md)** - PostgreSQL + pgvector configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md)** - Time-travel queries and compliance
 - **[RBAC](docs/RBAC.md)** - Role-based access control guide
 - **[Rate Limiting](docs/RATE_LIMITING.md)** - Protection and limits

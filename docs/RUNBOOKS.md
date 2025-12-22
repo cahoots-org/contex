@@ -5,13 +5,14 @@ This document contains operational runbooks for common scenarios when running Co
 ## Table of Contents
 
 1. [Incident Response](#incident-response)
-2. [Redis Operations](#redis-operations)
-3. [OpenSearch Operations](#opensearch-operations)
-4. [Scaling Operations](#scaling-operations)
-5. [Deployment Procedures](#deployment-procedures)
-6. [Backup and Recovery](#backup-and-recovery)
-7. [Performance Troubleshooting](#performance-troubleshooting)
-8. [Security Incidents](#security-incidents)
+2. [PostgreSQL Operations](#postgresql-operations)
+3. [Redis Operations](#redis-operations)
+4. [OpenSearch Operations](#opensearch-operations)
+5. [Scaling Operations](#scaling-operations)
+6. [Deployment Procedures](#deployment-procedures)
+7. [Backup and Recovery](#backup-and-recovery)
+8. [Performance Troubleshooting](#performance-troubleshooting)
+9. [Security Incidents](#security-incidents)
 
 ---
 
@@ -43,7 +44,10 @@ This document contains operational runbooks for common scenarios when running Co
 
 3. **Check dependent services:**
    ```bash
-   # Redis health
+   # PostgreSQL health
+   psql -U contex -d contex -c "SELECT 1"
+
+   # Redis health (pub/sub only)
    redis-cli ping
 
    # OpenSearch health
@@ -57,7 +61,8 @@ This document contains operational runbooks for common scenarios when running Co
 
 **Resolution:**
 
-- If Redis is down: See [Redis Failover](#redis-failover)
+- If PostgreSQL is down: See [PostgreSQL Recovery](#postgresql-recovery)
+- If Redis is down: See [Redis Issues](#redis-pubsub-issues)
 - If OpenSearch is down: See [OpenSearch Recovery](#opensearch-recovery)
 - If high latency: See [High Latency Investigation](#high-latency-investigation)
 - If OOM: See [Memory Issues](#memory-issues)
@@ -79,10 +84,15 @@ This document contains operational runbooks for common scenarios when running Co
    Look at: Latency Distribution, P95/P99 over time
    ```
 
-2. **Check Redis latency:**
+2. **Check PostgreSQL latency:**
    ```bash
-   redis-cli --latency-history
-   redis-cli info stats | grep -E "(instantaneous|keyspace)"
+   # Check active queries
+   psql -c "SELECT pid, now() - pg_stat_activity.query_start AS duration, query
+            FROM pg_stat_activity
+            WHERE state = 'active' ORDER BY duration DESC;"
+
+   # Check connection count
+   psql -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'contex';"
    ```
 
 3. **Check OpenSearch latency:**
@@ -100,7 +110,7 @@ This document contains operational runbooks for common scenarios when running Co
 
 - Scale up replicas if CPU bound
 - Increase embedding cache size if cache miss rate is high
-- Add Redis replicas if Redis is the bottleneck
+- Add connection pool capacity if PostgreSQL connections are exhausted
 - Optimize OpenSearch indices if search is slow
 
 ---
@@ -130,120 +140,191 @@ This document contains operational runbooks for common scenarios when running Co
    kubectl top pods -l app=contex
    ```
 
-4. **Check degradation status:**
+4. **Check health endpoint:**
    ```bash
-   curl -s http://localhost:8001/health | jq '.degradation'
+   curl -s http://localhost:8001/api/v1/health | jq .
    ```
 
 **Resolution:**
 
 - If OOMKilled: Increase memory limits
 - If CrashLoopBackOff: Check logs for startup errors
-- If Redis unavailable: Check Redis health, Contex will auto-degrade
+- If PostgreSQL unavailable: Check database health
 - If ImagePullBackOff: Check image registry credentials
 
 ---
 
-## Redis Operations
+## PostgreSQL Operations
 
-### Redis Failover
-
-**When Sentinel Detects Master Failure:**
-
-Sentinel automatically handles failover. Monitor with:
-
-```bash
-# Check Sentinel status
-redis-cli -p 26379 SENTINEL master mymaster
-redis-cli -p 26379 SENTINEL slaves mymaster
-
-# Check which node is master
-redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster
-```
-
-**Manual Failover (if needed):**
-
-```bash
-# Trigger manual failover
-redis-cli -p 26379 SENTINEL failover mymaster
-
-# Verify new master
-redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster
-```
-
-**Contex Response:**
-
-- Contex will automatically reconnect to the new master
-- Brief connectivity errors during failover (typically < 30 seconds)
-- Check `degradation_mode` metric - should return to NORMAL after recovery
-
-### Redis Memory Issues
+### PostgreSQL Recovery
 
 **Symptoms:**
-- `redis_memory_used_bytes` approaching `redis_memory_max_bytes`
-- OOM errors in Redis logs
-- Eviction happening (`evicted_keys` counter increasing)
+- Connection errors to PostgreSQL
+- "could not connect to server" errors
+- Database queries timing out
 
 **Investigation:**
 
 ```bash
-# Check memory usage
-redis-cli info memory
+# Check PostgreSQL container status
+docker compose ps postgres
 
-# Check key distribution
-redis-cli --bigkeys
+# Check PostgreSQL logs
+docker compose logs postgres --tail=100
 
-# Check memory per key type
-redis-cli memory doctor
+# Test connection
+psql "postgresql://contex:contex_password@localhost:5432/contex" -c "SELECT 1"
+
+# Check active connections
+psql -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"
 ```
 
 **Resolution:**
 
-1. **Immediate:** Increase `maxmemory` if possible
+1. **If container is down:**
    ```bash
-   redis-cli CONFIG SET maxmemory 2gb
+   docker compose up -d postgres
+   # Wait for healthy status
+   docker compose ps postgres
    ```
 
-2. **Short-term:** Enable eviction policy
+2. **If too many connections:**
    ```bash
-   redis-cli CONFIG SET maxmemory-policy allkeys-lru
+   # Terminate idle connections
+   psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+            WHERE datname = 'contex' AND state = 'idle'
+            AND query_start < now() - interval '5 minutes';"
    ```
 
-3. **Long-term:**
-   - Scale Redis cluster
-   - Review data retention policies
-   - Implement TTLs on cached data
+3. **If disk space issue:**
+   ```bash
+   # Check disk usage
+   docker exec contex-postgres-1 df -h /var/lib/postgresql/data
 
-### Redis Connection Pool Exhaustion
+   # Vacuum to reclaim space
+   psql -c "VACUUM FULL;"
+   ```
+
+### PostgreSQL Connection Pool Exhaustion
 
 **Symptoms:**
-- "Connection pool exhausted" errors
+- "connection pool exhausted" errors
 - Increasing latency
-- Timeouts on Redis operations
+- Timeouts on database operations
 
 **Investigation:**
 
 ```bash
-# Check connected clients
-redis-cli info clients
+# Check active connections
+psql -c "SELECT count(*), usename, application_name
+         FROM pg_stat_activity
+         WHERE datname = 'contex'
+         GROUP BY usename, application_name;"
 
-# Check connection pool metrics in Prometheus
-# Look at: redis_connected_clients
+# Check max connections setting
+psql -c "SHOW max_connections;"
 ```
 
 **Resolution:**
 
 1. **Increase pool size:**
    ```bash
-   export REDIS_MAX_CONNECTIONS=100
+   export DATABASE_POOL_SIZE=20
+   export DATABASE_MAX_OVERFLOW=40
    ```
 
 2. **Check for connection leaks:**
-   - Review code for unclosed connections
-   - Ensure proper connection cleanup in error paths
+   - Review code for unclosed sessions
+   - Ensure proper `async with db.session()` usage
 
 3. **Scale horizontally:**
    - Add more Contex replicas to distribute connections
+
+### PostgreSQL Performance Tuning
+
+**Check slow queries:**
+
+```sql
+-- Enable pg_stat_statements if not already
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- Find slowest queries
+SELECT query, mean_exec_time, calls, total_exec_time
+FROM pg_stat_statements
+ORDER BY mean_exec_time DESC
+LIMIT 10;
+```
+
+**Check table bloat:**
+
+```sql
+-- Check table sizes
+SELECT schemaname, tablename,
+       pg_size_pretty(pg_total_relation_size(schemaname || '.' || tablename))
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
+
+-- Run vacuum if needed
+VACUUM ANALYZE embeddings;
+VACUUM ANALYZE events;
+```
+
+**Check index usage:**
+
+```sql
+-- Find unused indexes
+SELECT schemaname, tablename, indexname, idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0;
+```
+
+---
+
+## Redis Operations
+
+Redis is used only for pub/sub notifications in Contex. Data is stored in PostgreSQL.
+
+### Redis Pub/Sub Issues
+
+**Symptoms:**
+- Agent notifications not being delivered
+- Pub/sub messages not arriving
+
+**Investigation:**
+
+```bash
+# Check Redis status
+redis-cli ping
+
+# Check pub/sub channels
+redis-cli PUBSUB CHANNELS "*"
+
+# Monitor pub/sub activity
+redis-cli MONITOR
+```
+
+**Resolution:**
+
+```bash
+# Restart Redis if needed
+docker compose restart redis
+
+# Check Contex is connected
+docker compose logs contex | grep -i redis
+```
+
+### Redis Memory (Pub/Sub Buffer)
+
+Even for pub/sub only, Redis uses memory for message buffers:
+
+```bash
+# Check memory usage
+redis-cli info memory
+
+# Check client output buffers
+redis-cli info clients
+```
 
 ---
 
@@ -453,38 +534,33 @@ kubectl delete deployment contex-blue
 
 ## Backup and Recovery
 
-### Redis Backup
+### PostgreSQL Backup
 
-**RDB Snapshot:**
-
-```bash
-# Trigger immediate backup
-redis-cli BGSAVE
-
-# Check backup status
-redis-cli LASTSAVE
-
-# Backup files are in Redis data directory
-# Default: /data/dump.rdb
-```
-
-**AOF Backup:**
+**Logical Backup (pg_dump):**
 
 ```bash
-# Trigger AOF rewrite
-redis-cli BGREWRITEAOF
+# Full database backup
+pg_dump -h localhost -U contex -Fc contex > backup-$(date +%Y%m%d).dump
 
-# Backup the AOF file
-cp /data/appendonly.aof /backup/appendonly-$(date +%Y%m%d).aof
+# Backup specific tables
+pg_dump -h localhost -U contex -t events -t embeddings contex > tables-backup.sql
 ```
 
-**Kubernetes CronJob for Backups:**
+**Docker Volume Backup:**
+
+```bash
+# Backup volume
+docker run --rm -v contex_postgres-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/postgres-backup-$(date +%Y%m%d).tar.gz /data
+```
+
+**Automated Backup CronJob (Kubernetes):**
 
 ```yaml
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: redis-backup
+  name: postgres-backup
 spec:
   schedule: "0 2 * * *"  # Daily at 2 AM
   jobTemplate:
@@ -493,46 +569,40 @@ spec:
         spec:
           containers:
           - name: backup
-            image: redis:7-alpine
+            image: postgres:16
             command:
             - /bin/sh
             - -c
             - |
-              redis-cli -h redis BGSAVE
-              sleep 10
-              cp /data/dump.rdb /backup/dump-$(date +%Y%m%d).rdb
+              pg_dump -h postgres -U contex -Fc contex > /backup/contex-$(date +%Y%m%d).dump
           restartPolicy: OnFailure
 ```
 
-### Redis Recovery
+### PostgreSQL Recovery
 
-**From RDB:**
+**From pg_dump:**
 
 ```bash
-# Stop Redis
-redis-cli SHUTDOWN
+# Restore to existing database
+pg_restore -h localhost -U contex -d contex -c backup.dump
 
-# Replace dump.rdb
-cp /backup/dump-20240101.rdb /data/dump.rdb
-
-# Start Redis
-redis-server
+# Restore to new database
+createdb contex_restored
+pg_restore -h localhost -U contex -d contex_restored backup.dump
 ```
 
-**From AOF:**
+**From Volume Backup:**
 
 ```bash
-# Stop Redis
-redis-cli SHUTDOWN
+# Stop containers
+docker compose down
 
-# Replace appendonly.aof
-cp /backup/appendonly-20240101.aof /data/appendonly.aof
+# Restore volume
+docker run --rm -v contex_postgres-data:/data -v $(pwd):/backup \
+  alpine sh -c "rm -rf /data/* && tar xzf /backup/postgres-backup.tar.gz -C /"
 
-# Check and fix AOF if corrupted
-redis-check-aof --fix /data/appendonly.aof
-
-# Start Redis
-redis-server --appendonly yes
+# Start containers
+docker compose up -d
 ```
 
 ---
@@ -552,8 +622,9 @@ redis-server --appendonly yes
 # Check container memory
 kubectl top pods -l app=contex
 
-# Check Python memory profile (if profiling enabled)
-curl http://localhost:8001/debug/memory
+# Check PostgreSQL memory
+psql -c "SELECT pg_size_pretty(sum(pg_total_relation_size(schemaname || '.' || tablename)))
+         FROM pg_tables WHERE schemaname = 'public';"
 ```
 
 **Resolution:**
@@ -598,15 +669,15 @@ curl -X PUT "localhost:9200/contex-contexts/_settings" -H 'Content-Type: applica
   "index.search.slowlog.threshold.query.info": "1s"
 }'
 
-# View slow log
-docker logs opensearch | grep slowlog
+# Check PostgreSQL slow queries
+psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 5;"
 ```
 
 **Resolution:**
 
 1. **Optimize queries** - reduce result size
 2. **Add indices** - improve search performance
-3. **Increase OpenSearch resources**
+3. **Increase database resources**
 4. **Enable query caching**
 
 ---
@@ -639,8 +710,8 @@ docker logs opensearch | grep slowlog
      --from-literal=API_KEY_SALT=$(openssl rand -base64 32) \
      --dry-run=client -o yaml | kubectl apply -f -
 
+   # Rotate PostgreSQL password
    # Rotate Redis password
-   # Rotate Vault tokens
    # Rotate AWS credentials
    ```
 
@@ -655,8 +726,8 @@ docker logs opensearch | grep slowlog
 
 1. **Invalidate compromised keys:**
    ```bash
-   # Delete from Redis
-   redis-cli DEL "api_key:<compromised_hash>"
+   # Delete from database
+   psql -c "DELETE FROM api_keys WHERE key_id = '<compromised_key_id>';"
    ```
 
 2. **Rotate API key salt** (invalidates ALL keys):
@@ -667,10 +738,12 @@ docker logs opensearch | grep slowlog
 
 3. **Issue new keys to legitimate users**
 
-4. **Review access logs:**
-   ```bash
-   # Check for suspicious activity
-   grep "api_key" /var/log/contex/*.log | grep -v 200
+4. **Review audit logs:**
+   ```sql
+   -- Check for suspicious activity
+   SELECT * FROM audit_events
+   WHERE actor_id = '<compromised_key_id>'
+   ORDER BY timestamp DESC LIMIT 100;
    ```
 
 ### Secret Exposure
@@ -680,7 +753,7 @@ docker logs opensearch | grep slowlog
 1. **Rotate immediately:**
    - All API keys
    - Database passwords
-   - Vault tokens
+   - Redis password
    - AWS credentials
 
 2. **Audit access:**
@@ -712,21 +785,23 @@ docker logs opensearch | grep slowlog
 | P99 Latency | > 500ms | > 2s | Scale or optimize |
 | CPU Usage | > 70% | > 90% | Scale horizontally |
 | Memory Usage | > 70% | > 90% | Scale vertically or fix leaks |
-| Redis Connections | > 80% pool | > 95% pool | Increase pool or scale |
+| DB Connections | > 80% pool | > 95% pool | Increase pool or scale |
 | Cache Hit Rate | < 70% | < 50% | Increase cache size |
-| Degradation Mode | DEGRADED | UNAVAILABLE | Check Redis health |
 
 ### Useful Commands
 
 ```bash
 # Quick health check
-curl -s http://localhost:8001/health | jq .
+curl -s http://localhost:8001/api/v1/health | jq .
 
 # Metrics endpoint
-curl -s http://localhost:8001/metrics | head -100
+curl -s http://localhost:8001/api/v1/metrics | head -100
 
-# Redis quick check
-redis-cli ping && redis-cli info keyspace
+# PostgreSQL quick check
+psql -c "SELECT 1" && psql -c "SELECT count(*) FROM events;"
+
+# Redis quick check (pub/sub)
+redis-cli ping
 
 # OpenSearch quick check
 curl -s http://localhost:9200/_cluster/health | jq '.status'

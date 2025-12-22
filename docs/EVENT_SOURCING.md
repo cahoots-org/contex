@@ -1,11 +1,11 @@
 # Event Sourcing in Contex
 
-Contex uses event sourcing via Redis Streams to maintain an immutable audit trail of all data changes. This document explains how to leverage event sourcing for debugging, compliance, disaster recovery, and more.
+Contex uses event sourcing via PostgreSQL to maintain an immutable audit trail of all data changes. This document explains how to leverage event sourcing for debugging, compliance, disaster recovery, and more.
 
 ## Overview
 
 Every data change in Contex is stored as an immutable event with:
-- **Automatic sequencing** - Events ordered by timestamp
+- **Automatic sequencing** - Events ordered by timestamp and sequence number
 - **Complete history** - Never deleted, always queryable
 - **Time-travel queries** - Reconstruct state at any point in time
 - **Agent catch-up** - New agents automatically receive historical context
@@ -16,7 +16,7 @@ Each event contains three core fields:
 
 ```json
 {
-  "sequence": "1704067200000-0",
+  "sequence": 1704067200000,
   "event_type": "data_published",
   "data": {
     "data_key": "api_config",
@@ -31,10 +31,9 @@ Each event contains three core fields:
 
 ### Field Reference
 
-- **sequence**: Unique timestamp-based ID (milliseconds-seqnum)
-  - Format: `{unix_timestamp_ms}-{sequence_number}`
-  - Example: `1704067200000-0` = Jan 1, 2024 00:00:00 UTC, first event at that millisecond
-  - Globally ordered across all events
+- **sequence**: Auto-incrementing sequence number per project
+  - Monotonically increasing within each project
+  - Used for ordering and catch-up queries
 
 - **event_type**: Type of event that occurred
   - `data_published` - New data added or updated
@@ -53,15 +52,15 @@ Each event contains three core fields:
 import httpx
 
 response = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 100}
 )
 
 # Response format
 {
   "events": [
-    {"sequence": "...", "event_type": "...", "data": {...}},
-    {"sequence": "...", "event_type": "...", "data": {...}},
+    {"sequence": 1, "event_type": "...", "data": {...}},
+    {"sequence": 2, "event_type": "...", "data": {...}},
     ...
   ],
   "count": 42
@@ -73,8 +72,8 @@ response = await httpx.get(
 ```python
 # Get only new events since last check
 response = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
-    params={"since": "1704067200000-0", "count": 50}
+    "http://localhost:8001/api/v1/projects/my-app/events",
+    params={"since": "100", "count": 50}
 )
 ```
 
@@ -83,20 +82,19 @@ response = await httpx.get(
 ```python
 from datetime import datetime
 
-# Convert timestamps to sequence IDs
-start_time = int(datetime(2024, 1, 15, 15, 0).timestamp() * 1000)
-end_time = int(datetime(2024, 1, 15, 16, 0).timestamp() * 1000)
-
-# Get all events
+# Query events and filter by timestamp
 all_events = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 10000}
 )
 
 # Filter to time range
+start_time = datetime(2024, 1, 15, 15, 0)
+end_time = datetime(2024, 1, 15, 16, 0)
+
 events_in_range = [
     e for e in all_events["events"]
-    if start_time <= int(e["sequence"].split("-")[0]) <= end_time
+    if start_time <= datetime.fromisoformat(e["created_at"]) <= end_time
 ]
 
 print(f"Found {len(events_in_range)} events between 3-4 PM")
@@ -114,20 +112,17 @@ print(f"Found {len(events_in_range)} events between 3-4 PM")
 import httpx
 from datetime import datetime
 
-# Convert timestamp to Redis sequence
-timestamp_ms = int(datetime(2024, 1, 15, 15, 30).timestamp() * 1000)
-sequence = f"{timestamp_ms}-0"
-
 # Get all events up to that point
 events = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 1000}
 )
 
-# Filter events before the sequence
+# Filter events before the target time
+target_time = datetime(2024, 1, 15, 15, 30)
 historical_events = [
     e for e in events["events"]
-    if int(e["sequence"].split("-")[0]) <= timestamp_ms
+    if datetime.fromisoformat(e["created_at"]) <= target_time
 ]
 
 # Reconstruct agent's context at that moment
@@ -162,7 +157,7 @@ events = await get_all_events("my-app")
 
 audit_trail = [
     {
-        "timestamp": datetime.fromtimestamp(int(e["sequence"].split("-")[0]) / 1000),
+        "timestamp": e["created_at"],
         "data_key": e["data"]["data_key"],
         "change_type": "published"
     }
@@ -204,7 +199,7 @@ for key, count in most_common:
 **Update Frequency Over Time:**
 
 ```python
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 
 events = await get_all_events("my-app")
@@ -213,8 +208,8 @@ events = await get_all_events("my-app")
 updates_by_hour = defaultdict(int)
 for e in events:
     if e["event_type"] == "data_published":
-        timestamp_ms = int(e["sequence"].split("-")[0])
-        hour = datetime.fromtimestamp(timestamp_ms / 1000).replace(minute=0, second=0, microsecond=0)
+        dt = datetime.fromisoformat(e["created_at"])
+        hour = dt.replace(minute=0, second=0, microsecond=0)
         updates_by_hour[hour] += 1
 
 # Find peak hours
@@ -232,7 +227,7 @@ Export and replay events to recover from failures or migrate to new instances.
 
 ```bash
 # Export all events to JSON file
-curl "http://localhost:8001/api/projects/my-app/events?since=0&count=10000" \
+curl "http://localhost:8001/api/v1/projects/my-app/events?since=0&count=10000" \
   > events-backup-$(date +%Y%m%d).json
 
 # Verify backup
@@ -240,18 +235,6 @@ jq '.count' events-backup-*.json
 ```
 
 **Replay on New Instance:**
-
-```bash
-# Method 1: Using jq and curl
-cat events.json | jq -r '.events[] | select(.event_type == "data_published") | .data' | \
-  while read -r event; do
-    curl -X POST "http://new-instance:8001/api/data/publish" \
-      -H "Content-Type: application/json" \
-      -d "$event"
-  done
-```
-
-**Replay with Python:**
 
 ```python
 import httpx
@@ -266,7 +249,7 @@ async with httpx.AsyncClient() as client:
     for event in backup["events"]:
         if event["event_type"] == "data_published":
             await client.post(
-                "http://new-instance:8001/api/data/publish",
+                "http://new-instance:8001/api/v1/data/publish",
                 json=event["data"]
             )
             print(f"Replayed: {event['data']['data_key']}")
@@ -283,7 +266,7 @@ import httpx
 
 # Export production events
 prod_events = await httpx.get(
-    "https://prod.contex.io/api/projects/my-app/events",
+    "https://prod.contex.io/api/v1/projects/my-app/events",
     params={"since": "0", "count": 1000}
 )
 
@@ -292,34 +275,11 @@ async with httpx.AsyncClient() as client:
     for event in prod_events.json()["events"]:
         if event["event_type"] == "data_published":
             await client.post(
-                "http://test.contex.local/api/data/publish",
+                "http://test.contex.local/api/v1/data/publish",
                 json=event["data"]
             )
 
 # Test environment now has identical data to production
-```
-
-**Selective Replay:**
-
-```python
-# Only replay events from last 24 hours
-from datetime import datetime, timedelta
-
-yesterday = datetime.now() - timedelta(days=1)
-yesterday_ms = int(yesterday.timestamp() * 1000)
-
-prod_events = await httpx.get(
-    "https://prod.contex.io/api/projects/my-app/events",
-    params={"since": f"{yesterday_ms}-0", "count": 1000}
-)
-
-# Replay recent events only
-for event in prod_events.json()["events"]:
-    if event["event_type"] == "data_published":
-        await test_client.post(
-            "http://test.contex.local/api/data/publish",
-            json=event["data"]
-        )
 ```
 
 ### 6. New Agent Catch-Up
@@ -331,7 +291,7 @@ When registering a new agent, it automatically receives all relevant historical 
 ```python
 # Register agent
 registration = await httpx.post(
-    "http://localhost:8001/api/agents/register",
+    "http://localhost:8001/api/v1/agents/register",
     json={
         "agent_id": "new-agent",
         "project_id": "my-app",
@@ -343,26 +303,6 @@ registration = await httpx.post(
 # Agent receives all matching data that was ever published
 matched_data = registration.json()["matched_data"]
 print(f"Agent caught up with {len(matched_data)} historical data sources")
-```
-
-**Partial Catch-Up:**
-
-```python
-# Agent only wants data from last week
-from datetime import datetime, timedelta
-
-last_week = datetime.now() - timedelta(days=7)
-last_week_ms = int(last_week.timestamp() * 1000)
-
-registration = await httpx.post(
-    "http://localhost:8001/api/agents/register",
-    json={
-        "agent_id": "new-agent",
-        "project_id": "my-app",
-        "data_needs": ["API configuration"],
-        "last_seen_sequence": f"{last_week_ms}-0"  # Only last week
-    }
-)
 ```
 
 ## Best Practices
@@ -377,7 +317,7 @@ since = "0"
 all_events = []
 while True:
     response = await httpx.get(
-        f"http://localhost:8001/api/projects/my-app/events",
+        f"http://localhost:8001/api/v1/projects/my-app/events",
         params={"since": since, "count": count_per_page}
     )
 
@@ -386,7 +326,7 @@ while True:
         break
 
     all_events.extend(events)
-    since = events[-1]["sequence"]  # Last sequence becomes next 'since'
+    since = str(events[-1]["sequence"])  # Last sequence becomes next 'since'
 
 print(f"Retrieved {len(all_events)} total events")
 ```
@@ -415,7 +355,7 @@ async def get_events_cached(project_id):
 
     # Fetch fresh data
     response = await httpx.get(
-        f"http://localhost:8001/api/projects/{project_id}/events",
+        f"http://localhost:8001/api/v1/projects/{project_id}/events",
         params={"since": "0", "count": 10000}
     )
     events = response.json()
@@ -427,19 +367,19 @@ async def get_events_cached(project_id):
     return events
 ```
 
-### 3. Monitor Stream Length
+### 3. Monitor Event Count
 
 ```python
 # Check how many events exist
 events = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 1}
 )
 
 # If count is large, consider data retention policies
 total_count = events.json()["count"]
 if total_count > 100000:
-    print(f"Warning: {total_count} events in stream, consider archiving old data")
+    print(f"Warning: {total_count} events in table, consider archiving old data")
 ```
 
 ### 4. Structure Event Queries Efficiently
@@ -462,21 +402,21 @@ while True:
     if not events:
         break
     process(events)
-    since = events[-1]["sequence"]
+    since = str(events[-1]["sequence"])
 ```
 
 ## Performance Considerations
 
-### Event Stream Size
+### Event Table Size
 
-- Redis Streams are highly efficient (O(1) append, O(log N) range queries)
-- Can handle millions of events per project
-- Memory usage: ~1KB per event (varies with payload size)
+- PostgreSQL handles millions of events per project efficiently
+- Indexed on `(project_id, sequence)` for fast range queries
+- Storage: ~1KB per event (varies with payload size)
 
 ### Query Performance
 
-- `since=0` queries scan from beginning (O(N))
-- Recent event queries are fast (O(log N + K) where K = count)
+- Recent event queries are fast (indexed lookup)
+- Full table scans for old events should use pagination
 - Use incremental queries when possible:
 
 ```python
@@ -488,17 +428,19 @@ save_checkpoint(new_events[-1]["sequence"])
 
 ### Data Retention
 
-For very large event streams, consider retention policies:
+For very large event stores, consider retention policies:
 
 ```python
 # Archive old events to S3/object storage
 from datetime import datetime, timedelta
 
 cutoff = datetime.now() - timedelta(days=90)
-cutoff_ms = int(cutoff.timestamp() * 1000)
 
 events = await get_all_events("my-app")
-old_events = [e for e in events if int(e["sequence"].split("-")[0]) < cutoff_ms]
+old_events = [
+    e for e in events
+    if datetime.fromisoformat(e["created_at"]) < cutoff
+]
 
 # Archive to long-term storage
 import boto3
@@ -509,8 +451,8 @@ s3.put_object(
     Body=json.dumps(old_events)
 )
 
-# Note: Contex doesn't currently support automatic event deletion
-# Manual Redis Streams trimming would be needed
+# Delete from database (via admin API or direct SQL)
+# DELETE FROM events WHERE project_id = 'my-app' AND created_at < cutoff
 ```
 
 ## Troubleshooting
@@ -520,7 +462,7 @@ s3.put_object(
 ```python
 # Check if events are being published
 events = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 10}
 )
 
@@ -531,28 +473,16 @@ else:
     print(f"Latest: {events.json()['events'][-1]}")
 ```
 
-### Sequence ID Confusion
+### Sequence Number Gaps
 
-```python
-# Sequence IDs are strings, not integers
-# Format: "{unix_ms}-{seq}"
-
-sequence = "1704067200000-0"
-timestamp_ms = int(sequence.split("-")[0])  # 1704067200000
-seq_num = int(sequence.split("-")[1])       # 0
-
-# Convert to datetime
-from datetime import datetime
-dt = datetime.fromtimestamp(timestamp_ms / 1000)
-print(f"Event occurred at: {dt}")
-```
+Sequence numbers may have gaps if transactions fail. This is normal and expected - the ordering is preserved.
 
 ### Missing Historical Events
 
 ```python
 # Ensure you're querying from the beginning
 response = await httpx.get(
-    "http://localhost:8001/api/projects/my-app/events",
+    "http://localhost:8001/api/v1/projects/my-app/events",
     params={"since": "0", "count": 1000}  # "0" means from beginning
 )
 
@@ -563,6 +493,6 @@ if response.json()["count"] == 1000:
 
 ## Related Documentation
 
-- [Redis Persistence](REDIS_PERSISTENCE.md) - How event data is stored and backed up
+- [Database Setup](DATABASE.md) - PostgreSQL and pgvector configuration
 - [RBAC](RBAC.md) - Access control for event queries
 - [Metrics](METRICS.md) - Monitoring event stream health

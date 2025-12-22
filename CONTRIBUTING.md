@@ -42,7 +42,8 @@ By participating in this project, you agree to maintain a respectful and inclusi
 ### Prerequisites
 
 - Python 3.11+
-- Redis 7.0+
+- PostgreSQL 16+ with pgvector extension
+- Redis 7.0+ (for pub/sub only)
 - Git
 
 ### Local Setup
@@ -58,24 +59,35 @@ By participating in this project, you agree to maintain a respectful and inclusi
    pip install -r requirements.txt
    ```
 
-3. **Start Redis** (if not using Docker):
+3. **Start PostgreSQL and Redis** (using Docker):
    ```bash
-   # macOS
-   brew services start redis
+   # Start all services with Docker Compose
+   docker compose up -d postgres redis
 
-   # Linux
-   sudo systemctl start redis
+   # Or manually:
+   # PostgreSQL with pgvector
+   docker run -d -p 5432:5432 \
+     -e POSTGRES_DB=contex \
+     -e POSTGRES_USER=contex \
+     -e POSTGRES_PASSWORD=contex_password \
+     pgvector/pgvector:pg16
 
-   # Docker
+   # Redis (for pub/sub only)
    docker run -d -p 6379:6379 redis:7-alpine
    ```
 
-4. **Run Contex**:
+4. **Set environment variables**:
+   ```bash
+   export DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+   export REDIS_URL="redis://localhost:6379"
+   ```
+
+5. **Run Contex**:
    ```bash
    python main.py
    ```
 
-5. **Run tests**:
+6. **Run tests**:
    ```bash
    pytest tests/ -v
    ```
@@ -218,14 +230,23 @@ from fakeredis import FakeAsyncRedis
 from src.context_engine import ContextEngine
 
 @pytest_asyncio.fixture
+async def db():
+    """Create a test database connection"""
+    from src.core.database import DatabaseManager
+    db = DatabaseManager(database_url="postgresql+asyncpg://...")
+    await db.initialize()
+    yield db
+    await db.close()
+
+@pytest_asyncio.fixture
 async def redis():
-    """Create a fake Redis instance for testing"""
+    """Create a fake Redis instance for pub/sub testing"""
     return FakeAsyncRedis(decode_responses=False)
 
 @pytest_asyncio.fixture
-async def context_engine(redis):
+async def context_engine(db, redis):
     """Create a ContextEngine instance for testing"""
-    return ContextEngine(redis=redis)
+    return ContextEngine(db=db, redis=redis)
 
 @pytest.mark.asyncio
 async def test_publish_data_creates_event(context_engine):
@@ -417,20 +438,36 @@ pytest tests/ --pdb  # Drop into debugger on failure
   ```
 - Check logs with `docker compose logs -f contex`
 
-### Working with Redis
+### Working with the Database
+
+```bash
+# Connect to PostgreSQL CLI
+psql "postgresql://contex:contex_password@localhost:5432/contex"
+
+# Or with Docker
+docker exec -it contex-postgres-1 psql -U contex -d contex
+
+# View tables
+\dt
+
+# Check embeddings
+SELECT project_id, data_key, created_at FROM embeddings LIMIT 10;
+
+# Check events
+SELECT project_id, event_type, sequence FROM events ORDER BY created_at DESC LIMIT 10;
+```
+
+### Working with Redis (Pub/Sub)
 
 ```bash
 # Connect to Redis CLI
 redis-cli
 
 # Or with Docker
-docker exec -it contex-redis redis-cli
+docker exec -it contex-redis-1 redis-cli
 
-# View all keys
-KEYS *
-
-# View stream data
-XREAD STREAMS project:test-project:events 0
+# Subscribe to agent updates
+SUBSCRIBE agent:my-agent:updates
 ```
 
 ## Questions?
