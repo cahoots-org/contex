@@ -8,6 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -87,7 +88,7 @@ class DatabaseManager:
         # Test connection
         try:
             async with self.engine.connect() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             self._is_connected = True
             logger.info("Database connection established", url=url.split("@")[-1])
         except Exception as e:
@@ -165,7 +166,7 @@ class DatabaseManager:
         try:
             start = time.perf_counter()
             async with self.engine.connect() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             latency_ms = (time.perf_counter() - start) * 1000
 
             pool = self.engine.pool
