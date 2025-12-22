@@ -64,15 +64,29 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      postgres:
+        image: ankane/pgvector:latest
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: contex_test
+          POSTGRES_USER: contex
+          POSTGRES_PASSWORD: contex_password
+        options: >-
+          --health-cmd "pg_isready -U contex -d contex_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     steps:
     - name: Checkout code
@@ -89,8 +103,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Wait for PostgreSQL
+      run: |
+        until pg_isready -h localhost -p 5432 -U contex; do
+          echo "Waiting for PostgreSQL..."
+          sleep 2
+        done
+
+    - name: Setup pgvector extension
+      env:
+        PGPASSWORD: contex_password
+      run: |
+        psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
     - name: Run pytest
       env:
+        DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
         REDIS_URL: redis://localhost:6379
       run: |
         pytest tests/ -v --tb=short
