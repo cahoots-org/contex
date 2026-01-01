@@ -34,7 +34,7 @@ pyyaml==6.0.1
 toml==0.10.2
 
 # Authentication (JWT for service accounts)
-PyJWT==2.8.0
+PyJWT==2.10.1
 
 # Error tracking
 sentry-sdk[fastapi]==1.39.1
