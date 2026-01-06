@@ -92,6 +92,7 @@ class FeaturesConfig(BaseModel):
     hybrid_search_enabled: bool = Field(default=False, description="Enable hybrid search with RRF")
     rrf_k: int = Field(default=60, ge=1, le=1000, description="RRF constant (typical value: 60)")
     vector_boost: float = Field(default=1.0, ge=0.1, le=10.0, description="Vector rank boost multiplier")
+    vector_store: str = Field(default="pgvector", description="Vector store backend: 'pgvector' or 'opensearch'")
 
 
 class ContexConfig(BaseModel):
@@ -141,6 +142,7 @@ class ContexConfig(BaseModel):
                 hybrid_search_enabled=os.getenv('HYBRID_SEARCH_ENABLED', 'false').lower() == 'true',
                 rrf_k=int(os.getenv('RRF_K', '60')),
                 vector_boost=float(os.getenv('VECTOR_BOOST', '1.0')),
+                vector_store=os.getenv('VECTOR_STORE', 'pgvector'),
             ),
         )
     

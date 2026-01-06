@@ -10,7 +10,7 @@ References:
 """
 
 import os
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 import numpy as np
 from opensearchpy import OpenSearch
 
@@ -107,7 +107,13 @@ class RankFusionSearch:
                                 "m": 24
                             }
                         }
-                    }
+                    },
+                    # Additional fields for OpenSearch-only mode
+                    "data": {"type": "object", "enabled": True},
+                    "data_original": {"type": "text", "index": False},
+                    "node_path": {"type": "keyword"},
+                    "node_type": {"type": "keyword"},
+                    "description": {"type": "text"},
                 }
             }
         }
@@ -123,7 +129,11 @@ class RankFusionSearch:
         metadata: str,
         vector: List[float],
         data_format: str,
-        is_structured: bool
+        is_structured: bool,
+        data: Optional[Dict[str, Any]] = None,
+        data_original: Optional[str] = None,
+        node_path: Optional[str] = None,
+        node_type: Optional[str] = None,
     ) -> None:
         """
         Index a document for hybrid search.
@@ -131,11 +141,15 @@ class RankFusionSearch:
         Args:
             project_id: Project identifier
             data_key: Unique data key
-            content: Searchable text content
+            content: Searchable text content (also used as description)
             metadata: Additional metadata
             vector: Embedding vector
             data_format: Data format type
             is_structured: Whether data is structured
+            data: The actual data payload (for OpenSearch-only mode)
+            data_original: Original data string
+            node_path: Node path in the data structure
+            node_type: Type of node
         """
         doc_id = f"{project_id}::{data_key}"
 
@@ -146,7 +160,13 @@ class RankFusionSearch:
             "metadata": metadata,
             "vector": vector,
             "format": data_format,
-            "is_structured": is_structured
+            "is_structured": is_structured,
+            # Additional fields for OpenSearch-only mode
+            "data": data or {},
+            "data_original": data_original or "",
+            "node_path": node_path or "",
+            "node_type": node_type or "",
+            "description": content,  # Use content as description
         }
 
         self.client.index(
