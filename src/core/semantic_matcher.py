@@ -449,6 +449,9 @@ class SemanticDataMatcher:
                 logger.warning(f"Failed to get data keys from OpenSearch: {e}")
                 return []
 
+        if VECTOR_STORE == "opensearch":
+            return []
+
         async with self.db.session() as session:
             result = await session.execute(
                 select(Embedding.data_key)
@@ -511,6 +514,9 @@ class SemanticDataMatcher:
             except Exception as e:
                 logger.warning(f"Failed to get count from OpenSearch: {e}")
                 return 0
+
+        if VECTOR_STORE == "opensearch":
+            return 0
 
         async with self.db.session() as session:
             result = await session.execute(
