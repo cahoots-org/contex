@@ -47,10 +47,11 @@ class RankFusionSearch:
 
         # Initialize OpenSearch connection
         os_url = opensearch_url or os.getenv("OPENSEARCH_URL", "http://localhost:9200")
+        use_ssl = os_url.startswith("https://")
         self.client = OpenSearch(
             hosts=[os_url],
             http_compress=True,
-            use_ssl=False,
+            use_ssl=use_ssl,
             verify_certs=False,
             ssl_assert_hostname=False,
             ssl_show_warn=False
