@@ -160,6 +160,14 @@ class HealthChecker:
     
     async def check_pgvector(self) -> ComponentHealth:
         """Check pgvector extension health"""
+        import os
+        if os.getenv("VECTOR_STORE", "pgvector") == "opensearch":
+            return ComponentHealth(
+                status=HealthStatus.HEALTHY,
+                message="Using OpenSearch for vector storage",
+                details={"vector_store": "opensearch"}
+            )
+
         try:
             from sqlalchemy import text
 

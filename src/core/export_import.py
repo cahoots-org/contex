@@ -123,6 +123,10 @@ class ExportImportManager:
         """Export all embeddings for the project"""
         embeddings = []
 
+        import os
+        if os.getenv("VECTOR_STORE", "pgvector") == "opensearch":
+            return embeddings
+
         try:
             async with self.db.session() as session:
                 result = await session.execute(
@@ -385,6 +389,10 @@ class ExportImportManager:
         overwrite: bool = False
     ) -> int:
         """Import embeddings to PostgreSQL"""
+        import os
+        if os.getenv("VECTOR_STORE", "pgvector") == "opensearch":
+            return 0
+
         from sqlalchemy import delete
 
         try:

@@ -728,40 +728,79 @@ async def get_project_data(
     if not include_content:
         return {"project_id": project_id, "data_keys": data_keys, "count": len(data_keys)}
 
-    # Fetch full data for each key from PostgreSQL
-    from src.core.db_models import Embedding
-    from sqlalchemy import select
+    # Fetch full data for each key
+    import os
+    vector_store = os.getenv("VECTOR_STORE", "pgvector")
 
     result = []
-    db = request.app.state.db
-    async with db.session() as session:
+
+    if vector_store == "opensearch" and engine.semantic_matcher.hybrid_search:
+        # Fetch from OpenSearch
         for key in data_keys:
-            # Fetch embedding data from PostgreSQL
-            stmt = select(Embedding).where(
-                Embedding.project_id == project_id,
-                Embedding.data_key == key
-            )
-            query_result = await session.execute(stmt)
-            rows = query_result.scalars().all()
+            try:
+                query = {
+                    "query": {"bool": {"must": [
+                        {"term": {"project_id": project_id}},
+                        {"term": {"data_key": key}},
+                    ]}},
+                    "size": 100,
+                }
+                search_result = engine.semantic_matcher.hybrid_search.client.search(
+                    index=engine.semantic_matcher.hybrid_search.index_name,
+                    body=query,
+                )
+                for hit in search_result["hits"]["hits"]:
+                    source = hit["_source"]
+                    data_obj = source.get("data", {})
 
-            for row in rows:
-                data_obj = row.data if isinstance(row.data, dict) else {}
+                    try:
+                        import toon_format as toon
+                        toon_str = toon.encode(data_obj)
+                    except:
+                        toon_str = "TOON format not available"
 
-                # Generate TOON format
-                try:
-                    import toon_format as toon
-                    toon_str = toon.encode(data_obj)
-                except:
-                    toon_str = "TOON format not available"
+                    result.append({
+                        "data_key": source.get("data_key", key),
+                        "description": source.get("description", ""),
+                        "data": data_obj,
+                        "data_format": source.get("format", "json"),
+                        "is_structured": source.get("is_structured", False),
+                        "toon": toon_str,
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to fetch data from OpenSearch for key {key}: {e}")
+    else:
+        # Fetch from PostgreSQL
+        from src.core.db_models import Embedding
+        from sqlalchemy import select
 
-                result.append({
-                    "data_key": row.node_key or key,
-                    "description": row.description,
-                    "data": data_obj,
-                    "data_format": row.data_format or "json",
-                    "is_structured": row.node_type in ["object", "row"],
-                    "toon": toon_str
-                })
+        db = request.app.state.db
+        async with db.session() as session:
+            for key in data_keys:
+                stmt = select(Embedding).where(
+                    Embedding.project_id == project_id,
+                    Embedding.data_key == key
+                )
+                query_result = await session.execute(stmt)
+                rows = query_result.scalars().all()
+
+                for row in rows:
+                    data_obj = row.data if isinstance(row.data, dict) else {}
+
+                    try:
+                        import toon_format as toon
+                        toon_str = toon.encode(data_obj)
+                    except:
+                        toon_str = "TOON format not available"
+
+                    result.append({
+                        "data_key": row.node_key or key,
+                        "description": row.description,
+                        "data": data_obj,
+                        "data_format": row.data_format or "json",
+                        "is_structured": row.node_type in ["object", "row"],
+                        "toon": toon_str
+                    })
 
     return result
 
