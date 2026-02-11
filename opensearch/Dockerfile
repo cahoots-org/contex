@@ -1,8 +1,8 @@
 FROM --platform=linux/amd64 opensearchproject/opensearch:2.11.0
 
 USER root
-RUN yum install -y util-linux && yum clean all
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Patch entrypoint to allow running as root (required for Railway volume permissions)
+RUN sed -i 's/\[[ ]*"$(id -u)" == "0"[ ]*\]/false/' /usr/share/opensearch/opensearch-docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/share/opensearch/opensearch-docker-entrypoint.sh"]
