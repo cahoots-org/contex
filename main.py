@@ -11,6 +11,7 @@ from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
+from sqlalchemy import text
 from src.core.database import init_database
 from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
@@ -54,6 +55,23 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL connection established successfully")
     except Exception as e:
         logger.error("Failed to connect to PostgreSQL", error=str(e))
+        raise
+
+    # Create database tables if they don't exist
+    try:
+        from src.core.db_models import Base, Embedding
+        vector_store = os.getenv("VECTOR_STORE", "pgvector")
+        async with db.engine.begin() as conn:
+            if vector_store == "opensearch":
+                # Skip embeddings table (requires pgvector extension)
+                tables = [t for t in Base.metadata.sorted_tables if t.name != Embedding.__tablename__]
+                await conn.run_sync(Base.metadata.create_all, tables=tables)
+            else:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified")
+    except Exception as e:
+        logger.error("Failed to create database tables", error=str(e))
         raise
 
     # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)
