@@ -243,7 +243,7 @@ def initialize_tracing(
         enable_console_export = os.getenv("TRACING_CONSOLE_EXPORT", "false").lower() == "true"
 
     if enable_otlp_export is None:
-        enable_otlp_export = os.getenv("TRACING_OTLP_EXPORT", "true").lower() == "true"
+        enable_otlp_export = os.getenv("TRACING_OTLP_EXPORT", "false").lower() == "true"
 
     if otlp_endpoint is None:
         otlp_endpoint = os.getenv("TRACING_OTLP_ENDPOINT", "http://localhost:4317")

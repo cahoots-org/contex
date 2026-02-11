@@ -57,7 +57,6 @@ RUN mkdir -p /home/appuser/.cache/torch /home/appuser/.cache/huggingface && \
 # Set environment variables for model cache
 ENV TORCH_HOME=/home/appuser/.cache/torch \
     HF_HOME=/home/appuser/.cache/huggingface \
-    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
     SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/torch/sentence_transformers
 
 # Switch to non-root user

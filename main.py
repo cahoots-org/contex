@@ -137,12 +137,11 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize context engine", error=str(e))
         raise
 
-    # Initialize pgvector index
+    # Initialize vector storage index
     try:
         await context_engine.semantic_matcher.initialize_index()
-        logger.info("pgvector index initialized")
     except Exception as e:
-        logger.warning("pgvector index initialization failed", error=str(e))
+        logger.warning("Vector index initialization failed", error=str(e))
 
     # Initialize health checker
     from src.core.health import HealthChecker
@@ -177,14 +176,12 @@ async def lifespan(app: FastAPI):
         app.state.webhook_manager = None
         logger.info("Webhooks disabled")
 
-    # Initialize distributed tracing
+    # Initialize distributed tracing (FastAPI instrumented at module level below)
     try:
         tracing_manager = initialize_tracing(
             service_name="contex",
             service_version="0.2.0"
         )
-        # Instrument FastAPI and Redis
-        tracing_manager.instrument_fastapi(app)
         tracing_manager.instrument_redis()
         app.state.tracing_manager = tracing_manager
         logger.info("Distributed tracing initialized")
@@ -374,6 +371,19 @@ from fastapi.responses import RedirectResponse
 async def root():
     """Redirect to query sandbox"""
     return RedirectResponse(url="/sandbox")
+
+
+# Instrument FastAPI with OpenTelemetry at module level (must happen after all
+# middleware and routes are configured, but before the app starts serving)
+try:
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    FastAPIInstrumentor.instrument_app(
+        app,
+        excluded_urls="health,ready,metrics"
+    )
+    logger.info("Tracing: FastAPI instrumented")
+except Exception as e:
+    logger.warning("Tracing: Failed to instrument FastAPI", error=str(e))
 
 
 if __name__ == "__main__":
