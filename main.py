@@ -194,17 +194,18 @@ async def lifespan(app: FastAPI):
         app.state.webhook_manager = None
         logger.info("Webhooks disabled")
 
-    # Initialize distributed tracing (FastAPI instrumented at module level below)
+    # Instrument Redis with tracing (TracerProvider initialized at module level)
     try:
-        tracing_manager = initialize_tracing(
-            service_name="contex",
-            service_version="0.2.0"
-        )
-        tracing_manager.instrument_redis()
-        app.state.tracing_manager = tracing_manager
-        logger.info("Distributed tracing initialized")
+        from src.core.tracing import get_tracing_manager
+        tracing_manager = get_tracing_manager()
+        if tracing_manager:
+            tracing_manager.instrument_redis()
+            app.state.tracing_manager = tracing_manager
+            logger.info("Redis tracing instrumented")
+        else:
+            app.state.tracing_manager = None
     except Exception as e:
-        logger.warning("Failed to initialize tracing", error=str(e))
+        logger.warning("Failed to instrument Redis tracing", error=str(e))
         app.state.tracing_manager = None
 
     logger.info("Contex is ready!")
@@ -391,8 +392,19 @@ async def root():
     return RedirectResponse(url="/sandbox")
 
 
-# Instrument FastAPI with OpenTelemetry at module level (must happen after all
-# middleware and routes are configured, but before the app starts serving)
+# Initialize tracing at module level so the TracerProvider is set globally
+# BEFORE FastAPI instrumentation picks it up
+try:
+    _tracing_mgr = initialize_tracing(
+        service_name="contex",
+        service_version="0.2.0"
+    )
+    logger.info("Tracing: TracerProvider initialized")
+except Exception as e:
+    logger.warning("Tracing: Failed to initialize TracerProvider", error=str(e))
+
+# Instrument FastAPI with OpenTelemetry at module level (must happen after
+# TracerProvider is set, and after all middleware/routes are configured)
 try:
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
     FastAPIInstrumentor.instrument_app(
