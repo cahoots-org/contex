@@ -95,8 +95,15 @@ class FeaturesConfig(BaseModel):
     vector_store: str = Field(default="pgvector", description="Vector store backend: 'pgvector' or 'opensearch'")
 
 
+class ServerConfig(BaseModel):
+    """Server binding configuration"""
+    host: str = Field(default="::", description="Bind address (use '::' for dual-stack IPv4+IPv6, '0.0.0.0' for IPv4 only)")
+    port: int = Field(default=8001, ge=1, le=65535, description="Server port")
+
+
 class ContexConfig(BaseModel):
     """Main Contex configuration"""
+    server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
@@ -107,6 +114,10 @@ class ContexConfig(BaseModel):
     def from_env(cls) -> 'ContexConfig':
         """Load configuration from environment variables"""
         return cls(
+            server=ServerConfig(
+                host=os.getenv('CONTEX_HOST', '::'),
+                port=int(os.getenv('CONTEX_PORT', '8001')),
+            ),
             database=DatabaseConfig(
                 url=os.getenv('DATABASE_URL', 'postgresql+asyncpg://contex:contex_password@localhost:5432/contex'),
                 pool_size=int(os.getenv('DATABASE_POOL_SIZE', '5')),

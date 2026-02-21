@@ -75,7 +75,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || curl -f -g http://[::1]:8001/health"]
       interval: 10s
       timeout: 3s
       retries: 3

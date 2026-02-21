@@ -252,7 +252,7 @@ async def main():
     # Note: In production, you'd run this with a proper ASGI server
     config = uvicorn.Config(
         app,
-        host="0.0.0.0",
+        host="::",
         port=WEBHOOK_PORT,
         log_level="info"
     )
