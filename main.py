@@ -418,4 +418,6 @@ except Exception as e:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    host = os.getenv("CONTEX_HOST", "::")
+    port = int(os.getenv("CONTEX_PORT", "8001"))
+    uvicorn.run(app, host=host, port=port)
