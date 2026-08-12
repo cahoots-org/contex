@@ -7,10 +7,11 @@ Each parser:
 3. Can reconstruct from Nodes back to the format
 """
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 from abc import ABC, abstractmethod
 import json
 import re
+import io
 
 from .node import Node, NodeType, ParseResult
 
@@ -612,3 +613,285 @@ class CSVNodeParser(BaseNodeParser):
                 writer.writerow(node.content)
 
         return output.getvalue()
+
+
+# ============================================================================
+# PDF Parser
+# ============================================================================
+
+class PDFNodeParser(BaseNodeParser):
+    """Parse PDF documents into nodes by extracting text per page/section"""
+
+    @property
+    def format_name(self) -> str:
+        return "pdf"
+
+    @property
+    def priority(self) -> int:
+        return 5  # High priority when format hint matches
+
+    def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
+        if format_hint == "pdf":
+            return True
+        # Check for PDF magic bytes
+        if isinstance(data, (bytes, bytearray)):
+            return data[:5] == b'%PDF-'
+        return False
+
+    def parse(self, data: Any) -> ParseResult:
+        """Parse PDF bytes into nodes"""
+        try:
+            import fitz  # pymupdf
+
+            if isinstance(data, (bytes, bytearray)):
+                doc = fitz.open(stream=data, filetype="pdf")
+            else:
+                return ParseResult(
+                    nodes=[],
+                    format_name="pdf",
+                    success=False,
+                    error="PDF parser requires bytes input"
+                )
+
+            nodes = []
+            total_pages = len(doc)
+
+            for page_num in range(total_pages):
+                page = doc[page_num]
+                text = page.get_text("text").strip()
+
+                if not text:
+                    continue
+
+                # Split page text into paragraphs
+                paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+                if len(paragraphs) <= 1:
+                    # Single block of text for this page — one section node
+                    nodes.append(Node(
+                        path=f"page_{page_num + 1}",
+                        content=text,
+                        node_type=NodeType.SECTION,
+                        metadata={
+                            "format": "pdf",
+                            "page": page_num + 1,
+                            "total_pages": total_pages,
+                        }
+                    ))
+                else:
+                    # Multiple paragraphs — create individual nodes
+                    for i, para in enumerate(paragraphs):
+                        nodes.append(Node(
+                            path=f"page_{page_num + 1}.paragraph_{i}",
+                            content=para,
+                            node_type=NodeType.PARAGRAPH,
+                            metadata={
+                                "format": "pdf",
+                                "page": page_num + 1,
+                                "total_pages": total_pages,
+                            }
+                        ))
+
+            doc.close()
+
+            return ParseResult(
+                nodes=nodes,
+                format_name="pdf",
+                success=True,
+                metadata={
+                    "node_count": len(nodes),
+                    "total_pages": total_pages,
+                }
+            )
+        except ImportError:
+            return ParseResult(
+                nodes=[],
+                format_name="pdf",
+                success=False,
+                error="pymupdf is required for PDF parsing: pip install pymupdf"
+            )
+        except Exception as e:
+            return ParseResult(
+                nodes=[],
+                format_name="pdf",
+                success=False,
+                error=str(e)
+            )
+
+    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
+        """Reconstruct PDF content as plain text (cannot recreate binary PDF)"""
+        if not nodes:
+            return ""
+
+        pages: dict[int, list[str]] = {}
+        for node in nodes:
+            page = node.metadata.get("page", 1)
+            if page not in pages:
+                pages[page] = []
+            pages[page].append(str(node.content))
+
+        parts = []
+        for page_num in sorted(pages.keys()):
+            parts.append(f"--- Page {page_num} ---")
+            parts.append("\n\n".join(pages[page_num]))
+
+        return "\n\n".join(parts)
+
+
+# ============================================================================
+# DOCX Parser
+# ============================================================================
+
+class DOCXNodeParser(BaseNodeParser):
+    """Parse DOCX documents into nodes using python-docx"""
+
+    @property
+    def format_name(self) -> str:
+        return "docx"
+
+    @property
+    def priority(self) -> int:
+        return 5  # High priority when format hint matches
+
+    def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
+        if format_hint == "docx":
+            return True
+        # Check for ZIP/DOCX magic bytes (PK header)
+        if isinstance(data, (bytes, bytearray)):
+            return data[:2] == b'PK' and b'word/' in data[:2000]
+        return False
+
+    def parse(self, data: Any) -> ParseResult:
+        """Parse DOCX bytes into nodes"""
+        try:
+            from docx import Document
+            from docx.opc.exceptions import PackageNotFoundError
+
+            if isinstance(data, (bytes, bytearray)):
+                doc = Document(io.BytesIO(data))
+            else:
+                return ParseResult(
+                    nodes=[],
+                    format_name="docx",
+                    success=False,
+                    error="DOCX parser requires bytes input"
+                )
+
+            nodes = []
+            current_heading = None
+            para_idx = 0
+
+            for paragraph in doc.paragraphs:
+                text = paragraph.text.strip()
+                if not text:
+                    continue
+
+                style_name = paragraph.style.name if paragraph.style else ""
+
+                if style_name.startswith("Heading"):
+                    # Extract heading level from style name (e.g., "Heading 1" -> 1)
+                    try:
+                        level = int(style_name.split()[-1])
+                    except (ValueError, IndexError):
+                        level = 1
+                    current_heading = text
+                    nodes.append(Node(
+                        path=f"heading_{len(nodes)}",
+                        content=text,
+                        node_type=NodeType.HEADING,
+                        metadata={
+                            "format": "docx",
+                            "level": level,
+                            "style": style_name,
+                        }
+                    ))
+                elif style_name.startswith("List"):
+                    nodes.append(Node(
+                        path=f"list_item_{len(nodes)}",
+                        content=text,
+                        node_type=NodeType.LIST_ITEM,
+                        metadata={
+                            "format": "docx",
+                            "heading": current_heading,
+                            "style": style_name,
+                        }
+                    ))
+                else:
+                    nodes.append(Node(
+                        path=f"paragraph_{para_idx}",
+                        content=text,
+                        node_type=NodeType.PARAGRAPH,
+                        metadata={
+                            "format": "docx",
+                            "heading": current_heading,
+                            "style": style_name,
+                        }
+                    ))
+                    para_idx += 1
+
+            # Extract tables
+            for t_idx, table in enumerate(doc.tables):
+                # Get headers from first row
+                headers = []
+                if table.rows:
+                    headers = [cell.text.strip() for cell in table.rows[0].cells]
+
+                for r_idx, row in enumerate(table.rows[1:], start=1):
+                    row_data = {}
+                    for c_idx, cell in enumerate(row.cells):
+                        key = headers[c_idx] if c_idx < len(headers) else f"col_{c_idx}"
+                        row_data[key] = cell.text.strip()
+                    if any(v for v in row_data.values()):
+                        nodes.append(Node(
+                            path=f"table_{t_idx}.row_{r_idx}",
+                            content=row_data,
+                            node_type=NodeType.ROW,
+                            metadata={
+                                "format": "docx",
+                                "table_index": t_idx,
+                            }
+                        ))
+
+            return ParseResult(
+                nodes=nodes,
+                format_name="docx",
+                success=True,
+                metadata={"node_count": len(nodes)}
+            )
+        except ImportError:
+            return ParseResult(
+                nodes=[],
+                format_name="docx",
+                success=False,
+                error="python-docx is required for DOCX parsing: pip install python-docx"
+            )
+        except Exception as e:
+            return ParseResult(
+                nodes=[],
+                format_name="docx",
+                success=False,
+                error=str(e)
+            )
+
+    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
+        """Reconstruct DOCX content as plain text (cannot recreate binary DOCX)"""
+        if not nodes:
+            return ""
+
+        parts = []
+        for node in nodes:
+            if node.node_type == NodeType.HEADING:
+                level = node.metadata.get("level", 1)
+                parts.append(f"\n{'#' * level} {node.content}\n")
+            elif node.node_type == NodeType.LIST_ITEM:
+                parts.append(f"  - {node.content}")
+            elif node.node_type == NodeType.ROW:
+                if isinstance(node.content, dict):
+                    row_str = " | ".join(f"{k}: {v}" for k, v in node.content.items())
+                    parts.append(f"  [{row_str}]")
+                else:
+                    parts.append(f"  {node.content}")
+            else:
+                parts.append(str(node.content))
+
+        return "\n\n".join(parts)

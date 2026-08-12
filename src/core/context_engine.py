@@ -231,9 +231,21 @@ class ContextEngine:
         )
 
         # 2. Append to event store
+        # For binary formats (PDF, DOCX), store metadata instead of raw bytes
+        # since the event store uses JSON serialization
+        if isinstance(data, (bytes, bytearray)):
+            event_data = {
+                data_key: {
+                    "_binary": True,
+                    "_format": format_hint,
+                    "_size_bytes": len(data),
+                }
+            }
+        else:
+            event_data = {data_key: data}
         event_type = event.event_type or f"{data_key}_updated"
         sequence = await self.event_store.append_event(
-            project_id, event_type, {data_key: data}
+            project_id, event_type, event_data
         )
 
         # 3. Notify agents that depend on this data
@@ -436,12 +448,18 @@ class ContextEngine:
             format_type = agent_info.get("response_format", "toon")
 
             # Build update payload
+            # For binary data, omit the raw bytes from notifications;
+            # agents will re-query for matched context instead
+            if isinstance(data, (bytes, bytearray)):
+                notification_data = {"_binary": True, "_size_bytes": len(data)}
+            else:
+                notification_data = data
             update_payload = {
                 "type": "data_update",
                 "sequence": sequence,
                 "data_key": data_key,
                 "format": format_type,
-                "data": data,
+                "data": notification_data,
             }
 
             # Serialize based on format

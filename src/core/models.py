@@ -65,7 +65,7 @@ class DataPublishEvent(BaseModel):
     )
     data_format: Optional[str] = Field(
         default=None,
-        description="Optional format hint: 'json', 'yaml', 'toml', 'text', 'markdown' (auto-detected if not provided)"
+        description="Optional format hint: 'json', 'yaml', 'toml', 'text', 'markdown', 'pdf', 'docx' (auto-detected if not provided)"
     )
     event_type: Optional[str] = Field(
         default=None, description="Optional event type (auto-generated if not provided)"

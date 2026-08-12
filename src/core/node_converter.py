@@ -13,6 +13,8 @@ from .node_parsers import (
     PlainTextNodeParser,
     MarkdownNodeParser,
     CSVNodeParser,
+    PDFNodeParser,
+    DOCXNodeParser,
 )
 
 
@@ -36,6 +38,8 @@ class NodeConverter:
     def __init__(self):
         """Initialize with all available parsers"""
         self.parsers: List[BaseNodeParser] = [
+            PDFNodeParser(),
+            DOCXNodeParser(),
             JSONNodeParser(),
             YAMLNodeParser(),
             CSVNodeParser(),

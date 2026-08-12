@@ -1,6 +1,6 @@
 """REST API routes for Contex"""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from src.core.models import (
     AgentRegistration,
     DataPublishEvent,
@@ -476,6 +476,167 @@ async def publish_data(event: DataPublishEvent, request: Request):
             result="failure",
             severity=AuditEventSeverity.ERROR,
             details={"data_format": event.data_format or "json", "error": str(e)},
+            **ctx
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+UPLOAD_FORMAT_MAP = {
+    ".pdf": "pdf",
+    ".docx": "docx",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".csv": "csv",
+    ".tsv": "csv",
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".txt": "text",
+    ".xml": "xml",
+}
+
+BINARY_FORMATS = {"pdf", "docx"}
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+@router.post("/data/upload", response_model=dict)
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(..., description="Document file (PDF, DOCX, or any supported text format)"),
+    project_id: str = Form(..., description="Project identifier"),
+    data_key: str = Form(None, description="Data identifier (defaults to filename without extension)"),
+):
+    """
+    Upload a document file for indexing.
+
+    Supports binary document formats (PDF, DOCX) as well as all text-based
+    formats. The file content is extracted, parsed into semantic nodes,
+    embedded, and made available for agent context matching.
+
+    Examples:
+        curl -X POST /api/v1/data/upload \\
+          -F "file=@architecture.pdf" \\
+          -F "project_id=proj_123"
+
+        curl -X POST /api/v1/data/upload \\
+          -F "file=@requirements.docx" \\
+          -F "project_id=proj_123" \\
+          -F "data_key=project_requirements"
+    """
+    import os
+    import time
+
+    ctx = _get_request_context(request)
+
+    # Determine format from file extension
+    _, ext = os.path.splitext(file.filename or "")
+    ext = ext.lower()
+    data_format = UPLOAD_FORMAT_MAP.get(ext)
+
+    if not data_format:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Supported: {', '.join(sorted(UPLOAD_FORMAT_MAP.keys()))}"
+        )
+
+    # Default data_key to filename stem
+    if not data_key:
+        data_key = os.path.splitext(file.filename or "upload")[0]
+
+    try:
+        from src.core.metrics import record_event_published, publish_duration_seconds
+
+        # Read file content
+        content = await file.read()
+
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB"
+            )
+
+        # For text-based formats, decode bytes to string
+        if data_format not in BINARY_FORMATS:
+            try:
+                content = content.decode("utf-8")
+            except UnicodeDecodeError:
+                content = content.decode("latin-1")
+
+        logger.info("Uploading document",
+                    project_id=project_id,
+                    data_key=data_key,
+                    data_format=data_format,
+                    filename=file.filename,
+                    size_bytes=len(content) if isinstance(content, bytes) else len(content.encode()))
+
+        start_time = time.time()
+
+        # Create a DataPublishEvent and publish through the same pipeline
+        event = DataPublishEvent(
+            project_id=project_id,
+            data_key=data_key,
+            data=content,
+            data_format=data_format,
+        )
+        engine = request.app.state.context_engine
+        sequence = await engine.publish_data(event)
+        duration = time.time() - start_time
+
+        # Record metrics
+        record_event_published(project_id, data_format)
+        publish_duration_seconds.labels(project_id=project_id).observe(duration)
+
+        # Audit log
+        audit_details = {
+            "data_format": data_format,
+            "filename": file.filename,
+            "sequence": sequence,
+            "duration_ms": round(duration * 1000, 2),
+        }
+        await audit_log(
+            event_type=AuditEventType.DATA_PUBLISHED,
+            action=f"Uploaded document '{file.filename}' as '{data_key}'",
+            project_id=project_id,
+            resource_type="data",
+            resource_id=data_key,
+            details=audit_details,
+            **ctx
+        )
+
+        logger.info("Document uploaded successfully",
+                    project_id=project_id,
+                    data_key=data_key,
+                    filename=file.filename,
+                    sequence=sequence,
+                    duration_ms=round(duration * 1000, 2))
+
+        return {
+            "status": "published",
+            "project_id": project_id,
+            "data_key": data_key,
+            "data_format": data_format,
+            "filename": file.filename,
+            "sequence": sequence,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to upload document",
+                    project_id=project_id,
+                    data_key=data_key,
+                    filename=file.filename,
+                    error=str(e))
+        await audit_log(
+            event_type=AuditEventType.DATA_PUBLISHED,
+            action=f"Failed to upload document '{file.filename}'",
+            project_id=project_id,
+            resource_type="data",
+            resource_id=data_key,
+            result="failure",
+            severity=AuditEventSeverity.ERROR,
+            details={"data_format": data_format, "filename": file.filename, "error": str(e)},
             **ctx
         )
         raise HTTPException(status_code=500, detail=str(e))
