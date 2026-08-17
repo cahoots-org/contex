@@ -1,0 +1,18 @@
+# Golden Eval Report
+
+> OpenSearch-hybrid strategy omitted in plan 1; added in plan 3 for comparison.
+
+| strategy | scope | precision | recall | mrr | ndcg |
+|---|---|---|---|---|---|
+| vector | overall | 0.20 | 1.00 | 1.00 | 1.00 |
+| vector | config_keys | 0.20 | 1.00 | 1.00 | 1.00 |
+| vector | code_symbols | 0.20 | 1.00 | 1.00 | 1.00 |
+| vector | error_ids | 0.20 | 1.00 | 1.00 | 1.00 |
+| vector | codenames | 0.20 | 1.00 | 1.00 | 1.00 |
+| vector | prose | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | overall | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | config_keys | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | code_symbols | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | error_ids | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | codenames | 0.20 | 1.00 | 1.00 | 1.00 |
+| pgfts_hybrid | prose | 0.20 | 1.00 | 1.00 | 1.00 |
