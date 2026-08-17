@@ -7,6 +7,7 @@ included in this plan.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from statistics import mean
 
 from sqlalchemy import text
@@ -86,9 +87,11 @@ async def evaluate(strategy_search, project_id: str, k: int = 5) -> dict:
         return {m: mean(r[m] for r in rows) for m in ("precision", "recall", "mrr", "ndcg")}
 
     all_rows = [r for rows in per_shape.values() for r in rows]
+    # Keep every shape (empty ones aggregate to zeros) so callers can safely
+    # index results["by_shape"][shape] without risking a KeyError.
     return {
         "overall": _agg(all_rows),
-        "by_shape": {shape: _agg(rows) for shape, rows in per_shape.items() if rows},
+        "by_shape": {shape: _agg(rows) for shape, rows in per_shape.items()},
     }
 
 
@@ -139,9 +142,8 @@ async def _main() -> None:
     results = {name: await evaluate(s, "eval", k=5) for name, s in strategies.items()}
     report = render_report(results)
 
-    report_path = "benchmark/eval/report.md"
-    with open(report_path, "w") as fh:
-        fh.write(report)
+    report_path = Path(__file__).parent / "report.md"
+    report_path.write_text(report)
     print(report)
     print(f"\nReport written to {report_path}")
 
