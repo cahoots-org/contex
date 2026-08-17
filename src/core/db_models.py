@@ -12,6 +12,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -21,7 +22,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -243,6 +244,14 @@ class Embedding(Base):
     data_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     embedding = mapped_column(Vector(384), nullable=False)  # 384-dim for all-MiniLM-L6-v2
+    search_text = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('english', coalesce(description,'') || ' ' || coalesce(data_original,''))",
+            persisted=True,
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -252,6 +261,7 @@ class Embedding(Base):
         Index("idx_embeddings_project", "project_id"),
         Index("idx_embeddings_project_node_key", "project_id", "node_key", unique=True),
         Index("idx_embeddings_project_data_key", "project_id", "data_key"),
+        Index("idx_embeddings_search_text", "search_text", postgresql_using="gin"),
     )
 
 
