@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
 from src.web.live import stream_subscription_updates
+from src.core.models import DataPublishEvent
 
 router = APIRouter()
 
@@ -296,3 +297,27 @@ async def subscribe_to_updates(
             "X-Accel-Buffering": "no",  # disable nginx buffering
         },
     )
+
+
+@router.post("/demo/publish")
+async def demo_publish(
+    request: Request,
+    project_id: str = Form(...),
+    data_key: str = Form(...),
+    data: str = Form(...),
+    data_format: str = Form("json"),
+):
+    """Publish a changed value for the demo project. Reconcile fires inline, which the
+    open SSE stream turns into a live context-panel update."""
+    engine = request.app.state.context_engine
+    if data_format == "json":
+        try:
+            parsed = json.loads(data)
+        except json.JSONDecodeError:
+            parsed = data  # fall back to raw text if the field isn't valid JSON
+    else:
+        parsed = data
+    await engine.publish_data(DataPublishEvent(
+        project_id=project_id, data_key=data_key, data=parsed, data_format=data_format,
+    ))
+    return {"status": "ok", "project_id": project_id, "data_key": data_key}
