@@ -38,3 +38,31 @@ class SubscriptionService:
             if row is None:
                 raise KeyError(subscription_id)
             return row.bundle
+
+    async def reconcile_project(self, project_id, changed_data_key=None) -> list[str]:
+        async with self.db.session() as session:
+            subs = (await session.execute(
+                select(Subscription).where(Subscription.project_id == project_id)
+            )).scalars().all()
+
+        changed_ids: list[str] = []
+        for sub in subs:
+            new_bundle = await self.matcher.match(project_id, sub.needs)  # computed fully first
+            if new_bundle == sub.bundle:
+                continue
+            async with self.db.session() as session:  # buffer-until-complete: one atomic swap
+                row = (await session.execute(
+                    select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
+                )).scalar_one()
+                row.bundle = new_bundle
+                row.bundle_updated_at = datetime.now(timezone.utc)
+                await session.commit()
+            await self.redis.publish(
+                f"subscription:{sub.subscription_id}:updated",
+                json.dumps({
+                    "subscription_id": sub.subscription_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }),
+            )
+            changed_ids.append(sub.subscription_id)
+        return changed_ids
