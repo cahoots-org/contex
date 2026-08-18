@@ -20,14 +20,14 @@ class SubscriptionService:
         self.redis = redis
 
     async def create(
-        self, project_id, needs, tenant_id=None, scope=None, subscription_id=None
+        self, project_id, needs, tenant_id=None, scope=None, subscription_id=None, top_k=None, threshold=None
     ) -> str:
         sub_id = subscription_id or f"sub_{uuid4().hex}"
-        bundle = await self.matcher.match(project_id, needs)
+        bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold)
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                needs=list(needs), scope=scope, bundle=bundle,
+                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold, bundle=bundle,
                 bundle_updated_at=datetime.now(timezone.utc),
             ))
             await session.commit()
@@ -70,7 +70,7 @@ class SubscriptionService:
         changed_ids: list[str] = []
         for sub in subs:
             try:
-                new_bundle = await self.matcher.match(project_id, sub.needs)  # computed fully first
+                new_bundle = await self.matcher.match(project_id, sub.needs, top_k=sub.top_k, threshold=sub.threshold)  # computed fully first
                 if new_bundle == sub.bundle:
                     continue
                 now = datetime.now(timezone.utc)  # single timestamp for both DB + event

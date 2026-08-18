@@ -432,6 +432,8 @@ class Subscription(Base):
     tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     scope: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    top_k: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    threshold: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Materialized matches, shape = SemanticDataMatcher.match_agent_needs output.
     bundle: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'"))
     bundle_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
