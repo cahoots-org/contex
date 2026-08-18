@@ -30,4 +30,10 @@ def build_mcp_server(engine):
         await engine.subscriptions.delete(subscription_id)
         return json.dumps({"deleted": subscription_id})
 
+    @server.resource("contex://subscriptions/{id}", name="subscription",
+                     description="A subscription's current matched context bundle.",
+                     mime_type="application/json")
+    async def read_subscription(id: str) -> str:
+        return json.dumps(await engine.subscriptions.get_bundle(id))
+
     return server, bus
