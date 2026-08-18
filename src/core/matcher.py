@@ -35,6 +35,8 @@ class HybridMatcher:
         threshold: float | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         sm = self.semantic_matcher
+        if top_k is None and threshold is None:
+            return await sm.match_agent_needs(project_id, needs)
         old_max, old_thr = sm.max_matches, sm.threshold
         try:
             if top_k is not None:
