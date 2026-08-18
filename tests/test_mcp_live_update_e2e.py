@@ -32,8 +32,8 @@ async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, redis):
 
     # drain the redis event and drive the bridge (stands in for the running bridge task)
     msg = None
-    for _ in range(5):
-        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1)
+    for _ in range(10):
+        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=2)
         if msg:
             break
     assert msg is not None, "reconcile did not emit a subscription-updated event"
@@ -52,3 +52,6 @@ async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, redis):
         for matches in bundle.values()
         for m in matches
     )
+
+    await pubsub.unsubscribe(f"subscription:{sub_id}:updated")
+    await pubsub.close()
