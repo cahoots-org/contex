@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Contex — context that updates itself</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1117; color: #e6e6e6; }
+    header { padding: 16px 24px; border-bottom: 1px solid #23262f; }
+    header h1 { font-size: 18px; margin: 0; }
+    header p { margin: 4px 0 0; color: #8b93a7; font-size: 13px; }
+    .split { display: flex; gap: 1px; background: #23262f; min-height: calc(100vh - 66px); }
+    .pane { flex: 1; background: #0f1117; padding: 20px 24px; }
+    .pane h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8b93a7; margin: 0 0 12px; }
+    input, textarea, select, button { font: inherit; }
+    #need { width: 100%; padding: 10px 12px; background: #171a22; border: 1px solid #2b2f3a;
+            border-radius: 8px; color: #e6e6e6; }
+    .item { border: 1px solid #2b2f3a; border-radius: 8px; padding: 10px 12px; margin: 10px 0;
+            background: #171a22; transition: background .1s ease, border-color .1s ease; }
+    .item .key { font-weight: 600; color: #7cc5ff; }
+    .item pre { margin: 6px 0 0; white-space: pre-wrap; font-size: 12px; color: #c7ccd8; }
+    .flash { animation: flash 1.2s ease; }
+    @keyframes flash { 0% { background: #14351f; border-color: #2f9e57; } 100% { background: #171a22; } }
+    label { display: block; margin: 10px 0 4px; color: #8b93a7; font-size: 12px; }
+    #pubKey, #pubData { width: 100%; padding: 8px 10px; background: #171a22;
+                        border: 1px solid #2b2f3a; border-radius: 8px; color: #e6e6e6; }
+    #pubData { min-height: 120px; font-family: ui-monospace, monospace; }
+    #publish { margin-top: 12px; padding: 9px 16px; background: #2f9e57; border: none;
+               border-radius: 8px; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Contex — context that updates itself</h1>
+    <p>Subscribe to a meaning in plain English. Publish a change and watch it stay current — no refresh.</p>
+  </header>
+
+  <div class="split">
+    <section class="pane">
+      <h2>The need (live)</h2>
+      <input id="need" value="{{ need }}" readonly />
+      <div id="context"><p style="color:#8b93a7">Connecting…</p></div>
+    </section>
+
+    <section class="pane">
+      <h2>Publish a change</h2>
+      <label for="pubKey">Item</label>
+      <select id="pubKey">
+        {% for key in items %}<option value="{{ key }}">{{ key }}</option>{% endfor %}
+      </select>
+      <label for="pubData">New value (JSON)</label>
+      <textarea id="pubData">{"host": "db.internal", "port": 6543, "purpose": "primary database connection settings"}</textarea>
+      <button id="publish">Publish</button>
+    </section>
+  </div>
+
+  <script>
+    const projectId = {{ project_id | tojson }};
+    const need = {{ need | tojson }};
+    const contextEl = document.getElementById("context");
+    let lastByKey = {};
+
+    function flatten(bundle) {
+      // bundle is { need: [ {data_key, similarity, data, ...}, ... ], ... }
+      const out = [];
+      for (const matches of Object.values(bundle)) {
+        for (const m of matches) out.push(m);
+      }
+      return out;
+    }
+
+    function render(bundle) {
+      const items = flatten(bundle);
+      const nextByKey = {};
+      contextEl.innerHTML = "";
+      if (!items.length) {
+        contextEl.innerHTML = '<p style="color:#8b93a7">No matching context yet.</p>';
+      }
+      for (const m of items) {
+        const serialized = JSON.stringify(m.data);
+        nextByKey[m.data_key] = serialized;
+        const changed = lastByKey[m.data_key] !== undefined && lastByKey[m.data_key] !== serialized;
+        const div = document.createElement("div");
+        div.className = "item" + (changed ? " flash" : "");
+        div.innerHTML =
+          '<span class="key"></span><pre></pre>';
+        div.querySelector(".key").textContent = m.data_key;
+        div.querySelector("pre").textContent = JSON.stringify(m.data, null, 2);
+        contextEl.appendChild(div);
+      }
+      lastByKey = nextByKey;
+    }
+
+    const url = "/sandbox/subscribe?project_id=" + encodeURIComponent(projectId) +
+                "&need=" + encodeURIComponent(need);
+    const es = new EventSource(url);
+    es.onmessage = (e) => {
+      const payload = JSON.parse(e.data);
+      if (payload.type === "bundle") render(payload.bundle);
+    };
+
+    document.getElementById("publish").addEventListener("click", async () => {
+      const body = new URLSearchParams();
+      body.set("project_id", projectId);
+      body.set("data_key", document.getElementById("pubKey").value);
+      body.set("data", document.getElementById("pubData").value);
+      body.set("data_format", "json");
+      await fetch("/sandbox/demo/publish", { method: "POST", body });
+    });
+  </script>
+</body>
+</html>

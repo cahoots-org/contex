@@ -9,6 +9,7 @@ from pathlib import Path
 import toon_format as toon
 from src.web.live import stream_subscription_updates
 from src.core.models import DataPublishEvent
+from src.web.demo_seed import DEMO_ITEMS, DEMO_NEED, DEMO_PROJECT_ID, ensure_demo_seed
 
 router = APIRouter()
 
@@ -43,6 +44,23 @@ async def sandbox_home(request: Request):
             "request": request,
             "projects": sorted(list(projects)),
         }
+    )
+
+
+@router.get("/demo", response_class=HTMLResponse)
+async def sandbox_demo(request: Request):
+    """Pre-seeded split-screen live demo: a need on the left updates itself when data is
+    published on the right."""
+    engine = request.app.state.context_engine
+    await ensure_demo_seed(engine)
+    return templates.TemplateResponse(
+        request,
+        "demo.html",
+        {
+            "project_id": DEMO_PROJECT_ID,
+            "need": DEMO_NEED,
+            "items": [key for key, _ in DEMO_ITEMS],
+        },
     )
 
 
