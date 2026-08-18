@@ -8,6 +8,14 @@
 
 Contex delivers relevant project context to AI agents using semantic matching. Agents describe their needs in natural language, and Contex automatically routes matching data with real-time updates—no schemas, no polling.
 
+## Context that updates itself
+
+![Contex live sandbox demo](docs/assets/demo.gif)
+
+Subscribe to a need in plain English; when the underlying data changes, the matched context
+re-materializes and is pushed live. Try it: `docker compose up` then open
+`/sandbox/demo`. See [docs/demo/capture.md](docs/demo/capture.md) to regenerate this GIF.
+
 ## Features
 
 - **Semantic Matching** - AI-powered filtering using sentence transformers

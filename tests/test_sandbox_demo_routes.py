@@ -65,3 +65,9 @@ def test_demo_template_has_live_wiring():
     assert "EventSource" in html
     assert "/sandbox/subscribe" in html
     assert "/sandbox/demo/publish" in html
+
+
+def test_readme_embeds_demo_gif():
+    readme = Path("README.md").read_text()
+    assert "docs/assets/demo.gif" in readme
+    assert Path("docs/demo/capture.md").exists()
