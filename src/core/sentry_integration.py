@@ -226,7 +226,7 @@ def capture_exception(exception: Exception, **extra_context):
         logger.debug("Sentry not initialized, skipping exception capture")
         return
 
-    with _sentry_sdk.push_scope() as scope:
+    with _sentry_sdk.new_scope() as scope:
         for key, value in extra_context.items():
             scope.set_extra(key, value)
 
@@ -256,7 +256,7 @@ def capture_message(message: str, level: str = "info", **extra_context):
         logger.debug("Sentry not initialized, skipping message capture")
         return
 
-    with _sentry_sdk.push_scope() as scope:
+    with _sentry_sdk.new_scope() as scope:
         for key, value in extra_context.items():
             scope.set_extra(key, value)
 
