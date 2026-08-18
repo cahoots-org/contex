@@ -11,6 +11,8 @@ from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
 from .event_store import EventStore
 from .webhook_dispatcher import WebhookDispatcher
+from src.core.matcher import HybridMatcher
+from src.core.subscriptions import SubscriptionService
 from .models import (
     AgentRegistration,
     DataPublishEvent,
@@ -49,6 +51,9 @@ class ContextEngine:
             db=db,
             similarity_threshold=similarity_threshold,
             max_matches=max_matches
+        )
+        self.subscriptions = SubscriptionService(
+            db, HybridMatcher(self.semantic_matcher), redis
         )
         self.event_store = EventStore(db)
         self.webhook_dispatcher = WebhookDispatcher()
@@ -250,6 +255,9 @@ class ContextEngine:
 
         # 3. Notify agents that depend on this data
         await self._notify_affected_agents(project_id, data_key, data, sequence)
+
+        # Reconcile persistent subscriptions against the new data (inline).
+        await self.subscriptions.reconcile_project(project_id, data_key)
 
         return sequence
 
