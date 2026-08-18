@@ -11,17 +11,19 @@ from mcp.server.subscriptions import ResourceUpdated
 logger = logging.getLogger(__name__)
 
 _CHANNEL_PATTERN = "subscription:*:updated"
+_RESOURCE_URI_PREFIX = "contex://subscriptions/"
 
 
 def resource_uri_for(subscription_id: str) -> str:
-    return f"contex://subscriptions/{subscription_id}"
+    return f"{_RESOURCE_URI_PREFIX}{subscription_id}"
 
 
 async def handle_message(bus, raw) -> str | None:
     try:
         data = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
         sub_id = data["subscription_id"]
-    except (ValueError, KeyError, AttributeError, TypeError):
+    except (ValueError, KeyError, AttributeError, TypeError) as exc:
+        logger.warning("MCP bridge dropped a malformed subscription-updated message: %s", exc)
         return None
     uri = resource_uri_for(sub_id)
     await bus.publish(ResourceUpdated(uri=uri))
@@ -41,4 +43,4 @@ async def run_bridge(redis, bus, stop_event: asyncio.Event) -> None:
             except Exception:
                 logger.exception("MCP bridge loop error; continuing")
     finally:
-        await pubsub.close()
+        await pubsub.aclose()

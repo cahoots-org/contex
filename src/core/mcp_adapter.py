@@ -20,6 +20,13 @@ def build_mcp_server(engine):
     module-import time).  All tool/resource handlers resolve the engine lazily so
     that either form works correctly at runtime.
     """
+    # InMemorySubscriptionBus is MCP 2.0's in-process fan-out mechanism for
+    # resources/updated notifications to currently-connected MCP client sessions.
+    # It is NOT subscription persistence — durable subscription state (needs +
+    # materialized bundle) lives in the Subscription DB table and survives restarts.
+    # The bus only routes live notifications and is re-established when clients
+    # reconnect. It is multi-replica-safe because the bridge is driven by shared
+    # Redis events.
     bus = InMemorySubscriptionBus()
     server = MCPServer(name="contex", version="0.3.0", subscriptions=bus)
 

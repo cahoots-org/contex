@@ -1,5 +1,6 @@
 import json
 import pytest
+from mcp.server.mcpserver.exceptions import ResourceError
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
 
@@ -16,3 +17,15 @@ async def test_read_subscription_resource_returns_bundle(db, redis):
     first = list(contents)[0]
     bundle = json.loads(first.content)
     assert "auth config" in bundle
+
+
+@pytest.mark.asyncio
+async def test_read_unknown_subscription_raises(db, redis):
+    """Reading a non-existent subscription resource must raise ResourceError
+    (mcp wraps the KeyError from get_bundle into ResourceError)."""
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    with pytest.raises(ResourceError):
+        await server.read_resource("contex://subscriptions/does_not_exist")

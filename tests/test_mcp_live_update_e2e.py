@@ -54,4 +54,4 @@ async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, redis):
     )
 
     await pubsub.unsubscribe(f"subscription:{sub_id}:updated")
-    await pubsub.close()
+    await pubsub.aclose()
