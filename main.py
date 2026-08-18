@@ -1,5 +1,6 @@
 """Contex v0.2.0 - Semantic Context Routing Platform"""
 
+import asyncio
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -15,6 +16,8 @@ from sqlalchemy import text
 from src.core.database import init_database
 from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
+from src.core.mcp_adapter import build_mcp_server
+from src.core.mcp_bridge import run_bridge
 
 # Environment variables
 REDIS_MODE = os.getenv("REDIS_MODE", "standalone")
@@ -232,7 +235,23 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis
     app.state.health_checker = health_checker
 
-    yield
+    # Wire MCP server: store references and enter the session manager context.
+    # The MCP server and bus were built at module level with a lazy engine accessor;
+    # now that app.state.context_engine is set, the handlers will resolve it correctly.
+    app.state.mcp_server = _mcp_server
+    app.state.mcp_bus = _mcp_bus
+    mcp_stop = asyncio.Event()
+    async with _mcp_server.session_manager.run():
+        bridge_task = asyncio.create_task(run_bridge(redis, _mcp_bus, mcp_stop))
+        try:
+            yield
+        finally:
+            mcp_stop.set()
+            bridge_task.cancel()
+            try:
+                await bridge_task
+            except asyncio.CancelledError:
+                pass
 
     # Shutdown
     await shutdown_cleanup(app.state)
@@ -245,6 +264,14 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan
 )
+
+# Build the MCP server at module level with a lazy engine accessor so the
+# /mcp route exists in app.routes at import time (the test asserts this).
+# The engine is resolved at handler call time via app.state.context_engine,
+# which is populated during lifespan startup before any requests are served.
+_mcp_server, _mcp_bus = build_mcp_server(lambda: app.state.context_engine)
+_mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/mcp")
+app.mount("/mcp", _mcp_starlette_app)
 
 # CORS Configuration
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
