@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
 
 from src.core.db_models import Subscription
+
+logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
@@ -44,6 +47,7 @@ class SubscriptionService:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
+            # Idempotent: only commit when a row actually existed; absent id is a no-op.
             if row is not None:
                 await session.delete(row)
                 await session.commit()
@@ -56,23 +60,27 @@ class SubscriptionService:
 
         changed_ids: list[str] = []
         for sub in subs:
-            new_bundle = await self.matcher.match(project_id, sub.needs)  # computed fully first
-            if new_bundle == sub.bundle:
+            try:
+                new_bundle = await self.matcher.match(project_id, sub.needs)  # computed fully first
+                if new_bundle == sub.bundle:
+                    continue
+                now = datetime.now(timezone.utc)  # single timestamp for both DB + event
+                async with self.db.session() as session:  # buffer-until-complete: one atomic swap
+                    row = (await session.execute(
+                        select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
+                    )).scalar_one()
+                    row.bundle = new_bundle
+                    row.bundle_updated_at = now
+                    await session.commit()  # commit BEFORE publish: reader must see committed value
+                await self.redis.publish(
+                    f"subscription:{sub.subscription_id}:updated",
+                    json.dumps({
+                        "subscription_id": sub.subscription_id,
+                        "updated_at": now.isoformat(),
+                    }),
+                )
+                changed_ids.append(sub.subscription_id)
+            except Exception:
+                logger.exception("reconcile failed for subscription %s", sub.subscription_id)
                 continue
-            now = datetime.now(timezone.utc)  # single timestamp for both DB + event
-            async with self.db.session() as session:  # buffer-until-complete: one atomic swap
-                row = (await session.execute(
-                    select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
-                )).scalar_one()
-                row.bundle = new_bundle
-                row.bundle_updated_at = now
-                await session.commit()  # commit BEFORE publish: reader must see committed value
-            await self.redis.publish(
-                f"subscription:{sub.subscription_id}:updated",
-                json.dumps({
-                    "subscription_id": sub.subscription_id,
-                    "updated_at": now.isoformat(),
-                }),
-            )
-            changed_ids.append(sub.subscription_id)
         return changed_ids

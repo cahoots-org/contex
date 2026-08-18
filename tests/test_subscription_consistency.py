@@ -18,6 +18,7 @@ async def test_query_matches_subscription_bundle(db, redis):
     sub_id = await engine.subscriptions.create("proj", [need])
     bundle_matches = (await engine.subscriptions.get_bundle(sub_id))[need]
 
+    assert query_matches, "expected non-empty query matches (test would be vacuous otherwise)"
     # what you test (query) is what you get (subscription): same data_keys, same order
     assert [m["data_key"] for m in query_matches] == [m["data_key"] for m in bundle_matches]
 
