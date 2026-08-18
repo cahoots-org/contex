@@ -9,7 +9,7 @@ class _MutableMatcher:
     def __init__(self, bundle):
         self._bundle = bundle
 
-    async def match(self, project_id, needs, metadata=None):
+    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None):
         return {n: self._bundle for n in needs}
 
 
@@ -18,7 +18,7 @@ class _KeyedMatcher:
     def __init__(self, bundles):  # bundles: dict[need -> list]
         self.bundles = bundles
 
-    async def match(self, project_id, needs, metadata=None):
+    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None):
         return {n: list(self.bundles.get(n, [])) for n in needs}
 
 
@@ -107,7 +107,7 @@ async def test_reconcile_scoped_to_project(db, redis):
             self._call_count = 0
             self.bundles = {"need_o": list(other_initial)}
 
-        async def match(self, project_id, needs, metadata=None):
+        async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None):
             self._call_count += 1
             # Always return a "different" bundle so any cross-project reconcile would be detected
             return {n: [{"data_key": "ok", "similarity": 0.5, "data": {"v": self._call_count}, "description": None}] for n in needs}
