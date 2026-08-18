@@ -35,6 +35,6 @@ class SubscriptionService:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
-        if row is None:
-            raise KeyError(subscription_id)
-        return row.bundle
+            if row is None:
+                raise KeyError(subscription_id)
+            return row.bundle

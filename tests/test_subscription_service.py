@@ -1,6 +1,5 @@
 import pytest
 from src.core.subscriptions import SubscriptionService
-from src.core.db_models import Embedding
 
 
 class _StubMatcher:
