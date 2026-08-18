@@ -419,3 +419,26 @@ class AgentRegistration(Base):
         Index("idx_agent_tenant", "tenant_id"),
         Index("idx_agent_last_seen", "last_seen"),
     )
+
+
+class Subscription(Base):
+    """A persistent semantic subscription: needs + a materialized matched bundle."""
+
+    __tablename__ = "subscriptions"
+
+    subscription_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    scope: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    # Materialized matches, shape = SemanticDataMatcher.match_agent_needs output.
+    bundle: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    bundle_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_subscriptions_project", "project_id"),
+    )
