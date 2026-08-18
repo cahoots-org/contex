@@ -7,6 +7,8 @@ import json
 from mcp.server import MCPServer
 from mcp.server.subscriptions import InMemorySubscriptionBus
 
+from src.core.models import DataPublishEvent
+
 
 def build_mcp_server(engine):
     """Build the Contex MCP server bound to a ContextEngine. Returns (server, bus)."""
@@ -35,5 +37,12 @@ def build_mcp_server(engine):
                      mime_type="application/json")
     async def read_subscription(id: str) -> str:
         return json.dumps(await engine.subscriptions.get_bundle(id))
+
+    @server.tool(name="contex_publish", description="Publish/update context data for a project.")
+    async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json") -> str:
+        seq = await engine.publish_data(DataPublishEvent(
+            project_id=project_id, data_key=data_key, data=data, data_format=data_format,
+        ))
+        return json.dumps({"published": data_key, "sequence": str(seq)})
 
     return server, bus
