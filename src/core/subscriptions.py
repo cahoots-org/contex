@@ -50,18 +50,19 @@ class SubscriptionService:
             new_bundle = await self.matcher.match(project_id, sub.needs)  # computed fully first
             if new_bundle == sub.bundle:
                 continue
+            now = datetime.now(timezone.utc)  # single timestamp for both DB + event
             async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                 row = (await session.execute(
                     select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
                 )).scalar_one()
                 row.bundle = new_bundle
-                row.bundle_updated_at = datetime.now(timezone.utc)
-                await session.commit()
+                row.bundle_updated_at = now
+                await session.commit()  # commit BEFORE publish: reader must see committed value
             await self.redis.publish(
                 f"subscription:{sub.subscription_id}:updated",
                 json.dumps({
                     "subscription_id": sub.subscription_id,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": now.isoformat(),
                 }),
             )
             changed_ids.append(sub.subscription_id)

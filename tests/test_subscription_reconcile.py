@@ -42,6 +42,13 @@ async def test_reconcile_no_change_no_emit(db, redis):
     m = _MutableMatcher([{"data_key": "cfg", "similarity": 0.9, "data": {"v": 1}, "description": "d"}])
     svc = SubscriptionService(db, m, redis)
     sub_id = await svc.create("p1", ["auth"])
+
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(f"subscription:{sub_id}:updated")
+
     # matcher returns the same bundle -> no change
     changed = await svc.reconcile_project("p1")
     assert changed == []
+    # no updated event should have been published for the unchanged subscription
+    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.5)
+    assert msg is None
