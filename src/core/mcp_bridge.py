@@ -21,7 +21,7 @@ async def handle_message(bus, raw) -> str | None:
     try:
         data = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
         sub_id = data["subscription_id"]
-    except (ValueError, KeyError, AttributeError):
+    except (ValueError, KeyError, AttributeError, TypeError):
         return None
     uri = resource_uri_for(sub_id)
     await bus.publish(ResourceUpdated(uri=uri))
@@ -35,7 +35,10 @@ async def run_bridge(redis, bus, stop_event: asyncio.Event) -> None:
     try:
         while not stop_event.is_set():
             msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if msg and msg.get("type") in ("pmessage", "message"):
-                await handle_message(bus, msg["data"])
+            try:
+                if msg and msg.get("type") in ("pmessage", "message"):
+                    await handle_message(bus, msg["data"])
+            except Exception:
+                logger.exception("MCP bridge loop error; continuing")
     finally:
         await pubsub.close()

@@ -21,4 +21,7 @@ async def test_handle_message_publishes_resource_updated():
 @pytest.mark.asyncio
 async def test_handle_message_ignores_garbage():
     bus = InMemorySubscriptionBus()
+    seen = []
+    bus.subscribe(lambda ev: seen.append(ev))
     assert await handle_message(bus, b"not json") is None
+    assert seen == []
