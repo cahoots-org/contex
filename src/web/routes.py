@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
-from src.core.models import AgentRegistration
+from src.web.live import stream_subscription_updates
 
 router = APIRouter()
 
@@ -279,97 +279,20 @@ async def get_project_data(request: Request, project_id: str):
 async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),
-    data_needs: str = Query(...),
-    session_id: str = Query(...)
+    need: str = Query(...),
 ):
-    """
-    Subscribe to real-time project data updates via Server-Sent Events (SSE).
-    Registers the sandbox session as a temporary agent.
+    """Stream a natural-language need as a live-updating context bundle over SSE.
+
+    Backed by an ephemeral Subscription; the browser is a parallel consumer of the
+    same reconcile pipeline the MCP bridge uses.
     """
     engine = request.app.state.context_engine
-
-    # Parse data needs
-    needs = json.loads(data_needs)
-
-    async def event_stream():
-        # Register as agent with webhook notification (we'll intercept via Redis)
-        registration = AgentRegistration(
-            agent_id=session_id,
-            project_id=project_id,
-            data_needs=needs,
-            notification_method="redis",
-            response_format="json"
-        )
-
-        try:
-            # Register the sandbox session as an agent
-            response = await engine.register_agent(registration)
-
-            # Send initial context
-            initial_data = {
-                "type": "initial_context",
-                "message": f"Subscribed to {project_id}",
-                "matched_needs": response.matched_needs
-            }
-            yield f"data: {json.dumps(initial_data)}\n\n"
-
-            # Subscribe to Redis pub/sub for updates
-            channel = f"agent:{session_id}:updates"
-            pubsub = engine.redis.pubsub()
-            await pubsub.subscribe(channel)
-
-            # Stream updates
-            try:
-                async for message in pubsub.listen():
-                    if message["type"] == "message":
-                        data = json.loads(message["data"])
-
-                        # Transform for UI display
-                        if data["type"] == "data_update":
-                            ui_update = {
-                                "type": "data_update",
-                                "data_key": data.get("data_key"),
-                                "sequence": data.get("sequence"),
-                                "data": data.get("data")
-                            }
-                        elif data["type"] == "initial_context":
-                            # Initial context with matched data
-                            ui_update = {
-                                "type": "initial_context",
-                                "context": data.get("context")
-                            }
-                        else:
-                            ui_update = data
-
-                        yield f"data: {json.dumps(ui_update)}\n\n"
-
-                        # Flush to ensure immediate delivery
-                        await asyncio.sleep(0)
-
-            finally:
-                await pubsub.unsubscribe(channel)
-                await pubsub.aclose()
-
-        except Exception as e:
-            error_data = {
-                "type": "error",
-                "message": str(e)
-            }
-            yield f"data: {json.dumps(error_data)}\n\n"
-
-        finally:
-            # Cleanup: unregister agent
-            try:
-                await engine.unregister_agent(session_id)
-            except:
-                pass
-
     return StreamingResponse(
-        event_stream(),
+        stream_subscription_updates(engine, project_id, need),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Disable nginx buffering
-        }
+            "X-Accel-Buffering": "no",  # disable nginx buffering
+        },
     )
