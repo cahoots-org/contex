@@ -244,6 +244,10 @@ class Embedding(Base):
     data_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     embedding = mapped_column(Vector(384), nullable=False)  # 384-dim for all-MiniLM-L6-v2
+    # Full-text search vector for lexical (BM25-style) matching, kept in sync by
+    # Postgres itself: a persisted generated column derived from description +
+    # data_original. Backs the GIN index below so PgFtsLexical can query it with
+    # ts_rank_cd/plainto_tsquery without maintaining the tsvector in app code.
     search_text = mapped_column(
         TSVECTOR,
         Computed(

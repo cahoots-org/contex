@@ -1,9 +1,4 @@
-"""Golden-eval runner: load dataset, run strategies, aggregate metrics, render report.
-
-NOTE: OpenSearch-hybrid strategy is intentionally omitted here — it is added
-in plan 3 for three-way comparison. Only 'vector' and 'pgfts_hybrid' are
-included in this plan.
-"""
+"""Golden-eval runner: load dataset, run strategies, aggregate metrics, render report."""
 from __future__ import annotations
 
 import asyncio
@@ -99,8 +94,6 @@ def render_report(results_by_strategy: dict) -> str:
     """Render a markdown comparison table from evaluate() results."""
     lines = [
         "# Golden Eval Report",
-        "",
-        "> OpenSearch-hybrid strategy omitted in plan 1; added in plan 3 for comparison.",
         "",
         "| strategy | scope | precision | recall | mrr | ndcg |",
         "|---|---|---|---|---|---|",

@@ -28,3 +28,15 @@ def test_ndcg_at_k_perfect_is_one():
 
 def test_ndcg_at_k_empty_relevant_is_zero():
     assert ndcg_at_k(RANKED, set(), k=4) == 0.0
+
+
+def test_ndcg_at_k_mid_range_relevant_at_rank_two():
+    # One relevant doc ranked 2nd instead of 1st: DCG = 1/log2(2+1), and the
+    # ideal (relevant doc at rank 1) IDCG = 1/log2(1+1) = 1.0, so nDCG = 1/log2(3)
+    # ~= 0.63 — a value strictly between the 0.0 and 1.0 boundary cases above.
+    assert math.isclose(ndcg_at_k(["x", "a"], {"a"}, k=2), 1.0 / math.log2(3))
+
+
+def test_ndcg_at_k_rewards_earlier_rank():
+    # Same relevant doc, earlier position scores strictly higher.
+    assert ndcg_at_k(["a", "x", "y"], {"a"}, k=3) > ndcg_at_k(["x", "y", "a"], {"a"}, k=3)

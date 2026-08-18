@@ -1,7 +1,5 @@
 # Golden Eval Report
 
-> OpenSearch-hybrid strategy omitted in plan 1; added in plan 3 for comparison.
-
 | strategy | scope | precision | recall | mrr | ndcg |
 |---|---|---|---|---|---|
 | vector | overall | 0.20 | 1.00 | 0.88 | 0.91 |
