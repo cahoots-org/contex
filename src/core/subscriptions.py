@@ -39,6 +39,15 @@ class SubscriptionService:
                 raise KeyError(subscription_id)
             return row.bundle
 
+    async def delete(self, subscription_id) -> None:
+        async with self.db.session() as session:
+            row = (await session.execute(
+                select(Subscription).where(Subscription.subscription_id == subscription_id)
+            )).scalar_one_or_none()
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+
     async def reconcile_project(self, project_id, changed_data_key=None) -> list[str]:
         async with self.db.session() as session:
             subs = (await session.execute(
