@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -432,7 +433,7 @@ class Subscription(Base):
     needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     scope: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     # Materialized matches, shape = SemanticDataMatcher.match_agent_needs output.
-    bundle: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    bundle: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'"))
     bundle_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
