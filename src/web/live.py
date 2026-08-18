@@ -24,11 +24,14 @@ async def stream_subscription_updates(
     """Create an ephemeral subscription for `need`, stream its bundle, and re-stream
     the bundle each time reconcile fires `subscription:{id}:updated`. The subscription
     is always deleted when the stream closes."""
-    sub_id = await engine.subscriptions.create(project_id, [need], top_k=top_k, threshold=threshold)
-    channel = f"subscription:{sub_id}:updated"
-    pubsub = engine.redis.pubsub()
-    await pubsub.subscribe(channel)
+    sub_id = None
+    pubsub = None
     try:
+        sub_id = await engine.subscriptions.create(project_id, [need], top_k=top_k, threshold=threshold)
+        channel = f"subscription:{sub_id}:updated"
+        pubsub = engine.redis.pubsub()
+        await pubsub.subscribe(channel)
+
         # Re-read AFTER subscribing so a change racing the create() is not missed.
         bundle = await engine.subscriptions.get_bundle(sub_id)
         yield _sse({"type": "bundle", "bundle": bundle, "updated_at": None})
@@ -44,7 +47,9 @@ async def stream_subscription_updates(
             })
     finally:
         try:
-            await pubsub.unsubscribe(channel)
-            await pubsub.aclose()
+            if pubsub is not None:
+                await pubsub.unsubscribe(channel)
+                await pubsub.aclose()
         finally:
-            await engine.subscriptions.delete(sub_id)
+            if sub_id is not None:
+                await engine.subscriptions.delete(sub_id)
