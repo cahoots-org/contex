@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import tiktoken
 import toon_format as toon
 from typing import Dict, List, Any, Optional
@@ -11,14 +12,16 @@ from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
 from .event_store import EventStore
 from .webhook_dispatcher import WebhookDispatcher
-from src.core.matcher import HybridMatcher
-from src.core.subscriptions import SubscriptionService
+from .matcher import HybridMatcher
+from .subscriptions import SubscriptionService
 from .models import (
     AgentRegistration,
     DataPublishEvent,
     RegistrationResponse,
     MatchedDataSource,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ContextEngine:
@@ -257,7 +260,14 @@ class ContextEngine:
         await self._notify_affected_agents(project_id, data_key, data, sequence)
 
         # Reconcile persistent subscriptions against the new data (inline).
-        await self.subscriptions.reconcile_project(project_id, data_key)
+        # A reconcile/matcher failure must not fail the publish (spec §6):
+        # the event is already appended and agents already notified.
+        try:
+            await self.subscriptions.reconcile_project(project_id, data_key)
+        except Exception:
+            logger.exception(
+                "subscription reconcile failed for %s/%s", project_id, data_key
+            )
 
         return sequence
 
