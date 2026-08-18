@@ -12,7 +12,12 @@ from typing import Any, Protocol
 
 class Matcher(Protocol):
     async def match(
-        self, project_id: str, needs: list[str], metadata: dict | None = None
+        self,
+        project_id: str,
+        needs: list[str],
+        metadata: dict | None = None,
+        top_k: int | None = None,
+        threshold: float | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         ...
 
@@ -22,6 +27,20 @@ class HybridMatcher:
         self.semantic_matcher = semantic_matcher
 
     async def match(
-        self, project_id: str, needs: list[str], metadata: dict | None = None
+        self,
+        project_id: str,
+        needs: list[str],
+        metadata: dict | None = None,
+        top_k: int | None = None,
+        threshold: float | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        return await self.semantic_matcher.match_agent_needs(project_id, needs)
+        sm = self.semantic_matcher
+        old_max, old_thr = sm.max_matches, sm.threshold
+        try:
+            if top_k is not None:
+                sm.max_matches = top_k
+            if threshold is not None:
+                sm.threshold = threshold
+            return await sm.match_agent_needs(project_id, needs)
+        finally:
+            sm.max_matches, sm.threshold = old_max, old_thr

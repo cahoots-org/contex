@@ -3,7 +3,7 @@ from src.core.subscriptions import SubscriptionService
 
 
 class _StubMatcher:
-    async def match(self, project_id, needs, metadata=None):
+    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None):
         return {n: [{"data_key": "cfg", "similarity": 0.9, "data": {"x": 1}, "description": "auth"}] for n in needs}
 
 

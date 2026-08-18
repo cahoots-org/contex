@@ -5,6 +5,8 @@ from src.core.matcher import HybridMatcher
 class _FakeSemanticMatcher:
     def __init__(self):
         self.calls = []
+        self.max_matches = 10
+        self.threshold = 0.35
 
     async def match_agent_needs(self, project_id, needs):
         self.calls.append((project_id, tuple(needs)))
@@ -51,6 +53,8 @@ async def test_matcher_passes_through_empty_matches():
     class _EmptyMatchSemanticMatcher:
         def __init__(self):
             self.calls = []
+            self.max_matches = 10
+            self.threshold = 0.35
 
         async def match_agent_needs(self, project_id, needs):
             self.calls.append((project_id, tuple(needs)))

@@ -20,10 +20,10 @@ class SubscriptionService:
         self.redis = redis
 
     async def create(
-        self, project_id, needs, tenant_id=None, scope=None, subscription_id=None
+        self, project_id, needs, tenant_id=None, scope=None, subscription_id=None, top_k=None, threshold=None
     ) -> str:
         sub_id = subscription_id or f"sub_{uuid4().hex}"
-        bundle = await self.matcher.match(project_id, needs)
+        bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold)
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
