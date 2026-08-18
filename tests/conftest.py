@@ -90,6 +90,7 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
             try:
                 async with manager.session() as session:
                     # Delete in reverse order of dependencies
+                    await session.execute(text("DELETE FROM subscriptions"))
                     await session.execute(text("DELETE FROM webhook_deliveries"))
                     await session.execute(text("DELETE FROM webhook_endpoints"))
                     await session.execute(text("DELETE FROM audit_events"))
