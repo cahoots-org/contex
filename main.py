@@ -240,21 +240,22 @@ async def lifespan(app: FastAPI):
     # now that app.state.context_engine is set, the handlers will resolve it correctly.
     app.state.mcp_server = _mcp_server
     app.state.mcp_bus = _mcp_bus
-    mcp_stop = asyncio.Event()
-    async with _mcp_server.session_manager.run():
-        bridge_task = asyncio.create_task(run_bridge(redis, _mcp_bus, mcp_stop))
-        try:
-            yield
-        finally:
-            mcp_stop.set()
-            bridge_task.cancel()
+    try:
+        async with _mcp_server.session_manager.run():
+            mcp_stop = asyncio.Event()
+            bridge_task = asyncio.create_task(run_bridge(redis, _mcp_bus, mcp_stop))
             try:
-                await bridge_task
-            except asyncio.CancelledError:
-                pass
-
-    # Shutdown
-    await shutdown_cleanup(app.state)
+                yield
+            finally:
+                mcp_stop.set()
+                bridge_task.cancel()
+                try:
+                    await bridge_task
+                except asyncio.CancelledError:
+                    pass
+    finally:
+        # Shutdown — unconditional even if session_manager teardown raises
+        await shutdown_cleanup(app.state)
 
 
 # Global instances

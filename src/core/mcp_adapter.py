@@ -3,11 +3,11 @@ that imports the mcp SDK. Handlers delegate to ContextEngine/SubscriptionService
 from __future__ import annotations
 
 import json
-from typing import Callable
 
 from mcp.server import MCPServer
 from mcp.server.subscriptions import InMemorySubscriptionBus
 
+from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 
 
@@ -25,9 +25,7 @@ def build_mcp_server(engine):
 
     def _get_engine():
         """Resolve the engine, supporting both concrete instances and lazy callables."""
-        if callable(engine) and not hasattr(engine, "query_project_data"):
-            return engine()
-        return engine
+        return engine if isinstance(engine, ContextEngine) else engine()
 
     @server.tool(name="contex_query", description="Semantic query over a project's context (stateless).")
     async def contex_query(project_id: str, query: str, top_k: int = 5, threshold: float | None = None) -> str:
