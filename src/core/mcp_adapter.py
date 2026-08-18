@@ -18,4 +18,16 @@ def build_mcp_server(engine):
         matches = await engine.query_project_data(project_id, query, top_k=top_k, threshold=threshold)
         return json.dumps({"query": query, "matches": matches})
 
+    @server.tool(name="contex_create_subscription",
+                 description="Create a live subscription; returns its resource URI to subscribe to.")
+    async def contex_create_subscription(project_id: str, needs: list[str],
+                                         top_k: int = 5, threshold: float | None = None) -> str:
+        sub_id = await engine.subscriptions.create(project_id, needs, top_k=top_k, threshold=threshold)
+        return json.dumps({"subscription_id": sub_id, "resource_uri": f"contex://subscriptions/{sub_id}"})
+
+    @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
+    async def contex_delete_subscription(subscription_id: str) -> str:
+        await engine.subscriptions.delete(subscription_id)
+        return json.dumps({"deleted": subscription_id})
+
     return server, bus
