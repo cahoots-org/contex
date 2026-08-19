@@ -1256,3 +1256,18 @@ footer {
     overflow-x: auto;
     max-height: 200px;
 }
+
+/* Sandbox Watch (live subscription) results */
+.watch-item {
+    border: 1px solid #2b2f3a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 10px 0;
+}
+.watch-key { font-weight: 600; }
+.watch-item pre { margin: 6px 0 0; white-space: pre-wrap; }
+.flash { animation: flash 1.2s ease; }
+@keyframes flash {
+    0% { background: #14351f; }
+    100% { background: transparent; }
+}

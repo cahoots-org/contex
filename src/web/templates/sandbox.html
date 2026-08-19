@@ -11,10 +11,8 @@
     topK: 10,
     maxTokens: 51200,
     selectedProject: '{{ projects[0] if projects else '' }}',
-    subscribed: false,
-    subscribedProject: '',
-    dataNeeds: '',
-    updates: [],
+    watching: false,
+    watchLastByKey: {},
     eventSource: null,
     projectData: [],
     dataFormat: 'json',
@@ -26,6 +24,57 @@
     },
     toggleFormat() {
         this.dataFormat = this.dataFormat === 'json' ? 'toon' : 'json';
+    },
+    startWatch() {
+        if (!this.selectedProject || !this.queryText.trim()) {
+            alert('Pick a project and enter a need first.');
+            return;
+        }
+        this.stopWatch();
+        this.watchLastByKey = {};
+        const url = '/sandbox/subscribe?project_id=' + encodeURIComponent(this.selectedProject)
+                  + '&need=' + encodeURIComponent(this.queryText);
+        this.eventSource = new EventSource(url);
+        this.watching = true;
+        this.eventSource.onmessage = (e) => {
+            const payload = JSON.parse(e.data);
+            if (payload.type === 'bundle') this.renderWatch(payload.bundle);
+        };
+    },
+    stopWatch() {
+        if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+        this.watching = false;
+    },
+    renderWatch(bundle) {
+        const results = document.getElementById('results');
+        if (!results) return;
+        const items = [];
+        for (const matches of Object.values(bundle || {})) {
+            for (const m of matches) items.push(m);
+        }
+        const nextByKey = {};
+        let html = '<div class="watch-results">';
+        if (!items.length) {
+            html += '<div class="placeholder"><p>Watching — no matching context yet. '
+                 +  'Publish data to this project to see it appear.</p></div>';
+        }
+        for (const m of items) {
+            const serialized = JSON.stringify(m.data);
+            nextByKey[m.data_key] = serialized;
+            const changed = this.watchLastByKey[m.data_key] !== undefined
+                         && this.watchLastByKey[m.data_key] !== serialized;
+            html += '<div class="watch-item' + (changed ? ' flash' : '') + '">'
+                 +  '<div class="watch-key"></div><pre></pre></div>';
+        }
+        html += '</div>';
+        results.innerHTML = html;
+        // Fill user data via textContent (no innerHTML of published data — avoids injection).
+        const nodes = results.querySelectorAll('.watch-item');
+        items.forEach((m, i) => {
+            nodes[i].querySelector('.watch-key').textContent = m.data_key;
+            nodes[i].querySelector('pre').textContent = JSON.stringify(m.data, null, 2);
+        });
+        this.watchLastByKey = nextByKey;
     },
     projectConfigs: {
         'saas-app': {
@@ -82,7 +131,7 @@
     <!-- Project Selection -->
     <div class="project-selector">
         <label for="project_select">Project:</label>
-        <select id="project_select" x-model="selectedProject" @change="loadProjectData()">
+        <select id="project_select" x-model="selectedProject" @change="stopWatch(); loadProjectData()">
             {% for project in projects %}
             <option value="{{ project }}">{{ project }}</option>
             {% endfor %}
@@ -111,7 +160,7 @@
                     hx-target="#results"
                     hx-indicator="#loading"
                     class="query-form"
-                    @submit="$event.target.querySelector('button').disabled = true"
+                    @submit="stopWatch(); $event.target.querySelector('button').disabled = true"
                 >
                 <input type="hidden" name="project_id" :value="selectedProject">
 
@@ -208,6 +257,10 @@
             <button type="submit" class="btn-primary">
                 <span class="htmx-indicator" id="loading">Searching...</span>
                 <span>Find Matches</span>
+            </button>
+            <button type="button" class="btn-secondary" @click="watching ? stopWatch() : startWatch()">
+                <span x-show="!watching">Watch</span>
+                <span x-show="watching">Stop watching</span>
             </button>
         </form>
 

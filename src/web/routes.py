@@ -39,11 +39,11 @@ async def sandbox_home(request: Request):
         pass
 
     return templates.TemplateResponse(
+        request,
         "sandbox.html",
         {
-            "request": request,
             "projects": sorted(list(projects)),
-        }
+        },
     )
 
 
