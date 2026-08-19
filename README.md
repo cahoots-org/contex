@@ -8,13 +8,48 @@
 
 Contex delivers relevant project context to AI agents using semantic matching. Agents describe their needs in natural language, and Contex automatically routes matching data with real-time updates—no schemas, no polling.
 
-## Context that updates itself
+## Quickstart — context that updates itself
 
-![Contex live sandbox demo](docs/assets/demo.gif)
+Two terminals, `curl` only. Auth is off by default, so there's nothing to configure.
 
-Subscribe to a need in plain English; when the underlying data changes, the matched context
-re-materializes and is pushed live. Try it: `docker compose up` then open
-`/sandbox/demo`. See [docs/demo/capture.md](docs/demo/capture.md) to regenerate this GIF.
+```bash
+docker compose up          # Postgres + Redis + app on http://localhost:8000
+```
+
+**Terminal A — a consumer subscribes to a *need* and streams live context:**
+
+```bash
+curl -N "http://localhost:8000/sandbox/subscribe?project_id=quickstart&need=how%20the%20service%20reaches%20its%20datastore"
+```
+
+It prints the current matched context, then holds the stream open.
+
+**Terminal B — a producer publishes data (note: no shared words with the need):**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/data/publish \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"quickstart","data_key":"pg_dsn",
+       "data":{"engine":"postgres","host":"db.internal","port":5432,"pool":20}}'
+```
+
+Terminal A prints an updated bundle within a second — the consumer never named the
+producer, and matched on *meaning* ("datastore") not keywords. Change it again and
+watch it stay current:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/data/publish \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"quickstart","data_key":"pg_dsn",
+       "data":{"engine":"postgres","host":"db-2.internal","port":6543,"pool":50}}'
+```
+
+Prefer a UI? Open `http://localhost:8000/sandbox`, pick a project, type a need, and hit
+**Watch** — the same live subscription, in the query editor.
+
+![Contex Watch mode](docs/assets/demo.gif)
+
+> Production sets `AUTH_ENABLED=true`; the quickstart runs in the default open dev mode.
 
 ## Features
 
