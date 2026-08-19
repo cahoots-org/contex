@@ -8,8 +8,6 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
 from src.web.live import stream_subscription_updates
-from src.core.models import DataPublishEvent
-from src.web.demo_seed import DEMO_ITEMS, DEMO_NEED, DEMO_PROJECT_ID, ensure_demo_seed
 
 router = APIRouter()
 
@@ -43,23 +41,6 @@ async def sandbox_home(request: Request):
         "sandbox.html",
         {
             "projects": sorted(list(projects)),
-        },
-    )
-
-
-@router.get("/demo", response_class=HTMLResponse)
-async def sandbox_demo(request: Request):
-    """Pre-seeded split-screen live demo: a need on the left updates itself when data is
-    published on the right."""
-    engine = request.app.state.context_engine
-    await ensure_demo_seed(engine)
-    return templates.TemplateResponse(
-        request,
-        "demo.html",
-        {
-            "project_id": DEMO_PROJECT_ID,
-            "need": DEMO_NEED,
-            "items": [key for key, _ in DEMO_ITEMS],
         },
     )
 
@@ -317,25 +298,3 @@ async def subscribe_to_updates(
     )
 
 
-@router.post("/demo/publish")
-async def demo_publish(
-    request: Request,
-    project_id: str = Form(...),
-    data_key: str = Form(...),
-    data: str = Form(...),
-    data_format: str = Form("json"),
-):
-    """Publish a changed value for the demo project. Reconcile fires inline, which the
-    open SSE stream turns into a live context-panel update."""
-    engine = request.app.state.context_engine
-    if data_format == "json":
-        try:
-            parsed = json.loads(data)
-        except json.JSONDecodeError:
-            parsed = data  # fall back to raw text if the field isn't valid JSON
-    else:
-        parsed = data
-    await engine.publish_data(DataPublishEvent(
-        project_id=project_id, data_key=data_key, data=parsed, data_format=data_format,
-    ))
-    return {"status": "ok", "project_id": project_id, "data_key": data_key}
