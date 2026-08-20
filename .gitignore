@@ -75,3 +75,6 @@ models/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Playwright MCP scratch artifacts
+.playwright-mcp/

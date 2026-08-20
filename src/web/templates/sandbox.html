@@ -11,10 +11,8 @@
     topK: 10,
     maxTokens: 51200,
     selectedProject: '{{ projects[0] if projects else '' }}',
-    subscribed: false,
-    subscribedProject: '',
-    dataNeeds: '',
-    updates: [],
+    watching: false,
+    watchLastByKey: {},
     eventSource: null,
     projectData: [],
     dataFormat: 'json',
@@ -26,6 +24,57 @@
     },
     toggleFormat() {
         this.dataFormat = this.dataFormat === 'json' ? 'toon' : 'json';
+    },
+    startWatch() {
+        if (!this.selectedProject || !this.queryText.trim()) {
+            alert('Pick a project and enter a need first.');
+            return;
+        }
+        this.stopWatch();
+        this.watchLastByKey = {};
+        const url = '/sandbox/subscribe?project_id=' + encodeURIComponent(this.selectedProject)
+                  + '&need=' + encodeURIComponent(this.queryText);
+        this.eventSource = new EventSource(url);
+        this.watching = true;
+        this.eventSource.onmessage = (e) => {
+            const payload = JSON.parse(e.data);
+            if (payload.type === 'bundle') this.renderWatch(payload.bundle);
+        };
+    },
+    stopWatch() {
+        if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+        this.watching = false;
+    },
+    renderWatch(bundle) {
+        const results = document.getElementById('results');
+        if (!results) return;
+        const items = [];
+        for (const matches of Object.values(bundle || {})) {
+            for (const m of matches) items.push(m);
+        }
+        const nextByKey = {};
+        let html = '<div class="watch-results">';
+        if (!items.length) {
+            html += '<div class="placeholder"><p>Watching — no matching context yet. '
+                 +  'Publish data to this project to see it appear.</p></div>';
+        }
+        for (const m of items) {
+            const serialized = JSON.stringify(m.data);
+            nextByKey[m.data_key] = serialized;
+            const changed = this.watchLastByKey[m.data_key] !== undefined
+                         && this.watchLastByKey[m.data_key] !== serialized;
+            html += '<div class="watch-item' + (changed ? ' flash' : '') + '">'
+                 +  '<div class="watch-key"></div><pre></pre></div>';
+        }
+        html += '</div>';
+        results.innerHTML = html;
+        // Fill user data via textContent (no innerHTML of published data — avoids injection).
+        const nodes = results.querySelectorAll('.watch-item');
+        items.forEach((m, i) => {
+            nodes[i].querySelector('.watch-key').textContent = m.data_key;
+            nodes[i].querySelector('pre').textContent = JSON.stringify(m.data, null, 2);
+        });
+        this.watchLastByKey = nextByKey;
     },
     projectConfigs: {
         'saas-app': {
@@ -82,7 +131,7 @@
     <!-- Project Selection -->
     <div class="project-selector">
         <label for="project_select">Project:</label>
-        <select id="project_select" x-model="selectedProject" @change="loadProjectData()">
+        <select id="project_select" x-model="selectedProject" @change="stopWatch(); loadProjectData()">
             {% for project in projects %}
             <option value="{{ project }}">{{ project }}</option>
             {% endfor %}
@@ -102,14 +151,6 @@
                 >
                     Search
                 </button>
-                <button
-                    class="tab-button"
-                    :class="{ 'active': activeTab === 'updates' }"
-                    @click="activeTab = 'updates'"
-                >
-                    Real-time Updates
-                    <span x-show="subscribed" class="notification-badge"></span>
-                </button>
             </div>
 
             <!-- Query Tab Content -->
@@ -119,7 +160,7 @@
                     hx-target="#results"
                     hx-indicator="#loading"
                     class="query-form"
-                    @submit="$event.target.querySelector('button').disabled = true"
+                    @submit="stopWatch(); $event.target.querySelector('button').disabled = true"
                 >
                 <input type="hidden" name="project_id" :value="selectedProject">
 
@@ -217,6 +258,10 @@
                 <span class="htmx-indicator" id="loading">Searching...</span>
                 <span>Find Matches</span>
             </button>
+            <button type="button" class="btn-secondary" @click="watching ? stopWatch() : startWatch()">
+                <span x-show="!watching">Watch</span>
+                <span x-show="watching">Stop watching</span>
+            </button>
         </form>
 
         <div id="results" class="results-container">
@@ -233,60 +278,6 @@
         </div>
     </div>
 
-    <!-- Real-time Updates Tab Content -->
-    <div class="tab-content" x-show="activeTab === 'updates'">
-        <div class="subscription-panel">
-        <h3>Real-time Updates</h3>
-        <p>Subscribe to live data changes in your project (like an agent)</p>
-
-        <div x-show="!subscribed">
-            <div class="form-group">
-                <label for="data_needs">What data do you need? (one per line)</label>
-                <textarea
-                    x-model="dataNeeds"
-                    rows="3"
-                    :placeholder="currentConfig.dataNeeds"
-                ></textarea>
-            </div>
-            <button
-                @click="subscribeToUpdates()"
-                class="btn-secondary"
-                :disabled="!dataNeeds.trim()"
-            >
-                Subscribe to Updates
-            </button>
-        </div>
-
-        <div x-show="subscribed" class="subscription-active">
-            <div class="subscription-status">
-                <span class="status-badge">Subscribed to <strong x-text="subscribedProject"></strong></span>
-                <button @click="unsubscribe()" class="btn-small">Unsubscribe</button>
-            </div>
-
-            <div class="updates-feed">
-                <h4>Live Updates (<span x-text="updates.length"></span>)</h4>
-                <div x-show="updates.length === 0" class="no-updates">
-                    Waiting for updates...
-                </div>
-                <template x-for="(update, index) in updates.slice().reverse()" :key="index">
-                    <div class="update-item">
-                        <div class="update-header">
-                            <span class="update-type" x-text="update.type"></span>
-                            <span class="update-time" x-text="update.time"></span>
-                        </div>
-                        <div class="update-content">
-                            <strong x-text="update.data_key"></strong>
-                            <template x-if="update.similarity">
-                                <span class="similarity-badge" x-text="`${(update.similarity * 100).toFixed(0)}% match`"></span>
-                            </template>
-                        </div>
-                        <pre x-show="update.data" x-text="JSON.stringify(update.data, null, 2)" class="update-data"></pre>
-                    </div>
-                </template>
-            </div>
-        </div>
-        </div>
-        </div>
         </div>
 
         <!-- Data Panel: Project Data -->
@@ -394,78 +385,5 @@
         }
     });
 
-    // Subscription functions
-    function subscribeToUpdates() {
-        const app = Alpine.$data(document.querySelector('.sandbox'));
-        const needs = app.dataNeeds.split('\n').filter(n => n.trim()).map(n => n.trim());
-
-        if (needs.length === 0) return;
-
-        // Generate unique session ID
-        const sessionId = 'sandbox-' + Date.now() + '-' + Math.random().toString(36).substring(7);
-
-        // Build SSE URL with parameters
-        const params = new URLSearchParams({
-            project_id: app.selectedProject,
-            data_needs: JSON.stringify(needs),
-            session_id: sessionId
-        });
-
-        // Create EventSource for SSE
-        app.eventSource = new EventSource(`/sandbox/subscribe?${params}`);
-
-        app.eventSource.onopen = () => {
-            app.subscribed = true;
-            app.subscribedProject = app.selectedProject;
-            console.log('Connected to updates stream');
-        };
-
-        app.eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-
-            // Add timestamp
-            data.time = new Date().toLocaleTimeString();
-
-            // Add to updates feed
-            app.updates.push(data);
-
-            // Keep only last 50 updates
-            if (app.updates.length > 50) {
-                app.updates.shift();
-            }
-
-            console.log('Received update:', data);
-        };
-
-        app.eventSource.onerror = (error) => {
-            console.error('SSE error:', error);
-            if (app.eventSource.readyState === EventSource.CLOSED) {
-                app.subscribed = false;
-                app.eventSource = null;
-            }
-        };
-    }
-
-    function unsubscribe() {
-        const app = Alpine.$data(document.querySelector('.sandbox'));
-
-        if (app.eventSource) {
-            app.eventSource.close();
-            app.eventSource = null;
-        }
-
-        app.subscribed = false;
-        app.subscribedProject = '';
-        app.updates = [];
-        console.log('Unsubscribed from updates');
-    }
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', () => {
-        const app = Alpine.$data(document.querySelector('.sandbox'));
-        if (app && app.eventSource) {
-            app.eventSource.close();
-        }
-    });
 </script>
 {% endblock %}
