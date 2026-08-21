@@ -91,6 +91,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                api_key = auth_header[len("Bearer "):].strip()
         actor_ip = request.client.host if request.client else None
         endpoint = str(request.url.path)
 
