@@ -5,9 +5,30 @@ import pytest_asyncio
 import json
 import numpy as np
 from fakeredis import FakeAsyncRedis
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from src.core.context_engine import ContextEngine
 from src.core.models import AgentRegistration, DataPublishEvent
+
+
+@pytest.mark.asyncio
+async def test_publish_data_forwards_provenance_to_event_store():
+    """Test that publish_data forwards source/actor/tenant_id to append_event"""
+    engine = ContextEngine.__new__(ContextEngine)  # bypass __init__
+    engine.semantic_matcher = MagicMock(register_data=AsyncMock())
+    engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
+    engine._notify_affected_agents = AsyncMock()
+    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
+
+    evt = DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1})
+    actor = {"actor_id": "key-1", "actor_type": "api_key", "actor_ip": "1.2.3.4"}
+
+    seq = await engine.publish_data(evt, source="api", actor=actor, tenant_id="tenant-1")
+
+    assert seq == "1"
+    _, kwargs = engine.event_store.append_event.call_args
+    assert kwargs["source"] == "api"
+    assert kwargs["actor"] == actor
+    assert kwargs["tenant_id"] == "tenant-1"
 
 
 class TestContextEngine:
