@@ -410,7 +410,14 @@ async def publish_data(event: DataPublishEvent, request: Request):
 
         start_time = time.time()
         engine = request.app.state.context_engine
-        sequence = await engine.publish_data(event)
+        actor = {
+            "actor_id": ctx["actor_id"],
+            "actor_type": ctx["actor_type"],
+            "actor_ip": ctx["actor_ip"],
+        }
+        sequence = await engine.publish_data(
+            event, source="api", actor=actor, tenant_id=ctx.get("tenant_id"),
+        )
         duration = time.time() - start_time
 
         # Record metrics
