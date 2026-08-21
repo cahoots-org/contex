@@ -32,6 +32,9 @@ class EventStore:
         event_type: str,
         data: Dict[str, Any],
         tenant_id: Optional[str] = None,
+        *,
+        source: str = "api",
+        actor: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Append event to project event log.
@@ -41,38 +44,42 @@ class EventStore:
             event_type: Event type (e.g., "tech_stack_updated")
             data: Event data
             tenant_id: Optional tenant identifier
+            source: Who/what produced the event (default: "api")
+            actor: Optional dict with actor_id, actor_type, actor_ip
 
         Returns:
             Event sequence number as string (for compatibility with existing code)
         """
+        actor = actor or {}
         async with self.db.session() as session:
-            # Get next sequence number for this project
             result = await session.execute(
                 select(func.coalesce(func.max(Event.sequence), 0) + 1)
                 .where(Event.project_id == project_id)
             )
             sequence = result.scalar()
 
-            # Create event
             event = Event(
                 project_id=project_id,
                 tenant_id=tenant_id,
                 event_type=event_type,
                 data=data,
                 sequence=sequence,
+                source=source,
+                actor_id=actor.get("actor_id"),
+                actor_type=actor.get("actor_type"),
+                actor_ip=actor.get("actor_ip"),
             )
             session.add(event)
             await session.flush()
 
-            # Return sequence as string for compatibility
             sequence_str = str(sequence)
             logger.debug(
                 "Appended event",
                 project_id=project_id,
                 event_type=event_type,
                 sequence=sequence_str,
+                source=source,
             )
-
             return sequence_str
 
     async def get_events_since(

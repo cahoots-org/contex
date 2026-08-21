@@ -197,6 +197,12 @@ class Event(Base):
     event_type: Mapped[str] = mapped_column(String(255), nullable=False)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="api"
+    )
+    actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    actor_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    actor_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
