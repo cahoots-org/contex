@@ -128,3 +128,19 @@ async def test_revoke_nonexistent_key(db):
     """Test revoking a key that doesn't exist"""
     success = await revoke_api_key(db, "nonexistent_key_id")
     assert success is False
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_accepts_bearer_token(app_with_auth, db):
+    raw_key, _ = await create_api_key(db, "bearer-key")
+    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
+        resp = await client.get("/protected", headers={"Authorization": f"Bearer {raw_key}"})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_rejects_missing_credentials(app_with_auth):
+    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
+        resp = await client.get("/protected")
+        assert resp.status_code == 401

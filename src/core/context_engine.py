@@ -216,12 +216,22 @@ class ContextEngine:
 
         return result
 
-    async def publish_data(self, event: DataPublishEvent) -> str:
+    async def publish_data(
+        self,
+        event: DataPublishEvent,
+        *,
+        source: str = "api",
+        actor: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> str:
         """
         Main app publishes data change (supports any format).
 
         Args:
             event: Data publish event
+            source: Source of the publication (default: "api")
+            actor: Actor performing the publication
+            tenant_id: Tenant ID for multi-tenant scenarios
 
         Returns:
             Event sequence number
@@ -253,7 +263,8 @@ class ContextEngine:
             event_data = {data_key: data}
         event_type = event.event_type or f"{data_key}_updated"
         sequence = await self.event_store.append_event(
-            project_id, event_type, event_data
+            project_id, event_type, event_data,
+            tenant_id=tenant_id, source=source, actor=actor,
         )
 
         # 3. Notify agents that depend on this data

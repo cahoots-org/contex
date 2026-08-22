@@ -2,7 +2,9 @@
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from src.core.event_store import EventStore
+from src.core.db_models import Event, Tenant
 from src.core.models import DataPublishEvent
 
 
@@ -193,3 +195,43 @@ class TestEventStore:
         # PostgreSQL uses integer sequences
         assert seq.isdigit()
         assert int(seq) > 0
+
+
+@pytest.mark.asyncio
+async def test_append_event_persists_provenance(db):
+    # Create tenant required by FK constraint
+    async with db.session() as session:
+        session.add(Tenant(tenant_id="tenant-1", name="Test Tenant", plan="free", quotas={}, settings={}, metadata_={}))
+        await session.flush()
+
+    store = EventStore(db)
+    seq = await store.append_event(
+        "proj-prov", "thing_updated", {"thing": 1},
+        tenant_id="tenant-1",
+        source="api",
+        actor={"actor_id": "key-abc", "actor_type": "api_key", "actor_ip": "10.0.0.9"},
+    )
+    assert seq == "1"
+
+    async with db.session() as session:
+        row = (await session.execute(
+            select(Event).where(Event.project_id == "proj-prov")
+        )).scalar_one()
+        assert row.source == "api"
+        assert row.actor_id == "key-abc"
+        assert row.actor_type == "api_key"
+        assert row.actor_ip == "10.0.0.9"
+
+
+@pytest.mark.asyncio
+async def test_append_event_provenance_defaults(db):
+    store = EventStore(db)
+    await store.append_event("proj-prov2", "thing_updated", {"thing": 2})
+    async with db.session() as session:
+        row = (await session.execute(
+            select(Event).where(Event.project_id == "proj-prov2")
+        )).scalar_one()
+        assert row.source == "api"      # default
+        assert row.actor_id is None     # unauthenticated
+        assert row.actor_type is None
+        assert row.actor_ip is None
