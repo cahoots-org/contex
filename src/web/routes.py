@@ -8,8 +8,11 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
 from src.web.live import stream_subscription_updates
+from src.core.logging import get_logger
 
 router = APIRouter()
+
+logger = get_logger(__name__)
 
 # Setup templates
 templates_dir = Path(__file__).parent / "templates"
@@ -21,20 +24,20 @@ async def sandbox_home(request: Request):
     """Query sandbox home page"""
     engine = request.app.state.context_engine
 
-    # Get all available projects from Redis
+    # Get all available projects from the embeddings store (Postgres/pgvector),
+    # which is where published data actually lands.
     projects = set()
     try:
-        from redis.commands.search.query import Query
-        q = Query("*").return_fields("project_id").paging(0, 1000)
-        results = await engine.semantic_matcher.redis.ft(
-            engine.semantic_matcher.INDEX_NAME
-        ).search(q)
+        from sqlalchemy import select
+        from src.core.db_models import Embedding
 
-        for doc in results.docs:
-            projects.add(doc.project_id)
-    except:
-        # Index might not exist yet
-        pass
+        async with engine.semantic_matcher.db.session() as session:
+            result = await session.execute(
+                select(Embedding.project_id).distinct()
+            )
+            projects.update(row[0] for row in result.all())
+    except Exception as e:
+        logger.warning("Failed to list projects for sandbox", error=str(e))
 
     return templates.TemplateResponse(
         request,
@@ -219,58 +222,42 @@ async def project_stats(request: Request, project_id: str):
 @router.get("/projects/{project_id}/data")
 async def get_project_data(request: Request, project_id: str):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
-    import json
+    from sqlalchemy import select
+    from src.core.db_models import Embedding
 
     engine = request.app.state.context_engine
 
-    # Get all unique data_keys for this project
-    data_keys = await engine.semantic_matcher.get_registered_data(project_id)
+    # One representative row per data_key, straight from the embeddings store.
+    # DISTINCT ON collapses the per-node rows back to a single item per key.
+    async with engine.semantic_matcher.db.session() as session:
+        result = await session.execute(
+            select(
+                Embedding.data_key,
+                Embedding.data,
+                Embedding.data_original,
+                Embedding.data_format,
+            )
+            .where(Embedding.project_id == project_id)
+            .distinct(Embedding.data_key)
+            .order_by(Embedding.data_key, Embedding.id)
+        )
+        rows = result.all()
 
     data_items = []
+    for data_key, data, data_original, data_format in rows:
+        # Prefer the full original payload (pre node-splitting); fall back to the JSONB node data.
+        data_obj = data
+        if data_original:
+            try:
+                data_obj = json.loads(data_original)
+            except (json.JSONDecodeError, ValueError):
+                data_obj = data_original
 
-    # For each data_key, find one node and get its data_original field
-    for key in data_keys:
-        # Find any node for this data_key using SCAN
-        pattern = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}*"
-        cursor = 0
-        found = False
-
-        while not found:
-            cursor, keys = await engine.semantic_matcher.redis.scan(
-                cursor, match=pattern, count=1
-            )
-
-            if keys:
-                # Get first matching node
-                node_key = keys[0]
-                data_info = await engine.semantic_matcher.redis.hgetall(node_key)
-
-                if data_info:
-                    # Extract data_original (full original data before node splitting)
-                    data_original_str = data_info.get(b"data_original") or data_info.get("data_original")
-                    if isinstance(data_original_str, bytes):
-                        data_original_str = data_original_str.decode()
-
-                    # Extract format
-                    data_format = data_info.get(b"data_format") or data_info.get("data_format", "unknown")
-                    if isinstance(data_format, bytes):
-                        data_format = data_format.decode()
-
-                    # Parse data
-                    try:
-                        data_obj = json.loads(data_original_str)
-                    except (json.JSONDecodeError, ValueError):
-                        data_obj = data_original_str
-
-                    data_items.append({
-                        "data_key": key,
-                        "description": f"{key} ({data_format})",
-                        "data": data_obj
-                    })
-                    found = True
-
-            if cursor == 0:
-                break
+        data_items.append({
+            "data_key": data_key,
+            "description": f"{data_key} ({data_format or 'unknown'})",
+            "data": data_obj,
+        })
 
     return {"data": data_items}
 
