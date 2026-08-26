@@ -13,13 +13,13 @@ Contex delivers relevant project context to AI agents using semantic matching. A
 Two terminals, `curl` only. Auth is off by default, so there's nothing to configure.
 
 ```bash
-docker compose up          # Postgres + Redis + app on http://localhost:8000
+docker compose up          # Postgres + Redis + app on http://localhost:8001
 ```
 
 **Terminal A — a consumer subscribes to a *need* and streams live context:**
 
 ```bash
-curl -N "http://localhost:8000/sandbox/subscribe?project_id=quickstart&need=how%20the%20service%20reaches%20its%20datastore"
+curl -N "http://localhost:8001/sandbox/subscribe?project_id=quickstart&need=how%20the%20service%20reaches%20its%20datastore"
 ```
 
 It prints the current matched context, then holds the stream open.
@@ -27,7 +27,7 @@ It prints the current matched context, then holds the stream open.
 **Terminal B — a producer publishes data (note: no shared words with the need):**
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/data/publish \
+curl -X POST http://localhost:8001/api/v1/data/publish \
   -H "Content-Type: application/json" \
   -d '{"project_id":"quickstart","data_key":"pg_dsn",
        "data":{"engine":"postgres","host":"db.internal","port":5432,"pool":20}}'
@@ -38,13 +38,13 @@ producer, and matched on *meaning* ("datastore") not keywords. Change it again a
 watch it stay current:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/data/publish \
+curl -X POST http://localhost:8001/api/v1/data/publish \
   -H "Content-Type: application/json" \
   -d '{"project_id":"quickstart","data_key":"pg_dsn",
        "data":{"engine":"postgres","host":"db-2.internal","port":6543,"pool":50}}'
 ```
 
-Prefer a UI? Open `http://localhost:8000/sandbox`, pick a project, type a need, and hit
+Prefer a UI? Open `http://localhost:8001/sandbox`, pick a project, type a need, and hit
 **Watch** — the same live subscription, in the query editor.
 
 ![Contex Watch mode](docs/assets/demo.gif)
