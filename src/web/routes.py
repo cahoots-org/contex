@@ -7,8 +7,11 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from src.web.live import stream_subscription_updates
 from src.core.logging import get_logger
+from src.core.db_models import Embedding
 
 router = APIRouter()
 
@@ -28,15 +31,16 @@ async def sandbox_home(request: Request):
     # which is where published data actually lands.
     projects = set()
     try:
-        from sqlalchemy import select
-        from src.core.db_models import Embedding
-
         async with engine.semantic_matcher.db.session() as session:
             result = await session.execute(
                 select(Embedding.project_id).distinct()
             )
             projects.update(row[0] for row in result.all())
-    except Exception as e:
+    except SQLAlchemyError as e:
+        # Non-critical: this only populates the project dropdown. If the store
+        # is briefly unreachable (or the table doesn't exist yet on a fresh DB),
+        # render the page with an empty list instead of 500ing. Unexpected
+        # (non-DB) errors propagate so real bugs surface rather than hide here.
         logger.warning("Failed to list projects for sandbox", error=str(e))
 
     return templates.TemplateResponse(
@@ -222,9 +226,6 @@ async def project_stats(request: Request, project_id: str):
 @router.get("/projects/{project_id}/data")
 async def get_project_data(request: Request, project_id: str):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
-    from sqlalchemy import select
-    from src.core.db_models import Embedding
-
     engine = request.app.state.context_engine
 
     # One representative row per data_key, straight from the embeddings store.
