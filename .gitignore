@@ -78,3 +78,6 @@ dmypy.json
 
 # Playwright MCP scratch artifacts
 .playwright-mcp/
+
+# Superpowers SDD ledgers / workflow scratch
+.superpowers/
