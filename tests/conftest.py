@@ -76,11 +76,11 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     try:
         await manager.connect_test(database_url)
 
-        # Enable pgvector extension and create tables
-        from src.core.db_models import Base
-        async with manager.engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await conn.run_sync(Base.metadata.create_all)
+        # Enable pgvector extension, create tables, and stamp alembic_version to
+        # head so the create_all path mirrors what the app does in production
+        # (see src/core/schema_bootstrap.create_all_and_stamp).
+        from src.core.schema_bootstrap import create_all_and_stamp
+        await create_all_and_stamp(manager.engine)
 
         yield manager
 

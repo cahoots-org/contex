@@ -12,7 +12,6 @@ from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
-from sqlalchemy import text
 from src.core.database import init_database
 from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
@@ -60,12 +59,17 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to connect to PostgreSQL", error=str(e))
         raise
 
-    # Create database tables if they don't exist
+    # Create database tables if they don't exist.
+    #
+    # This uses create_all (not `alembic upgrade`) so a fresh app can stand up its
+    # whole schema in one shot, but it then stamps alembic_version to head so the
+    # database remains reconcilable with the migration chain and can take future
+    # incremental migrations. The alembic migrations and the ORM models are kept in
+    # agreement, so both paths produce an equivalent schema. See
+    # src/core/schema_bootstrap.create_all_and_stamp.
     try:
-        from src.core.db_models import Base
-        async with db.engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await conn.run_sync(Base.metadata.create_all)
+        from src.core.schema_bootstrap import create_all_and_stamp
+        await create_all_and_stamp(db.engine)
         logger.info("Database tables verified")
     except Exception as e:
         logger.error("Failed to create database tables", error=str(e))

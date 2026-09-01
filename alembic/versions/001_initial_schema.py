@@ -10,6 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
 revision: str = '001'
@@ -138,7 +139,13 @@ def upgrade() -> None:
     op.create_index('idx_snapshots_project', 'snapshots', ['project_id'])
     op.create_index('idx_snapshots_project_sequence', 'snapshots', ['project_id', 'sequence'], unique=True)
 
-    # Embeddings table with pgvector
+    # Embeddings table with pgvector.
+    #
+    # The embedding column is created directly as a native pgvector `vector(384)`
+    # column. Earlier revisions of this migration created it as LargeBinary/bytea
+    # and then ran `ALTER ... TYPE vector(384) USING embedding::vector(384)`, but
+    # that cast is invalid (bytea cannot be coerced to vector) and fails hard under
+    # asyncpg, making the entire migration chain unreachable on a fresh database.
     op.create_table(
         'embeddings',
         sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
@@ -151,17 +158,24 @@ def upgrade() -> None:
         sa.Column('data', postgresql.JSONB, nullable=False),
         sa.Column('data_original', sa.Text, nullable=True),
         sa.Column('data_format', sa.String(50), nullable=True),
-        sa.Column('embedding', sa.LargeBinary, nullable=False),  # Will be altered to vector type
+        sa.Column('embedding', Vector(384), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     )
-    # Alter column to use vector type
-    op.execute('ALTER TABLE embeddings ALTER COLUMN embedding TYPE vector(384) USING embedding::vector(384)')
     op.create_index('idx_embeddings_project', 'embeddings', ['project_id'])
     op.create_index('idx_embeddings_project_node_key', 'embeddings', ['project_id', 'node_key'], unique=True)
     op.create_index('idx_embeddings_project_data_key', 'embeddings', ['project_id', 'data_key'])
-    # Create HNSW index for vector similarity search
-    op.execute('CREATE INDEX idx_embeddings_vector ON embeddings USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)')
+    # HNSW index for vector cosine similarity search. This is the index that makes
+    # semantic search use an ANN scan instead of a sequential scan; it must exist on
+    # every fresh install. Kept in sync with the ORM model's __table_args__.
+    op.create_index(
+        'idx_embeddings_vector',
+        'embeddings',
+        ['embedding'],
+        postgresql_using='hnsw',
+        postgresql_ops={'embedding': 'vector_cosine_ops'},
+        postgresql_with={'m': 16, 'ef_construction': 64},
+    )
 
     # Audit events table
     op.create_table(
