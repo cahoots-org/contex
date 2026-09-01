@@ -23,8 +23,7 @@ redis==7.1.0
 sentence-transformers==3.3.1
 scikit-learn==1.7.2
 
-# Hybrid search
-opensearch-py==2.4.2
+# Numerical operations for embeddings / rank fusion
 numpy==2.3.5
 
 # Document parsing (PDF, DOCX)

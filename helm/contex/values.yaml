@@ -104,8 +104,6 @@ contex:
 
     # Redis password (used in both standalone and Sentinel modes)
     password: ""
-  opensearch:
-    url: "http://opensearch:9200"
   security:
     apiKeySalt: ""  # REQUIRED: Set this via --set or secrets
     rateLimitEnabled: true
@@ -205,18 +203,3 @@ startupProbe:
   periodSeconds: 5
   timeoutSeconds: 3
   failureThreshold: 30
-
-# OpenSearch dependency (optional)
-opensearch:
-  enabled: true
-  singleNode: true
-  persistence:
-    enabled: true
-    size: 10Gi
-  resources:
-    limits:
-      cpu: 1000m
-      memory: 2Gi
-    requests:
-      cpu: 500m
-      memory: 1Gi

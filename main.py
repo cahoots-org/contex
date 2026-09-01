@@ -62,16 +62,10 @@ async def lifespan(app: FastAPI):
 
     # Create database tables if they don't exist
     try:
-        from src.core.db_models import Base, Embedding
-        vector_store = os.getenv("VECTOR_STORE", "pgvector")
+        from src.core.db_models import Base
         async with db.engine.begin() as conn:
-            if vector_store == "opensearch":
-                # Skip embeddings table (requires pgvector extension)
-                tables = [t for t in Base.metadata.sorted_tables if t.name != Embedding.__tablename__]
-                await conn.run_sync(Base.metadata.create_all, tables=tables)
-            else:
-                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables verified")
     except Exception as e:
         logger.error("Failed to create database tables", error=str(e))

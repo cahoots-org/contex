@@ -100,11 +100,6 @@ spec:
         #     configMapKeyRef:
         #       name: contex-config
         #       key: redis_db
-        - name: OPENSEARCH_URL
-          valueFrom:
-            configMapKeyRef:
-              name: contex-config
-              key: opensearch_url
         - name: API_KEY_SALT
           valueFrom:
             secretKeyRef:

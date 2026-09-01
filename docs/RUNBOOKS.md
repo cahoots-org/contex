@@ -7,12 +7,11 @@ This document contains operational runbooks for common scenarios when running Co
 1. [Incident Response](#incident-response)
 2. [PostgreSQL Operations](#postgresql-operations)
 3. [Redis Operations](#redis-operations)
-4. [OpenSearch Operations](#opensearch-operations)
-5. [Scaling Operations](#scaling-operations)
-6. [Deployment Procedures](#deployment-procedures)
-7. [Backup and Recovery](#backup-and-recovery)
-8. [Performance Troubleshooting](#performance-troubleshooting)
-9. [Security Incidents](#security-incidents)
+4. [Scaling Operations](#scaling-operations)
+5. [Deployment Procedures](#deployment-procedures)
+6. [Backup and Recovery](#backup-and-recovery)
+7. [Performance Troubleshooting](#performance-troubleshooting)
+8. [Security Incidents](#security-incidents)
 
 ---
 
@@ -49,9 +48,6 @@ This document contains operational runbooks for common scenarios when running Co
 
    # Redis health (pub/sub only)
    redis-cli ping
-
-   # OpenSearch health
-   curl -s http://localhost:9200/_cluster/health | jq .
    ```
 
 4. **Check Sentry for error details:**
@@ -63,7 +59,6 @@ This document contains operational runbooks for common scenarios when running Co
 
 - If PostgreSQL is down: See [PostgreSQL Recovery](#postgresql-recovery)
 - If Redis is down: See [Redis Issues](#redis-pubsub-issues)
-- If OpenSearch is down: See [OpenSearch Recovery](#opensearch-recovery)
 - If high latency: See [High Latency Investigation](#high-latency-investigation)
 - If OOM: See [Memory Issues](#memory-issues)
 
@@ -95,12 +90,7 @@ This document contains operational runbooks for common scenarios when running Co
    psql -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'contex';"
    ```
 
-3. **Check OpenSearch latency:**
-   ```bash
-   curl -s "http://localhost:9200/_cat/nodes?v&h=name,cpu,load_1m,heap.percent"
-   ```
-
-4. **Check embedding cache hit rate:**
+3. **Check embedding cache hit rate:**
    ```
    Look at: embedding_cache_hits_total vs embedding_cache_misses_total
    Low hit rate = more embedding computations = higher latency
@@ -111,7 +101,6 @@ This document contains operational runbooks for common scenarios when running Co
 - Scale up replicas if CPU bound
 - Increase embedding cache size if cache miss rate is high
 - Add connection pool capacity if PostgreSQL connections are exhausted
-- Optimize OpenSearch indices if search is slow
 
 ---
 
@@ -324,85 +313,6 @@ redis-cli info memory
 
 # Check client output buffers
 redis-cli info clients
-```
-
----
-
-## OpenSearch Operations
-
-### OpenSearch Recovery
-
-**Symptoms:**
-- Hybrid search failing
-- Yellow/Red cluster health
-- Index errors
-
-**Investigation:**
-
-```bash
-# Check cluster health
-curl -s http://localhost:9200/_cluster/health?pretty
-
-# Check node status
-curl -s http://localhost:9200/_cat/nodes?v
-
-# Check index status
-curl -s http://localhost:9200/_cat/indices?v
-
-# Check shard allocation
-curl -s http://localhost:9200/_cat/shards?v
-```
-
-**Resolution for Yellow Status:**
-
-```bash
-# Wait for shard recovery (usually automatic)
-curl -s http://localhost:9200/_cat/recovery?v
-
-# If stuck, force shard allocation
-curl -X POST "localhost:9200/_cluster/reroute?retry_failed=true"
-```
-
-**Resolution for Red Status:**
-
-```bash
-# Identify problem indices
-curl -s http://localhost:9200/_cat/indices?v&health=red
-
-# Try to recover index
-curl -X POST "localhost:9200/<index-name>/_open"
-
-# If data is lost, recreate index
-curl -X DELETE "localhost:9200/<index-name>"
-# Then restart Contex to recreate
-```
-
-### OpenSearch Index Maintenance
-
-**Re-index for Better Performance:**
-
-```bash
-# Create new index with updated settings
-curl -X PUT "localhost:9200/contex-contexts-v2" -H 'Content-Type: application/json' -d'{
-  "settings": {
-    "number_of_shards": 3,
-    "number_of_replicas": 1
-  }
-}'
-
-# Reindex data
-curl -X POST "localhost:9200/_reindex" -H 'Content-Type: application/json' -d'{
-  "source": {"index": "contex-contexts"},
-  "dest": {"index": "contex-contexts-v2"}
-}'
-
-# Update alias
-curl -X POST "localhost:9200/_aliases" -H 'Content-Type: application/json' -d'{
-  "actions": [
-    {"remove": {"index": "contex-contexts", "alias": "contex"}},
-    {"add": {"index": "contex-contexts-v2", "alias": "contex"}}
-  ]
-}'
 ```
 
 ---
@@ -663,12 +573,6 @@ py-spy record -o profile.svg --pid <pid>
 **Investigation:**
 
 ```bash
-# Check OpenSearch slow log
-curl -X PUT "localhost:9200/contex-contexts/_settings" -H 'Content-Type: application/json' -d'{
-  "index.search.slowlog.threshold.query.warn": "2s",
-  "index.search.slowlog.threshold.query.info": "1s"
-}'
-
 # Check PostgreSQL slow queries
 psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 5;"
 ```
@@ -802,9 +706,6 @@ psql -c "SELECT 1" && psql -c "SELECT count(*) FROM events;"
 
 # Redis quick check (pub/sub)
 redis-cli ping
-
-# OpenSearch quick check
-curl -s http://localhost:9200/_cluster/health | jq '.status'
 
 # Pod resource usage
 kubectl top pods -l app=contex

@@ -89,17 +89,14 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
       - REDIS_URL=redis://redis:6379
-      - OPENSEARCH_URL=http://opensearch:9200
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
-      - HYBRID_SEARCH_ENABLED=true  # Enable BM25 + semantic hybrid search
+      - HYBRID_SEARCH_ENABLED=true  # pgvector + Postgres FTS hybrid (RRF)
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      opensearch:
         condition: service_healthy
 
   postgres:
@@ -128,25 +125,8 @@ services:
       timeout: 3s
       retries: 5
 
-  opensearch:
-    image: opensearchproject/opensearch:2.11.0
-    environment:
-      - discovery.type=single-node
-      - plugins.security.disabled=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
-    volumes:
-      - opensearch-data:/usr/share/opensearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
   postgres-data:
-  opensearch-data:
 ```
 
 Then run:
@@ -354,7 +334,7 @@ Contex supports hybrid search that combines:
 - **Semantic Vector Search** - AI-powered understanding of meaning
 - **Reciprocal Rank Fusion (RRF)** - Intelligent merging of both approaches
 
-Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. This requires OpenSearch to be running.
+Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. Hybrid search fuses pgvector similarity with Postgres full-text search using Reciprocal Rank Fusion (RRF); it runs entirely on Postgres and needs no additional services.
 
 **Benefits:**
 - Better accuracy for queries with specific technical terms
