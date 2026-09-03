@@ -59,20 +59,21 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to connect to PostgreSQL", error=str(e))
         raise
 
-    # Create database tables if they don't exist.
+    # Bring the schema up to head via alembic. This is the single, canonical schema
+    # path: the migration chain owns the schema (real vector(384) column, HNSW
+    # index, alembic_version row). The alembic command API is sync and drives its
+    # own event loop, so migrate_to_head offloads it to a worker thread.
     #
-    # This uses create_all (not `alembic upgrade`) so a fresh app can stand up its
-    # whole schema in one shot, but it then stamps alembic_version to head so the
-    # database remains reconcilable with the migration chain and can take future
-    # incremental migrations. The alembic migrations and the ORM models are kept in
-    # agreement, so both paths produce an equivalent schema. See
-    # src/core/schema_bootstrap.create_all_and_stamp.
+    # NOTE: this runs migrations at boot. With multiple app replicas starting
+    # concurrently, they may race on `alembic upgrade head`; alembic takes a lock
+    # so this is generally safe, but a dedicated pre-deploy migration step (a
+    # release-phase job / init container) is the more robust pattern at scale.
+    # Called out as a known consideration; not solved here.
     try:
-        from src.core.schema_bootstrap import create_all_and_stamp
-        await create_all_and_stamp(db.engine)
-        logger.info("Database tables verified")
+        await db.migrate_to_head()
+        logger.info("Database schema migrated to head")
     except Exception as e:
-        logger.error("Failed to create database tables", error=str(e))
+        logger.error("Failed to migrate database schema", error=str(e))
         raise
 
     # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)

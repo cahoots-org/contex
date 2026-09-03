@@ -50,6 +50,11 @@ COPY src/ ./src/
 # Copy the main entry points
 COPY main.py ./
 
+# Copy alembic config + migration scripts. These MUST be in the image: the app
+# runs `alembic upgrade head` at boot, so a container without them crash-loops.
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 # Create model cache directory
 RUN mkdir -p /home/appuser/.cache/torch /home/appuser/.cache/huggingface && \
     chown -R appuser:appuser /app /home/appuser
