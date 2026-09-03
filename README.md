@@ -334,7 +334,7 @@ Contex supports hybrid search that combines:
 - **Semantic Vector Search** - AI-powered understanding of meaning
 - **Reciprocal Rank Fusion (RRF)** - Intelligent merging of both approaches
 
-Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. Hybrid search fuses pgvector similarity with Postgres full-text search using Reciprocal Rank Fusion (RRF); it runs entirely on Postgres and needs no additional services.
+Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. Hybrid search fuses pgvector similarity with Postgres full-text search using Reciprocal Rank Fusion (RRF).
 
 **Benefits:**
 - Better accuracy for queries with specific technical terms
