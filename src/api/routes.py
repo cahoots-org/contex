@@ -18,6 +18,8 @@ from src.core.audit import (
     AuditEventSeverity,
 )
 from src.core.webhooks import emit_webhook, WebhookEventType
+from src.core.db_models import Embedding
+from sqlalchemy import select
 from typing import List
 
 router = APIRouter()
@@ -897,9 +899,6 @@ async def get_project_data(
         return {"project_id": project_id, "data_keys": data_keys, "count": len(data_keys)}
 
     # Fetch full data for each key from PostgreSQL
-    from src.core.db_models import Embedding
-    from sqlalchemy import select
-
     result = []
 
     db = request.app.state.db
