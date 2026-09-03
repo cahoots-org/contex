@@ -59,6 +59,25 @@ class TestDatabaseManager(DatabaseManager):
         self._is_connected = True
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _migrated_schema():
+    """Bring the test database schema up to alembic head, once per session.
+
+    Contex has a single canonical schema path (`alembic upgrade head`); the test
+    suite uses the same path the app uses at boot rather than
+    `Base.metadata.create_all`. Running migrations once per session (instead of
+    per test) keeps suite runtime sane. Individual tests get a clean slate via the
+    per-test data cleanup in the `db` fixture, not by rebuilding the schema.
+
+    run_migrations_to_head is synchronous (it drives alembic's own event loop),
+    so this fixture is a plain sync, session-scoped fixture.
+    """
+    if not os.getenv("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set")
+    from src.core.database import run_migrations_to_head
+    run_migrations_to_head(os.environ["DATABASE_URL"])
+
+
 @pytest_asyncio.fixture
 async def db() -> AsyncGenerator[DatabaseManager, None]:
     """
@@ -76,12 +95,9 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     try:
         await manager.connect_test(database_url)
 
-        # Enable pgvector extension, create tables, and stamp alembic_version to
-        # head so the create_all path mirrors what the app does in production
-        # (see src/core/schema_bootstrap.create_all_and_stamp).
-        from src.core.schema_bootstrap import create_all_and_stamp
-        await create_all_and_stamp(manager.engine)
-
+        # Schema is provisioned once per session by the `_migrated_schema`
+        # fixture via `alembic upgrade head`; here we just connect and, after the
+        # test, clean up the rows it wrote.
         yield manager
 
     finally:
