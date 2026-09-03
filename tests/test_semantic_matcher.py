@@ -262,3 +262,49 @@ class TestSemanticMatcherWithRealEmbeddings:
             top_match = results[0]
             assert "auth" in top_match.get("data_key", "").lower() or \
                    "JWT" in str(top_match.get("data", {}))
+
+
+class TestSemanticMatcherHybridSearch:
+    """Hybrid search must run on pgvector + Postgres FTS (no OpenSearch)."""
+
+    @pytest_asyncio.fixture
+    async def hybrid_matcher(self, db, monkeypatch):
+        monkeypatch.setenv("HYBRID_SEARCH_ENABLED", "true")
+        try:
+            matcher = SemanticDataMatcher(
+                db=db,
+                model_name="all-MiniLM-L6-v2",
+                similarity_threshold=0.3,
+                max_matches=10,
+            )
+            await matcher.initialize_index()
+            return matcher
+        except Exception:
+            pytest.skip("Sentence transformer model not available")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hybrid_uses_pgvector_fts_service(self, hybrid_matcher):
+        """HYBRID_SEARCH_ENABLED=true wires HybridSearchService, not OpenSearch."""
+        from src.core.hybrid_search_service import HybridSearchService
+
+        assert isinstance(hybrid_matcher.hybrid_search, HybridSearchService)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hybrid_matches_end_to_end(self, hybrid_matcher):
+        """End-to-end hybrid search returns data via pgvector + FTS fusion."""
+        await hybrid_matcher.register_data(
+            "projhy", "user_auth", {"method": "JWT", "flow": "OAuth2"}
+        )
+        await hybrid_matcher.register_data(
+            "projhy", "database", {"type": "PostgreSQL", "host": "localhost"}
+        )
+
+        matches = await hybrid_matcher.match_agent_needs(
+            "projhy", ["authentication and security"]
+        )
+        results = matches.get("authentication and security", [])
+        assert results, "hybrid search returned no results"
+        keys = [r["data_key"] for r in results]
+        assert any("user_auth" in k for k in keys)

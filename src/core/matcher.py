@@ -1,9 +1,10 @@
 """The Matcher seam: relevance matching behind a stable interface.
 
-HybridMatcher delegates to SemanticDataMatcher.match_agent_needs, which already
-routes through Plan 1's HybridSearchService (pgvector + Postgres FTS + RRF) when
-hybrid is enabled. `metadata` (item format/type/length) is accepted so a future
-LLM or tiered-model matcher can route on it without changing callers.
+HybridMatcher delegates to SemanticDataMatcher.match_agent_needs, which routes
+through HybridSearchService (pgvector + Postgres FTS + RRF) when hybrid search is
+enabled, and pgvector cosine similarity otherwise. `metadata` (item format/type/
+length) is accepted so a future LLM or tiered-model matcher can route on it
+without changing callers.
 """
 from __future__ import annotations
 

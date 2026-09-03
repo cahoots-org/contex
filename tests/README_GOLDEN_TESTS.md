@@ -19,7 +19,7 @@ pytest tests/test_golden_unit.py -v
 ### Full Integration Run (Requires Docker)
 ```bash
 # Start infrastructure
-docker compose up -d redis opensearch
+docker compose up -d postgres redis
 
 # Run comprehensive golden tests
 pytest tests/test_golden_integration.py -v
@@ -57,7 +57,7 @@ Add to your GitHub Actions workflow:
 ```yaml
 - name: Run Golden Integration Tests
   run: |
-    docker compose up -d redis opensearch
+    docker compose up -d postgres redis
     pytest tests/test_golden_integration.py -v --maxfail=1
     docker compose down
 ```

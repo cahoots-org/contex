@@ -21,9 +21,6 @@ data:
   # redis_sentinel_master: "mymaster"
   # redis_db: "0"
 
-  # OpenSearch Configuration
-  opensearch_url: "http://opensearch:9200"
-
   # Semantic Matching
   similarity_threshold: "0.5"
   max_matches: "10"
