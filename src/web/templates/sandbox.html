@@ -53,9 +53,9 @@
             for (const m of matches) items.push(m);
         }
         const nextByKey = {};
-        let html = '<div class="watch-results">';
+        let html = '<div class=&quot;watch-results&quot;>';
         if (!items.length) {
-            html += '<div class="placeholder"><p>Watching — no matching context yet. '
+            html += '<div class=&quot;placeholder&quot;><p>Watching — no matching context yet. '
                  +  'Publish data to this project to see it appear.</p></div>';
         }
         for (const m of items) {
@@ -63,8 +63,8 @@
             nextByKey[m.data_key] = serialized;
             const changed = this.watchLastByKey[m.data_key] !== undefined
                          && this.watchLastByKey[m.data_key] !== serialized;
-            html += '<div class="watch-item' + (changed ? ' flash' : '') + '">'
-                 +  '<div class="watch-key"></div><pre></pre></div>';
+            html += '<div class=&quot;watch-item' + (changed ? ' flash' : '') + '&quot;>'
+                 +  '<div class=&quot;watch-key&quot;></div><pre></pre></div>';
         }
         html += '</div>';
         results.innerHTML = html;

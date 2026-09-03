@@ -1,6 +1,9 @@
 # Multi-stage build for Context Engine Service
 FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228 as builder
 
+# Harden APT against "Hash Sum mismatch" from proxies/pipelining
+RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
@@ -25,6 +28,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Production stage
 FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228
+
+# Harden APT against "Hash Sum mismatch" from proxies/pipelining
+RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
 # Install curl for healthcheck
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
