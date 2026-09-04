@@ -23,8 +23,13 @@ database_url = os.getenv(
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
+#
+# disable_existing_loggers=False is important: Contex runs `alembic upgrade head`
+# at app boot (and once per test session), and the default (True) would disable
+# every logger not declared in alembic.ini — including the application's own
+# loggers and pytest's caplog capture. Keep existing loggers intact.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
