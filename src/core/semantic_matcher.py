@@ -206,7 +206,11 @@ class SemanticDataMatcher:
         )
 
     async def match_agent_needs(
-        self, project_id: str, needs: List[str]
+        self,
+        project_id: str,
+        needs: List[str],
+        top_k: Optional[int] = None,
+        threshold: Optional[float] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Match agent semantic needs to available data.
@@ -217,6 +221,12 @@ class SemanticDataMatcher:
         Args:
             project_id: Project identifier
             needs: List of semantic needs (natural language)
+            top_k: Per-request maximum matches to return per need. Defaults to
+                the instance ``max_matches``. Passed as an argument (rather than
+                mutated on the instance) so concurrent requests never read each
+                other's value.
+            threshold: Per-request minimum similarity to match (0-1). Defaults to
+                the instance ``threshold``. Also per-request for the same reason.
 
         Returns:
             Dict mapping needs to matched data sources:
@@ -227,6 +237,14 @@ class SemanticDataMatcher:
                 ]
             }
         """
+        # Resolve per-request parameters locally. Reading these into locals keeps
+        # all shared mutable state off the hot path: nothing on `self` is mutated,
+        # so interleaved concurrent calls can't corrupt each other (#105).
+        effective_max = top_k if top_k is not None else self.max_matches
+        effective_threshold = (
+            threshold if threshold is not None else self.threshold
+        )
+
         matches = {}
 
         for need in needs:
@@ -238,7 +256,7 @@ class SemanticDataMatcher:
                     fused = await self.hybrid_search.search(
                         project_id=project_id,
                         query=need,
-                        top_k=self.max_matches * 2,
+                        top_k=effective_max * 2,
                     )
 
                     candidates = []
@@ -260,7 +278,7 @@ class SemanticDataMatcher:
                                     "description": embedding_row.description,
                                 })
 
-                    matches[need] = candidates[: self.max_matches]
+                    matches[need] = candidates[:effective_max]
 
                     logger.debug(
                         "Hybrid search matches",
@@ -286,7 +304,7 @@ class SemanticDataMatcher:
                     )
                     .where(Embedding.project_id == project_id)
                     .order_by(Embedding.embedding.cosine_distance(need_embedding.tolist()))
-                    .limit(self.max_matches * 2)
+                    .limit(effective_max * 2)
                 )
 
                 candidates = []
@@ -294,7 +312,7 @@ class SemanticDataMatcher:
                     embedding_obj = row[0]
                     similarity = float(row[1])
 
-                    if similarity >= self.threshold:
+                    if similarity >= effective_threshold:
                         candidates.append({
                             "data_key": embedding_obj.node_key,
                             "similarity": similarity,
@@ -304,7 +322,7 @@ class SemanticDataMatcher:
 
                 # Sort and limit
                 candidates.sort(key=lambda x: x["similarity"], reverse=True)
-                matches[need] = candidates[: self.max_matches]
+                matches[need] = candidates[:effective_max]
 
                 if matches[need]:
                     logger.debug(
@@ -317,7 +335,7 @@ class SemanticDataMatcher:
                     logger.debug(
                         "No matches found",
                         need=need,
-                        threshold=self.threshold,
+                        threshold=effective_threshold,
                     )
 
         return matches
