@@ -12,7 +12,6 @@ from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
-from sqlalchemy import text
 from src.core.database import init_database
 from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
@@ -60,15 +59,21 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to connect to PostgreSQL", error=str(e))
         raise
 
-    # Create database tables if they don't exist
+    # Bring the schema up to head via alembic. This is the single, canonical schema
+    # path: the migration chain owns the schema (real vector(384) column, HNSW
+    # index, alembic_version row). The alembic command API is sync and drives its
+    # own event loop, so migrate_to_head offloads it to a worker thread.
+    #
+    # NOTE: this runs migrations at boot. With multiple app replicas starting
+    # concurrently, they may race on `alembic upgrade head`; alembic takes a lock
+    # so this is generally safe, but a dedicated pre-deploy migration step (a
+    # release-phase job / init container) is the more robust pattern at scale.
+    # Called out as a known consideration; not solved here.
     try:
-        from src.core.db_models import Base
-        async with db.engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables verified")
+        await db.migrate_to_head()
+        logger.info("Database schema migrated to head")
     except Exception as e:
-        logger.error("Failed to create database tables", error=str(e))
+        logger.error("Failed to migrate database schema", error=str(e))
         raise
 
     # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)

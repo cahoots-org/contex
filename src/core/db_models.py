@@ -273,6 +273,16 @@ class Embedding(Base):
         Index("idx_embeddings_project_node_key", "project_id", "node_key", unique=True),
         Index("idx_embeddings_project_data_key", "project_id", "data_key"),
         Index("idx_embeddings_search_text", "search_text", postgresql_using="gin"),
+        # HNSW ANN index for vector cosine similarity search. Without this, the
+        # create_all path (and every test DB) would fall back to a sequential scan
+        # for semantic search. Kept in sync with alembic migration 001.
+        Index(
+            "idx_embeddings_vector",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+            postgresql_with={"m": 16, "ef_construction": 64},
+        ),
     )
 
 

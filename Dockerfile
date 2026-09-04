@@ -5,7 +5,8 @@ FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get install -y --fix-missing -o Acquire::Retries=5 \
     gcc \
     g++ \
     git \
@@ -33,7 +34,9 @@ FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
 # Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get install -y --fix-missing -o Acquire::Retries=5 curl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -55,6 +58,11 @@ COPY src/ ./src/
 
 # Copy the main entry points
 COPY main.py ./
+
+# Copy alembic config + migration scripts. These MUST be in the image: the app
+# runs `alembic upgrade head` at boot, so a container without them crash-loops.
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 # Create model cache directory
 RUN mkdir -p /home/appuser/.cache/torch /home/appuser/.cache/huggingface && \

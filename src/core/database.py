@@ -4,10 +4,14 @@ PostgreSQL Database Connection Manager
 Provides async SQLAlchemy engine and session management for Contex.
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -22,6 +26,48 @@ from src.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+# Repo root = three parents up from this file (src/core/database.py). The alembic
+# config and migration scripts live at the repo root and MUST be present in any
+# runtime image (see Dockerfile COPY of alembic/ + alembic.ini), otherwise a
+# migrate-at-boot deployment crash-loops.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ALEMBIC_INI = _REPO_ROOT / "alembic.ini"
+_ALEMBIC_DIR = _REPO_ROOT / "alembic"
+
+
+def _alembic_config(database_url: str) -> Config:
+    """Build an alembic Config pointed at our script dir and the given URL.
+
+    Note: alembic's env.py also reads DATABASE_URL from the environment and
+    overrides ``sqlalchemy.url`` with it, so the caller sets that env var for the
+    duration of the run as well. env.py uses an async engine (asyncpg), so the
+    same ``postgresql+asyncpg://`` URL the app uses works for migrations too.
+    """
+    cfg = Config(str(_ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
+    cfg.set_main_option("sqlalchemy.url", database_url)
+    return cfg
+
+
+def run_migrations_to_head(database_url: str) -> None:
+    """Synchronously run ``alembic upgrade head`` against ``database_url``.
+
+    This is the blocking worker used by ``DatabaseManager.migrate_to_head`` and by
+    the test fixtures. It temporarily exports DATABASE_URL because alembic's
+    env.py resolves the connection from that variable, restoring the previous
+    value afterwards so it is safe to call in-process.
+    """
+    prev = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = database_url
+    try:
+        command.upgrade(_alembic_config(database_url), "head")
+    finally:
+        if prev is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = prev
+
+
 class DatabaseManager:
     """Manages PostgreSQL database connections using SQLAlchemy async."""
 
@@ -29,6 +75,7 @@ class DatabaseManager:
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker[AsyncSession]] = None
         self._is_connected = False
+        self._database_url: Optional[str] = None
 
     async def connect(
         self,
@@ -58,6 +105,7 @@ class DatabaseManager:
             "DATABASE_URL",
             "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
         )
+        self._database_url = url
 
         # For testing with SQLite, use NullPool
         if "sqlite" in url:
@@ -94,6 +142,27 @@ class DatabaseManager:
         except Exception as e:
             logger.error("Failed to connect to database", error=str(e))
             raise
+
+    async def migrate_to_head(self, database_url: Optional[str] = None) -> None:
+        """Bring the database schema up to the alembic head revision.
+
+        This is the single, canonical schema path for Contex: both the app boot
+        (main.py lifespan) and the test fixtures call this instead of
+        ``Base.metadata.create_all``. Running the alembic chain guarantees the
+        schema matches the migrations exactly (real ``vector(384)`` column, HNSW
+        index, and an ``alembic_version`` row) and that future incremental
+        migrations apply.
+
+        alembic's command API is synchronous and its env.py drives its own engine
+        via ``asyncio.run()``, which cannot run inside an already-running event
+        loop. Since callers invoke this from async contexts, the blocking work is
+        offloaded to a worker thread.
+        """
+        url = database_url or self._database_url or os.getenv(
+            "DATABASE_URL",
+            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
+        )
+        await asyncio.to_thread(run_migrations_to_head, url)
 
     async def disconnect(self) -> None:
         """Close database connections."""
