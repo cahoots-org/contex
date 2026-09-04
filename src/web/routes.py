@@ -64,103 +64,95 @@ async def execute_query(
     """Execute a semantic query and return results"""
     engine = request.app.state.context_engine
 
-    # Override the semantic matcher's threshold temporarily
-    original_threshold = engine.semantic_matcher.threshold
-    engine.semantic_matcher.threshold = threshold
+    # Pass the per-request threshold through instead of mutating the shared
+    # matcher singleton, so concurrent /query requests stay isolated (#105).
+    # Over-fetch candidates so the token-limit truncation below has room to work.
+    matches = await engine.query_project_data(
+        project_id=project_id,
+        query=query,
+        top_k=top_k * 3,
+        threshold=threshold,
+    )
 
+    # Limit to top_k (candidates already threshold-filtered by the matcher)
+    matches = matches[:top_k]
+
+    # Apply token limit truncation if specified
+    if max_tokens and matches:
+        matches_dict = {query: matches}
+        truncated = engine._truncate_matches(matches_dict, max_tokens)
+        matches = truncated.get(query, [])
+
+    # Calculate token counts
+    import tiktoken
     try:
-        # Execute query (get more candidates for threshold filtering)
-        matches = await engine.query_project_data(
-            project_id=project_id,
-            query=query,
-            top_k=top_k * 3
-        )
+        enc = tiktoken.get_encoding("cl100k_base")
+    except:
+        enc = None
 
-        # Filter by threshold (scores are normalized to 0-1 range)
-        matches = [m for m in matches if m["similarity"] >= threshold]
+    # Enhance matches with metadata
+    enhanced_matches = []
+    total_tokens = 0
 
-        # Limit to top_k after filtering
-        matches = matches[:top_k]
-
-        # Apply token limit truncation if specified
-        if max_tokens and matches:
-            matches_dict = {query: matches}
-            truncated = engine._truncate_matches(matches_dict, max_tokens)
-            matches = truncated.get(query, [])
-
-        # Calculate token counts
-        import tiktoken
+    for match in matches:
+        # Generate both JSON and TOON formats
+        data_json = json.dumps(match["data"], indent=2)
         try:
-            enc = tiktoken.get_encoding("cl100k_base")
-        except:
-            enc = None
+            data_toon = toon.encode(match["data"])
+        except NotImplementedError:
+            # TOON encoder not yet available, use JSON as fallback
+            data_toon = data_json
 
-        # Enhance matches with metadata
-        enhanced_matches = []
-        total_tokens = 0
-
-        for match in matches:
-            # Generate both JSON and TOON formats
-            data_json = json.dumps(match["data"], indent=2)
+        # Calculate token counts for both formats
+        json_tokens = 0
+        toon_tokens = 0
+        if enc:
             try:
-                data_toon = toon.encode(match["data"])
-            except NotImplementedError:
-                # TOON encoder not yet available, use JSON as fallback
-                data_toon = data_json
+                json_tokens = len(enc.encode(data_json))
+                toon_tokens = len(enc.encode(data_toon))
+                total_tokens += toon_tokens  # Use TOON tokens for total
+            except:
+                pass
 
-            # Calculate token counts for both formats
-            json_tokens = 0
-            toon_tokens = 0
-            if enc:
-                try:
-                    json_tokens = len(enc.encode(data_json))
-                    toon_tokens = len(enc.encode(data_toon))
-                    total_tokens += toon_tokens  # Use TOON tokens for total
-                except:
-                    pass
+        # Calculate token savings
+        token_savings = 0
+        savings_percent = 0
+        if json_tokens > 0 and toon_tokens > 0:
+            token_savings = json_tokens - toon_tokens
+            savings_percent = round((token_savings / json_tokens) * 100, 1)
 
-            # Calculate token savings
-            token_savings = 0
-            savings_percent = 0
-            if json_tokens > 0 and toon_tokens > 0:
-                token_savings = json_tokens - toon_tokens
-                savings_percent = round((token_savings / json_tokens) * 100, 1)
+        # No preview truncation - will be handled by CSS scrolling
+        preview = data_toon
 
-            # No preview truncation - will be handled by CSS scrolling
-            preview = data_toon
+        enhanced_matches.append({
+            "data_key": match["data_key"],
+            "similarity": match["similarity"],
+            "similarity_percent": round(match["similarity"] * 100, 1),
+            "data": match["data"],
+            "data_json": data_json,
+            "data_toon": data_toon,
+            "description": match.get("description", ""),
+            "token_count": toon_tokens,
+            "json_tokens": json_tokens,
+            "toon_tokens": toon_tokens,
+            "token_savings": token_savings,
+            "savings_percent": savings_percent,
+            "preview": preview
+        })
 
-            enhanced_matches.append({
-                "data_key": match["data_key"],
-                "similarity": match["similarity"],
-                "similarity_percent": round(match["similarity"] * 100, 1),
-                "data": match["data"],
-                "data_json": data_json,
-                "data_toon": data_toon,
-                "description": match.get("description", ""),
-                "token_count": toon_tokens,
-                "json_tokens": json_tokens,
-                "toon_tokens": toon_tokens,
-                "token_savings": token_savings,
-                "savings_percent": savings_percent,
-                "preview": preview
-            })
-
-        return templates.TemplateResponse(
-            "query_results.html",
-            {
-                "request": request,
-                "query": query,
-                "project_id": project_id,
-                "matches": enhanced_matches,
-                "total_matches": len(enhanced_matches),
-                "total_tokens": total_tokens,
-                "threshold": threshold,
-                "top_k": top_k
-            }
-        )
-    finally:
-        # Restore original threshold
-        engine.semantic_matcher.threshold = original_threshold
+    return templates.TemplateResponse(
+        "query_results.html",
+        {
+            "request": request,
+            "query": query,
+            "project_id": project_id,
+            "matches": enhanced_matches,
+            "total_matches": len(enhanced_matches),
+            "total_tokens": total_tokens,
+            "threshold": threshold,
+            "top_k": top_k
+        }
+    )
 
 
 @router.get("/projects/{project_id}/stats", response_class=HTMLResponse)

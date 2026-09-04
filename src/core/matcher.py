@@ -35,15 +35,9 @@ class HybridMatcher:
         top_k: int | None = None,
         threshold: float | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        sm = self.semantic_matcher
-        if top_k is None and threshold is None:
-            return await sm.match_agent_needs(project_id, needs)
-        old_max, old_thr = sm.max_matches, sm.threshold
-        try:
-            if top_k is not None:
-                sm.max_matches = top_k
-            if threshold is not None:
-                sm.threshold = threshold
-            return await sm.match_agent_needs(project_id, needs)
-        finally:
-            sm.max_matches, sm.threshold = old_max, old_thr
+        # Pass per-request parameters straight through. The matcher no longer
+        # holds mutable per-request state, so nothing needs save/restore here and
+        # concurrent calls stay isolated (#105).
+        return await self.semantic_matcher.match_agent_needs(
+            project_id, needs, top_k=top_k, threshold=threshold
+        )
