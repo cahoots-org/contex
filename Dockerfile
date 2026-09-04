@@ -2,7 +2,8 @@
 FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228 as builder
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get install -y --fix-missing -o Acquire::Retries=5 \
     gcc \
     g++ \
     git \
@@ -27,7 +28,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228
 
 # Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get install -y --fix-missing -o Acquire::Retries=5 curl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
