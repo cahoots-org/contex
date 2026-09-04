@@ -165,61 +165,68 @@ async def execute_query(
 
 @router.get("/projects/{project_id}/stats", response_class=HTMLResponse)
 async def project_stats(request: Request, project_id: str):
-    """Get statistics about a project's data"""
+    """Get statistics about a project's data.
+
+    Reads from the `embeddings` table (Postgres/pgvector) — the store where
+    published data actually lands — mirroring the sibling `/data` handler.
+    """
     engine = request.app.state.context_engine
 
-    # Get all data for this project
-    data_keys = await engine.semantic_matcher.get_registered_data(project_id)
+    # One representative row per data_key, straight from the embeddings store.
+    # DISTINCT ON collapses the per-node rows back to a single item per key.
+    async with engine.semantic_matcher.db.session() as session:
+        result = await session.execute(
+            select(
+                Embedding.data_key,
+                Embedding.description,
+                Embedding.data,
+                Embedding.data_original,
+            )
+            .where(Embedding.project_id == project_id)
+            .distinct(Embedding.data_key)
+            .order_by(Embedding.data_key, Embedding.id)
+        )
+        rows = result.all()
 
     # Calculate stats
     import tiktoken
     try:
         enc = tiktoken.get_encoding("cl100k_base")
-    except:
+    except Exception:
         enc = None
 
     total_tokens = 0
     data_items = []
 
-    # Fetch data from Redis for each key
-    for key in data_keys:
-        redis_key = f"{engine.semantic_matcher.KEY_PREFIX}{project_id}:{key}"
-        data_info = await engine.semantic_matcher.redis.hgetall(redis_key)
+    for data_key, description, data, data_original in rows:
+        # Prefer the full original payload (pre node-splitting); fall back to the
+        # JSONB node data serialized as JSON.
+        data_str = data_original if data_original else json.dumps(data)
 
-        if data_info:
-            # Decode bytes if needed
-            description = data_info.get(b"description") or data_info.get("description", "")
-            if isinstance(description, bytes):
-                description = description.decode()
+        # Calculate token count
+        token_count = 0
+        if enc:
+            try:
+                token_count = len(enc.encode(data_str))
+                total_tokens += token_count
+            except Exception:
+                pass
 
-            data_str = data_info.get(b"data") or data_info.get("data", "{}")
-            if isinstance(data_str, bytes):
-                data_str = data_str.decode()
-
-            # Calculate token count
-            token_count = 0
-            if enc:
-                try:
-                    token_count = len(enc.encode(data_str))
-                    total_tokens += token_count
-                except:
-                    pass
-
-            data_items.append({
-                "data_key": key,
-                "description": description,
-                "token_count": token_count
-            })
+        data_items.append({
+            "data_key": data_key,
+            "description": description or "",
+            "token_count": token_count,
+        })
 
     return templates.TemplateResponse(
+        request,
         "project_stats.html",
         {
-            "request": request,
             "project_id": project_id,
             "data_count": len(data_items),
             "total_tokens": total_tokens,
-            "data_items": sorted(data_items, key=lambda x: x["token_count"], reverse=True)
-        }
+            "data_items": sorted(data_items, key=lambda x: x["token_count"], reverse=True),
+        },
     )
 
 
