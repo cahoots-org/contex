@@ -1,5 +1,7 @@
 """Tests for event store with PostgreSQL"""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
@@ -221,6 +223,46 @@ async def test_append_event_persists_provenance(db):
         assert row.actor_id == "key-abc"
         assert row.actor_type == "api_key"
         assert row.actor_ip == "10.0.0.9"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_appends_are_unique_and_monotonic(db):
+    """Concurrent publishes to the same project must not race on the sequence.
+
+    Regression for #104: the previous SELECT MAX(sequence)+1 then INSERT pattern
+    let two concurrent transactions compute the same sequence, so the second
+    INSERT violated the (project_id, sequence) unique constraint and 500'd, with
+    the losing write lost. Fire many appends concurrently and assert every one
+    succeeds, sequences are unique, and they form the contiguous run 1..N.
+    """
+    store = EventStore(db)
+    n = 50
+
+    # No append may raise: gather propagates the first IntegrityError (the 500 the
+    # racy MAX+1/INSERT pattern produced). A single burst can miss the race window,
+    # so run a few rounds to make the assertion reliable.
+    total = 0
+    for _ in range(3):
+        results = await asyncio.gather(
+            *(
+                store.append_event("proj-race", f"event{i}", {"i": i})
+                for i in range(n)
+            )
+        )
+        assert len(results) == n
+        total += n
+
+    # Everything that landed in the table forms the contiguous, monotonic run
+    # 1..total (per-project, from 1) with no duplicates and no gaps.
+    async with db.session() as session:
+        rows = (
+            await session.execute(
+                select(Event.sequence)
+                .where(Event.project_id == "proj-race")
+                .order_by(Event.sequence.asc())
+            )
+        ).scalars().all()
+    assert rows == list(range(1, total + 1))
 
 
 @pytest.mark.asyncio
