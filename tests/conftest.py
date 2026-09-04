@@ -115,6 +115,7 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
                     await session.execute(text("DELETE FROM embeddings"))
                     await session.execute(text("DELETE FROM snapshots"))
                     await session.execute(text("DELETE FROM events"))
+                    await session.execute(text("DELETE FROM event_sequence_counters"))
                     await session.execute(text("DELETE FROM service_account_keys"))
                     await session.execute(text("DELETE FROM service_accounts"))
                     await session.execute(text("DELETE FROM api_key_roles"))

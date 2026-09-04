@@ -214,6 +214,25 @@ class Event(Base):
     )
 
 
+class EventSequenceCounter(Base):
+    """Per-project event sequence counter.
+
+    Backs atomic, race-free sequence assignment for the event log (#104). The
+    event store bumps a project's counter with a single
+    ``INSERT ... ON CONFLICT (project_id) DO UPDATE ... RETURNING`` statement,
+    which row-locks the counter and serialises concurrent publishes to the same
+    project while keeping sequences per-project, monotonic, and starting from 1.
+    Kept in agreement with alembic migration 006 (which is the schema source).
+    """
+
+    __tablename__ = "event_sequence_counters"
+
+    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0"
+    )
+
+
 class Snapshot(Base):
     """Snapshot model - project state snapshots."""
 

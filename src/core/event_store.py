@@ -3,10 +3,11 @@
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, select, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import DatabaseManager
-from src.core.db_models import Event
+from src.core.db_models import Event, EventSequenceCounter
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -52,11 +53,25 @@ class EventStore:
         """
         actor = actor or {}
         async with self.db.session() as session:
-            result = await session.execute(
-                select(func.coalesce(func.max(Event.sequence), 0) + 1)
-                .where(Event.project_id == project_id)
+            # Atomically claim the next per-project sequence. A single
+            # INSERT ... ON CONFLICT (project_id) DO UPDATE ... RETURNING both
+            # row-locks the project's counter and returns the bumped value, so
+            # concurrent publishes to the same project are serialised and can no
+            # longer compute a duplicate sequence (#104). The old
+            # SELECT MAX(sequence)+1 then INSERT pattern raced under READ
+            # COMMITTED and 500'd on the (project_id, sequence) unique index.
+            counter_stmt = (
+                pg_insert(EventSequenceCounter)
+                .values(project_id=project_id, last_sequence=1)
+                .on_conflict_do_update(
+                    index_elements=[EventSequenceCounter.project_id],
+                    set_={
+                        "last_sequence": EventSequenceCounter.last_sequence + 1,
+                    },
+                )
+                .returning(EventSequenceCounter.last_sequence)
             )
-            sequence = result.scalar()
+            sequence = (await session.execute(counter_stmt)).scalar_one()
 
             event = Event(
                 project_id=project_id,
