@@ -87,3 +87,8 @@ def test_unknown_mount_is_flagged():
     app.mount("/rogue", Starlette())
     with pytest.raises(RuntimeError, match="/rogue"):
         assert_authz_coverage(app)
+
+
+def test_real_app_is_fully_covered():
+    from main import app
+    assert find_uncovered_routes(app) == []
