@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+import tiktoken
 from fastapi import APIRouter, Request, Form, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -83,7 +84,6 @@ async def execute_query(
         matches = truncated.get(query, [])
 
     # Calculate token counts
-    import tiktoken
     try:
         enc = tiktoken.get_encoding("cl100k_base")
     except:
