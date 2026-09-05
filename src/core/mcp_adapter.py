@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from mcp.server import MCPServer
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.subscriptions import InMemorySubscriptionBus
@@ -13,6 +14,20 @@ from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
 from src.core.models import DataPublishEvent
+from src.core.rbac import Permission
+
+
+def _enforce(permission, project_id=None):
+    """Default-deny per-tool check. No-op when auth is off (demo parity)."""
+    if not auth_enabled():
+        return
+    tok = get_access_token()
+    if tok is None or permission.value not in tok.scopes:
+        raise PermissionError(f"Missing permission: {permission.value}")
+    if project_id is not None:
+        projects = (tok.claims or {}).get("projects") or []
+        if projects and project_id not in projects:
+            raise PermissionError(f"Project out of scope: {project_id}")
 
 
 class ApiKeyVerifier(TokenVerifier):
@@ -72,6 +87,7 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_query", description="Semantic query over a project's context (stateless).")
     async def contex_query(project_id: str, query: str, top_k: int = 5, threshold: float | None = None) -> str:
+        _enforce(Permission.QUERY_DATA, project_id=project_id)
         e = _get_engine()
         matches = await e.query_project_data(project_id, query, top_k=top_k, threshold=threshold)
         return json.dumps({"query": query, "matches": matches})
@@ -80,12 +96,14 @@ def build_mcp_server(engine, db_accessor=None):
                  description="Create a live subscription; returns its resource URI to subscribe to.")
     async def contex_create_subscription(project_id: str, needs: list[str],
                                          top_k: int = 5, threshold: float | None = None) -> str:
+        _enforce(Permission.QUERY_DATA, project_id=project_id)
         e = _get_engine()
         sub_id = await e.subscriptions.create(project_id, needs, top_k=top_k, threshold=threshold)
         return json.dumps({"subscription_id": sub_id, "resource_uri": f"contex://subscriptions/{sub_id}"})
 
     @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
     async def contex_delete_subscription(subscription_id: str) -> str:
+        _enforce(Permission.QUERY_DATA)  # subscription ownership check is fast-follow #73
         e = _get_engine()
         await e.subscriptions.delete(subscription_id)
         return json.dumps({"deleted": subscription_id})
@@ -94,11 +112,13 @@ def build_mcp_server(engine, db_accessor=None):
                      description="A subscription's current matched context bundle.",
                      mime_type="application/json")
     async def read_subscription(id: str) -> str:
+        _enforce(Permission.QUERY_DATA)
         e = _get_engine()
         return json.dumps(await e.subscriptions.get_bundle(id))
 
     @server.tool(name="contex_publish", description="Publish/update context data for a project.")
     async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json") -> str:
+        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         e = _get_engine()
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
