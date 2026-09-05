@@ -4,7 +4,9 @@ import asyncio
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from src.core.authz import public
+from src.core.authz_coverage import assert_authz_coverage
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
@@ -233,6 +235,10 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis
     app.state.health_checker = health_checker
 
+    # Fail-closed authz gate: refuse to boot if any route lacks a require()/public decision.
+    assert_authz_coverage(app)
+    logger.info("Authz coverage gate passed")
+
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;
     # now that app.state.context_engine is set, the handlers will resolve it correctly.
@@ -366,7 +372,7 @@ from src.web import router as web_router
 app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 
 # Root-level health endpoint (for Docker health checks)
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(public)])
 async def root_health():
     """
     Root-level health check endpoint for Docker/Kubernetes.
@@ -384,7 +390,7 @@ async def root_health():
 # Root redirect to sandbox
 from fastapi.responses import RedirectResponse
 
-@app.get("/")
+@app.get("/", dependencies=[Depends(public)])
 async def root():
     """Redirect to query sandbox"""
     return RedirectResponse(url="/sandbox")
