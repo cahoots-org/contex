@@ -431,7 +431,7 @@ async def revoke_key(
     )
 
 
-@router.post("/token", response_model=TokenResponse, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
+@router.post("/token", response_model=TokenResponse, dependencies=[Depends(public)])
 async def get_token(
     request: Request,
     body: TokenRequest,
@@ -484,7 +484,7 @@ async def get_token(
     )
 
 
-@router.post("/token/validate", dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
+@router.post("/token/validate", dependencies=[Depends(public)])
 async def validate_token(
     request: Request,
     token: str,
