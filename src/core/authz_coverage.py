@@ -14,6 +14,13 @@ def _dependant_is_marked(dependant) -> bool:
     while stack:
         dep = stack.pop()
         call = getattr(dep, "call", None)
+        # Contract (Task 3): require(*perms) always sets _authz_marker to a
+        # TUPLE, never None. An empty tuple (require() with no args =
+        # authenticated-only) is a valid, intentional decision and MUST count as
+        # covered. Hence the `is not None` presence check rather than a
+        # truthiness check — a truthiness check would silently turn the
+        # empty-tuple case into a fail-closed false-negative. Do not weaken this
+        # without also changing the marker's sentinel contract in authz.py.
         if getattr(call, "_authz_marker", None) is not None:
             return True
         if getattr(call, "_public_marker", False):

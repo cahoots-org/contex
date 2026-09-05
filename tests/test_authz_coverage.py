@@ -44,6 +44,43 @@ def test_per_method_granularity():
     assert any("POST" in u and "/x" in u for u in uncovered)
 
 
+def test_nested_marked_dependency_is_covered():
+    """The marker may live below the top-level route dependency; the recursive
+    descent through dep.dependencies must still find it."""
+    app = FastAPI()
+
+    # A route dependency that itself Depends on a marked dependency — the marker
+    # is nested one level down, not a direct top-level dependency of the route.
+    def marked_parent(_=Depends(require(Permission.QUERY_DATA))):
+        return None
+
+    @app.get("/nested-marked", dependencies=[Depends(marked_parent)])
+    async def nested_marked(): ...
+
+    assert find_uncovered_routes(app) == []
+    assert_authz_coverage(app)  # no raise
+
+
+def test_nested_unmarked_dependency_is_flagged():
+    """Inverse of the above: a nested dependency tree with NO marker anywhere
+    must still be flagged — guards against a false-negative in the recursion."""
+    app = FastAPI()
+
+    def plain_child():
+        return None
+
+    def plain_parent(_=Depends(plain_child)):
+        return None
+
+    @app.get("/nested-unmarked", dependencies=[Depends(plain_parent)])
+    async def nested_unmarked(): ...
+
+    uncovered = find_uncovered_routes(app)
+    assert any("/nested-unmarked" in u for u in uncovered)
+    with pytest.raises(RuntimeError, match="/nested-unmarked"):
+        assert_authz_coverage(app)
+
+
 def test_unknown_mount_is_flagged():
     from starlette.applications import Starlette
     app = FastAPI()
