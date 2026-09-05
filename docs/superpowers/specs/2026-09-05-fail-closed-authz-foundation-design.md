@@ -1,7 +1,13 @@
 # Fail-Closed Authorization Foundation (Wave D, Tier 0)
 
 - **Date:** 2026-09-05
-- **Status:** Approved (2026-09-05) — ready for implementation planning
+- **Status:** Implemented on branch `worktree-wave-d-authz` (2026-09-05) — pending review/merge.
+  Plan: `docs/superpowers/plans/2026-09-05-fail-closed-authz-foundation.md`.
+  Note: during implementation, `/service-accounts/token` and `/token/validate` were
+  reclassified from `require(MANAGE_SERVICE_ACCOUNTS)` to `public` (auth ingress —
+  the endpoint self-authenticates the service-account key in-body); rate limiting is
+  left unwired pending the #38-sibling path-table fix. Post-merge follow-ups build
+  the ownership/IDOR checks (#42/#43/#54/#55/#73) on `Identity.tenant_id`/`has_project`.
 - **Issues (foundation):** #37, #38, #39, #40, #41, #53, #72
 - **Spun off (fast-follow, build on this):** #42, #43, #54, #55, #73
 - **Adjacent, out of scope here:** #64 (CORS), #68 (JWT secret), #69 (key hashing), RLS (own issue)
