@@ -4,7 +4,9 @@ Data versioning API built on event sourcing.
 Instead of separate versioning system, versions are derived from event stream.
 """
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
+from src.core.authz import require, public
+from src.core.rbac import Permission
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +32,7 @@ def _extract_version(event: dict, data_key: str) -> dict | None:
     }
 
 
-@router.get("/projects/{project_id}/data/{data_key}/history")
+@router.get("/projects/{project_id}/data/{data_key}/history", dependencies=[Depends(require(Permission.VIEW_VERSION_HISTORY))])
 async def get_version_history(
     project_id: str,
     data_key: str,
@@ -82,7 +84,7 @@ async def get_version_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/projects/{project_id}/data/{data_key}/version/{sequence}")
+@router.get("/projects/{project_id}/data/{data_key}/version/{sequence}", dependencies=[Depends(require(Permission.VIEW_VERSION_HISTORY))])
 async def get_specific_version(
     project_id: str,
     data_key: str,
@@ -134,7 +136,7 @@ async def get_specific_version(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/projects/{project_id}/data/{data_key}/diff")
+@router.get("/projects/{project_id}/data/{data_key}/diff", dependencies=[Depends(require(Permission.VIEW_VERSION_HISTORY))])
 async def diff_versions(
     project_id: str,
     data_key: str,
@@ -179,7 +181,7 @@ async def diff_versions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/projects/{project_id}/data/{data_key}/restore/{sequence}")
+@router.post("/projects/{project_id}/data/{data_key}/restore/{sequence}", dependencies=[Depends(require(Permission.RESTORE_VERSION))])
 async def restore_version(
     project_id: str,
     data_key: str,
