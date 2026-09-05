@@ -12,7 +12,8 @@ from src.core.audit import (
     AuditEventSeverity,
     get_audit_logger,
 )
-from src.core.rbac import Role
+from src.core.authz import require, public
+from src.core.rbac import Permission, Role
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -116,7 +117,7 @@ def event_to_response(event: AuditEvent) -> AuditEventResponse:
 # Endpoints
 # ============================================================
 
-@router.get("/events", response_model=AuditLogResponse)
+@router.get("/events", response_model=AuditLogResponse, dependencies=[Depends(require(Permission.VIEW_AUDIT))])
 async def query_audit_events(
     request: Request,
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
@@ -173,7 +174,7 @@ async def query_audit_events(
     )
 
 
-@router.get("/events/{event_id}", response_model=AuditEventResponse)
+@router.get("/events/{event_id}", response_model=AuditEventResponse, dependencies=[Depends(require(Permission.VIEW_AUDIT))])
 async def get_audit_event(
     request: Request,
     event_id: str,
@@ -193,7 +194,7 @@ async def get_audit_event(
     return event_to_response(event)
 
 
-@router.get("/events/types", response_model=List[str])
+@router.get("/events/types", response_model=List[str], dependencies=[Depends(require(Permission.VIEW_AUDIT))])
 async def list_event_types(
     _: None = Depends(require_admin_permission),
 ):
@@ -205,7 +206,7 @@ async def list_event_types(
     return [e.value for e in AuditEventType]
 
 
-@router.get("/export", response_model=AuditExportResponse)
+@router.get("/export", response_model=AuditExportResponse, dependencies=[Depends(require(Permission.VIEW_AUDIT))])
 async def export_audit_events(
     request: Request,
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
@@ -259,7 +260,7 @@ async def export_audit_events(
     )
 
 
-@router.get("/summary")
+@router.get("/summary", dependencies=[Depends(require(Permission.VIEW_AUDIT))])
 async def get_audit_summary(
     request: Request,
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
