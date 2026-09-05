@@ -5,11 +5,29 @@ Instead of separate versioning system, versions are derived from event stream.
 """
 
 from fastapi import APIRouter, Request, HTTPException
-from typing import List, Optional
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/versions", tags=["Versioning"])
+
+
+def _extract_version(event: dict, data_key: str) -> dict | None:
+    """
+    Project an event onto a version record, or return ``None`` if the event
+    does not concern ``data_key``.
+
+    Events have the shape ``{"sequence", "event_type", "data": {data_key: value}}``,
+    so an event is relevant iff ``data_key`` is present in its ``data`` dict.
+    """
+    event_data = event.get("data") or {}
+    if not isinstance(event_data, dict) or data_key not in event_data:
+        return None
+
+    return {
+        "sequence": event.get("sequence"),
+        "data": event_data.get(data_key),
+        "event_type": event.get("event_type"),
+    }
 
 
 @router.get("/projects/{project_id}/data/{data_key}/history")
@@ -33,32 +51,20 @@ async def get_version_history(
     try:
         engine = request.app.state.context_engine
 
-        # Get all events for this project
-        all_events = await engine.event_store.get_events(project_id, since="0", count=10000)
+        # TODO(#120): full-scan of the project's event log. This loads up to
+        # 10k events into memory and filters in Python; replace with a
+        # key-scoped query once #120 lands.
+        all_events = await engine.event_store.get_all_events(project_id, count=10000)
 
-        # Filter to events for this data_key
         versions = []
         for event in all_events:
-            event_data = event.get("data", {})
-            if isinstance(event_data, str):
-                import json
-                try:
-                    event_data = json.loads(event_data)
-                except:
-                    continue
+            version = _extract_version(event, data_key)
+            if version is not None:
+                versions.append(version)
 
-            if event_data.get("data_key") == data_key:
-                versions.append({
-                    "sequence": event.get("id"),
-                    "timestamp": event.get("id").split("-")[0] if "-" in event.get("id", "") else event.get("id"),
-                    "data": event_data.get("data"),
-                    "data_format": event_data.get("data_format", "json"),
-                    "description": event_data.get("description"),
-                    "event_type": event_data.get("event_type"),
-                })
-
-        # Sort by sequence (most recent first) and limit
-        versions.sort(key=lambda x: x["sequence"], reverse=True)
+        # Sort by sequence (most recent first) and limit. Sequences are
+        # monotonic integers-as-strings, so sort numerically.
+        versions.sort(key=lambda v: int(v["sequence"]), reverse=True)
         versions = versions[:limit]
 
         return {
@@ -97,30 +103,23 @@ async def get_specific_version(
     try:
         engine = request.app.state.context_engine
 
-        # Get events up to this sequence
-        all_events = await engine.event_store.get_events(project_id, since="0", count=10000)
+        # TODO(#120): full-scan of the project's event log to find one sequence;
+        # replace with a direct sequence lookup once #120 lands.
+        all_events = await engine.event_store.get_all_events(project_id, count=10000)
 
-        # Find the specific version
         for event in all_events:
-            if event.get("id") == sequence:
-                event_data = event.get("data", {})
-                if isinstance(event_data, str):
-                    import json
-                    try:
-                        event_data = json.loads(event_data)
-                    except:
-                        raise HTTPException(status_code=500, detail="Failed to parse event data")
+            if event.get("sequence") != sequence:
+                continue
 
-                if event_data.get("data_key") == data_key:
-                    return {
-                        "project_id": project_id,
-                        "data_key": data_key,
-                        "sequence": sequence,
-                        "timestamp": sequence.split("-")[0] if "-" in sequence else sequence,
-                        "data": event_data.get("data"),
-                        "data_format": event_data.get("data_format", "json"),
-                        "description": event_data.get("description"),
-                    }
+            version = _extract_version(event, data_key)
+            if version is not None:
+                return {
+                    "project_id": project_id,
+                    "data_key": data_key,
+                    "sequence": sequence,
+                    "data": version["data"],
+                    "event_type": version["event_type"],
+                }
 
         raise HTTPException(status_code=404, detail=f"Version {sequence} not found for {data_key}")
 
@@ -190,6 +189,11 @@ async def restore_version(
     """
     Restore data to a specific version (creates new event with old data).
 
+    SECURITY: This is an UNAUTHENTICATED mutation. Anyone who can reach this
+    endpoint can restore a data key to an arbitrary prior version. Auth is
+    deliberately out of scope here and is tracked by issue #72 (Tier-0 auth
+    foundation); wire an authorization check in once #72 lands.
+
     Args:
         project_id: Project identifier
         data_key: Data key
@@ -210,10 +214,8 @@ async def restore_version(
             project_id=project_id,
             data_key=data_key,
             data=version.get("data"),
-            data_format=version.get("data_format"),
             event_type=f"data.restored.{data_key}",
         )
-        restore_event.description = f"Restored to version {sequence}"
 
         new_sequence = await engine.publish_data(restore_event)
 
