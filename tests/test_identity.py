@@ -1,7 +1,6 @@
 # tests/test_identity.py
 import hashlib
 import pytest
-import pytest_asyncio
 from src.core.identity import resolve_identity, Identity, ANONYMOUS_IDENTITY
 from src.core.rbac import Permission, Role, assign_role
 from src.core.db_models import APIKey, Tenant
@@ -64,3 +63,22 @@ def test_has_project():
     assert scoped.has_project("p2") is False
     unscoped = Identity(key_id="k", scopes=frozenset(), tenant_id=None, projects=(), role=None)
     assert unscoped.has_project("anything") is True  # empty = all projects
+
+
+@pytest.mark.asyncio
+async def test_powerless_key_has_empty_scopes(db):
+    """A key with no role and empty scopes is valid but grants nothing."""
+    key_id = await _make_key(db, "ck_powerless_dddd4444", scopes=[])
+    ident = await resolve_identity(db, "ck_powerless_dddd4444")
+    assert ident is not None, "Key exists — must not be None"
+    assert ident.scopes == frozenset(), "No role, no scopes — must be empty frozenset"
+
+
+@pytest.mark.asyncio
+async def test_parse_scopes_ignores_legacy_strings(db):
+    """Unknown scope strings are silently dropped; valid Permission values are kept."""
+    key_id = await _make_key(db, "ck_legacy_scopes_eeee5555",
+                             scopes=["read", "write", Permission.QUERY_DATA.value])
+    ident = await resolve_identity(db, "ck_legacy_scopes_eeee5555")
+    assert ident is not None
+    assert ident.scopes == frozenset({Permission.QUERY_DATA})
