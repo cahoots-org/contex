@@ -13,18 +13,11 @@ router = APIRouter(prefix="/api/v1/versions", tags=["Versioning"])
 
 def _extract_version(event: dict, data_key: str) -> dict | None:
     """
-    Project a raw EventStore event onto a version record for ``data_key``.
+    Project an event onto a version record, or return ``None`` if the event
+    does not concern ``data_key``.
 
-    EventStore events have the shape::
-
-        {"sequence": "<n>", "event_type": "<type>", "data": {data_key: <value>}}
-
-    (see ``EventStore.get_all_events`` / ``ContextEngine.publish_data``). A publish
-    stores the payload under its ``data_key``, so an event is relevant to this
-    ``data_key`` iff that key is present in the event's ``data`` dict.
-
-    Returns a version dict for the requested key, or ``None`` if the event does
-    not concern this key.
+    Events have the shape ``{"sequence", "event_type", "data": {data_key: value}}``,
+    so an event is relevant iff ``data_key`` is present in its ``data`` dict.
     """
     event_data = event.get("data") or {}
     if not isinstance(event_data, dict) or data_key not in event_data:
