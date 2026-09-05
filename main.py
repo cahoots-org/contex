@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
-from src.core.authz import public
+from src.core.authz import public, auth_enabled
 from src.core.authz_coverage import assert_authz_coverage
+from src.core.protected_mode import check_protected_mode
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
@@ -238,6 +239,15 @@ async def lifespan(app: FastAPI):
     # Fail-closed authz gate: refuse to boot if any route lacks a require()/public decision.
     assert_authz_coverage(app)
     logger.info("Authz coverage gate passed")
+
+    # Protected mode: refuse to bind a non-loopback address when auth is off,
+    # unless the operator explicitly opts out via CONTEX_PROTECTED_MODE=false.
+    check_protected_mode(
+        os.getenv("CONTEX_HOST", "0.0.0.0"),
+        auth_on=auth_enabled(),
+        protected=os.getenv("CONTEX_PROTECTED_MODE", "true").lower() == "true",
+    )
+    logger.info("Protected mode check passed")
 
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;
