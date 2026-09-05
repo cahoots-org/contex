@@ -53,13 +53,6 @@ class EventStore:
         """
         actor = actor or {}
         async with self.db.session() as session:
-            # Atomically claim the next per-project sequence. A single
-            # INSERT ... ON CONFLICT (project_id) DO UPDATE ... RETURNING both
-            # row-locks the project's counter and returns the bumped value, so
-            # concurrent publishes to the same project are serialised and can no
-            # longer compute a duplicate sequence (#104). The old
-            # SELECT MAX(sequence)+1 then INSERT pattern raced under READ
-            # COMMITTED and 500'd on the (project_id, sequence) unique index.
             counter_stmt = (
                 pg_insert(EventSequenceCounter)
                 .values(project_id=project_id, last_sequence=1)
