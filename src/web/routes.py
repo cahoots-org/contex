@@ -66,15 +66,14 @@ async def execute_query(
 
     # Pass the per-request threshold through instead of mutating the shared
     # matcher singleton, so concurrent /query requests stay isolated (#105).
-    # Over-fetch candidates so the token-limit truncation below has room to work.
     matches = await engine.query_project_data(
         project_id=project_id,
         query=query,
-        top_k=top_k * 3,
+        top_k=top_k,
         threshold=threshold,
     )
 
-    # Limit to top_k (candidates already threshold-filtered by the matcher)
+    # Defensive cap (the matcher already limits to top_k)
     matches = matches[:top_k]
 
     # Apply token limit truncation if specified
