@@ -12,7 +12,8 @@ from src.core.service_accounts import (
     ServiceAccountToken,
     get_service_account_manager,
 )
-from src.core.rbac import Role
+from src.core.authz import require, public
+from src.core.rbac import Permission, Role
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -180,7 +181,7 @@ def account_to_response(account: ServiceAccount) -> ServiceAccountResponse:
 # Endpoints
 # ============================================================
 
-@router.post("", response_model=CreateServiceAccountResponse, status_code=201)
+@router.post("", response_model=CreateServiceAccountResponse, status_code=201, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def create_service_account(
     request: Request,
     body: CreateServiceAccountRequest,
@@ -234,7 +235,7 @@ async def create_service_account(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("", response_model=List[ServiceAccountResponse])
+@router.get("", response_model=List[ServiceAccountResponse], dependencies=[Depends(require(Permission.VIEW_SERVICE_ACCOUNTS))])
 async def list_service_accounts(
     request: Request,
     account_type: Optional[ServiceAccountType] = None,
@@ -260,7 +261,7 @@ async def list_service_accounts(
     return [account_to_response(a) for a in accounts]
 
 
-@router.get("/{account_id}", response_model=ServiceAccountResponse)
+@router.get("/{account_id}", response_model=ServiceAccountResponse, dependencies=[Depends(require(Permission.VIEW_SERVICE_ACCOUNTS))])
 async def get_service_account(
     request: Request,
     account_id: str,
@@ -280,7 +281,7 @@ async def get_service_account(
     return account_to_response(account)
 
 
-@router.patch("/{account_id}", response_model=ServiceAccountResponse)
+@router.patch("/{account_id}", response_model=ServiceAccountResponse, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def update_service_account(
     request: Request,
     account_id: str,
@@ -321,7 +322,7 @@ async def update_service_account(
     return account_to_response(account)
 
 
-@router.delete("/{account_id}", status_code=204)
+@router.delete("/{account_id}", status_code=204, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def delete_service_account(
     request: Request,
     account_id: str,
@@ -350,7 +351,7 @@ async def delete_service_account(
     )
 
 
-@router.post("/{account_id}/keys", response_model=CreateKeyResponse, status_code=201)
+@router.post("/{account_id}/keys", response_model=CreateKeyResponse, status_code=201, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def create_key(
     request: Request,
     account_id: str,
@@ -400,7 +401,7 @@ async def create_key(
     )
 
 
-@router.delete("/{account_id}/keys/{key_id}", status_code=204)
+@router.delete("/{account_id}/keys/{key_id}", status_code=204, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def revoke_key(
     request: Request,
     account_id: str,
@@ -430,7 +431,7 @@ async def revoke_key(
     )
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post("/token", response_model=TokenResponse, dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def get_token(
     request: Request,
     body: TokenRequest,
@@ -483,7 +484,7 @@ async def get_token(
     )
 
 
-@router.post("/token/validate")
+@router.post("/token/validate", dependencies=[Depends(require(Permission.MANAGE_SERVICE_ACCOUNTS))])
 async def validate_token(
     request: Request,
     token: str,
