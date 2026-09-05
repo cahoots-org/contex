@@ -221,12 +221,8 @@ class SemanticDataMatcher:
         Args:
             project_id: Project identifier
             needs: List of semantic needs (natural language)
-            top_k: Per-request maximum matches to return per need. Defaults to
-                the instance ``max_matches``. Passed as an argument (rather than
-                mutated on the instance) so concurrent requests never read each
-                other's value.
-            threshold: Per-request minimum similarity to match (0-1). Defaults to
-                the instance ``threshold``. Also per-request for the same reason.
+            top_k: Per-request max matches per need; defaults to the instance value.
+            threshold: Per-request min similarity (0-1); defaults to the instance value.
 
         Returns:
             Dict mapping needs to matched data sources:
@@ -237,9 +233,6 @@ class SemanticDataMatcher:
                 ]
             }
         """
-        # Resolve per-request parameters locally. Reading these into locals keeps
-        # all shared mutable state off the hot path: nothing on `self` is mutated,
-        # so interleaved concurrent calls can't corrupt each other (#105).
         effective_max = top_k if top_k is not None else self.max_matches
         effective_threshold = (
             threshold if threshold is not None else self.threshold

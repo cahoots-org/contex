@@ -35,9 +35,7 @@ class HybridMatcher:
         top_k: int | None = None,
         threshold: float | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        # Pass per-request parameters straight through. The matcher no longer
-        # holds mutable per-request state, so nothing needs save/restore here and
-        # concurrent calls stay isolated (#105).
+        # Pass per-request params straight through; nothing is mutated on the matcher (#105).
         return await self.semantic_matcher.match_agent_needs(
             project_id, needs, top_k=top_k, threshold=threshold
         )
