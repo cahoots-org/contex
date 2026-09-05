@@ -5,13 +5,39 @@ from __future__ import annotations
 import json
 
 from mcp.server import MCPServer
+from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.subscriptions import InMemorySubscriptionBus
 
+from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
+from src.core.identity import resolve_identity
 from src.core.models import DataPublishEvent
 
 
-def build_mcp_server(engine):
+class ApiKeyVerifier(TokenVerifier):
+    """Resolve a Contex API key into an MCP AccessToken. DB is resolved lazily."""
+
+    def __init__(self, db_accessor):
+        self._db_accessor = db_accessor  # zero-arg callable → DatabaseManager
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        identity = await resolve_identity(self._db_accessor(), token)
+        if identity is None:
+            return None
+        return AccessToken(
+            token=token,
+            client_id=identity.key_id,
+            scopes=[p.value for p in identity.scopes],
+            claims={
+                "role": identity.role.value if identity.role else None,
+                "tenant_id": identity.tenant_id,
+                "projects": list(identity.projects),
+            },
+        )
+
+
+def build_mcp_server(engine, db_accessor=None):
     """Build the Contex MCP server bound to a ContextEngine. Returns (server, bus).
 
     ``engine`` may be either a ``ContextEngine`` instance (concrete, backward
@@ -28,7 +54,17 @@ def build_mcp_server(engine):
     # reconnect. It is multi-replica-safe because the bridge is driven by shared
     # Redis events.
     bus = InMemorySubscriptionBus()
-    server = MCPServer(name="contex", version="0.3.0", subscriptions=bus)
+    auth_kwargs = {}
+    if auth_enabled() and db_accessor is not None:
+        auth_kwargs = dict(
+            token_verifier=ApiKeyVerifier(db_accessor),
+            auth=AuthSettings(
+                issuer_url="https://contex.local",  # required by pydantic; unused in this path
+                resource_server_url=None,            # keeps us off RFC 9728 discovery
+                required_scopes=None,               # per-tool checks live in handlers
+            ),
+        )
+    server = MCPServer(name="contex", version="0.3.0", subscriptions=bus, **auth_kwargs)
 
     def _get_engine():
         """Resolve the engine, supporting both concrete instances and lazy callables."""

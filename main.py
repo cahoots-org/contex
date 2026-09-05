@@ -274,7 +274,10 @@ app = FastAPI(
 # /mcp route exists in app.routes at import time (the test asserts this).
 # The engine is resolved at handler call time via app.state.context_engine,
 # which is populated during lifespan startup before any requests are served.
-_mcp_server, _mcp_bus = build_mcp_server(lambda: app.state.context_engine)
+_mcp_server, _mcp_bus = build_mcp_server(
+    lambda: app.state.context_engine,
+    db_accessor=lambda: app.state.db,
+)
 _mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/mcp")
 app.mount("/mcp", _mcp_starlette_app)
 
