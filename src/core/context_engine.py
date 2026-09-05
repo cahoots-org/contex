@@ -558,25 +558,15 @@ class ContextEngine:
         """
         print(f"[ContextEngine] Ad-hoc query for project {project_id}: '{query}'")
 
-        # Use semantic matcher with temporary overrides
-        original_max = self.semantic_matcher.max_matches
-        original_threshold = self.semantic_matcher.threshold
-        self.semantic_matcher.max_matches = top_k
-        if threshold is not None:
-            self.semantic_matcher.threshold = threshold
+        # Pass per-request top_k/threshold through instead of mutating the shared
+        # matcher, so concurrent ad-hoc queries can't corrupt each other (#105).
+        matches = await self.semantic_matcher.match_agent_needs(
+            project_id, [query], top_k=top_k, threshold=threshold
+        )
 
-        try:
-            # Match the query as if it were a single agent need
-            matches = await self.semantic_matcher.match_agent_needs(project_id, [query])
+        # Extract matches for the query
+        results = matches.get(query, [])
 
-            # Extract matches for the query
-            results = matches.get(query, [])
+        print(f"[ContextEngine] Found {len(results)} matches for query")
 
-            print(f"[ContextEngine] Found {len(results)} matches for query")
-
-            return results
-
-        finally:
-            # Restore original values
-            self.semantic_matcher.max_matches = original_max
-            self.semantic_matcher.threshold = original_threshold
+        return results

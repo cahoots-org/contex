@@ -1,5 +1,7 @@
 """Tests for semantic data matching with PostgreSQL/pgvector"""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 import numpy as np
@@ -216,6 +218,117 @@ class TestSemanticDataMatcher:
         # Should still have one entry (updated, not duplicated)
         config_count = keys.count("config")
         assert config_count == 1
+
+
+class TestSemanticMatcherConcurrency:
+    """Concurrent requests must not clobber each other's per-request parameters.
+
+    Regression test for #105: `match_agent_needs` previously read `top_k`/
+    `threshold` from mutable instance attributes on a shared singleton, which
+    callers save/mutated/restored around ``await`` points. Under concurrency the
+    interleaved queries read each other's values, silently returning results with
+    the wrong match count or threshold. The fix threads these as per-call
+    arguments so nothing shared is mutated.
+    """
+
+    @pytest_asyncio.fixture
+    async def matcher(self, db):
+        """Matcher with a mocked model so every text embeds identically.
+
+        With identical embeddings and threshold 0, every registered item is a
+        match, so a call with ``top_k=k`` must return exactly ``min(k, N)``
+        results regardless of what any concurrent call requests.
+        """
+        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
+            mock_model = Mock()
+            mock_model.encode.return_value = np.ones(384).astype(np.float32)
+            mock_model_cls.return_value = mock_model
+
+            matcher = SemanticDataMatcher(
+                db=db,
+                model_name="all-MiniLM-L6-v2",
+                similarity_threshold=0.5,
+                max_matches=10,
+            )
+            await matcher.initialize_index()
+            return matcher
+
+    @pytest.mark.asyncio
+    async def test_concurrent_top_k_do_not_cross_contaminate(self, matcher):
+        """Interleaved calls with different top_k each get their own count."""
+        n_items = 8
+        for i in range(n_items):
+            await matcher.register_data("projc", f"item_{i}", {"idx": i})
+
+        need = "anything"
+
+        async def query(k: int) -> int:
+            result = await matcher.match_agent_needs(
+                "projc", [need], top_k=k, threshold=0.0
+            )
+            return len(result[need])
+
+        # Many interleaved calls, each requesting a different number of matches.
+        # If per-request state leaked through a shared attribute, some calls would
+        # return another call's count.
+        ks = [(i % n_items) + 1 for i in range(60)]
+        counts = await asyncio.gather(*(query(k) for k in ks))
+
+        for requested, got in zip(ks, counts):
+            assert got == requested, (
+                f"requested top_k={requested} but got {got} matches; "
+                "concurrent requests cross-contaminated shared state"
+            )
+
+    @pytest.mark.asyncio
+    async def test_concurrent_threshold_do_not_cross_contaminate(self, matcher):
+        """A strict-threshold call must not be relaxed by a concurrent lenient one.
+
+        All items embed identically to the query, so similarity is 1.0 for every
+        item. A threshold of 1.5 excludes everything; a threshold of 0.0 includes
+        everything. Interleaving the two must keep the strict call at zero.
+        """
+        for i in range(5):
+            await matcher.register_data("projt", f"item_{i}", {"idx": i})
+
+        need = "anything"
+
+        async def strict() -> int:
+            result = await matcher.match_agent_needs(
+                "projt", [need], top_k=10, threshold=1.5
+            )
+            return len(result[need])
+
+        async def lenient() -> int:
+            result = await matcher.match_agent_needs(
+                "projt", [need], top_k=10, threshold=0.0
+            )
+            return len(result[need])
+
+        tasks = []
+        for _ in range(20):
+            tasks.append(strict())
+            tasks.append(lenient())
+        results = await asyncio.gather(*tasks)
+
+        strict_counts = results[0::2]
+        lenient_counts = results[1::2]
+        assert all(c == 0 for c in strict_counts), (
+            f"strict threshold leaked matches: {strict_counts}"
+        )
+        assert all(c == 5 for c in lenient_counts), (
+            f"lenient threshold lost matches: {lenient_counts}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_match_agent_needs_does_not_mutate_instance_state(self, matcher):
+        """Passing per-call top_k/threshold must leave the instance defaults intact."""
+        await matcher.register_data("projm", "item", {"idx": 0})
+
+        await matcher.match_agent_needs("projm", ["x"], top_k=1, threshold=0.99)
+
+        assert matcher.max_matches == 10
+        assert matcher.threshold == 0.5
 
 
 class TestSemanticMatcherWithRealEmbeddings:
