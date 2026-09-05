@@ -1,6 +1,8 @@
 """REST API routes for Contex"""
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from src.core.authz import require, public
+from src.core.rbac import Permission
 from src.core.models import (
     AgentRegistration,
     DataPublishEvent,
@@ -39,7 +41,7 @@ def _get_request_context(request: Request) -> dict:
     }
 
 
-@router.get("/")
+@router.get("/", dependencies=[Depends(public)])
 async def root():
     """Root endpoint"""
     return {
@@ -49,7 +51,7 @@ async def root():
     }
 
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(public)])
 async def health(request: Request):
     """Comprehensive health check endpoint"""
     from src.core.health import HealthChecker
@@ -68,7 +70,7 @@ async def health(request: Request):
         return {"status": "healthy"}
 
 
-@router.get("/health/ready")
+@router.get("/health/ready", dependencies=[Depends(public)])
 async def readiness(request: Request):
     """Readiness check for Kubernetes"""
     from src.core.health import HealthChecker
@@ -82,7 +84,7 @@ async def readiness(request: Request):
         return {"ready": True}
 
 
-@router.get("/health/live")
+@router.get("/health/live", dependencies=[Depends(public)])
 async def liveness(request: Request):
     """Liveness check for Kubernetes"""
     from src.core.health import HealthChecker
@@ -94,7 +96,7 @@ async def liveness(request: Request):
         return {"alive": True}
 
 
-@router.get("/metrics")
+@router.get("/metrics", dependencies=[Depends(public)])
 async def metrics():
     """Prometheus metrics endpoint"""
     from fastapi.responses import Response
@@ -104,7 +106,7 @@ async def metrics():
     return Response(content=metrics_output, media_type="text/plain; version=0.0.4")
 
 
-@router.post("/auth/keys", response_model=dict)
+@router.post("/auth/keys", response_model=dict, dependencies=[Depends(require(Permission.CREATE_API_KEY))])
 async def create_key(name: str, request: Request):
     """Create a new API key"""
     ctx = _get_request_context(request)
@@ -139,7 +141,7 @@ async def create_key(name: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/auth/keys", response_model=List[APIKey])
+@router.get("/auth/keys", response_model=List[APIKey], dependencies=[Depends(require(Permission.LIST_API_KEYS))])
 async def list_keys(request: Request):
     """List all API keys"""
     try:
@@ -149,7 +151,7 @@ async def list_keys(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/auth/keys/{key_id}")
+@router.delete("/auth/keys/{key_id}", dependencies=[Depends(require(Permission.REVOKE_API_KEY))])
 async def revoke_key(key_id: str, request: Request):
     """Revoke an API key"""
     ctx = _get_request_context(request)
@@ -194,7 +196,7 @@ async def revoke_key(key_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/admin/rate-limits")
+@router.get("/admin/rate-limits", dependencies=[Depends(require(Permission.VIEW_RATE_LIMITS))])
 async def get_rate_limits(request: Request):
     """Get current rate limit status for the authenticated API key"""
     try:
@@ -211,7 +213,7 @@ async def get_rate_limits(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/auth/roles")
+@router.post("/auth/roles", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
 async def assign_role_endpoint(
     key_id: str,
     role: str,
@@ -266,7 +268,7 @@ async def assign_role_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/auth/roles")
+@router.get("/auth/roles", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
 async def list_roles_endpoint(request: Request):
     """List all role assignments"""
     try:
@@ -286,7 +288,7 @@ async def list_roles_endpoint(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/auth/roles/{key_id}")
+@router.get("/auth/roles/{key_id}", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
 async def get_role_endpoint(key_id: str, request: Request):
     """Get role assignment for a specific API key"""
     try:
@@ -308,7 +310,7 @@ async def get_role_endpoint(key_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/auth/roles/{key_id}")
+@router.delete("/auth/roles/{key_id}", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
 async def revoke_role_endpoint(key_id: str, request: Request):
     """Revoke role assignment for an API key"""
     ctx = _get_request_context(request)
@@ -346,7 +348,7 @@ async def revoke_role_endpoint(key_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/auth/permissions")
+@router.get("/auth/permissions", dependencies=[Depends(require())])
 async def list_permissions():
     """List all available permissions and roles"""
     from src.core.rbac import Role, Permission, ROLE_PERMISSIONS
@@ -362,7 +364,7 @@ async def list_permissions():
     }
 
 
-@router.post("/data/publish", response_model=dict)
+@router.post("/data/publish", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
 async def publish_data(event: DataPublishEvent, request: Request):
     """
     Main app publishes data change in ANY format.
@@ -510,7 +512,7 @@ BINARY_FORMATS = {"pdf", "docx"}
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
-@router.post("/data/upload", response_model=dict)
+@router.post("/data/upload", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
 async def upload_document(
     request: Request,
     file: UploadFile = File(..., description="Document file (PDF, DOCX, or any supported text format)"),
@@ -651,7 +653,7 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/agents/register", response_model=RegistrationResponse)
+@router.post("/agents/register", response_model=RegistrationResponse, dependencies=[Depends(require(Permission.REGISTER_AGENT))])
 async def register_agent(registration: AgentRegistration, request: Request):
     """
     Agent registers with semantic data needs.
@@ -746,7 +748,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/agents/{agent_id}")
+@router.delete("/agents/{agent_id}", dependencies=[Depends(require(Permission.DELETE_AGENT))])
 async def unregister_agent(agent_id: str, request: Request):
     """Unregister an agent"""
     ctx = _get_request_context(request)
@@ -772,7 +774,7 @@ async def unregister_agent(agent_id: str, request: Request):
     return {"status": "unregistered", "agent_id": agent_id}
 
 
-@router.get("/agents")
+@router.get("/agents", dependencies=[Depends(require(Permission.LIST_AGENTS))])
 async def list_agents(request: Request):
     """List all registered agents"""
     engine = request.app.state.context_engine
@@ -780,7 +782,7 @@ async def list_agents(request: Request):
     return {"agents": agents, "count": len(agents)}
 
 
-@router.get("/agents/{agent_id}")
+@router.get("/agents/{agent_id}", dependencies=[Depends(require(Permission.LIST_AGENTS))])
 async def get_agent_info(agent_id: str, request: Request):
     """Get info about a registered agent"""
     engine = request.app.state.context_engine
@@ -790,7 +792,7 @@ async def get_agent_info(agent_id: str, request: Request):
     return info
 
 
-@router.get("/projects/{project_id}/events")
+@router.get("/projects/{project_id}/events", dependencies=[Depends(require(Permission.VIEW_PROJECT_EVENTS))])
 async def get_project_events(project_id: str, request: Request, since: str = "0", count: int = 100):
     """Get events for a project"""
     engine = request.app.state.context_engine
@@ -802,7 +804,7 @@ async def get_project_events(project_id: str, request: Request, since: str = "0"
     return {"events": events, "count": len(events)}
 
 
-@router.get("/projects/{project_id}/data")
+@router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
 async def get_project_data(
     project_id: str,
     request: Request,
@@ -932,7 +934,7 @@ async def get_project_data(
     return result
 
 
-@router.post("/projects/{project_id}/query")
+@router.post("/projects/{project_id}/query", dependencies=[Depends(require(Permission.QUERY_DATA))])
 async def query_project(project_id: str, query_req: QueryRequest, request: Request):
     """
     Search project data by semantic similarity without agent registration.
@@ -1040,7 +1042,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/cleanup")
+@router.post("/admin/cleanup", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
 async def cleanup_all_projects(request: Request):
     """
     Run cleanup for all projects (admin only).
@@ -1072,7 +1074,7 @@ async def cleanup_all_projects(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/cleanup/{project_id}")
+@router.post("/admin/cleanup/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
 async def cleanup_project(project_id: str, request: Request):
     """
     Run cleanup for a specific project (admin only).
@@ -1104,7 +1106,7 @@ async def cleanup_project(project_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/admin/retention/{project_id}")
+@router.get("/admin/retention/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
 async def get_retention_stats(project_id: str, request: Request):
     """
     Get retention statistics for a project.
@@ -1135,7 +1137,7 @@ async def get_retention_stats(project_id: str, request: Request):
 # Import Endpoints
 # ========================================================================
 
-@router.post("/projects/{project_id}/import")
+@router.post("/projects/{project_id}/import", dependencies=[Depends(require(Permission.PUBLISH_DATA))])
 async def import_project(
     project_id: str,
     request: Request,
@@ -1234,7 +1236,7 @@ async def import_project(
 # BATCH OPERATIONS - Phase 2 Performance Enhancement
 # ============================================================================
 
-@router.post("/batch/publish", response_model=dict)
+@router.post("/batch/publish", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
 async def batch_publish_data(events: List[DataPublishEvent], request: Request):
     """
     Batch publish multiple data items in a single request.
@@ -1320,7 +1322,7 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/batch/register", response_model=dict)
+@router.post("/batch/register", response_model=dict, dependencies=[Depends(require(Permission.REGISTER_AGENT))])
 async def batch_register_agents(registrations: List[AgentRegistration], request: Request):
     """
     Batch register multiple agents in a single request.
