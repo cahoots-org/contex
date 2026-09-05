@@ -263,7 +263,7 @@ async def get_project_data(request: Request, project_id: str):
     return {"data": data_items}
 
 
-@router.get("/subscribe", dependencies=[Depends(public)])
+@router.get("/subscribe", dependencies=[Depends(require(Permission.QUERY_DATA))])
 async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),
