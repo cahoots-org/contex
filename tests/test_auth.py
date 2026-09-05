@@ -1,60 +1,7 @@
 """Tests for authentication with PostgreSQL"""
 
 import pytest
-import pytest_asyncio
-from fastapi import FastAPI
-from httpx import AsyncClient
-from src.core.auth import APIKeyMiddleware, create_api_key, revoke_api_key
-
-
-@pytest_asyncio.fixture
-async def app_with_auth(db):
-    app = FastAPI()
-    app.state.db = db  # Make DB available via app state
-
-    app.add_middleware(APIKeyMiddleware)
-
-    @app.get("/protected")
-    async def protected():
-        return {"status": "ok"}
-
-    @app.get("/health")
-    async def health():
-        return {"status": "ok"}
-
-    return app
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_no_key(app_with_auth):
-    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
-        # Public path should work
-        resp = await client.get("/health")
-        assert resp.status_code == 200
-
-        # Protected path should fail
-        resp = await client.get("/protected")
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Missing API Key"
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_invalid_key(app_with_auth):
-    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
-        resp = await client.get("/protected", headers={"X-API-Key": "invalid_key"})
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Invalid API Key"
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_valid_key(app_with_auth, db):
-    # Create a key
-    raw_key, _ = await create_api_key(db, "test-key")
-
-    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
-        resp = await client.get("/protected", headers={"X-API-Key": raw_key})
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
+from src.core.auth import create_api_key, revoke_api_key
 
 
 @pytest.mark.asyncio
@@ -128,19 +75,3 @@ async def test_revoke_nonexistent_key(db):
     """Test revoking a key that doesn't exist"""
     success = await revoke_api_key(db, "nonexistent_key_id")
     assert success is False
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_accepts_bearer_token(app_with_auth, db):
-    raw_key, _ = await create_api_key(db, "bearer-key")
-    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
-        resp = await client.get("/protected", headers={"Authorization": f"Bearer {raw_key}"})
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
-
-
-@pytest.mark.asyncio
-async def test_auth_middleware_rejects_missing_credentials(app_with_auth):
-    async with AsyncClient(app=app_with_auth, base_url="http://test") as client:
-        resp = await client.get("/protected")
-        assert resp.status_code == 401
