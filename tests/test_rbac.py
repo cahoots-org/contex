@@ -11,6 +11,7 @@ from src.core.rbac import (
     list_roles,
     get_role_permissions,
     check_permission,
+    expand_role,
     ROLE_PERMISSIONS
 )
 from src.core.db_models import APIKey
@@ -27,6 +28,27 @@ async def create_api_key(db, key_id: str) -> None:
             scopes=["read", "write"],
         )
         session.add(api_key)
+
+
+def test_new_subsystem_permissions_exist():
+    """Test that new subsystem permissions exist"""
+    for name in ("MANAGE_TENANTS", "VIEW_TENANTS", "MANAGE_WEBHOOKS", "VIEW_WEBHOOKS",
+                 "MANAGE_SERVICE_ACCOUNTS", "VIEW_SERVICE_ACCOUNTS", "VIEW_AUDIT",
+                 "VIEW_VERSION_HISTORY", "RESTORE_VERSION"):
+        assert hasattr(Permission, name)
+
+
+def test_admin_has_every_permission():
+    """Test that admin role has every permission"""
+    assert ROLE_PERMISSIONS[Role.ADMIN] == set(Permission)
+
+
+def test_expand_role_returns_frozenset():
+    """Test that expand_role returns a frozenset"""
+    perms = expand_role(Role.READONLY)
+    assert isinstance(perms, frozenset)
+    assert Permission.QUERY_DATA in perms
+    assert Permission.MANAGE_TENANTS not in perms
 
 
 class TestRoles:
