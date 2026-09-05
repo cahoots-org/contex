@@ -39,6 +39,10 @@ def _record_quota_exceeded(tenant_id: str, resource: str):
 MULTI_TENANT_ENABLED = os.getenv("MULTI_TENANT_ENABLED", "false").lower() == "true"
 
 
+class _TenantSpoofingError(Exception):
+    """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
+
+
 class TenantMiddleware(BaseHTTPMiddleware):
     """
     Middleware to handle tenant isolation and context.
@@ -106,7 +110,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.tenant_manager = manager
 
             # Identify tenant
-            tenant_id = await self._identify_tenant(request, manager)
+            try:
+                tenant_id = await self._identify_tenant(request, manager)
+            except _TenantSpoofingError:
+                logger.warning("Tenant spoofing attempt rejected",
+                               path=path,
+                               method=request.method,
+                               requested_tenant=request.headers.get("X-Tenant-ID"))
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "X-Tenant-ID does not match authenticated tenant"}
+                )
 
             if not tenant_id and self.require_tenant:
                 return JSONResponse(
@@ -167,25 +181,35 @@ class TenantMiddleware(BaseHTTPMiddleware):
         """
         Identify tenant from request.
 
-        Tries multiple methods in order:
-        1. X-Tenant-ID header
-        2. API key association
-        3. Path prefix (e.g., /t/tenant_id/...)
+        When authentication is enabled, the tenant is derived authoritatively
+        from the caller's identity (resolved from their credential), NOT from a
+        client-supplied ``X-Tenant-ID`` header. A client that sends an
+        ``X-Tenant-ID`` that disagrees with its identity's tenant is attempting
+        tenant spoofing and is rejected upstream (see :meth:`dispatch`).
 
-        Args:
-            request: FastAPI request
-            manager: TenantManager instance
+        When authentication is disabled (demo mode), the legacy header/API-key/
+        path precedence is used unchanged.
 
         Returns:
             Tenant ID if identified, None otherwise
+
+        Raises:
+            _TenantSpoofingError: if auth is on and X-Tenant-ID disagrees with
+                the identity's tenant.
         """
+        from src.core.authz import auth_enabled
+
+        if auth_enabled():
+            return await self._identify_tenant_from_identity(request)
+
+        # --- Demo mode (auth disabled): legacy header-based behavior ---
+
         # Method 1: Explicit header
         tenant_id = request.headers.get("X-Tenant-ID")
         if tenant_id:
             return tenant_id
 
-        # Method 2: API key association
-        # Check if APIKeyMiddleware has already set the key_id
+        # Method 2: API key association (legacy: key_id set elsewhere in state)
         key_id = getattr(request.state, 'api_key_id', None)
         if key_id:
             tenant_id = await manager.get_api_key_tenant(key_id)
@@ -200,6 +224,44 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return parts[2]
 
         return None
+
+    async def _identify_tenant_from_identity(
+        self,
+        request: Request,
+    ) -> Optional[str]:
+        """
+        Resolve the tenant from the caller's credential when auth is enabled.
+
+        Identity is normally resolved in the route's ``get_identity``
+        dependency, which runs AFTER this middleware, so ``request.state.identity``
+        is not yet populated here. We therefore resolve the credential directly
+        (a cheap indexed hash lookup). This does NOT return 401 for a
+        missing/invalid credential — that remains the single responsibility of
+        the route's ``get_identity`` dependency. We simply decline to set a
+        tenant and let the request proceed to be rejected downstream.
+
+        If the credential resolves to an identity and the client also sent an
+        ``X-Tenant-ID`` that does not match ``identity.tenant_id``, this raises
+        :class:`_TenantSpoofingError`.
+        """
+        from src.core.authz import _extract_credential
+        from src.core.identity import resolve_identity
+
+        credential = _extract_credential(request)
+        if not credential:
+            # Missing credential: let get_identity 401 it downstream.
+            return None
+
+        identity = await resolve_identity(request.app.state.db, credential)
+        if identity is None:
+            # Invalid credential: let get_identity 401 it downstream.
+            return None
+
+        requested = request.headers.get("X-Tenant-ID")
+        if requested is not None and requested != identity.tenant_id:
+            raise _TenantSpoofingError()
+
+        return identity.tenant_id
 
 
 class TenantQuotaMiddleware(BaseHTTPMiddleware):
