@@ -2,7 +2,10 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from src.core.authz import require, public
+from src.core.identity import Identity
+from src.core.ownership import check_project_access
 from src.core.rbac import Permission
+from src.core.tenant import TenantManager
 from src.core.models import (
     AgentRegistration,
     DataPublishEvent,
@@ -26,6 +29,10 @@ from typing import List
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+def get_tenant_manager(request: Request) -> TenantManager:
+    return TenantManager(request.app.state.db)
 
 
 def _get_request_context(request: Request) -> dict:
@@ -364,8 +371,8 @@ async def list_permissions():
     }
 
 
-@router.post("/data/publish", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
-async def publish_data(event: DataPublishEvent, request: Request):
+@router.post("/data/publish", response_model=dict)
+async def publish_data(event: DataPublishEvent, request: Request, identity: Identity = Depends(require(Permission.PUBLISH_DATA))):
     """
     Main app publishes data change in ANY format.
 
@@ -402,6 +409,7 @@ async def publish_data(event: DataPublishEvent, request: Request):
             "data": "We use a microservices architecture with Redis for caching"
         }
     """
+    await check_project_access(identity, event.project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
     try:
         from src.core.metrics import record_event_published, publish_duration_seconds
@@ -512,12 +520,13 @@ BINARY_FORMATS = {"pdf", "docx"}
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
-@router.post("/data/upload", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
+@router.post("/data/upload", response_model=dict)
 async def upload_document(
     request: Request,
     file: UploadFile = File(..., description="Document file (PDF, DOCX, or any supported text format)"),
     project_id: str = Form(..., description="Project identifier"),
     data_key: str = Form(None, description="Data identifier (defaults to filename without extension)"),
+    identity: Identity = Depends(require(Permission.PUBLISH_DATA)),
 ):
     """
     Upload a document file for indexing.
@@ -539,6 +548,7 @@ async def upload_document(
     import os
     import time
 
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
 
     # Determine format from file extension
@@ -792,9 +802,10 @@ async def get_agent_info(agent_id: str, request: Request):
     return info
 
 
-@router.get("/projects/{project_id}/events", dependencies=[Depends(require(Permission.VIEW_PROJECT_EVENTS))])
-async def get_project_events(project_id: str, request: Request, since: str = "0", count: int = 100):
+@router.get("/projects/{project_id}/events")
+async def get_project_events(project_id: str, request: Request, since: str = "0", count: int = 100, identity: Identity = Depends(require(Permission.VIEW_PROJECT_EVENTS))):
     """Get events for a project"""
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     engine = request.app.state.context_engine
     events = await engine.event_store.get_events_since(
         project_id,
@@ -804,7 +815,7 @@ async def get_project_events(project_id: str, request: Request, since: str = "0"
     return {"events": events, "count": len(events)}
 
 
-@router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
+@router.get("/projects/{project_id}/data")
 async def get_project_data(
     project_id: str,
     request: Request,
@@ -813,6 +824,7 @@ async def get_project_data(
     include_events: bool = False,
     include_embeddings: bool = False,
     include_agents: bool = False,
+    identity: Identity = Depends(require(Permission.VIEW_PROJECT_DATA)),
 ):
     """
     Get all registered data for a project.
@@ -827,6 +839,7 @@ async def get_project_data(
         include_embeddings: Include embeddings data
         include_agents: Include agent registrations
     """
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     ctx = _get_request_context(request)
     engine = request.app.state.context_engine
 
@@ -934,8 +947,8 @@ async def get_project_data(
     return result
 
 
-@router.post("/projects/{project_id}/query", dependencies=[Depends(require(Permission.QUERY_DATA))])
-async def query_project(project_id: str, query_req: QueryRequest, request: Request):
+@router.post("/projects/{project_id}/query")
+async def query_project(project_id: str, query_req: QueryRequest, request: Request, identity: Identity = Depends(require(Permission.QUERY_DATA))):
     """
     Search project data by semantic similarity without agent registration.
 
@@ -958,6 +971,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
         Complete data sources that match your search, ranked by semantic similarity,
         formatted as TOON or JSON.
     """
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         engine = request.app.state.context_engine
         matches = await engine.query_project_data(
@@ -1074,8 +1088,8 @@ async def cleanup_all_projects(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/admin/cleanup/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
-async def cleanup_project(project_id: str, request: Request):
+@router.post("/admin/cleanup/{project_id}")
+async def cleanup_project(project_id: str, request: Request, identity: Identity = Depends(require(Permission.SYSTEM_CLEANUP))):
     """
     Run cleanup for a specific project (admin only).
 
@@ -1085,6 +1099,7 @@ async def cleanup_project(project_id: str, request: Request):
     Returns:
         Cleanup statistics
     """
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         from src.core.retention import get_retention_manager_from_env
 
@@ -1106,8 +1121,8 @@ async def cleanup_project(project_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/admin/retention/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
-async def get_retention_stats(project_id: str, request: Request):
+@router.get("/admin/retention/{project_id}")
+async def get_retention_stats(project_id: str, request: Request, identity: Identity = Depends(require(Permission.SYSTEM_CLEANUP))):
     """
     Get retention statistics for a project.
 
@@ -1117,6 +1132,7 @@ async def get_retention_stats(project_id: str, request: Request):
     Returns:
         Retention statistics
     """
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         from src.core.retention import get_retention_manager_from_env
 
@@ -1137,13 +1153,14 @@ async def get_retention_stats(project_id: str, request: Request):
 # Import Endpoints
 # ========================================================================
 
-@router.post("/projects/{project_id}/import", dependencies=[Depends(require(Permission.PUBLISH_DATA))])
+@router.post("/projects/{project_id}/import")
 async def import_project(
     project_id: str,
     request: Request,
     format: str = "json",
     validate_only: bool = False,
     overwrite: bool = False,
+    identity: Identity = Depends(require(Permission.PUBLISH_DATA)),
 ):
     """
     Import project data.
@@ -1157,6 +1174,7 @@ async def import_project(
     Returns:
         Import statistics and validation results
     """
+    await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
     try:
         from src.core.export_import import ExportImportManager
@@ -1236,8 +1254,8 @@ async def import_project(
 # BATCH OPERATIONS - Phase 2 Performance Enhancement
 # ============================================================================
 
-@router.post("/batch/publish", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
-async def batch_publish_data(events: List[DataPublishEvent], request: Request):
+@router.post("/batch/publish", response_model=dict)
+async def batch_publish_data(events: List[DataPublishEvent], request: Request, identity: Identity = Depends(require(Permission.PUBLISH_DATA))):
     """
     Batch publish multiple data items in a single request.
 
@@ -1274,13 +1292,18 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request):
         logger.info(f"Batch publishing {len(events)} items")
         start_time = time.time()
         engine = request.app.state.context_engine
+        tenant_mgr = get_tenant_manager(request)
 
         results = []
         successful = 0
         failed = 0
 
+        seen_projects: set[str] = set()
         for event in events:
             try:
+                if event.project_id not in seen_projects:
+                    await check_project_access(identity, event.project_id, tenant_mgr, create_if_absent=True)
+                    seen_projects.add(event.project_id)
                 sequence = await engine.publish_data(event)
                 record_event_published(event.project_id, event.data_format or "json")
                 results.append({
