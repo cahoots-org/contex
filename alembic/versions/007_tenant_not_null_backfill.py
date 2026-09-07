@@ -78,11 +78,8 @@ def upgrade() -> None:
     for table in ('subscriptions', 'api_keys', 'service_accounts', 'events'):
         op.alter_column(table, 'tenant_id', server_default='default')
 
-    # 5. NOT NULL on the four columns (backfill guarantees no NULLs remain).
-    #    Small tables: plain SET NOT NULL. events is event-sourced and can be
-    #    large in prod, so apply NOT NULL via a NOT VALID CHECK + VALIDATE to
-    #    avoid a full-table scan under ACCESS EXCLUSIVE; PG12+ then skips the
-    #    scan on SET NOT NULL because the validated CHECK already proves it.
+    # 5. NOT NULL: 3 small tables via plain SET NOT NULL; events handled separately below.
+    # events may be large: NOT VALID CHECK -> VALIDATE -> SET NOT NULL avoids a full-table ACCESS EXCLUSIVE scan.
     for table in ('subscriptions', 'api_keys', 'service_accounts'):
         op.alter_column(table, 'tenant_id', nullable=False)
 
@@ -141,8 +138,7 @@ def downgrade() -> None:
     # Drop the subscriptions FK.
     op.drop_constraint('fk_subscriptions_tenant', 'subscriptions', type_='foreignkey')
 
-    # Re-add nullable, drop server_default on the four columns. Also drop the
-    # transient events CHECK in case a downgrade runs after a partial upgrade.
+    # Re-add nullable, drop server_default; drop transient events CHECK if present.
     op.execute("ALTER TABLE events DROP CONSTRAINT IF EXISTS events_tenant_id_not_null")
     for table in ('subscriptions', 'api_keys', 'service_accounts', 'events'):
         op.alter_column(table, 'tenant_id', nullable=True, server_default=None)
