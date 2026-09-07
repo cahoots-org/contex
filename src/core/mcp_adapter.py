@@ -103,7 +103,7 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
     async def contex_delete_subscription(subscription_id: str) -> str:
-        _enforce(Permission.QUERY_DATA)  # subscription ownership check is fast-follow #73
+        _enforce(Permission.QUERY_DATA)
         e = _get_engine()
         await e.subscriptions.delete(subscription_id)
         return json.dumps({"deleted": subscription_id})
