@@ -6,6 +6,9 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.core import authz as _authz
+from src.core.authz import extract_credential
+from src.core.identity import resolve_identity
 from src.core.logging import get_logger
 from src.core.tenant import (
     TenantManager,
@@ -37,6 +40,10 @@ def _record_quota_exceeded(tenant_id: str, resource: str):
 
 # Environment variable to enable/disable multi-tenancy
 MULTI_TENANT_ENABLED = os.getenv("MULTI_TENANT_ENABLED", "false").lower() == "true"
+
+
+class _TenantSpoofingError(Exception):
+    """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -106,7 +113,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.tenant_manager = manager
 
             # Identify tenant
-            tenant_id = await self._identify_tenant(request, manager)
+            try:
+                tenant_id = await self._identify_tenant(request, manager)
+            except _TenantSpoofingError:
+                logger.warning("Tenant spoofing attempt rejected",
+                               path=path,
+                               method=request.method,
+                               requested_tenant=request.headers.get("X-Tenant-ID"))
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "X-Tenant-ID does not match authenticated tenant"}
+                )
 
             if not tenant_id and self.require_tenant:
                 return JSONResponse(
@@ -164,33 +181,21 @@ class TenantMiddleware(BaseHTTPMiddleware):
         request: Request,
         manager: TenantManager,
     ) -> Optional[str]:
+        """Identify tenant from request.
+
+        When auth is on, derives tenant authoritatively from the caller's identity.
+        When auth is off (demo mode), selects tenant from X-Tenant-ID header or /t/ path prefix.
+        Raises _TenantSpoofingError if X-Tenant-ID disagrees with identity's tenant.
         """
-        Identify tenant from request.
+        if _authz.auth_enabled():
+            return await self._identify_tenant_from_identity(request)
 
-        Tries multiple methods in order:
-        1. X-Tenant-ID header
-        2. API key association
-        3. Path prefix (e.g., /t/tenant_id/...)
+        # Auth disabled (demo mode): select tenant from X-Tenant-ID header or /t/ path prefix
 
-        Args:
-            request: FastAPI request
-            manager: TenantManager instance
-
-        Returns:
-            Tenant ID if identified, None otherwise
-        """
         # Method 1: Explicit header
         tenant_id = request.headers.get("X-Tenant-ID")
         if tenant_id:
             return tenant_id
-
-        # Method 2: API key association
-        # Check if APIKeyMiddleware has already set the key_id
-        key_id = getattr(request.state, 'api_key_id', None)
-        if key_id:
-            tenant_id = await manager.get_api_key_tenant(key_id)
-            if tenant_id:
-                return tenant_id
 
         # Method 3: Path prefix (e.g., /t/acme-corp/api/v1/...)
         path = request.url.path
@@ -200,6 +205,29 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return parts[2]
 
         return None
+
+    async def _identify_tenant_from_identity(
+        self,
+        request: Request,
+    ) -> Optional[str]:
+        """Resolve tenant from the caller's credential (identity not yet in state at middleware time).
+
+        Missing/invalid credentials are not rejected here — get_identity handles 401 downstream.
+        Raises _TenantSpoofingError if X-Tenant-ID header disagrees with identity.tenant_id.
+        """
+        credential = extract_credential(request)
+        if not credential:
+            return None
+
+        identity = await resolve_identity(request.app.state.db, credential)
+        if identity is None:
+            return None
+
+        requested = request.headers.get("X-Tenant-ID")
+        if requested is not None and requested != identity.tenant_id:
+            raise _TenantSpoofingError()
+
+        return identity.tenant_id
 
 
 class TenantQuotaMiddleware(BaseHTTPMiddleware):

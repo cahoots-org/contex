@@ -11,6 +11,7 @@ from src.core.tenant import (
     TenantQuotas,
     TenantUsage,
 )
+from src.core.authz import require, public
 from src.core.rbac import Role, Permission
 from src.core.logging import get_logger
 from src.core.audit import (
@@ -124,7 +125,7 @@ async def require_admin_permission(request: Request):
 # Tenant CRUD Endpoints
 # ============================================================
 
-@router.post("", response_model=TenantResponse, status_code=201)
+@router.post("", response_model=TenantResponse, status_code=201, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def create_tenant(
     request: Request,
     body: CreateTenantRequest,
@@ -198,7 +199,7 @@ async def create_tenant(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("", response_model=TenantListResponse)
+@router.get("", response_model=TenantListResponse, dependencies=[Depends(require(Permission.VIEW_TENANTS))])
 async def list_tenants(
     request: Request,
     plan: Optional[TenantPlan] = None,
@@ -249,7 +250,7 @@ async def list_tenants(
     )
 
 
-@router.get("/{tenant_id}", response_model=TenantResponse)
+@router.get("/{tenant_id}", response_model=TenantResponse, dependencies=[Depends(require(Permission.VIEW_TENANTS))])
 async def get_tenant(
     request: Request,
     tenant_id: str,
@@ -285,7 +286,7 @@ async def get_tenant(
     )
 
 
-@router.patch("/{tenant_id}", response_model=TenantResponse)
+@router.patch("/{tenant_id}", response_model=TenantResponse, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def update_tenant(
     request: Request,
     tenant_id: str,
@@ -357,7 +358,7 @@ async def update_tenant(
     )
 
 
-@router.delete("/{tenant_id}", status_code=204)
+@router.delete("/{tenant_id}", status_code=204, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def delete_tenant(
     request: Request,
     tenant_id: str,
@@ -415,7 +416,7 @@ async def delete_tenant(
 # Usage and Quota Endpoints
 # ============================================================
 
-@router.get("/{tenant_id}/usage", response_model=TenantUsageResponse)
+@router.get("/{tenant_id}/usage", response_model=TenantUsageResponse, dependencies=[Depends(require(Permission.VIEW_TENANTS))])
 async def get_tenant_usage(
     request: Request,
     tenant_id: str,
@@ -459,7 +460,7 @@ async def get_tenant_usage(
     )
 
 
-@router.post("/{tenant_id}/reset-monthly-usage", status_code=204)
+@router.post("/{tenant_id}/reset-monthly-usage", status_code=204, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def reset_monthly_usage(
     request: Request,
     tenant_id: str,
@@ -492,7 +493,7 @@ async def reset_monthly_usage(
 # Project Management Endpoints
 # ============================================================
 
-@router.get("/{tenant_id}/projects", response_model=List[str])
+@router.get("/{tenant_id}/projects", response_model=List[str], dependencies=[Depends(require(Permission.VIEW_TENANTS))])
 async def list_tenant_projects(
     request: Request,
     tenant_id: str,
@@ -518,7 +519,7 @@ async def list_tenant_projects(
     return await manager.list_projects(tenant_id)
 
 
-@router.post("/{tenant_id}/projects/{project_id}", status_code=201)
+@router.post("/{tenant_id}/projects/{project_id}", status_code=201, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def add_project_to_tenant(
     request: Request,
     tenant_id: str,
@@ -554,7 +555,7 @@ async def add_project_to_tenant(
         raise HTTPException(status_code=429, detail=str(e))
 
 
-@router.delete("/{tenant_id}/projects/{project_id}", status_code=204)
+@router.delete("/{tenant_id}/projects/{project_id}", status_code=204, dependencies=[Depends(require(Permission.MANAGE_TENANTS))])
 async def remove_project_from_tenant(
     request: Request,
     tenant_id: str,

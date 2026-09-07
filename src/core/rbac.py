@@ -46,46 +46,50 @@ class Permission(str, Enum):
     # System operations (cross-project)
     SYSTEM_CLEANUP = "system_cleanup"
 
+    # Tenant admin
+    MANAGE_TENANTS = "manage_tenants"
+    VIEW_TENANTS = "view_tenants"
+
+    # Webhooks
+    MANAGE_WEBHOOKS = "manage_webhooks"
+    VIEW_WEBHOOKS = "view_webhooks"
+
+    # Service accounts
+    MANAGE_SERVICE_ACCOUNTS = "manage_service_accounts"
+    VIEW_SERVICE_ACCOUNTS = "view_service_accounts"
+
+    # Audit
+    VIEW_AUDIT = "view_audit"
+
+    # Versioning
+    VIEW_VERSION_HISTORY = "view_version_history"
+    RESTORE_VERSION = "restore_version"
+
 
 # Role to permissions mapping
 ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
-    Role.ADMIN: {
-        # Admins have all permissions
-        Permission.PUBLISH_DATA,
-        Permission.QUERY_DATA,
-        Permission.REGISTER_AGENT,
-        Permission.LIST_AGENTS,
-        Permission.DELETE_AGENT,
-        Permission.CREATE_API_KEY,
-        Permission.LIST_API_KEYS,
-        Permission.REVOKE_API_KEY,
-        Permission.MANAGE_ROLES,
-        Permission.VIEW_RATE_LIMITS,
-        Permission.VIEW_PROJECT_DATA,
-        Permission.VIEW_PROJECT_EVENTS,
-        Permission.SYSTEM_CLEANUP,
-    },
+    Role.ADMIN: set(Permission),  # admins have every permission, including future ones
     Role.PUBLISHER: {
-        # Publishers can publish data and view project info
         Permission.PUBLISH_DATA,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
+        Permission.VIEW_VERSION_HISTORY,
     },
     Role.CONSUMER: {
-        # Consumers can register agents and query
         Permission.REGISTER_AGENT,
         Permission.LIST_AGENTS,
         Permission.DELETE_AGENT,
         Permission.QUERY_DATA,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
+        Permission.VIEW_VERSION_HISTORY,
     },
     Role.READONLY: {
-        # Readonly can only query and view
         Permission.QUERY_DATA,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
         Permission.LIST_AGENTS,
+        Permission.VIEW_VERSION_HISTORY,
     },
 }
 
@@ -239,6 +243,11 @@ async def list_roles(db: DatabaseManager) -> List[APIKeyRole]:
             )
             for r in role_records
         ]
+
+
+def expand_role(role: Role) -> frozenset[Permission]:
+    """Expand a role preset into its permission set."""
+    return frozenset(ROLE_PERMISSIONS[role])
 
 
 def get_role_permissions(role: Role) -> Set[Permission]:

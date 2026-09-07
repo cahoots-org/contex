@@ -4,11 +4,13 @@ import asyncio
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from src.core.authz import public, auth_enabled
+from src.core.authz_coverage import assert_authz_coverage
+from src.core.protected_mode import check_protected_mode
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
-from src.core.auth import APIKeyMiddleware
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
@@ -234,6 +236,19 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis
     app.state.health_checker = health_checker
 
+    # Fail-closed authz gate: refuse to boot if any route lacks a require()/public decision.
+    assert_authz_coverage(app)
+    logger.info("Authz coverage gate passed")
+
+    # Protected mode: refuse to bind a non-loopback address when auth is off,
+    # unless the operator explicitly opts out via CONTEX_PROTECTED_MODE=false.
+    check_protected_mode(
+        os.getenv("CONTEX_HOST", "0.0.0.0"),
+        auth_on=auth_enabled(),
+        protected=os.getenv("CONTEX_PROTECTED_MODE", "true").lower() == "true",
+    )
+    logger.info("Protected mode check passed")
+
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;
     # now that app.state.context_engine is set, the handlers will resolve it correctly.
@@ -269,7 +284,10 @@ app = FastAPI(
 # /mcp route exists in app.routes at import time (the test asserts this).
 # The engine is resolved at handler call time via app.state.context_engine,
 # which is populated during lifespan startup before any requests are served.
-_mcp_server, _mcp_bus = build_mcp_server(lambda: app.state.context_engine)
+_mcp_server, _mcp_bus = build_mcp_server(
+    lambda: app.state.context_engine,
+    db_accessor=lambda: app.state.db,
+)
 _mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/mcp")
 app.mount("/mcp", _mcp_starlette_app)
 
@@ -303,9 +321,6 @@ app.add_middleware(SecurityHeadersMiddleware, enable_hsts=ENABLE_HSTS)
 logger.info("Security headers middleware enabled", hsts=ENABLE_HSTS)
 
 # Add security middleware stack (order matters - executed in reverse)
-from src.core.auth import APIKeyMiddleware
-from src.core.rbac_middleware import RBACMiddleware
-from src.core.rate_limiter import RateLimitMiddleware
 from src.core.tracing_middleware import TracingMiddleware
 from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, MULTI_TENANT_ENABLED
 
@@ -313,22 +328,20 @@ from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, 
 app.add_middleware(TracingMiddleware)
 logger.info("Tracing middleware enabled")
 
-# Authentication & Authorization (opt-in via AUTH_ENABLED)
+# Authentication & Authorization is now enforced per-route via the dependency
+# model (src.core.authz: get_identity / require(...)), not via middleware. The
+# fail-open APIKeyMiddleware/RBACMiddleware have been removed. Fail-closed
+# behavior lives on the routes themselves.
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 if AUTH_ENABLED:
-    # Rate limiting (checks limits)
-    app.add_middleware(RateLimitMiddleware)
-    logger.info("Rate limit middleware enabled")
-
-    # RBAC (checks permissions after auth)
-    app.add_middleware(RBACMiddleware)
-    logger.info("RBAC middleware enabled")
-
-    # Authentication (validates API keys)
-    app.add_middleware(APIKeyMiddleware)
-    logger.info("Authentication middleware enabled")
+    logger.info("Authentication ENABLED - enforced per-route via authz dependencies")
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
+
+# Rate limiting is intentionally left UNWIRED for now: the RateLimitMiddleware
+# path table shares the same broken-path-matching bug tracked for the removed
+# middleware (see #38). A follow-up will re-introduce rate limiting correctly.
+logger.warning("Rate limiting is DISABLED (pending #38 path-matching fix)")
 
 # Tenant middleware (identifies tenant, enforces quotas)
 if MULTI_TENANT_ENABLED:
@@ -367,35 +380,12 @@ app.include_router(webhook_router)
 # Mount Versioning API (built on event sourcing)
 app.include_router(version_router)
 
-# Mount legacy /api for backward compatibility (with deprecation warning)
-from fastapi import Response
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class DeprecationWarningMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        # Check if request is using legacy /api path (not /api/v1)
-        if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/v1"):
-            response = await call_next(request)
-            response.headers["X-API-Deprecation"] = "This API version is deprecated. Use /api/v1 instead."
-            response.headers["X-API-Version"] = "legacy"
-            return response
-        else:
-            response = await call_next(request)
-            if request.url.path.startswith("/api/v1"):
-                response.headers["X-API-Version"] = "v1"
-            return response
-
-app.add_middleware(DeprecationWarningMiddleware)
-
-# Mount legacy API for backward compatibility
-app.include_router(api_router, prefix="/api", tags=["API (deprecated)"])
-
 # Mount Web UI routes
 from src.web import router as web_router
 app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 
 # Root-level health endpoint (for Docker health checks)
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(public)])
 async def root_health():
     """
     Root-level health check endpoint for Docker/Kubernetes.
@@ -413,7 +403,7 @@ async def root_health():
 # Root redirect to sandbox
 from fastapi.responses import RedirectResponse
 
-@app.get("/")
+@app.get("/", dependencies=[Depends(public)])
 async def root():
     """Redirect to query sandbox"""
     return RedirectResponse(url="/sandbox")

@@ -561,3 +561,73 @@ class TestDefaultTenant:
         tenant2 = await ensure_default_tenant(db)
 
         assert tenant1.tenant_id == tenant2.tenant_id
+
+
+class TestTenantMiddlewareIdentityDerivation:
+    """Tenant must be derived from identity (not X-Tenant-ID) when auth is on (#41)."""
+
+    @pytest_asyncio.fixture
+    async def app_and_key(self, db, monkeypatch):
+        """Build a minimal app with TenantMiddleware, auth+multitenancy forced on."""
+        from fastapi import FastAPI, Request
+        from src.core import authz
+        from src.core import tenant_middleware as tm
+        from src.core.auth import create_api_key
+        from src.core.db_models import Tenant as TenantModel
+
+        # Force auth + multi-tenancy on regardless of environment.
+        monkeypatch.setattr(authz, "auth_enabled", lambda: True)
+        monkeypatch.setattr(tm, "MULTI_TENANT_ENABLED", True)
+
+        # Pre-create tenant rows so FK / get_tenant checks pass.
+        async with db.session() as session:
+            session.add(TenantModel(tenant_id="tenant-a", name="Tenant A", plan="free"))
+            session.add(TenantModel(tenant_id="tenant-b", name="Tenant B", plan="free"))
+
+        # Create a key bound to tenant-a.
+        raw_key, _ = await create_api_key(db, "tenant-a-key", tenant_id="tenant-a")
+
+        app = FastAPI()
+        app.state.db = db
+        app.add_middleware(tm.TenantMiddleware)
+
+        @app.get("/whoami")
+        async def whoami(request: Request):
+            return {"tenant_id": getattr(request.state, "tenant_id", None)}
+
+        return app, raw_key
+
+    @pytest.mark.asyncio
+    async def test_mismatched_x_tenant_id_rejected_when_auth_on(self, app_and_key):
+        from httpx import AsyncClient
+
+        app, raw_key = app_and_key
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            resp = await client.get(
+                "/whoami",
+                headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-b"},
+            )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_matching_x_tenant_id_accepted_when_auth_on(self, app_and_key):
+        from httpx import AsyncClient
+
+        app, raw_key = app_and_key
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            resp = await client.get(
+                "/whoami",
+                headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-a"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["tenant_id"] == "tenant-a"
+
+    @pytest.mark.asyncio
+    async def test_absent_x_tenant_id_accepted_when_auth_on(self, app_and_key):
+        from httpx import AsyncClient
+
+        app, raw_key = app_and_key
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            resp = await client.get("/whoami", headers={"X-API-Key": raw_key})
+        assert resp.status_code == 200
+        assert resp.json()["tenant_id"] == "tenant-a"

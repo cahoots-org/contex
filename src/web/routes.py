@@ -3,7 +3,9 @@
 import json
 import asyncio
 import tiktoken
-from fastapi import APIRouter, Request, Form, Query
+from fastapi import APIRouter, Depends, Request, Form, Query
+from src.core.authz import require, public
+from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -23,7 +25,7 @@ templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse, dependencies=[Depends(public)])
 async def sandbox_home(request: Request):
     """Query sandbox home page"""
     engine = request.app.state.context_engine
@@ -53,7 +55,7 @@ async def sandbox_home(request: Request):
     )
 
 
-@router.post("/query", response_class=HTMLResponse)
+@router.post("/query", response_class=HTMLResponse, dependencies=[Depends(require(Permission.QUERY_DATA))])
 async def execute_query(
     request: Request,
     project_id: str = Form(...),
@@ -154,7 +156,7 @@ async def execute_query(
     )
 
 
-@router.get("/projects/{project_id}/stats", response_class=HTMLResponse)
+@router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
 async def project_stats(request: Request, project_id: str):
     """Get statistics about a project's data.
 
@@ -221,7 +223,7 @@ async def project_stats(request: Request, project_id: str):
     )
 
 
-@router.get("/projects/{project_id}/data")
+@router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
 async def get_project_data(request: Request, project_id: str):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
     engine = request.app.state.context_engine
@@ -261,7 +263,7 @@ async def get_project_data(request: Request, project_id: str):
     return {"data": data_items}
 
 
-@router.get("/subscribe")
+@router.get("/subscribe", dependencies=[Depends(require(Permission.QUERY_DATA))])
 async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),

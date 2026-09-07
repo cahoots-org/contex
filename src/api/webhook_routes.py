@@ -15,7 +15,8 @@ from src.core.webhooks import (
     get_webhook_manager,
     init_webhook_manager,
 )
-from src.core.rbac import Role
+from src.core.authz import require, public
+from src.core.rbac import Permission, Role
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -184,7 +185,7 @@ def endpoint_to_response(endpoint: WebhookEndpoint) -> EndpointResponse:
 # Event Catalog Endpoints
 # ============================================================
 
-@router.get("/events", response_model=List[EventCatalogEntry])
+@router.get("/events", response_model=List[EventCatalogEntry], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def get_event_catalog(
     category: Optional[WebhookEventCategory] = Query(
         None,
@@ -213,13 +214,13 @@ async def get_event_catalog(
     return entries
 
 
-@router.get("/events/categories", response_model=List[str])
+@router.get("/events/categories", response_model=List[str], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def get_event_categories():
     """Get all available event categories"""
     return [c.value for c in WebhookEventCategory]
 
 
-@router.get("/events/types", response_model=List[str])
+@router.get("/events/types", response_model=List[str], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def get_event_types():
     """Get all available event types"""
     return [e.value for e in WebhookEventType]
@@ -229,7 +230,7 @@ async def get_event_types():
 # Endpoint Management
 # ============================================================
 
-@router.post("/endpoints", response_model=EndpointWithSecretResponse, status_code=201)
+@router.post("/endpoints", response_model=EndpointWithSecretResponse, status_code=201, dependencies=[Depends(require(Permission.MANAGE_WEBHOOKS))])
 async def create_endpoint(
     request: Request,
     body: CreateEndpointRequest,
@@ -296,7 +297,7 @@ async def create_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/endpoints", response_model=List[EndpointResponse])
+@router.get("/endpoints", response_model=List[EndpointResponse], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def list_endpoints(
     request: Request,
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
@@ -318,7 +319,7 @@ async def list_endpoints(
     return [endpoint_to_response(e) for e in endpoints]
 
 
-@router.get("/endpoints/{endpoint_id}", response_model=EndpointResponse)
+@router.get("/endpoints/{endpoint_id}", response_model=EndpointResponse, dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def get_endpoint(
     request: Request,
     endpoint_id: str,
@@ -338,7 +339,7 @@ async def get_endpoint(
     return endpoint_to_response(endpoint)
 
 
-@router.patch("/endpoints/{endpoint_id}", response_model=EndpointResponse)
+@router.patch("/endpoints/{endpoint_id}", response_model=EndpointResponse, dependencies=[Depends(require(Permission.MANAGE_WEBHOOKS))])
 async def update_endpoint(
     request: Request,
     endpoint_id: str,
@@ -373,7 +374,7 @@ async def update_endpoint(
     return endpoint_to_response(endpoint)
 
 
-@router.delete("/endpoints/{endpoint_id}", status_code=204)
+@router.delete("/endpoints/{endpoint_id}", status_code=204, dependencies=[Depends(require(Permission.MANAGE_WEBHOOKS))])
 async def delete_endpoint(
     request: Request,
     endpoint_id: str,
@@ -402,7 +403,7 @@ async def delete_endpoint(
     )
 
 
-@router.post("/endpoints/{endpoint_id}/rotate-secret", response_model=EndpointWithSecretResponse)
+@router.post("/endpoints/{endpoint_id}/rotate-secret", response_model=EndpointWithSecretResponse, dependencies=[Depends(require(Permission.MANAGE_WEBHOOKS))])
 async def rotate_secret(
     request: Request,
     endpoint_id: str,
@@ -446,7 +447,7 @@ async def rotate_secret(
 # Delivery Management
 # ============================================================
 
-@router.get("/endpoints/{endpoint_id}/deliveries", response_model=List[DeliveryResponse])
+@router.get("/endpoints/{endpoint_id}/deliveries", response_model=List[DeliveryResponse], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])
 async def get_deliveries(
     request: Request,
     endpoint_id: str,
@@ -486,7 +487,7 @@ async def get_deliveries(
     ]
 
 
-@router.post("/endpoints/{endpoint_id}/test")
+@router.post("/endpoints/{endpoint_id}/test", dependencies=[Depends(require(Permission.MANAGE_WEBHOOKS))])
 async def send_test_event(
     request: Request,
     endpoint_id: str,
