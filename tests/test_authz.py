@@ -23,10 +23,12 @@ def _build_app():
     return app
 
 
-def test_require_and_public_carry_markers():
-    dep = require(Permission.PUBLISH_DATA)
-    assert getattr(dep, "_authz_marker") == (Permission.PUBLISH_DATA,)
-    assert getattr(public, "_public_marker") is True
+def test_require_and_public_contract():
+    assert require(Permission.PUBLISH_DATA).permissions == frozenset({Permission.PUBLISH_DATA})
+    assert require().permissions == frozenset()
+    assert callable(public)
+    from src.core.authz import _Public
+    assert isinstance(public, _Public)
 
 
 @pytest.mark.asyncio

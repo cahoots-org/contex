@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from src.core.identity import Identity, ANONYMOUS_IDENTITY, resolve_identity
 from src.core.rbac import Permission
@@ -38,26 +38,23 @@ async def get_identity(request: Request) -> Identity:
     return identity
 
 
-def require(*permissions: Permission):
-    """Return a dependency that requires all `permissions`. Empty = authenticated-only."""
-    from fastapi import Depends
+class require:
+    """Route dependency: the caller must hold all `permissions`. No args = any authenticated caller."""
 
-    async def _dep(identity: Identity = Depends(get_identity)) -> Identity:
-        if not set(permissions).issubset(identity.scopes):
-            missing = sorted(p.value for p in set(permissions) - identity.scopes)
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden", "missing_permissions": missing},
-            )
+    def __init__(self, *permissions: Permission):
+        self.permissions = frozenset(permissions)
+
+    async def __call__(self, identity: Identity = Depends(get_identity)) -> Identity:
+        if not self.permissions.issubset(identity.scopes):
+            raise HTTPException(status_code=403, detail="Forbidden")
         return identity
 
-    _dep._authz_marker = permissions  # sentinel for the coverage walker
-    return _dep
+
+class _Public:
+    """Route dependency marking a route as intentionally unauthenticated."""
+
+    async def __call__(self) -> None:
+        return None
 
 
-async def public() -> None:
-    """Explicit public marker. No-op dependency; presence = intentionally unauthenticated."""
-    return None
-
-
-public._public_marker = True  # type: ignore[attr-defined]
+public = _Public()
