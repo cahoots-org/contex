@@ -23,11 +23,11 @@ def _enforce(permission, project_id=None):
         return
     tok = get_access_token()
     if tok is None or permission.value not in tok.scopes:
-        raise PermissionError(f"Missing permission: {permission.value}")
+        raise PermissionError("Permission denied")
     if project_id is not None:
         projects = (tok.claims or {}).get("projects") or []
         if projects and project_id not in projects:
-            raise PermissionError(f"Project out of scope: {project_id}")
+            raise PermissionError("Permission denied")
 
 
 class ApiKeyVerifier(TokenVerifier):
