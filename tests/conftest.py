@@ -149,8 +149,11 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
                     await session.execute(text("DELETE FROM api_key_roles"))
                     await session.execute(text("DELETE FROM api_keys"))
                     await session.execute(text("DELETE FROM tenant_projects"))
-                    await session.execute(text("DELETE FROM tenant_usage"))
-                    await session.execute(text("DELETE FROM tenants"))
+                    # Preserve the default tenant (seeded by migration 007) so
+                    # FK-constrained inserts work in every test regardless of
+                    # db-access path; only default-owned children above are cleared.
+                    await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id != 'default'"))
+                    await session.execute(text("DELETE FROM tenants WHERE tenant_id != 'default'"))
             except Exception:
                 pass  # Tables might not exist yet
 
