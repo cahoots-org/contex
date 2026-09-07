@@ -9,6 +9,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from src.core.db_models import Subscription
+from src.core.tenant import DEFAULT_TENANT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ class SubscriptionService:
     async def create(
         self, project_id, needs, tenant_id=None, scope=None, subscription_id=None, top_k=None, threshold=None
     ) -> str:
+        if tenant_id is None:
+            tenant_id = DEFAULT_TENANT_ID
         sub_id = subscription_id or f"sub_{uuid4().hex}"
         bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold)
         async with self.db.session() as session:

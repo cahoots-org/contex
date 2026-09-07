@@ -23,6 +23,7 @@ os.environ.setdefault(
 )
 
 from src.core.database import DatabaseManager
+from src.core.tenant import DEFAULT_TENANT_ID
 
 
 class TestDatabaseManager(DatabaseManager):
@@ -98,6 +99,33 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
         # Schema is provisioned once per session by the `_migrated_schema`
         # fixture via `alembic upgrade head`; here we just connect and, after the
         # test, clean up the rows it wrote.
+
+        # Ensure the default tenant row exists before every test.  Cleanup
+        # (below) deletes all tenant rows; this re-establishes the invariant
+        # that migration 007 creates so FK-constrained inserts don't fail.
+        async with manager.session() as session:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO tenants (tenant_id, name, plan, quotas, settings, metadata, is_active, created_at)
+                    VALUES (:tid, 'Default Tenant', 'enterprise', '{}', '{"is_default": true}', '{}', true, now())
+                    ON CONFLICT (tenant_id) DO NOTHING
+                    """
+                ),
+                {"tid": DEFAULT_TENANT_ID},
+            )
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO tenant_usage (tenant_id, projects_count, agents_count, api_keys_count,
+                                             events_this_month, storage_used_mb, last_updated)
+                    VALUES (:tid, 0, 0, 0, 0, 0.0, now())
+                    ON CONFLICT (tenant_id) DO NOTHING
+                    """
+                ),
+                {"tid": DEFAULT_TENANT_ID},
+            )
+
         yield manager
 
     finally:
