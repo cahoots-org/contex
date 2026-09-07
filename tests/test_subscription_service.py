@@ -1,5 +1,9 @@
 import pytest
+from sqlalchemy import select
+
+from src.core.db_models import Subscription
 from src.core.subscriptions import SubscriptionService
+from src.core.tenant import DEFAULT_TENANT_ID
 
 
 class _StubMatcher:
@@ -22,3 +26,16 @@ async def test_get_bundle_unknown_raises(db, redis):
     svc = SubscriptionService(db, _StubMatcher(), redis)
     with pytest.raises(KeyError):
         await svc.get_bundle("nope")
+
+
+@pytest.mark.asyncio
+async def test_create_without_tenant_id_defaults_to_default(db, redis):
+    svc = SubscriptionService(db, _StubMatcher(), redis)
+    sub_id = await svc.create("p1", ["auth config"])
+    assert sub_id.startswith("sub_")
+
+    async with db.session() as session:
+        row = (await session.execute(
+            select(Subscription).where(Subscription.subscription_id == sub_id)
+        )).scalar_one()
+        assert row.tenant_id == DEFAULT_TENANT_ID

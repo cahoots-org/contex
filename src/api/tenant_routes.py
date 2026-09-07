@@ -96,7 +96,7 @@ def get_tenant_manager(request: Request) -> TenantManager:
     """Get TenantManager from request state or create new one"""
     manager = getattr(request.state, 'tenant_manager', None)
     if not manager:
-        manager = TenantManager(request.app.state.redis)
+        manager = TenantManager(request.app.state.db)
     return manager
 
 

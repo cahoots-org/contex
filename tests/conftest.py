@@ -23,6 +23,7 @@ os.environ.setdefault(
 )
 
 from src.core.database import DatabaseManager
+from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
 
 
 class TestDatabaseManager(DatabaseManager):
@@ -98,6 +99,12 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
         # Schema is provisioned once per session by the `_migrated_schema`
         # fixture via `alembic upgrade head`; here we just connect and, after the
         # test, clean up the rows it wrote.
+
+        # Ensure the default tenant row exists before every test.  Cleanup
+        # (below) deletes all tenant rows; this re-establishes the invariant
+        # that migration 007 creates so FK-constrained inserts don't fail.
+        await ensure_default_tenant(manager)
+
         yield manager
 
     finally:
@@ -121,8 +128,11 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
                     await session.execute(text("DELETE FROM api_key_roles"))
                     await session.execute(text("DELETE FROM api_keys"))
                     await session.execute(text("DELETE FROM tenant_projects"))
-                    await session.execute(text("DELETE FROM tenant_usage"))
-                    await session.execute(text("DELETE FROM tenants"))
+                    # Preserve the default tenant (seeded by migration 007) so
+                    # FK-constrained inserts work in every test regardless of
+                    # db-access path; only default-owned children above are cleared.
+                    await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id != 'default'"))
+                    await session.execute(text("DELETE FROM tenants WHERE tenant_id != 'default'"))
             except Exception:
                 pass  # Tables might not exist yet
 

@@ -24,12 +24,27 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     """Base class for all models."""
     pass
+
+
+class TenantScopedMixin:
+    """Standard tenant_id column for tables that reference a tenant.
+    Subclasses may override _tenant_ondelete (default RESTRICT)."""
+    _tenant_ondelete = "RESTRICT"
+
+    @declared_attr
+    def tenant_id(cls) -> Mapped[str]:
+        return mapped_column(
+            String(255),
+            ForeignKey("tenants.tenant_id", ondelete=cls._tenant_ondelete),
+            nullable=False,
+            server_default="default",
+        )
 
 
 class Tenant(Base):
@@ -98,7 +113,7 @@ class TenantProject(Base):
     tenant: Mapped["Tenant"] = relationship(back_populates="projects")
 
 
-class APIKey(Base):
+class APIKey(TenantScopedMixin, Base):
     """API Key model."""
 
     __tablename__ = "api_keys"
@@ -108,9 +123,6 @@ class APIKey(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     prefix: Mapped[str] = mapped_column(String(10), nullable=False)
     scopes: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="SET NULL"), nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -139,7 +151,7 @@ class APIKeyRole(Base):
     api_key: Mapped["APIKey"] = relationship(back_populates="role")
 
 
-class ServiceAccount(Base):
+class ServiceAccount(TenantScopedMixin, Base):
     """Service Account model."""
 
     __tablename__ = "service_accounts"
@@ -148,9 +160,6 @@ class ServiceAccount(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     account_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="SET NULL"), nullable=True
-    )
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="readonly")
     allowed_projects: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     scopes: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
@@ -184,16 +193,15 @@ class ServiceAccountKey(Base):
     account: Mapped["ServiceAccount"] = relationship(back_populates="key_mappings")
 
 
-class Event(Base):
+class Event(TenantScopedMixin, Base):
     """Event model - event sourcing table."""
 
     __tablename__ = "events"
 
+    _tenant_ondelete = "CASCADE"
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
-    )
     event_type: Mapped[str] = mapped_column(String(255), nullable=False)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -457,14 +465,13 @@ class AgentRegistration(Base):
     )
 
 
-class Subscription(Base):
+class Subscription(TenantScopedMixin, Base):
     """A persistent semantic subscription: needs + a materialized matched bundle."""
 
     __tablename__ = "subscriptions"
 
     subscription_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     scope: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     top_k: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

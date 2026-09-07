@@ -203,7 +203,8 @@ class TestTenantManager:
 
         tenants = await manager.list_tenants()
 
-        assert len(tenants) == 3
+        tenant_ids = {t.tenant_id for t in tenants}
+        assert {f"list_org_{i}" for i in range(3)}.issubset(tenant_ids)
 
     @pytest.mark.asyncio
     async def test_list_tenants_by_plan(self, manager):
@@ -249,8 +250,12 @@ class TestTenantManager:
         active_tenants = await manager.list_tenants(is_active=True)
         inactive_tenants = await manager.list_tenants(is_active=False)
 
-        assert len(active_tenants) == 1
-        assert len(inactive_tenants) == 1
+        active_ids = {t.tenant_id for t in active_tenants}
+        inactive_ids = {t.tenant_id for t in inactive_tenants}
+        assert "active_org" in active_ids
+        assert "inactive_org" in inactive_ids
+        assert "inactive_org" not in active_ids
+        assert "active_org" not in inactive_ids
 
 
 class TestTenantQuotasMgmt:
