@@ -1,4 +1,4 @@
-"""Redis-style protected mode: refuse remote binds when auth is unconfigured."""
+"""Protected mode: refuse remote binds when authentication is unconfigured."""
 from __future__ import annotations
 
 import ipaddress

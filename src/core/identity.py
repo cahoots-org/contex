@@ -11,6 +11,8 @@ from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel, APIKeyRole as APIKeyRoleModel
 from src.core.rbac import Permission, Role, expand_role
 
+_KEY_PREFIX = "ck_"
+
 
 @dataclass(frozen=True)
 class Identity:
@@ -40,7 +42,7 @@ ANONYMOUS_IDENTITY = Identity(
 
 async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None:
     """Resolve a raw bearer credential to an Identity, or None (deny)."""
-    if not raw_key or not raw_key.startswith("ck_"):
+    if not raw_key or not raw_key.startswith(_KEY_PREFIX):
         return None
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
@@ -77,11 +79,11 @@ async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None
 
 
 def _parse_scopes(raw: list[str] | None) -> frozenset[Permission]:
-    """Parse stored scope strings into Permissions, ignoring unknown/legacy values."""
+    """Parse stored scope strings into Permissions, ignoring unrecognized values."""
     out = set()
     for s in raw or []:
         try:
             out.add(Permission(s))
         except ValueError:
-            continue  # legacy scope strings like "read"/"write" are ignored
+            continue
     return frozenset(out)

@@ -14,7 +14,7 @@ def auth_enabled() -> bool:
     return os.getenv("AUTH_ENABLED", "false").lower() == "true"
 
 
-def _extract_credential(request: Request) -> str | None:
+def extract_credential(request: Request) -> str | None:
     key = request.headers.get("X-API-Key")
     if key:
         return key
@@ -28,7 +28,7 @@ async def get_identity(request: Request) -> Identity:
     """Resolve the caller. Anonymous (all scopes) when auth is off; 401 when on and invalid."""
     if not auth_enabled():
         return ANONYMOUS_IDENTITY
-    credential = _extract_credential(request)
+    credential = extract_credential(request)
     if not credential:
         raise HTTPException(status_code=401, detail="Missing API Key")
     identity = await resolve_identity(request.app.state.db, credential)

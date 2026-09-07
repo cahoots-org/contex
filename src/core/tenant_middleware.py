@@ -6,6 +6,9 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.core import authz as _authz
+from src.core.authz import extract_credential
+from src.core.identity import resolve_identity
 from src.core.logging import get_logger
 from src.core.tenant import (
     TenantManager,
@@ -178,43 +181,21 @@ class TenantMiddleware(BaseHTTPMiddleware):
         request: Request,
         manager: TenantManager,
     ) -> Optional[str]:
+        """Identify tenant from request.
+
+        When auth is on, derives tenant authoritatively from the caller's identity.
+        When auth is off (demo mode), selects tenant from X-Tenant-ID header or /t/ path prefix.
+        Raises _TenantSpoofingError if X-Tenant-ID disagrees with identity's tenant.
         """
-        Identify tenant from request.
-
-        When authentication is enabled, the tenant is derived authoritatively
-        from the caller's identity (resolved from their credential), NOT from a
-        client-supplied ``X-Tenant-ID`` header. A client that sends an
-        ``X-Tenant-ID`` that disagrees with its identity's tenant is attempting
-        tenant spoofing and is rejected upstream (see :meth:`dispatch`).
-
-        When authentication is disabled (demo mode), the legacy header/API-key/
-        path precedence is used unchanged.
-
-        Returns:
-            Tenant ID if identified, None otherwise
-
-        Raises:
-            _TenantSpoofingError: if auth is on and X-Tenant-ID disagrees with
-                the identity's tenant.
-        """
-        from src.core.authz import auth_enabled
-
-        if auth_enabled():
+        if _authz.auth_enabled():
             return await self._identify_tenant_from_identity(request)
 
-        # --- Demo mode (auth disabled): legacy header-based behavior ---
+        # Auth disabled (demo mode): select tenant from X-Tenant-ID header or /t/ path prefix
 
         # Method 1: Explicit header
         tenant_id = request.headers.get("X-Tenant-ID")
         if tenant_id:
             return tenant_id
-
-        # Method 2: API key association (legacy: key_id set elsewhere in state)
-        key_id = getattr(request.state, 'api_key_id', None)
-        if key_id:
-            tenant_id = await manager.get_api_key_tenant(key_id)
-            if tenant_id:
-                return tenant_id
 
         # Method 3: Path prefix (e.g., /t/acme-corp/api/v1/...)
         path = request.url.path
@@ -229,32 +210,17 @@ class TenantMiddleware(BaseHTTPMiddleware):
         self,
         request: Request,
     ) -> Optional[str]:
+        """Resolve tenant from the caller's credential (identity not yet in state at middleware time).
+
+        Missing/invalid credentials are not rejected here — get_identity handles 401 downstream.
+        Raises _TenantSpoofingError if X-Tenant-ID header disagrees with identity.tenant_id.
         """
-        Resolve the tenant from the caller's credential when auth is enabled.
-
-        Identity is normally resolved in the route's ``get_identity``
-        dependency, which runs AFTER this middleware, so ``request.state.identity``
-        is not yet populated here. We therefore resolve the credential directly
-        (a cheap indexed hash lookup). This does NOT return 401 for a
-        missing/invalid credential — that remains the single responsibility of
-        the route's ``get_identity`` dependency. We simply decline to set a
-        tenant and let the request proceed to be rejected downstream.
-
-        If the credential resolves to an identity and the client also sent an
-        ``X-Tenant-ID`` that does not match ``identity.tenant_id``, this raises
-        :class:`_TenantSpoofingError`.
-        """
-        from src.core.authz import _extract_credential
-        from src.core.identity import resolve_identity
-
-        credential = _extract_credential(request)
+        credential = extract_credential(request)
         if not credential:
-            # Missing credential: let get_identity 401 it downstream.
             return None
 
         identity = await resolve_identity(request.app.state.db, credential)
         if identity is None:
-            # Invalid credential: let get_identity 401 it downstream.
             return None
 
         requested = request.headers.get("X-Tenant-ID")
