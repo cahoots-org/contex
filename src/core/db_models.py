@@ -108,8 +108,8 @@ class APIKey(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     prefix: Mapped[str] = mapped_column(String(10), nullable=False)
     scopes: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="SET NULL"), nullable=True
+    tenant_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False, server_default="default"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -148,8 +148,8 @@ class ServiceAccount(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     account_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="SET NULL"), nullable=True
+    tenant_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False, server_default="default"
     )
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="readonly")
     allowed_projects: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
@@ -191,8 +191,8 @@ class Event(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
+    tenant_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False, server_default="default"
     )
     event_type: Mapped[str] = mapped_column(String(255), nullable=False)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -464,7 +464,9 @@ class Subscription(Base):
 
     subscription_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("tenants.tenant_id", ondelete="RESTRICT", name="fk_subscriptions_tenant"), nullable=False, server_default="default"
+    )
     needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     scope: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     top_k: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
