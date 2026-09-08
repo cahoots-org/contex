@@ -10,8 +10,14 @@ from sqlalchemy import select
 
 from src.core.db_models import Subscription
 from src.core.tenant import DEFAULT_TENANT_ID
+from src.core.tenant_middleware import MULTI_TENANT_ENABLED
 
 logger = logging.getLogger(__name__)
+
+
+def _assert_sub_tenant(row, tenant_id):
+    if MULTI_TENANT_ENABLED and tenant_id is not None and row.tenant_id != tenant_id:
+        raise PermissionError("Permission denied")
 
 
 class SubscriptionService:
@@ -34,22 +40,24 @@ class SubscriptionService:
             await session.commit()
         return sub_id
 
-    async def get_bundle(self, subscription_id) -> dict:
+    async def get_bundle(self, subscription_id, *, tenant_id=None) -> dict:
         async with self.db.session() as session:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
             if row is None:
                 raise KeyError(subscription_id)
+            _assert_sub_tenant(row, tenant_id)
             return row.bundle
 
-    async def delete(self, subscription_id) -> None:
+    async def delete(self, subscription_id, *, tenant_id=None) -> None:
         async with self.db.session() as session:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
             # Idempotent: only commit when a row actually existed; absent id is a no-op.
             if row is not None:
+                _assert_sub_tenant(row, tenant_id)
                 await session.delete(row)
                 await session.commit()
 

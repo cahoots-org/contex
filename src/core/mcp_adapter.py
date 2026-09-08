@@ -104,8 +104,10 @@ def build_mcp_server(engine, db_accessor=None):
     @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
     async def contex_delete_subscription(subscription_id: str) -> str:
         _enforce(Permission.QUERY_DATA)
+        tok = get_access_token()
+        tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
-        await e.subscriptions.delete(subscription_id)
+        await e.subscriptions.delete(subscription_id, tenant_id=tid)
         return json.dumps({"deleted": subscription_id})
 
     @server.resource("contex://subscriptions/{id}", name="subscription",
@@ -113,8 +115,10 @@ def build_mcp_server(engine, db_accessor=None):
                      mime_type="application/json")
     async def read_subscription(id: str) -> str:
         _enforce(Permission.QUERY_DATA)
+        tok = get_access_token()
+        tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
-        return json.dumps(await e.subscriptions.get_bundle(id))
+        return json.dumps(await e.subscriptions.get_bundle(id, tenant_id=tid))
 
     @server.tool(name="contex_publish", description="Publish/update context data for a project.")
     async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json") -> str:
