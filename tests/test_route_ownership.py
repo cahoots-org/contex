@@ -227,3 +227,59 @@ async def test_cleanup_passes_when_multitenant_off(monkeypatch):
             resp = await c.post("/api/v1/admin/cleanup/project-b")
 
     assert resp.status_code != 403
+
+
+# ─── Batch publish ownership ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_publish_cross_tenant_is_403(monkeypatch):
+    """With multi-tenant on, a batch containing a cross-tenant project returns 403 (not 200-with-failed)."""
+    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+
+    identity_a = _identity("tenant-a")
+    app = _build_app(identity_a)
+
+    mock_mgr = AsyncMock()
+    mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-b")
+
+    with patch("src.api.routes.get_tenant_manager", return_value=mock_mgr):
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/api/v1/batch/publish",
+                json=[{"project_id": "proj-b", "data_key": "k1", "data": {"x": 1}}],
+            )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_batch_publish_own_tenant_succeeds(monkeypatch):
+    """With multi-tenant on, a batch entirely within tenant-A completes successfully."""
+    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+
+    identity_a = _identity("tenant-a")
+    app = _build_app(identity_a)
+
+    mock_mgr = AsyncMock()
+    mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-a")
+
+    chainable_hist = MagicMock()
+    chainable_hist.labels.return_value = MagicMock()
+    chainable_hist.labels.return_value.observe = MagicMock()
+
+    with (
+        patch("src.api.routes.get_tenant_manager", return_value=mock_mgr),
+        patch("src.core.metrics.record_event_published", new=MagicMock()),
+        patch("src.core.metrics.publish_duration_seconds", new=chainable_hist),
+    ):
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/api/v1/batch/publish",
+                json=[{"project_id": "proj-a", "data_key": "k1", "data": {"x": 1}}],
+            )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["successful"] == 1
+    assert body["failed"] == 0

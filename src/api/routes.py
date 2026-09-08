@@ -1289,6 +1289,10 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
             "results": [...]
         }
     """
+    tenant_mgr = get_tenant_manager(request)
+    for pid in {e.project_id for e in events}:
+        if not await check_project_access(identity, pid, tenant_mgr, create_if_absent=True):
+            raise HTTPException(status_code=403, detail="Forbidden")
     try:
         import time
         from src.core.metrics import record_event_published, publish_duration_seconds
@@ -1296,19 +1300,13 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
         logger.info(f"Batch publishing {len(events)} items")
         start_time = time.time()
         engine = request.app.state.context_engine
-        tenant_mgr = get_tenant_manager(request)
 
         results = []
         successful = 0
         failed = 0
 
-        seen_projects: set[str] = set()
         for event in events:
             try:
-                if event.project_id not in seen_projects:
-                    if not await check_project_access(identity, event.project_id, tenant_mgr, create_if_absent=True):
-                        raise HTTPException(status_code=403, detail="Forbidden")
-                    seen_projects.add(event.project_id)
                 sequence = await engine.publish_data(event)
                 record_event_published(event.project_id, event.data_format or "json")
                 results.append({
@@ -1345,6 +1343,8 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
             "results": results
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Batch publish failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
