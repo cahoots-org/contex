@@ -13,7 +13,7 @@ from src.core.audit import (
     get_audit_logger,
 )
 from src.core.authz import require, public
-from src.core.rbac import Permission, Role
+from src.core.rbac import Permission
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -66,19 +66,6 @@ class AuditExportResponse(BaseModel):
 # Helper Functions
 # ============================================================
 
-async def require_admin_permission(request: Request):
-    """Require admin role for audit access"""
-    role = getattr(request.state, 'api_key_role', None)
-    if role is None:
-        logger.warning("No RBAC context for audit access")
-        return
-    if role.role != Role.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required to access audit logs"
-        )
-
-
 def get_audit_logger_dependency(request: Request) -> AuditLogger:
     """Get audit logger or raise if not available"""
     audit_logger = get_audit_logger()
@@ -127,7 +114,6 @@ async def query_audit_events(
     end_time: Optional[datetime] = Query(None, description="End of time range (ISO 8601)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Skip first N results"),
-    _: None = Depends(require_admin_permission),
 ):
     """
     Query audit events with filtering.
@@ -178,7 +164,6 @@ async def query_audit_events(
 async def get_audit_event(
     request: Request,
     event_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get a single audit event by ID.
@@ -195,9 +180,7 @@ async def get_audit_event(
 
 
 @router.get("/events/types", response_model=List[str], dependencies=[Depends(require(Permission.VIEW_AUDIT))])
-async def list_event_types(
-    _: None = Depends(require_admin_permission),
-):
+async def list_event_types():
     """
     List all available audit event types.
 
@@ -213,7 +196,6 @@ async def export_audit_events(
     start_time: Optional[datetime] = Query(None, description="Start of time range"),
     end_time: Optional[datetime] = Query(None, description="End of time range"),
     days: int = Query(30, ge=1, le=365, description="Number of days to export (if no start_time)"),
-    _: None = Depends(require_admin_permission),
 ):
     """
     Export audit events for compliance reporting.
@@ -265,7 +247,6 @@ async def get_audit_summary(
     request: Request,
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
     days: int = Query(7, ge=1, le=90, description="Number of days for summary"),
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get audit event summary statistics.

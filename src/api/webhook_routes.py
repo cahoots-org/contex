@@ -16,7 +16,7 @@ from src.core.webhooks import (
     init_webhook_manager,
 )
 from src.core.authz import require, public
-from src.core.rbac import Permission, Role
+from src.core.rbac import Permission
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -149,19 +149,6 @@ async def get_manager(request: Request) -> WebhookManager:
     return manager
 
 
-async def require_admin_permission(request: Request):
-    """Require admin role for webhook management"""
-    role = getattr(request.state, 'api_key_role', None)
-    if role is None:
-        logger.warning("No RBAC context for webhook management")
-        return
-    if role.role != Role.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required for webhook management"
-        )
-
-
 def endpoint_to_response(endpoint: WebhookEndpoint) -> EndpointResponse:
     """Convert endpoint to response model (without secret)"""
     return EndpointResponse(
@@ -234,7 +221,6 @@ async def get_event_types():
 async def create_endpoint(
     request: Request,
     body: CreateEndpointRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Create a new webhook endpoint.
@@ -301,7 +287,6 @@ async def create_endpoint(
 async def list_endpoints(
     request: Request,
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    _: None = Depends(require_admin_permission),
 ):
     """
     List all webhook endpoints.
@@ -323,7 +308,6 @@ async def list_endpoints(
 async def get_endpoint(
     request: Request,
     endpoint_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get webhook endpoint by ID.
@@ -344,7 +328,6 @@ async def update_endpoint(
     request: Request,
     endpoint_id: str,
     body: UpdateEndpointRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Update a webhook endpoint.
@@ -378,7 +361,6 @@ async def update_endpoint(
 async def delete_endpoint(
     request: Request,
     endpoint_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Delete a webhook endpoint.
@@ -407,7 +389,6 @@ async def delete_endpoint(
 async def rotate_secret(
     request: Request,
     endpoint_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Rotate the webhook secret.
@@ -452,7 +433,6 @@ async def get_deliveries(
     request: Request,
     endpoint_id: str,
     limit: int = Query(default=50, ge=1, le=100),
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get delivery log for an endpoint.
@@ -492,7 +472,6 @@ async def send_test_event(
     request: Request,
     endpoint_id: str,
     body: TestEventRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Send a test event to an endpoint.

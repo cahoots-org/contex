@@ -135,19 +135,6 @@ def get_manager(request: Request) -> ServiceAccountManager:
     return manager
 
 
-async def require_admin_permission(request: Request):
-    """Require admin role for service account management"""
-    role = getattr(request.state, 'api_key_role', None)
-    if role is None:
-        logger.warning("No RBAC context for service account management")
-        return
-    if role.role != Role.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required for service account management"
-        )
-
-
 def account_to_response(account: ServiceAccount) -> ServiceAccountResponse:
     """Convert ServiceAccount to response model"""
     return ServiceAccountResponse(
@@ -185,7 +172,6 @@ def account_to_response(account: ServiceAccount) -> ServiceAccountResponse:
 async def create_service_account(
     request: Request,
     body: CreateServiceAccountRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Create a new service account.
@@ -241,7 +227,6 @@ async def list_service_accounts(
     account_type: Optional[ServiceAccountType] = None,
     is_active: Optional[bool] = None,
     limit: int = 100,
-    _: None = Depends(require_admin_permission),
 ):
     """
     List service accounts.
@@ -265,7 +250,6 @@ async def list_service_accounts(
 async def get_service_account(
     request: Request,
     account_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get service account by ID.
@@ -286,7 +270,6 @@ async def update_service_account(
     request: Request,
     account_id: str,
     body: UpdateServiceAccountRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Update service account.
@@ -326,7 +309,6 @@ async def update_service_account(
 async def delete_service_account(
     request: Request,
     account_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Delete service account.
@@ -356,7 +338,6 @@ async def create_key(
     request: Request,
     account_id: str,
     body: CreateKeyRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Create a new key for a service account.
@@ -406,7 +387,6 @@ async def revoke_key(
     request: Request,
     account_id: str,
     key_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Revoke a service account key.
