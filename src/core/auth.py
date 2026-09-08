@@ -137,16 +137,15 @@ async def revoke_api_key(
     async with db.session() as session:
         if tenant_id is not None:
             result = await session.execute(
-                select(APIKeyModel).where(APIKeyModel.key_id == key_id)
+                delete(APIKeyModel).where(
+                    APIKeyModel.key_id == key_id,
+                    APIKeyModel.tenant_id == tenant_id,
+                )
             )
-            key = result.scalar_one_or_none()
-            if key is None or key.tenant_id != tenant_id:
-                return False
-            await session.execute(
-                delete(APIKeyModel).where(APIKeyModel.key_id == key_id)
-            )
-            logger.info("API key revoked", key_id=key_id)
-            return True
+            if result.rowcount > 0:
+                logger.info("API key revoked", key_id=key_id)
+                return True
+            return False
 
         result = await session.execute(
             delete(APIKeyModel).where(APIKeyModel.key_id == key_id)
