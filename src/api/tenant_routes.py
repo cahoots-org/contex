@@ -4,9 +4,9 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
+from src.api.deps import get_tenant_manager
 from src.core.tenant import (
     TenantManager,
-    Tenant,
     TenantPlan,
     TenantQuotas,
     TenantUsage,
@@ -86,18 +86,6 @@ class TenantUsageResponse(BaseModel):
     usage: TenantUsage
     quotas: TenantQuotas
     usage_percentage: Dict[str, float]
-
-
-# ============================================================
-# Helper Functions
-# ============================================================
-
-def get_tenant_manager(request: Request) -> TenantManager:
-    """Get TenantManager from request state or create new one"""
-    manager = getattr(request.state, 'tenant_manager', None)
-    if not manager:
-        manager = TenantManager(request.app.state.db)
-    return manager
 
 
 # ============================================================
