@@ -9,6 +9,7 @@ With MULTI_TENANT_ENABLED=False: all pass unchanged.
 """
 
 import pytest
+import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
 from httpx import AsyncClient
@@ -67,7 +68,7 @@ async def test_data_endpoint_403_cross_tenant(monkeypatch):
     mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-b")
 
     with patch("src.api.routes.get_tenant_manager", return_value=mock_mgr):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/v1/projects/project-b/data")
 
     assert resp.status_code == 403
@@ -88,7 +89,7 @@ async def test_data_endpoint_200_own_project(monkeypatch):
         patch("src.api.routes.get_tenant_manager", return_value=mock_mgr),
         patch("src.api.routes.audit_log", new=AsyncMock()),
     ):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/v1/projects/project-a/data")
 
     assert resp.status_code == 200
@@ -117,7 +118,7 @@ async def test_publish_new_project_binds_to_tenant(monkeypatch):
         patch("src.core.metrics.record_event_published", new=MagicMock()),
         patch("src.core.metrics.publish_duration_seconds", new=chainable_hist),
     ):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post(
                 "/api/v1/data/publish",
                 json={"project_id": "new-proj", "data_key": "k", "data": {"x": 1}},
@@ -139,7 +140,7 @@ async def test_events_endpoint_403_cross_tenant(monkeypatch):
     mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-b")
 
     with patch("src.api.routes.get_tenant_manager", return_value=mock_mgr):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/v1/projects/project-b/events")
 
     assert resp.status_code == 403
@@ -157,7 +158,7 @@ async def test_cleanup_project_403_cross_tenant(monkeypatch):
     mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-b")
 
     with patch("src.api.routes.get_tenant_manager", return_value=mock_mgr):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/api/v1/admin/cleanup/project-b")
 
     assert resp.status_code == 403
@@ -175,7 +176,7 @@ async def test_retention_stats_403_cross_tenant(monkeypatch):
     mock_mgr.get_project_tenant = AsyncMock(return_value="tenant-b")
 
     with patch("src.api.routes.get_tenant_manager", return_value=mock_mgr):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/v1/admin/retention/project-b")
 
     assert resp.status_code == 403
@@ -198,7 +199,7 @@ async def test_data_endpoint_passes_when_multitenant_off(monkeypatch):
         patch("src.api.routes.get_tenant_manager", return_value=mock_mgr),
         patch("src.api.routes.audit_log", new=AsyncMock()),
     ):
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/v1/projects/project-b/data")
 
     assert resp.status_code != 403
@@ -222,7 +223,7 @@ async def test_cleanup_passes_when_multitenant_off(monkeypatch):
         mock_ret_mgr = AsyncMock()
         mock_ret_mgr.cleanup_project = AsyncMock(return_value={"project_id": "project-b", "events_deleted": 0, "agents_cleaned": 0})
         mock_ret.return_value = mock_ret_mgr
-        async with AsyncClient(app=app, base_url="http://test") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/api/v1/admin/cleanup/project-b")
 
     assert resp.status_code != 403
