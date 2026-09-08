@@ -97,8 +97,10 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_create_subscription(project_id: str, needs: list[str],
                                          top_k: int = 5, threshold: float | None = None) -> str:
         _enforce(Permission.QUERY_DATA, project_id=project_id)
+        tok = get_access_token()
+        tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
-        sub_id = await e.subscriptions.create(project_id, needs, top_k=top_k, threshold=threshold)
+        sub_id = await e.subscriptions.create(project_id, needs, tenant_id=tid, top_k=top_k, threshold=threshold)
         return json.dumps({"subscription_id": sub_id, "resource_uri": f"contex://subscriptions/{sub_id}"})
 
     @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
