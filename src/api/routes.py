@@ -113,13 +113,13 @@ async def metrics():
     return Response(content=metrics_output, media_type="text/plain; version=0.0.4")
 
 
-@router.post("/auth/keys", response_model=dict, dependencies=[Depends(require(Permission.CREATE_API_KEY))])
-async def create_key(name: str, request: Request):
+@router.post("/auth/keys", response_model=dict)
+async def create_key(name: str, request: Request, identity: Identity = Depends(require(Permission.CREATE_API_KEY))):
     """Create a new API key"""
     ctx = _get_request_context(request)
     try:
         db = request.app.state.db
-        raw_key, api_key = await create_api_key(db, name)
+        raw_key, api_key = await create_api_key(db, name, tenant_id=identity.tenant_id)
 
         # Audit log API key creation
         await audit_log(
@@ -148,23 +148,23 @@ async def create_key(name: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/auth/keys", response_model=List[APIKey], dependencies=[Depends(require(Permission.LIST_API_KEYS))])
-async def list_keys(request: Request):
+@router.get("/auth/keys", response_model=List[APIKey])
+async def list_keys(request: Request, identity: Identity = Depends(require(Permission.LIST_API_KEYS))):
     """List all API keys"""
     try:
         db = request.app.state.db
-        return await list_api_keys(db)
+        return await list_api_keys(db, tenant_id=identity.tenant_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/auth/keys/{key_id}", dependencies=[Depends(require(Permission.REVOKE_API_KEY))])
-async def revoke_key(key_id: str, request: Request):
+@router.delete("/auth/keys/{key_id}")
+async def revoke_key(key_id: str, request: Request, identity: Identity = Depends(require(Permission.REVOKE_API_KEY))):
     """Revoke an API key"""
     ctx = _get_request_context(request)
     try:
         db = request.app.state.db
-        success = await revoke_api_key(db, key_id)
+        success = await revoke_api_key(db, key_id, tenant_id=identity.tenant_id)
         if not success:
             await audit_log(
                 event_type=AuditEventType.AUTH_API_KEY_REVOKED,
