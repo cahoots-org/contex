@@ -97,7 +97,7 @@ async def test_keyhash_plain_roundtrip(db):
 @pytest.mark.asyncio
 async def test_keyhash_peppered_roundtrip(db, monkeypatch):
     """With salt set: create_api_key + resolve_identity round-trips via HMAC pepper."""
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "test-pepper")
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper")
     raw_key, _ = await create_api_key(db, "peppered-roundtrip")
     ident = await resolve_identity(db, raw_key)
     assert ident is not None
@@ -118,6 +118,6 @@ async def test_keyhash_dual_verify_legacy(db, monkeypatch):
             scopes=[],
             tenant_id="default",
         ))
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "test-pepper")
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper")
     ident = await resolve_identity(db, raw_key)
     assert ident is not None, "dual-verify must find legacy plain-sha key when salt is active"

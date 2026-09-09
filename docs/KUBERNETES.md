@@ -108,12 +108,12 @@ data:
 ### Create Secrets
 
 ```bash
-# Generate random salt
-API_KEY_SALT=$(openssl rand -hex 32)
+# Generate random pepper
+API_KEY_PEPPER=$(openssl rand -hex 32)
 
 # Create secret
 kubectl create secret generic contex-secrets \
-  --from-literal=api-key-salt=$API_KEY_SALT \
+  --from-literal=api_key_pepper=$API_KEY_PEPPER \
   -n contex
 ```
 

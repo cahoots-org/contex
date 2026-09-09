@@ -215,28 +215,28 @@ class TestSecurityConfigValidation:
         # Should not have CORS warnings
         assert not any("CORS" in w for w in warnings)
 
-    def test_api_key_salt_warning(self):
-        """Test warning for missing API key salt"""
+    def test_api_key_pepper_warning(self):
+        """Test warning for missing API key pepper"""
         from src.core.config import ContexConfig
 
         config = ContexConfig(
-            security=SecurityConfig(api_key_salt=None)
+            security=SecurityConfig(api_key_pepper=None)
         )
 
         warnings = config.validate_config()
 
-        # Should have warning about API key salt
-        assert any("API_KEY_SALT not set" in w for w in warnings)
+        # Should have warning about API key pepper
+        assert any("API_KEY_PEPPER not set" in w for w in warnings)
 
-    def test_api_key_salt_change_me_warning(self):
-        """Test warning for default API key salt"""
+    def test_api_key_pepper_change_me_warning(self):
+        """Test warning for default API key pepper"""
         from src.core.config import ContexConfig
 
         config = ContexConfig(
-            security=SecurityConfig(api_key_salt="CHANGE_ME_IN_PRODUCTION")
+            security=SecurityConfig(api_key_pepper="CHANGE_ME_IN_PRODUCTION")
         )
 
         warnings = config.validate_config()
 
-        # Should have warning about changing API key salt
+        # Should have warning about changing API key pepper
         assert any("CHANGE THIS IN PRODUCTION" in w for w in warnings)

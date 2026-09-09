@@ -44,18 +44,18 @@ class RedisConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security configuration"""
-    api_key_salt: Optional[str] = Field(default=None, description="Salt for API key hashing")
+    api_key_pepper: Optional[str] = Field(default=None, description="Pepper (global HMAC secret) for API key hashing")
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limiting")
     rate_limit_requests: int = Field(default=100, ge=1, le=10000, description="Requests per minute")
     rate_limit_window: int = Field(default=60, ge=1, le=3600, description="Rate limit window in seconds")
     cors_origins: List[str] = Field(default=["*"], description="Allowed CORS origins")
     cors_allow_credentials: bool = Field(default=True, description="Allow credentials in CORS")
 
-    @field_validator('api_key_salt')
+    @field_validator('api_key_pepper')
     @classmethod
-    def validate_salt(cls, v):
+    def validate_pepper(cls, v):
         if v and len(v) < 16:
-            raise ValueError("API key salt must be at least 16 characters")
+            raise ValueError("API key pepper must be at least 16 characters")
         return v
 
     @field_validator('cors_origins', mode='before')
@@ -131,7 +131,7 @@ class ContexConfig(BaseModel):
                 timeout=int(os.getenv('REDIS_TIMEOUT', '5')),
             ),
             security=SecurityConfig(
-                api_key_salt=os.getenv('API_KEY_SALT'),
+                api_key_pepper=os.getenv('API_KEY_PEPPER'),
                 rate_limit_enabled=os.getenv('RATE_LIMIT_ENABLED', 'true').lower() == 'true',
                 rate_limit_requests=int(os.getenv('RATE_LIMIT_REQUESTS', '100')),
                 rate_limit_window=int(os.getenv('RATE_LIMIT_WINDOW', '60')),
@@ -160,11 +160,11 @@ class ContexConfig(BaseModel):
         warnings = []
 
         # Check security warnings
-        if not self.security.api_key_salt:
-            warnings.append("API_KEY_SALT not set - using default (INSECURE for production)")
+        if not self.security.api_key_pepper:
+            warnings.append("API_KEY_PEPPER not set - using default (INSECURE for production)")
 
-        if self.security.api_key_salt == "CHANGE_ME_IN_PRODUCTION":
-            warnings.append("API_KEY_SALT is set to default value - CHANGE THIS IN PRODUCTION")
+        if self.security.api_key_pepper == "CHANGE_ME_IN_PRODUCTION":
+            warnings.append("API_KEY_PEPPER is set to default value - CHANGE THIS IN PRODUCTION")
 
         # Check CORS configuration
         if "*" in self.security.cors_origins:

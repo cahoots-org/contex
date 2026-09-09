@@ -29,7 +29,7 @@ from src.core.tenant import DEFAULT_TENANT_ID
 @pytest.mark.asyncio
 async def test_api_key_pepper_roundtrip(db, monkeypatch):
     """Peppered create → resolve_identity succeeds."""
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "test-pepper-roundtrip")
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper-roundtrip")
 
     raw_key, _meta = await create_api_key(
         db, name="pepper-rt", tenant_id=DEFAULT_TENANT_ID
@@ -41,14 +41,14 @@ async def test_api_key_pepper_roundtrip(db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# #69 — Legacy dual-verify: plain-SHA row resolves when salt is set
+# #69 — Legacy dual-verify: plain-SHA row resolves when a pepper is set
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_api_key_legacy_dual_verify(db, monkeypatch):
-    """Legacy plain-SHA key_hash row resolves even when API_KEY_SALT is active."""
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "test-pepper-legacy")
+    """Legacy plain-SHA key_hash row resolves even when API_KEY_PEPPER is active."""
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper-legacy")
 
     raw_key = f"ck_{secrets.token_urlsafe(32)}"
     legacy_hash = hashlib.sha256(raw_key.encode()).hexdigest()
@@ -71,13 +71,13 @@ async def test_api_key_legacy_dual_verify(db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Salted hash differs from plain SHA
+# Peppered hash differs from plain SHA
 # ---------------------------------------------------------------------------
 
 
-def test_hash_api_key_salted_differs_from_plain_sha(monkeypatch):
-    """hash_api_key output with a salt must not equal the plain SHA-256."""
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "some-pepper")
+def test_hash_api_key_peppered_differs_from_plain_sha(monkeypatch):
+    """hash_api_key output with a pepper must not equal the plain SHA-256."""
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "some-pepper")
     raw = "ck_test_value"
     assert keyhash.hash_api_key(raw) != hashlib.sha256(raw.encode()).hexdigest()
 
@@ -115,14 +115,14 @@ async def test_jwt_persistence_env_secret(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# ServiceAccount dual-verify: plain-SHA SA key resolves when salt is set
+# ServiceAccount dual-verify: plain-SHA SA key resolves when a pepper is set
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_service_account_key_legacy_dual_verify(db, monkeypatch):
-    """Legacy plain-SHA service_account_keys row authenticates when API_KEY_SALT is set."""
-    monkeypatch.setattr(keyhash, "_get_salt", lambda: "sa-test-pepper")
+    """Legacy plain-SHA service_account_keys row authenticates when API_KEY_PEPPER is set."""
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "sa-test-pepper")
 
     raw_key = f"sak_{secrets.token_urlsafe(32)}"
     legacy_hash = hashlib.sha256(raw_key.encode()).hexdigest()

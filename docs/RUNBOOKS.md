@@ -609,9 +609,9 @@ psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec
 
 3. **Rotate credentials:**
    ```bash
-   # Rotate API key salt
+   # Rotate API key pepper
    kubectl create secret generic contex-secrets \
-     --from-literal=API_KEY_SALT=$(openssl rand -base64 32) \
+     --from-literal=api_key_pepper=$(openssl rand -base64 32) \
      --dry-run=client -o yaml | kubectl apply -f -
 
    # Rotate PostgreSQL password
@@ -634,9 +634,9 @@ psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec
    psql -c "DELETE FROM api_keys WHERE key_id = '<compromised_key_id>';"
    ```
 
-2. **Rotate API key salt** (invalidates ALL keys):
+2. **Rotate API key pepper** (invalidates ALL keys):
    ```bash
-   export API_KEY_SALT=$(openssl rand -base64 32)
+   export API_KEY_PEPPER=$(openssl rand -base64 32)
    # Redeploy Contex
    ```
 
