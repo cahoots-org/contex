@@ -248,7 +248,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatc
 async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
     """/sandbox/subscribe returns 403 for cross-tenant project before SSE starts.
 
-    The ownership check (check_project_access) runs synchronously before the
+    The ownership check (ensure_project_access) runs synchronously before the
     StreamingResponse generator is entered, so a 403 is returned immediately
     without hanging on SSE.
     """

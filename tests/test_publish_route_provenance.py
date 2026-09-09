@@ -37,7 +37,7 @@ async def test_publish_route_stamps_provenance():
     # so we patch at src.core.metrics (the canonical location of the objects).
     chainable_hist = _chainable_histogram()
     with (
-        patch("src.api.routes.check_project_access", new=AsyncMock()),
+        patch("src.api.routes.ensure_project_access", new=AsyncMock()),
         patch("src.api.routes.audit_log", new=AsyncMock()),
         patch("src.api.routes.emit_webhook", new=AsyncMock()),
         patch("src.core.metrics.record_event_published", new=MagicMock()),

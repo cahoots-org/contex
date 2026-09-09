@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from src.core import ownership
-from src.core.ownership import check_project_access
+from src.core.ownership import ensure_project_access
 from src.core.identity import Identity
 from src.core.rbac import Permission
 
@@ -16,8 +16,7 @@ def _ident(tenant_id, projects=()):
 async def test_noop_when_multitenant_off(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", False)
     mgr = AsyncMock()
-    result = await check_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
-    assert result is True
+    await ensure_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
     mgr.get_project_tenant.assert_not_called()
 
 
@@ -25,8 +24,7 @@ async def test_noop_when_multitenant_off(monkeypatch):
 async def test_noop_when_identity_has_no_tenant(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock()
-    result = await check_project_access(_ident(None), "p1", mgr, create_if_absent=False)
-    assert result is True
+    await ensure_project_access(_ident(None), "p1", mgr, create_if_absent=False)
     mgr.get_project_tenant.assert_not_called()
 
 
@@ -34,32 +32,30 @@ async def test_noop_when_identity_has_no_tenant(monkeypatch):
 async def test_read_denies_unowned_project(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock(); mgr.get_project_tenant.return_value = None
-    result = await check_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
-    assert result is False
+    with pytest.raises(PermissionError):
+        await ensure_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
 
 
 @pytest.mark.asyncio
 async def test_read_denies_other_tenant_project(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock(); mgr.get_project_tenant.return_value = "t2"
-    result = await check_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
-    assert result is False
+    with pytest.raises(PermissionError):
+        await ensure_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
 
 
 @pytest.mark.asyncio
 async def test_read_allows_owned_project(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock(); mgr.get_project_tenant.return_value = "t1"
-    result = await check_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
-    assert result is True
+    await ensure_project_access(_ident("t1"), "p1", mgr, create_if_absent=False)
 
 
 @pytest.mark.asyncio
 async def test_publish_binds_new_project(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock(); mgr.get_project_tenant.return_value = None
-    result = await check_project_access(_ident("t1"), "pnew", mgr, create_if_absent=True)
-    assert result is True
+    await ensure_project_access(_ident("t1"), "pnew", mgr, create_if_absent=True)
     mgr.add_project.assert_awaited_once_with("t1", "pnew")
 
 
@@ -67,6 +63,6 @@ async def test_publish_binds_new_project(monkeypatch):
 async def test_key_project_scope_denies_out_of_scope(monkeypatch):
     monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
     mgr = AsyncMock()
-    result = await check_project_access(_ident("t1", projects=["allowed"]), "other", mgr, create_if_absent=True)
-    assert result is False
+    with pytest.raises(PermissionError):
+        await ensure_project_access(_ident("t1", projects=["allowed"]), "other", mgr, create_if_absent=True)
     mgr.get_project_tenant.assert_not_called()  # scope check short-circuits

@@ -12,6 +12,7 @@ import pytest
 import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from httpx import AsyncClient
 
 from src.api.routes import router as api_router
@@ -34,6 +35,11 @@ def _identity(tenant_id, projects=()):
 def _build_app(identity: Identity):
     """Build a minimal FastAPI app with the API router and a fake engine."""
     app = FastAPI()
+
+    @app.exception_handler(PermissionError)
+    async def _permission_denied_handler(request, exc):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
     app.include_router(api_router, prefix="/api/v1")
 
     mock_engine = MagicMock()
@@ -46,7 +52,7 @@ def _build_app(identity: Identity):
     mock_engine._truncate_matches = MagicMock(return_value={})
     app.state.context_engine = mock_engine
 
-    # Stub db — the TenantManager constructor needs it but we'll patch check_project_access
+    # Stub db — the TenantManager constructor needs it but we'll patch ensure_project_access
     app.state.db = MagicMock()
 
     app.dependency_overrides[get_identity] = lambda: identity
