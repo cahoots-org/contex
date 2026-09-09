@@ -267,8 +267,8 @@ await client.assign_role(
 # Enable authentication (disabled by default for easy development)
 export AUTH_ENABLED=true
 
-# REQUIRED when AUTH_ENABLED=true: Set API key salt for secure hashing
-export API_KEY_SALT=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+# REQUIRED when AUTH_ENABLED=true: Set API key pepper for secure hashing
+export API_KEY_PEPPER=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # Optional: Configure rate limiting
 export RATE_LIMIT_ENABLED=true

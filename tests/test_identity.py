@@ -2,6 +2,8 @@
 import hashlib
 import pytest
 from src.core.identity import resolve_identity, Identity, ANONYMOUS_IDENTITY
+from src.core import keyhash
+from src.core.auth import create_api_key
 from src.core.rbac import Permission, Role, assign_role
 from src.core.db_models import APIKey, Tenant
 
@@ -82,3 +84,40 @@ async def test_parse_scopes_ignores_legacy_strings(db):
     ident = await resolve_identity(db, "ck_legacy_scopes_eeee5555")
     assert ident is not None
     assert ident.scopes == frozenset({Permission.QUERY_DATA})
+
+
+@pytest.mark.asyncio
+async def test_keyhash_plain_roundtrip(db):
+    """No salt: create_api_key + resolve_identity round-trips via plain sha256."""
+    raw_key, _ = await create_api_key(db, "plain-roundtrip")
+    ident = await resolve_identity(db, raw_key)
+    assert ident is not None
+
+
+@pytest.mark.asyncio
+async def test_keyhash_peppered_roundtrip(db, monkeypatch):
+    """With salt set: create_api_key + resolve_identity round-trips via HMAC pepper."""
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper")
+    raw_key, _ = await create_api_key(db, "peppered-roundtrip")
+    ident = await resolve_identity(db, raw_key)
+    assert ident is not None
+
+
+@pytest.mark.asyncio
+async def test_keyhash_dual_verify_legacy(db, monkeypatch):
+    """With salt set, a key stored with legacy plain sha256 is still found (dual-verify)."""
+    raw_key = "ck_legacy_plain_key_for_dual_verify"
+    key_id = raw_key[-8:]
+    legacy_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    async with db.session() as session:
+        session.add(APIKey(
+            key_id=key_id,
+            key_hash=legacy_hash,
+            name="legacy-plain",
+            prefix=raw_key[:7],
+            scopes=[],
+            tenant_id="default",
+        ))
+    monkeypatch.setattr(keyhash, "_get_pepper", lambda: "test-pepper")
+    ident = await resolve_identity(db, raw_key)
+    assert ident is not None, "dual-verify must find legacy plain-sha key when salt is active"

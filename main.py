@@ -2,6 +2,8 @@
 
 import asyncio
 import os
+import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
@@ -12,6 +14,8 @@ from src.core.protected_mode import check_protected_mode
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
+from src.core.db_models import APIKey as APIKeyModel
+from src.core.keyhash import hash_api_key
 from src.core.logging import setup_logging, get_logger
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
@@ -100,13 +104,9 @@ async def lifespan(app: FastAPI):
             if bootstrap_key:
                 # Use provided bootstrap key
                 logger.info("Bootstrapping admin account with provided key", name=bootstrap_name)
-                import hashlib
-                import secrets
-                from src.core.db_models import APIKey as APIKeyModel
-                from datetime import datetime, timezone
 
                 key_id = secrets.token_hex(8)
-                key_hash = hashlib.sha256(bootstrap_key.encode()).hexdigest()
+                key_hash = hash_api_key(bootstrap_key)
 
                 # Store the key in PostgreSQL
                 async with db.session() as session:
@@ -306,6 +306,14 @@ if "*" in CORS_ORIGINS:
     logger.warning("CORS allows all origins (*) - INSECURE for production. Set CORS_ORIGINS env var.")
     if CORS_ALLOW_CREDENTIALS:
         logger.warning("CORS allows credentials with wildcard origin - SECURITY RISK!")
+
+# Browsers reject wildcard origin + credentials; coerce to safe state.
+if "*" in CORS_ORIGINS and CORS_ALLOW_CREDENTIALS:
+    CORS_ALLOW_CREDENTIALS = False
+    logger.warning(
+        "CORS: credentials disabled because a wildcard origin is configured; "
+        "set explicit CORS_ORIGINS to use credentials"
+    )
 
 app.add_middleware(
     CORSMiddleware,

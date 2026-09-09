@@ -2,13 +2,13 @@
 """Single source of truth for caller identity. Scopes are authoritative."""
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 
 from sqlalchemy import select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel, APIKeyRole as APIKeyRoleModel
+from src.core.keyhash import candidate_hashes
 from src.core.rbac import Permission, Role, expand_role
 
 _KEY_PREFIX = "ck_"
@@ -44,11 +44,9 @@ async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None
     """Resolve a raw bearer credential to an Identity, or None (deny)."""
     if not raw_key or not raw_key.startswith(_KEY_PREFIX):
         return None
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
     async with db.session() as session:
         key = (await session.execute(
-            select(APIKeyModel).where(APIKeyModel.key_hash == key_hash)
+            select(APIKeyModel).where(APIKeyModel.key_hash.in_(candidate_hashes(raw_key)))
         )).scalar_one_or_none()
         if key is None:
             return None

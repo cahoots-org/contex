@@ -10,7 +10,6 @@ Features:
 - Audit logging
 """
 
-import hashlib
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -21,19 +20,33 @@ import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, update
 
+from src.core.authz import auth_enabled
 from src.core.database import DatabaseManager
 from src.core.db_models import ServiceAccount as ServiceAccountModel
 from src.core.db_models import ServiceAccountKey as ServiceAccountKeyModel
+from src.core.keyhash import candidate_hashes, hash_api_key
 from src.core.logging import get_logger
 from src.core.rbac import Role
 
 logger = get_logger(__name__)
 
-
-# JWT secret (should be from environment in production)
-JWT_SECRET = os.getenv("SERVICE_ACCOUNT_JWT_SECRET", secrets.token_urlsafe(32))
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "contex"
+
+_fallback_jwt_secret: Optional[str] = None
+
+
+def _jwt_secret() -> str:
+    global _fallback_jwt_secret
+    secret = os.getenv("SERVICE_ACCOUNT_JWT_SECRET")
+    if secret:
+        return secret
+    if auth_enabled():
+        raise RuntimeError("SERVICE_ACCOUNT_JWT_SECRET must be set when AUTH_ENABLED=true")
+    if _fallback_jwt_secret is None:
+        _fallback_jwt_secret = secrets.token_urlsafe(32)
+        logger.warning("SERVICE_ACCOUNT_JWT_SECRET unset; using ephemeral secret (tokens will not survive restart)")
+    return _fallback_jwt_secret
 
 
 class ServiceAccountType(str, Enum):
@@ -139,7 +152,7 @@ class ServiceAccountManager:
 
         # Generate initial key
         raw_key = f"sak_{secrets.token_urlsafe(32)}"
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        key_hash = hash_api_key(raw_key)
         key_id = secrets.token_hex(8)
 
         initial_key = ServiceAccountKey(
@@ -324,7 +337,7 @@ class ServiceAccountManager:
 
             # Generate key
             raw_key = f"sak_{secrets.token_urlsafe(32)}"
-            key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+            key_hash = hash_api_key(raw_key)
             key_id = secrets.token_hex(8)
 
             expires_at = None
@@ -408,12 +421,12 @@ class ServiceAccountManager:
         if not raw_key.startswith("sak_"):
             return None
 
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
         async with self.db.session() as session:
             # Look up key
             key_result = await session.execute(
-                select(ServiceAccountKeyModel).where(ServiceAccountKeyModel.key_hash == key_hash)
+                select(ServiceAccountKeyModel).where(
+                    ServiceAccountKeyModel.key_hash.in_(candidate_hashes(raw_key))
+                )
             )
             key_record = key_result.scalar_one_or_none()
 
@@ -493,7 +506,7 @@ class ServiceAccountManager:
             "iss": JWT_ISSUER,
         }
 
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        token = jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
 
         return ServiceAccountToken(
             access_token=token,
@@ -514,7 +527,7 @@ class ServiceAccountManager:
         try:
             payload = jwt.decode(
                 token,
-                JWT_SECRET,
+                _jwt_secret(),
                 algorithms=[JWT_ALGORITHM],
                 issuer=JWT_ISSUER,
             )

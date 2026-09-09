@@ -1,7 +1,6 @@
 """Authentication module for Contex"""
 
 import asyncio
-import hashlib
 import secrets
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -11,6 +10,7 @@ from sqlalchemy import select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel
+from src.core.keyhash import hash_api_key
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -86,7 +86,7 @@ async def create_api_key(
     """
     # Generate key
     raw_key = f"ck_{secrets.token_urlsafe(32)}"
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    key_hash = hash_api_key(raw_key)
     key_id = secrets.token_hex(8)
     created_at = datetime.now(timezone.utc)
 
@@ -216,21 +216,3 @@ async def get_api_key(db: DatabaseManager, key_id: str) -> Optional[APIKey]:
             )
 
     return None
-
-
-async def get_api_key_by_hash(db: DatabaseManager, key_hash: str) -> Optional[APIKeyModel]:
-    """
-    Get an API key record by hash (internal use).
-
-    Args:
-        db: Database manager
-        key_hash: SHA256 hash of the raw key
-
-    Returns:
-        APIKeyModel if found, None otherwise
-    """
-    async with db.session() as session:
-        result = await session.execute(
-            select(APIKeyModel).where(APIKeyModel.key_hash == key_hash)
-        )
-        return result.scalar_one_or_none()

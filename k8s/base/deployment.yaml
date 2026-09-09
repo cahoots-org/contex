@@ -100,11 +100,11 @@ spec:
         #     configMapKeyRef:
         #       name: contex-config
         #       key: redis_db
-        - name: API_KEY_SALT
+        - name: API_KEY_PEPPER
           valueFrom:
             secretKeyRef:
               name: contex-secrets
-              key: api_key_salt
+              key: api_key_pepper
         - name: SIMILARITY_THRESHOLD
           valueFrom:
             configMapKeyRef:
