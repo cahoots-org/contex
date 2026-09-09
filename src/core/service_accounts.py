@@ -10,7 +10,6 @@ Features:
 - Audit logging
 """
 
-import hashlib
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -24,6 +23,7 @@ from sqlalchemy import delete, select, update
 from src.core.database import DatabaseManager
 from src.core.db_models import ServiceAccount as ServiceAccountModel
 from src.core.db_models import ServiceAccountKey as ServiceAccountKeyModel
+from src.core.keyhash import candidate_hashes, hash_api_key
 from src.core.logging import get_logger
 from src.core.rbac import Role
 
@@ -139,7 +139,7 @@ class ServiceAccountManager:
 
         # Generate initial key
         raw_key = f"sak_{secrets.token_urlsafe(32)}"
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        key_hash = hash_api_key(raw_key)
         key_id = secrets.token_hex(8)
 
         initial_key = ServiceAccountKey(
@@ -324,7 +324,7 @@ class ServiceAccountManager:
 
             # Generate key
             raw_key = f"sak_{secrets.token_urlsafe(32)}"
-            key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+            key_hash = hash_api_key(raw_key)
             key_id = secrets.token_hex(8)
 
             expires_at = None
@@ -408,12 +408,12 @@ class ServiceAccountManager:
         if not raw_key.startswith("sak_"):
             return None
 
-        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-
         async with self.db.session() as session:
             # Look up key
             key_result = await session.execute(
-                select(ServiceAccountKeyModel).where(ServiceAccountKeyModel.key_hash == key_hash)
+                select(ServiceAccountKeyModel).where(
+                    ServiceAccountKeyModel.key_hash.in_(candidate_hashes(raw_key))
+                )
             )
             key_record = key_result.scalar_one_or_none()
 
