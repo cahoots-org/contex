@@ -13,7 +13,6 @@ from src.core.tenant import (
     TenantManager,
     Tenant,
     DEFAULT_TENANT_ID,
-    ensure_default_tenant,
 )
 
 logger = get_logger(__name__)
@@ -37,30 +36,18 @@ def _record_quota_exceeded(tenant_id: str, resource: str):
         pass
 
 
-
 class _TenantSpoofingError(Exception):
     """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to handle tenant isolation and context.
+    """Resolve and attach tenant context to each request.
 
-    This middleware:
-    1. Identifies the tenant from the request (header, API key, or path)
-    2. Validates tenant exists and is active
-    3. Enforces tenant quotas
-    4. Adds tenant context to the request state
-
-    Tenant identification methods (in order of precedence):
-    1. X-Tenant-ID header (explicit, for admin operations)
-    2. API key association (automatic, most common)
-    3. Default tenant (for backward compatibility when multi-tenancy disabled)
-
-    Request state after middleware:
-    - request.state.tenant_id: Current tenant ID
-    - request.state.tenant: Full Tenant object
-    - request.state.tenant_manager: TenantManager instance
+    Auth off: single implicit default tenant, no credential required.
+    Auth on: tenant derived authoritatively from the caller's identity;
+    X-Tenant-ID is accepted only as a spoof cross-check (mismatch → 403).
+    Unauthenticated requests (no/invalid credential) pass through with
+    request.state.tenant = None so route-level get_identity can return 401.
     """
 
     def __init__(
@@ -116,11 +103,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     content={"detail": "X-Tenant-ID does not match authenticated tenant"}
                 )
 
-            # Fall back to default tenant when no credential is present;
-            # route-level get_identity handles 401 for unauthenticated access.
+            # No credential / unresolvable → unauthenticated; let the route
+            # handle it (get_identity → 401, require() → 403).
             if not tenant_id:
-                tenant_id = DEFAULT_TENANT_ID
-                await ensure_default_tenant(db)
+                request.state.tenant_id = None
+                request.state.tenant = None
+                return await call_next(request)
 
             # Get and validate tenant
             tenant = await manager.get_tenant(tenant_id)

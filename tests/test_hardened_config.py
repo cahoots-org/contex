@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from src.core.hardened_config import check_hardened_config
@@ -23,7 +25,6 @@ def test_passes_when_auth_on_and_jwt_secret_set(monkeypatch):
 
 
 def test_warns_on_missing_pepper(monkeypatch, caplog):
-    import logging
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("SERVICE_ACCOUNT_JWT_SECRET", "x" * 32)
     monkeypatch.delenv("API_KEY_PEPPER", raising=False)
