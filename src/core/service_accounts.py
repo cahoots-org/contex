@@ -20,6 +20,7 @@ import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, update
 
+from src.core.authz import auth_enabled
 from src.core.database import DatabaseManager
 from src.core.db_models import ServiceAccount as ServiceAccountModel
 from src.core.db_models import ServiceAccountKey as ServiceAccountKeyModel
@@ -29,11 +30,23 @@ from src.core.rbac import Role
 
 logger = get_logger(__name__)
 
-
-# JWT secret (should be from environment in production)
-JWT_SECRET = os.getenv("SERVICE_ACCOUNT_JWT_SECRET", secrets.token_urlsafe(32))
 JWT_ALGORITHM = "HS256"
 JWT_ISSUER = "contex"
+
+_fallback_jwt_secret: Optional[str] = None
+
+
+def _jwt_secret() -> str:
+    global _fallback_jwt_secret
+    secret = os.getenv("SERVICE_ACCOUNT_JWT_SECRET")
+    if secret:
+        return secret
+    if auth_enabled():
+        raise RuntimeError("SERVICE_ACCOUNT_JWT_SECRET must be set when AUTH_ENABLED=true")
+    if _fallback_jwt_secret is None:
+        _fallback_jwt_secret = secrets.token_urlsafe(32)
+        logger.warning("SERVICE_ACCOUNT_JWT_SECRET unset; using ephemeral secret (tokens will not survive restart)")
+    return _fallback_jwt_secret
 
 
 class ServiceAccountType(str, Enum):
@@ -493,7 +506,7 @@ class ServiceAccountManager:
             "iss": JWT_ISSUER,
         }
 
-        token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        token = jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
 
         return ServiceAccountToken(
             access_token=token,
@@ -514,7 +527,7 @@ class ServiceAccountManager:
         try:
             payload = jwt.decode(
                 token,
-                JWT_SECRET,
+                _jwt_secret(),
                 algorithms=[JWT_ALGORITHM],
                 issuer=JWT_ISSUER,
             )
