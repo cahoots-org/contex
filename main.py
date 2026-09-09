@@ -307,6 +307,14 @@ if "*" in CORS_ORIGINS:
     if CORS_ALLOW_CREDENTIALS:
         logger.warning("CORS allows credentials with wildcard origin - SECURITY RISK!")
 
+# Browsers reject wildcard origin + credentials; coerce to safe state.
+if "*" in CORS_ORIGINS and CORS_ALLOW_CREDENTIALS:
+    CORS_ALLOW_CREDENTIALS = False
+    logger.warning(
+        "CORS: credentials disabled because a wildcard origin is configured; "
+        "set explicit CORS_ORIGINS to use credentials"
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

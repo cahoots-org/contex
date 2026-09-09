@@ -3,9 +3,26 @@
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from httpx import AsyncClient
 from src.core.security_headers import SecurityHeadersMiddleware
 from src.core.config import SecurityConfig
+
+
+def _build_cors_app(origins, allow_credentials):
+    """Build a minimal FastAPI app applying the same CORS coercion logic as main.py."""
+    app = FastAPI()
+    coerced_credentials = allow_credentials
+    if "*" in origins and coerced_credentials:
+        coerced_credentials = False
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=coerced_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    return app
 
 
 class TestSecurityHeaders:
@@ -102,11 +119,34 @@ class TestSecurityHeaders:
             assert "frame-ancestors 'none'" in csp
 
 
+class TestCORSMiddlewareCoercion:
+    """Test that wildcard origin disables credentials in CORSMiddleware construction."""
+
+    def _cors_kwargs(self, app):
+        cors_mw = next(mw for mw in app.user_middleware if mw.cls is CORSMiddleware)
+        return cors_mw.kwargs
+
+    def test_wildcard_origin_disables_credentials(self):
+        """Wildcard origins + credentials=True must produce allow_credentials=False."""
+        app = _build_cors_app(["*"], allow_credentials=True)
+        assert self._cors_kwargs(app)["allow_credentials"] is False
+
+    def test_explicit_origins_preserve_credentials(self):
+        """Explicit (non-wildcard) origins with credentials=True must pass through unchanged."""
+        app = _build_cors_app(["https://app.example.com"], allow_credentials=True)
+        assert self._cors_kwargs(app)["allow_credentials"] is True
+
+    def test_wildcard_origin_credentials_already_false_unchanged(self):
+        """Wildcard origins with credentials=False must remain False (no-op coercion)."""
+        app = _build_cors_app(["*"], allow_credentials=False)
+        assert self._cors_kwargs(app)["allow_credentials"] is False
+
+
 class TestCORSConfiguration:
     """Test CORS configuration"""
 
     def test_cors_default_wildcard(self):
-        """Test that default CORS is wildcard"""
+        """Test that default CORS config has wildcard origin and credentials=True (coercion happens in main.py)."""
         config = SecurityConfig()
         assert config.cors_origins == ["*"]
         assert config.cors_allow_credentials is True
