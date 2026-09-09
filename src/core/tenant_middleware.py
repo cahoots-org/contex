@@ -1,6 +1,5 @@
 """Tenant middleware for request isolation and quota enforcement"""
 
-import os
 from typing import Optional, List
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -38,9 +37,6 @@ def _record_quota_exceeded(tenant_id: str, resource: str):
         pass
 
 
-# Environment variable to enable/disable multi-tenancy
-MULTI_TENANT_ENABLED = os.getenv("MULTI_TENANT_ENABLED", "false").lower() == "true"
-
 
 class _TenantSpoofingError(Exception):
     """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
@@ -71,15 +67,12 @@ class TenantMiddleware(BaseHTTPMiddleware):
         self,
         app,
         public_paths: Optional[List[str]] = None,
-        require_tenant: bool = True,
     ):
-        """
-        Initialize tenant middleware.
+        """Initialize tenant middleware.
 
         Args:
             app: FastAPI application
             public_paths: Paths that don't require tenant context
-            require_tenant: Whether to require tenant context (can disable for migration)
         """
         super().__init__(app)
         self.public_paths = public_paths or [
@@ -91,7 +84,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "/favicon.ico",
             "/api/v1/metrics",
         ]
-        self.require_tenant = require_tenant
 
     async def dispatch(self, request: Request, call_next):
         # Skip for public paths
@@ -99,11 +91,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if path == "/" or any(path.startswith(p) for p in self.public_paths):
             return await call_next(request)
 
-        # Skip if multi-tenancy is disabled
-        if not MULTI_TENANT_ENABLED:
-            # Use default tenant for all requests
+        # Demo mode (auth off): single implicit default tenant, no enforcement.
+        if not _authz.auth_enabled():
             request.state.tenant_id = DEFAULT_TENANT_ID
-            request.state.tenant = None  # Lazy load if needed
+            request.state.tenant = None
             return await call_next(request)
 
         try:
@@ -125,13 +116,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     content={"detail": "X-Tenant-ID does not match authenticated tenant"}
                 )
 
-            if not tenant_id and self.require_tenant:
-                return JSONResponse(
-                    status_code=400,
-                    content={"detail": "Tenant identification required"}
-                )
-
-            # Use default tenant if none identified
+            # Fall back to default tenant when no credential is present;
+            # route-level get_identity handles 401 for unauthenticated access.
             if not tenant_id:
                 tenant_id = DEFAULT_TENANT_ID
                 await ensure_default_tenant(db)
@@ -181,30 +167,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
         request: Request,
         manager: TenantManager,
     ) -> Optional[str]:
-        """Identify tenant from request.
+        """Derive tenant authoritatively from the caller's identity (auth is on here).
 
-        When auth is on, derives tenant authoritatively from the caller's identity.
-        When auth is off (demo mode), selects tenant from X-Tenant-ID header or /t/ path prefix.
-        Raises _TenantSpoofingError if X-Tenant-ID disagrees with identity's tenant.
+        Raises _TenantSpoofingError if X-Tenant-ID disagrees with identity.tenant_id.
         """
-        if _authz.auth_enabled():
-            return await self._identify_tenant_from_identity(request)
-
-        # Auth disabled (demo mode): select tenant from X-Tenant-ID header or /t/ path prefix
-
-        # Method 1: Explicit header
-        tenant_id = request.headers.get("X-Tenant-ID")
-        if tenant_id:
-            return tenant_id
-
-        # Method 3: Path prefix (e.g., /t/acme-corp/api/v1/...)
-        path = request.url.path
-        if path.startswith("/t/"):
-            parts = path.split("/")
-            if len(parts) >= 3:
-                return parts[2]
-
-        return None
+        return await self._identify_tenant_from_identity(request)
 
     async def _identify_tenant_from_identity(
         self,

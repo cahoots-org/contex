@@ -62,7 +62,7 @@ Prefer a UI? Open `http://localhost:8001/sandbox`, pick a project, type a need, 
 - **Data Management** - Automatic retention policies, export/import, and backup
 - **Security** - API key auth, RBAC, rate limiting, and security headers
 - **Observability** - Structured logging, Prometheus metrics, and distributed tracing
-- **Multi-Tenancy** - Isolated tenants with project-level permissions and quotas
+- **Multi-Tenancy** - Always-on tenant isolation; the default tenant is used when `AUTH_ENABLED=false`, full identity-derived isolation activates under `AUTH_ENABLED=true`
 - **Sandbox UI** - Interactive web interface for testing
 - **API Versioning** - Stable /api/v1 endpoints with backward compatibility
 

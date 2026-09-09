@@ -568,6 +568,26 @@ class TestDefaultTenant:
         assert tenant1.tenant_id == tenant2.tenant_id
 
 
+@pytest.mark.asyncio
+async def test_demo_mode_forces_default_tenant(monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    from starlette.requests import Request
+    from src.core import tenant_middleware as tm
+    mw = tm.TenantMiddleware(app=None)
+
+    captured = {}
+    async def call_next(request):
+        captured["tenant_id"] = request.state.tenant_id
+        from starlette.responses import Response
+        return Response("ok")
+
+    scope = {"type": "http", "method": "GET", "path": "/api/v1/projects/p/data",
+             "headers": [(b"x-tenant-id", b"spoofed")]}
+    req = Request(scope)
+    await mw.dispatch(req, call_next)
+    assert captured["tenant_id"] == tm.DEFAULT_TENANT_ID  # X-Tenant-ID ignored in demo
+
+
 class TestTenantMiddlewareIdentityDerivation:
     """Tenant must be derived from identity (not X-Tenant-ID) when auth is on (#41)."""
 
@@ -580,9 +600,9 @@ class TestTenantMiddlewareIdentityDerivation:
         from src.core.auth import create_api_key
         from src.core.db_models import Tenant as TenantModel
 
-        # Force auth + multi-tenancy on regardless of environment.
+        # Force auth on regardless of environment.
         monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-        monkeypatch.setattr(tm, "MULTI_TENANT_ENABLED", True)
+        monkeypatch.setenv("AUTH_ENABLED", "true")
 
         # Pre-create tenant rows so FK / get_tenant checks pass.
         async with db.session() as session:

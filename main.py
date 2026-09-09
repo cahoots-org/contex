@@ -336,7 +336,7 @@ logger.info("Security headers middleware enabled", hsts=ENABLE_HSTS)
 
 # Add security middleware stack (order matters - executed in reverse)
 from src.core.tracing_middleware import TracingMiddleware
-from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, MULTI_TENANT_ENABLED
+from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware
 
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
@@ -357,11 +357,11 @@ else:
 # middleware (see #38). A follow-up will re-introduce rate limiting correctly.
 logger.warning("Rate limiting is DISABLED (pending #38 path-matching fix)")
 
-# Tenant middleware (identifies tenant, enforces quotas)
-if MULTI_TENANT_ENABLED:
-    app.add_middleware(TenantQuotaMiddleware)
-    app.add_middleware(TenantMiddleware)
-    logger.info("Multi-tenant middleware enabled")
+# Tenant middleware always runs: it sets the default-tenant context in demo mode
+# and enforces identity-derived tenant + quotas when auth is on.
+app.add_middleware(TenantQuotaMiddleware)
+app.add_middleware(TenantMiddleware)
+logger.info("Tenant middleware enabled")
 
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"
