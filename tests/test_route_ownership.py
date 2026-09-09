@@ -1,11 +1,11 @@
 """Tests: project→tenant ownership enforcement on data and cleanup routes.
 
-With MULTI_TENANT_ENABLED=True and AUTH_ENABLED=True:
+With AUTH_ENABLED=True:
 - tenant A gets 403 on a project owned by tenant B
 - tenant A gets non-403 on its own project
 - publish to a new project binds it (no 403)
 
-With MULTI_TENANT_ENABLED=False: all pass unchanged.
+With AUTH_ENABLED=False: all pass unchanged.
 """
 
 import pytest
@@ -16,7 +16,6 @@ from fastapi.responses import JSONResponse
 from httpx import AsyncClient
 
 from src.api.routes import router as api_router
-from src.core import authz, ownership
 from src.core.authz import get_identity
 from src.core.identity import Identity
 from src.core.rbac import Permission
@@ -64,7 +63,7 @@ def _build_app(identity: Identity):
 @pytest.mark.asyncio
 async def test_data_endpoint_403_cross_tenant(monkeypatch):
     """With multi-tenant on, tenant A gets 403 on tenant B's project."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -83,7 +82,7 @@ async def test_data_endpoint_403_cross_tenant(monkeypatch):
 @pytest.mark.asyncio
 async def test_data_endpoint_200_own_project(monkeypatch):
     """With multi-tenant on, tenant A gets 200 on its own project."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -104,7 +103,7 @@ async def test_data_endpoint_200_own_project(monkeypatch):
 @pytest.mark.asyncio
 async def test_publish_new_project_binds_to_tenant(monkeypatch):
     """With multi-tenant on, publishing to an unowned project binds it (no 403)."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -137,7 +136,7 @@ async def test_publish_new_project_binds_to_tenant(monkeypatch):
 @pytest.mark.asyncio
 async def test_events_endpoint_403_cross_tenant(monkeypatch):
     """With multi-tenant on, tenant A gets 403 on tenant B's events."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -155,7 +154,7 @@ async def test_events_endpoint_403_cross_tenant(monkeypatch):
 @pytest.mark.asyncio
 async def test_cleanup_project_403_cross_tenant(monkeypatch):
     """With multi-tenant on, tenant A gets 403 on cleanup of tenant B's project."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -173,7 +172,7 @@ async def test_cleanup_project_403_cross_tenant(monkeypatch):
 @pytest.mark.asyncio
 async def test_retention_stats_403_cross_tenant(monkeypatch):
     """With multi-tenant on, tenant A gets 403 on retention stats for tenant B's project."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -193,7 +192,7 @@ async def test_retention_stats_403_cross_tenant(monkeypatch):
 @pytest.mark.asyncio
 async def test_data_endpoint_passes_when_multitenant_off(monkeypatch):
     """With multi-tenant off, cross-tenant calls are not 403."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", False)
+    monkeypatch.setenv("AUTH_ENABLED", "false")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -214,7 +213,7 @@ async def test_data_endpoint_passes_when_multitenant_off(monkeypatch):
 @pytest.mark.asyncio
 async def test_cleanup_passes_when_multitenant_off(monkeypatch):
     """With multi-tenant off, cleanup of any project is not 403."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", False)
+    monkeypatch.setenv("AUTH_ENABLED", "false")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -241,7 +240,7 @@ async def test_cleanup_passes_when_multitenant_off(monkeypatch):
 @pytest.mark.asyncio
 async def test_batch_publish_cross_tenant_is_403(monkeypatch):
     """With multi-tenant on, a batch containing a cross-tenant project returns 403 (not 200-with-failed)."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)
@@ -262,7 +261,7 @@ async def test_batch_publish_cross_tenant_is_403(monkeypatch):
 @pytest.mark.asyncio
 async def test_batch_publish_own_tenant_succeeds(monkeypatch):
     """With multi-tenant on, a batch entirely within tenant-A completes successfully."""
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     identity_a = _identity("tenant-a")
     app = _build_app(identity_a)

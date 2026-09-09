@@ -1,8 +1,8 @@
 """Project→tenant ownership enforcement for authorized routes."""
 from __future__ import annotations
 
+from src.core.authz import auth_enabled
 from src.core.identity import Identity
-from src.core.tenant_middleware import MULTI_TENANT_ENABLED
 
 
 async def ensure_project_access(
@@ -10,12 +10,10 @@ async def ensure_project_access(
 ) -> None:
     """Raise PermissionError if the caller's tenant may not access `project_id`.
 
-    No-ops when multi-tenancy is off or the caller carries no tenant. When
-    `create_if_absent` is True (publish paths), an unowned project is bound to
-    the caller's tenant instead of raising. Raises PermissionError on any
-    ownership mismatch; callers do not need to handle the bool.
+    No-op when auth is off (demo mode). When `create_if_absent` is True (publish
+    paths), an unowned project is bound to the caller's tenant instead of raising.
     """
-    if not MULTI_TENANT_ENABLED or identity.tenant_id is None:
+    if not auth_enabled():
         return
     if not identity.has_project(project_id):
         raise PermissionError("Permission denied")

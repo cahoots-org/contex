@@ -2,7 +2,7 @@
 """End-to-end multi-tenant isolation matrix.
 
 Proves that the ownership checks actually isolate tenants at the HTTP and
-service layers, and that isolation is a no-op when MULTI_TENANT_ENABLED is off.
+service layers, and that isolation is a no-op when auth is off.
 
 Transport: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), ...) —
 no lifespan runs; app.state.db is wired in each test that needs real DB access.
@@ -18,7 +18,6 @@ import pytest
 from sqlalchemy import text
 
 from main import app
-from src.core import authz, ownership
 from src.core.authz import get_identity
 from src.core.identity import Identity
 from src.core.rbac import Permission, Role, expand_role
@@ -112,8 +111,7 @@ async def _seed_api_key(db, key_id: str, tenant_id: str) -> None:
 @pytest.mark.asyncio
 async def test_cross_tenant_project_data_is_403(db, monkeypatch):
     """tenant-A identity gets 403 on tenant-B's project."""
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     await _ensure_tenant(db, "tenant-B")
@@ -134,8 +132,7 @@ async def test_cross_tenant_project_data_is_403(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_own_project_data_is_not_403(db, monkeypatch):
     """tenant-A identity gets non-403 on its own project."""
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     await _seed_tenant_project(db, "tenant-A", "proj-a")
@@ -158,7 +155,7 @@ async def test_own_project_data_is_not_403(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_list_keys_scoped_to_caller_tenant(db, monkeypatch):
     """GET /auth/keys returns only tenant-A's keys when called as tenant-A."""
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     await _ensure_tenant(db, "tenant-B")
@@ -187,8 +184,7 @@ async def test_list_keys_scoped_to_caller_tenant(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_publish_new_project_binds_to_tenant_a(db, monkeypatch):
     """Publishing to an unowned project binds it to the caller's tenant."""
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     # proj-new is intentionally absent from tenant_projects
@@ -225,7 +221,7 @@ async def test_publish_new_project_binds_to_tenant_a(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatch):
     """SubscriptionService.get_bundle raises PermissionError for cross-tenant access."""
-    monkeypatch.setattr("src.core.subscriptions.MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     await _ensure_tenant(db, "tenant-B")
@@ -252,8 +248,7 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
     StreamingResponse generator is entered, so a 403 is returned immediately
     without hanging on SSE.
     """
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
 
     await _ensure_tenant(db, "tenant-A")
     await _ensure_tenant(db, "tenant-B")
@@ -273,14 +268,13 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
         app.dependency_overrides.clear()
 
 
-# ── Case 6: isolation OFF → cross-tenant call is NOT 403 ───────────────────────
+# ── Case 6: auth OFF → cross-tenant call is NOT 403 ───────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_cross_tenant_data_not_403_when_isolation_off(db, monkeypatch):
-    """With MULTI_TENANT_ENABLED=False, cross-tenant project access is not blocked."""
-    monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    monkeypatch.setattr(ownership, "MULTI_TENANT_ENABLED", False)
+async def test_cross_tenant_data_not_403_when_auth_off(db, monkeypatch):
+    """With auth off, cross-tenant project access is not blocked."""
+    monkeypatch.setenv("AUTH_ENABLED", "false")
 
     await _ensure_tenant(db, "tenant-A")
     await _ensure_tenant(db, "tenant-B")
