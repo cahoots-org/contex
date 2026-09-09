@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from src.api.deps import get_tenant_manager
 from src.core.authz import require, public, get_identity
 from src.core.identity import Identity
-from src.core.ownership import check_project_access
+from src.core.ownership import ensure_project_access
 from src.core.rbac import Permission
 from src.core.models import (
     AgentRegistration,
@@ -405,8 +405,7 @@ async def publish_data(event: DataPublishEvent, request: Request, identity: Iden
             "data": "We use a microservices architecture with Redis for caching"
         }
     """
-    if not await check_project_access(identity, event.project_id, get_tenant_manager(request), create_if_absent=True):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, event.project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
     try:
         from src.core.metrics import record_event_published, publish_duration_seconds
@@ -545,8 +544,7 @@ async def upload_document(
     import os
     import time
 
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
 
     # Determine format from file extension
@@ -803,8 +801,7 @@ async def get_agent_info(agent_id: str, request: Request):
 @router.get("/projects/{project_id}/events", dependencies=[Depends(require(Permission.VIEW_PROJECT_EVENTS))])
 async def get_project_events(project_id: str, request: Request, since: str = "0", count: int = 100, identity: Identity = Depends(get_identity)):
     """Get events for a project"""
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     engine = request.app.state.context_engine
     events = await engine.event_store.get_events_since(
         project_id,
@@ -838,8 +835,7 @@ async def get_project_data(
         include_embeddings: Include embeddings data
         include_agents: Include agent registrations
     """
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     ctx = _get_request_context(request)
     engine = request.app.state.context_engine
 
@@ -971,8 +967,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
         Complete data sources that match your search, ranked by semantic similarity,
         formatted as TOON or JSON.
     """
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         engine = request.app.state.context_engine
         matches = await engine.query_project_data(
@@ -1100,8 +1095,7 @@ async def cleanup_project(project_id: str, request: Request, identity: Identity 
     Returns:
         Cleanup statistics
     """
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         from src.core.retention import get_retention_manager_from_env
 
@@ -1134,8 +1128,7 @@ async def get_retention_stats(project_id: str, request: Request, identity: Ident
     Returns:
         Retention statistics
     """
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=False)
     try:
         from src.core.retention import get_retention_manager_from_env
 
@@ -1177,8 +1170,7 @@ async def import_project(
     Returns:
         Import statistics and validation results
     """
-    if not await check_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, get_tenant_manager(request), create_if_absent=True)
     ctx = _get_request_context(request)
     try:
         from src.core.export_import import ExportImportManager
@@ -1291,8 +1283,7 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
     """
     tenant_mgr = get_tenant_manager(request)
     for pid in {e.project_id for e in events}:
-        if not await check_project_access(identity, pid, tenant_mgr, create_if_absent=True):
-            raise HTTPException(status_code=403, detail="Forbidden")
+        await ensure_project_access(identity, pid, tenant_mgr, create_if_absent=True)
     try:
         import time
         from src.core.metrics import record_event_published, publish_duration_seconds

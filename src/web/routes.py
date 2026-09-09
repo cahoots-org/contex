@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
 from src.api.deps import get_tenant_manager
 from src.core.authz import require, public, get_identity
 from src.core.identity import Identity
-from src.core.ownership import check_project_access
+from src.core.ownership import ensure_project_access
 from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -279,8 +279,7 @@ async def subscribe_to_updates(
     Backed by an ephemeral Subscription; the browser is a parallel consumer of the
     same reconcile pipeline the MCP bridge uses.
     """
-    if not await check_project_access(identity, project_id, tenant_mgr, create_if_absent=False):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     engine = request.app.state.context_engine
     return StreamingResponse(
         stream_subscription_updates(engine, project_id, need),

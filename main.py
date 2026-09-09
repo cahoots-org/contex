@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from src.core.authz import public, auth_enabled
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
@@ -279,6 +280,11 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan
 )
+
+@app.exception_handler(PermissionError)
+async def _permission_denied_handler(request, exc):
+    return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
 
 # Build the MCP server at module level with a lazy engine accessor so the
 # /mcp route exists in app.routes at import time (the test asserts this).
