@@ -48,7 +48,7 @@ def test_jwt_secret_consistent_across_reads(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_issue_validate_with_env_secret(monkeypatch):
-    monkeypatch.setenv("SERVICE_ACCOUNT_JWT_SECRET", "env-secret-roundtrip")
+    monkeypatch.setenv("SERVICE_ACCOUNT_JWT_SECRET", "env-secret-roundtrip-padded-1234")
     monkeypatch.setattr(sa_module, "_fallback_jwt_secret", None)
 
     mgr = ServiceAccountManager(db=None)
@@ -57,7 +57,7 @@ async def test_issue_validate_with_env_secret(monkeypatch):
     token_obj = await mgr.issue_token(account, expires_in=60)
 
     # Simulate a "new process read" by calling _jwt_secret() fresh — still same env value
-    assert _jwt_secret() == "env-secret-roundtrip"
+    assert _jwt_secret() == "env-secret-roundtrip-padded-1234"
 
     claims = await mgr.validate_token(token_obj.access_token)
     assert claims is not None
