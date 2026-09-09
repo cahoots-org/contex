@@ -5,13 +5,14 @@ from pathlib import Path
 import pytest
 
 from src.core.context_engine import ContextEngine
+from src.core.identity import ANONYMOUS_IDENTITY
 from src.core.models import DataPublishEvent
 from src.web.routes import project_stats, sandbox_home, subscribe_to_updates
 
 
-def _request_with(engine):
+def _request_with(engine, db=None):
     return types.SimpleNamespace(
-        app=types.SimpleNamespace(state=types.SimpleNamespace(context_engine=engine))
+        app=types.SimpleNamespace(state=types.SimpleNamespace(context_engine=engine, db=db))
     )
 
 
@@ -19,7 +20,7 @@ def _request_with(engine):
 async def test_sandbox_home_renders(db, redis):
     engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
-    resp = await sandbox_home(_request_with(engine))
+    resp = await sandbox_home(_request_with(engine, db))
     assert resp.template.name == "sandbox.html"
 
 
@@ -27,7 +28,12 @@ async def test_sandbox_home_renders(db, redis):
 async def test_subscribe_returns_event_stream(db, redis):
     engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
-    resp = await subscribe_to_updates(_request_with(engine), project_id="p", need="database connection settings")
+    resp = await subscribe_to_updates(
+        _request_with(engine, db),
+        project_id="p",
+        need="database connection settings",
+        identity=ANONYMOUS_IDENTITY,
+    )
     assert resp.media_type == "text/event-stream"
     assert resp.headers["Cache-Control"] == "no-cache"
 

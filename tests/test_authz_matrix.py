@@ -25,7 +25,9 @@ rather than explicitly constructing ASGITransport — both behave identically in
 this httpx version and the former is the idiomatic form used in the brief.
 """
 import pytest
+import httpx
 from httpx import AsyncClient
+from unittest.mock import AsyncMock, MagicMock
 
 from src.core import authz
 from src.core.authz import get_identity
@@ -41,12 +43,18 @@ def _identity(role: Role) -> Identity:
 def app_authed(monkeypatch):
     monkeypatch.setattr(authz, "auth_enabled", lambda: True)
     from main import app
+
+    mock_engine = MagicMock()
+    mock_engine.publish_data = AsyncMock(return_value="1")
+    app.state.context_engine = mock_engine
+    app.state.db = MagicMock()
+
     return app
 
 
 @pytest.mark.asyncio
 async def test_missing_key_is_401(app_authed):
-    async with AsyncClient(app=app_authed, base_url="http://t") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=app_authed), base_url="http://t") as c:
         r = await c.post("/api/v1/data/publish", json={})
         assert r.status_code == 401
 
@@ -55,7 +63,7 @@ async def test_missing_key_is_401(app_authed):
 async def test_readonly_cannot_publish(app_authed):
     app_authed.dependency_overrides[get_identity] = lambda: _identity(Role.READONLY)
     try:
-        async with AsyncClient(app=app_authed, base_url="http://t") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_authed), base_url="http://t") as c:
             r = await c.post("/api/v1/data/publish",
                              json={"project_id": "p", "data_key": "k", "data": {}})
             assert r.status_code == 403
@@ -67,7 +75,7 @@ async def test_readonly_cannot_publish(app_authed):
 async def test_publisher_can_reach_publish(app_authed):
     app_authed.dependency_overrides[get_identity] = lambda: _identity(Role.PUBLISHER)
     try:
-        async with AsyncClient(app=app_authed, base_url="http://t") as c:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_authed), base_url="http://t") as c:
             r = await c.post("/api/v1/data/publish",
                              json={"project_id": "p", "data_key": "k", "data": {}})
             assert r.status_code != 403  # authz passes (may 4xx/5xx on body/engine, not 403)
@@ -77,7 +85,7 @@ async def test_publisher_can_reach_publish(app_authed):
 
 @pytest.mark.asyncio
 async def test_legacy_api_alias_is_gone(app_authed):
-    async with AsyncClient(app=app_authed, base_url="http://t") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=app_authed), base_url="http://t") as c:
         # /api/... (non-v1) should 404 now that the alias is removed
         r = await c.post("/api/data/publish", json={})
         assert r.status_code == 404

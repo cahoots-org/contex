@@ -4,15 +4,15 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
+from src.api.deps import get_tenant_manager
 from src.core.tenant import (
     TenantManager,
-    Tenant,
     TenantPlan,
     TenantQuotas,
     TenantUsage,
 )
 from src.core.authz import require, public
-from src.core.rbac import Role, Permission
+from src.core.rbac import Permission
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -89,39 +89,6 @@ class TenantUsageResponse(BaseModel):
 
 
 # ============================================================
-# Helper Functions
-# ============================================================
-
-def get_tenant_manager(request: Request) -> TenantManager:
-    """Get TenantManager from request state or create new one"""
-    manager = getattr(request.state, 'tenant_manager', None)
-    if not manager:
-        manager = TenantManager(request.app.state.db)
-    return manager
-
-
-async def require_admin_permission(request: Request):
-    """
-    Dependency to require admin permission for tenant management.
-
-    In production, this should check the API key's role.
-    """
-    # Get role from request state (set by RBAC middleware)
-    role = getattr(request.state, 'api_key_role', None)
-
-    if role is None:
-        # For now, allow if no RBAC middleware (development mode)
-        logger.warning("No RBAC context, allowing tenant management")
-        return
-
-    if role.role != Role.ADMIN:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required for tenant management"
-        )
-
-
-# ============================================================
 # Tenant CRUD Endpoints
 # ============================================================
 
@@ -129,7 +96,6 @@ async def require_admin_permission(request: Request):
 async def create_tenant(
     request: Request,
     body: CreateTenantRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Create a new tenant.
@@ -206,7 +172,6 @@ async def list_tenants(
     is_active: Optional[bool] = None,
     limit: int = 100,
     offset: int = 0,
-    _: None = Depends(require_admin_permission),
 ):
     """
     List all tenants with optional filtering.
@@ -254,7 +219,6 @@ async def list_tenants(
 async def get_tenant(
     request: Request,
     tenant_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get tenant by ID.
@@ -291,7 +255,6 @@ async def update_tenant(
     request: Request,
     tenant_id: str,
     body: UpdateTenantRequest,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Update tenant properties.
@@ -363,7 +326,6 @@ async def delete_tenant(
     request: Request,
     tenant_id: str,
     force: bool = False,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Delete a tenant.
@@ -420,7 +382,6 @@ async def delete_tenant(
 async def get_tenant_usage(
     request: Request,
     tenant_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Get current usage for a tenant.
@@ -464,7 +425,6 @@ async def get_tenant_usage(
 async def reset_monthly_usage(
     request: Request,
     tenant_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Reset monthly usage counters for a tenant.
@@ -497,7 +457,6 @@ async def reset_monthly_usage(
 async def list_tenant_projects(
     request: Request,
     tenant_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     List all projects for a tenant.
@@ -524,7 +483,6 @@ async def add_project_to_tenant(
     request: Request,
     tenant_id: str,
     project_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Add a project to a tenant.
@@ -560,7 +518,6 @@ async def remove_project_from_tenant(
     request: Request,
     tenant_id: str,
     project_id: str,
-    _: None = Depends(require_admin_permission),
 ):
     """
     Remove a project from a tenant.

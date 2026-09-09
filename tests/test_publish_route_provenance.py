@@ -30,12 +30,14 @@ async def test_publish_route_stamps_provenance():
     mock_engine = MagicMock()
     mock_engine.publish_data = AsyncMock(return_value="42")
     app.state.context_engine = mock_engine
+    app.state.db = MagicMock()
 
     # Patch post-publish side effects so they don't error in a bare app.
     # The route does lazy `from src.core.metrics import ...` inside the function body,
     # so we patch at src.core.metrics (the canonical location of the objects).
     chainable_hist = _chainable_histogram()
     with (
+        patch("src.api.routes.ensure_project_access", new=AsyncMock()),
         patch("src.api.routes.audit_log", new=AsyncMock()),
         patch("src.api.routes.emit_webhook", new=AsyncMock()),
         patch("src.core.metrics.record_event_published", new=MagicMock()),

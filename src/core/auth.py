@@ -118,20 +118,35 @@ async def create_api_key(
     return raw_key, api_key
 
 
-async def revoke_api_key(db: DatabaseManager, key_id: str) -> bool:
+async def revoke_api_key(
+    db: DatabaseManager, key_id: str, tenant_id: Optional[str] = None
+) -> bool:
     """
     Revoke an API key by ID.
 
     Args:
         db: Database manager
         key_id: Key ID to revoke
+        tenant_id: When provided, only revokes the key if it belongs to this tenant
 
     Returns:
-        True if key was revoked, False if not found
+        True if key was revoked, False if not found or tenant mismatch
     """
     from sqlalchemy import delete
 
     async with db.session() as session:
+        if tenant_id is not None:
+            result = await session.execute(
+                delete(APIKeyModel).where(
+                    APIKeyModel.key_id == key_id,
+                    APIKeyModel.tenant_id == tenant_id,
+                )
+            )
+            if result.rowcount > 0:
+                logger.info("API key revoked", key_id=key_id)
+                return True
+            return False
+
         result = await session.execute(
             delete(APIKeyModel).where(APIKeyModel.key_id == key_id)
         )
