@@ -216,21 +216,3 @@ async def get_api_key(db: DatabaseManager, key_id: str) -> Optional[APIKey]:
             )
 
     return None
-
-
-async def get_api_key_by_hash(db: DatabaseManager, key_hash: str) -> Optional[APIKeyModel]:
-    """
-    Get an API key record by hash (internal use).
-
-    Args:
-        db: Database manager
-        key_hash: SHA256 hash of the raw key
-
-    Returns:
-        APIKeyModel if found, None otherwise
-    """
-    async with db.session() as session:
-        result = await session.execute(
-            select(APIKeyModel).where(APIKeyModel.key_hash == key_hash)
-        )
-        return result.scalar_one_or_none()
