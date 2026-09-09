@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from src.core.authz import public, auth_enabled
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
+from src.core.hardened_config import check_hardened_config
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
@@ -249,6 +250,9 @@ async def lifespan(app: FastAPI):
         protected=os.getenv("CONTEX_PROTECTED_MODE", "true").lower() == "true",
     )
     logger.info("Protected mode check passed")
+
+    check_hardened_config()
+    logger.info("Hardened-config preflight passed")
 
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;

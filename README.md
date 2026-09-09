@@ -267,7 +267,10 @@ await client.assign_role(
 # Enable authentication (disabled by default for easy development)
 export AUTH_ENABLED=true
 
-# REQUIRED when AUTH_ENABLED=true: Set API key pepper for secure hashing
+# REQUIRED when AUTH_ENABLED=true: server refuses to boot without this
+export SERVICE_ACCOUNT_JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# RECOMMENDED: pepper for API key hashing (defense in depth)
 export API_KEY_PEPPER=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # Optional: Configure rate limiting
@@ -276,6 +279,11 @@ export RATE_LIMIT_REQUESTS=100  # requests per minute
 ```
 
 > ⚠️ **Note:** Authentication is **opt-in** (disabled by default). This allows easy local development without API keys. Always set `AUTH_ENABLED=true` for production deployments.
+
+**Hardening behaviour with `AUTH_ENABLED=true`:**
+- `SERVICE_ACCOUNT_JWT_SECRET` is required — the server refuses to boot if it is not set.
+- `API_KEY_PEPPER` is strongly recommended — a warning is logged at boot if absent.
+- Tenant isolation activates automatically; every request is scoped to the authenticated identity's tenant.
 
 **[Security Overview](docs/SECURITY.md)** | **[RBAC Guide](docs/RBAC.md)**
 
