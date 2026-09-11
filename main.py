@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from src.core.authz import public, auth_enabled
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
+from src.core.hardened_config import check_hardened_config
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
@@ -250,6 +251,9 @@ async def lifespan(app: FastAPI):
     )
     logger.info("Protected mode check passed")
 
+    check_hardened_config()
+    logger.info("Hardened-config preflight passed")
+
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;
     # now that app.state.context_engine is set, the handlers will resolve it correctly.
@@ -336,7 +340,7 @@ logger.info("Security headers middleware enabled", hsts=ENABLE_HSTS)
 
 # Add security middleware stack (order matters - executed in reverse)
 from src.core.tracing_middleware import TracingMiddleware
-from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware, MULTI_TENANT_ENABLED
+from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware
 
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
@@ -357,11 +361,11 @@ else:
 # middleware (see #38). A follow-up will re-introduce rate limiting correctly.
 logger.warning("Rate limiting is DISABLED (pending #38 path-matching fix)")
 
-# Tenant middleware (identifies tenant, enforces quotas)
-if MULTI_TENANT_ENABLED:
-    app.add_middleware(TenantQuotaMiddleware)
-    app.add_middleware(TenantMiddleware)
-    logger.info("Multi-tenant middleware enabled")
+# Tenant middleware always runs: it sets the default-tenant context in demo mode
+# and enforces identity-derived tenant + quotas when auth is on.
+app.add_middleware(TenantQuotaMiddleware)
+app.add_middleware(TenantMiddleware)
+logger.info("Tenant middleware enabled")
 
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"

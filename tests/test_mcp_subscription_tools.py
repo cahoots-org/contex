@@ -4,7 +4,6 @@ from sqlalchemy import text
 from unittest.mock import MagicMock
 
 from src.core import mcp_adapter
-from src.core import subscriptions as subscriptions_module
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -90,9 +89,8 @@ async def test_multitenant_create_read_delete_lifecycle(db, redis, monkeypatch):
     fake_token.scopes = ["query_data"]
     fake_token.claims = {"tenant_id": tenant_id, "projects": []}
 
-    monkeypatch.setattr(mcp_adapter, "auth_enabled", lambda: True)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: fake_token)
-    monkeypatch.setattr(subscriptions_module, "MULTI_TENANT_ENABLED", True)
 
     engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()

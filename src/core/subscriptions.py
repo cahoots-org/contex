@@ -10,13 +10,13 @@ from sqlalchemy import select
 
 from src.core.db_models import Subscription
 from src.core.tenant import DEFAULT_TENANT_ID
-from src.core.tenant_middleware import MULTI_TENANT_ENABLED
+from src.core.authz import auth_enabled
 
 logger = logging.getLogger(__name__)
 
 
 def _assert_sub_tenant(row, tenant_id):
-    if MULTI_TENANT_ENABLED and tenant_id is not None and row.tenant_id != tenant_id:
+    if auth_enabled() and tenant_id is not None and row.tenant_id != tenant_id:
         raise PermissionError("Permission denied")
 
 
