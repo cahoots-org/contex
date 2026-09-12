@@ -8,6 +8,7 @@ real ContextEngine backed by the live Postgres event store and assert they
 return 200 for a normal case.
 """
 
+import httpx
 import numpy as np
 import pytest
 import pytest_asyncio
@@ -41,7 +42,7 @@ async def client(engine):
     app = FastAPI()
     app.include_router(version_router)
     app.state.context_engine = engine
-    async with AsyncClient(app=app, base_url="http://test") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
