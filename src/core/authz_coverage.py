@@ -6,6 +6,8 @@ from starlette.routing import Mount, Route, WebSocketRoute
 
 from src.core.authz import require, public
 
+# /mcp is the MCP streamable endpoint (self-authenticates via the SDK TokenVerifier,
+# per-tool default-deny); /static is framework assets.
 ALLOWED_MOUNTS = {"/mcp", "/static"}
 PUBLIC_FRAMEWORK_PATHS = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 
