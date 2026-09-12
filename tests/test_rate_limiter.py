@@ -1,5 +1,6 @@
 """Tests for rate limiting with PostgreSQL"""
 
+import httpx
 import pytest
 import pytest_asyncio
 import time
@@ -134,7 +135,7 @@ class TestRateLimitMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_allows_within_limit(self, app_with_rate_limit):
         """Test that middleware allows requests within limit"""
-        async with AsyncClient(app=app_with_rate_limit, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_with_rate_limit), base_url="http://test") as client:
             # Make several requests (should all succeed)
             for i in range(5):
                 response = await client.get(
@@ -167,7 +168,7 @@ class TestRateLimitMiddleware:
     @pytest.mark.asyncio
     async def test_middleware_skips_health_checks(self, app_with_rate_limit):
         """Test that middleware skips rate limiting for health checks"""
-        async with AsyncClient(app=app_with_rate_limit, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_with_rate_limit), base_url="http://test") as client:
             # Make many health check requests (should never be rate limited)
             for i in range(100):
                 response = await client.get("/health")

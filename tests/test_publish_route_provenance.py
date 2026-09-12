@@ -4,6 +4,7 @@ Test: HTTP publish route stamps server-attested provenance (source/actor/tenant_
 TDD: this test must FAIL before the route wiring (Task 4) and PASS after.
 """
 
+import httpx
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI, Request
@@ -43,7 +44,7 @@ async def test_publish_route_stamps_provenance():
         patch("src.core.metrics.record_event_published", new=MagicMock()),
         patch("src.core.metrics.publish_duration_seconds", new=chainable_hist),
     ):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/data/publish",
                 json={"project_id": "route-prov", "data_key": "k", "data": {"x": 1}},
