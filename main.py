@@ -306,14 +306,12 @@ _mcp_server, _mcp_bus = build_mcp_server(
     lambda: app.state.context_engine,
     db_accessor=lambda: app.state.db,
 )
-# Serve the streamable-HTTP endpoint at exactly /mcp. The SDK builds a Starlette
-# Route at streamable_http_path, so graft that route onto the app directly:
-# app.mount("/mcp", ...) would prefix it to /mcp/mcp, and mounting a root-path
-# sub-app 307-redirects /mcp -> /mcp/ (which non-redirect-following MCP clients
-# reject). The session-manager lifecycle is driven explicitly in lifespan
-# (session_manager.run()), so the sub-app is only a source of the route.
-_mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/mcp")
-app.router.routes.extend(_mcp_starlette_app.routes)
+# Mount the MCP streamable-HTTP app under /mcp. The sub-app serves at its own root
+# ("/"), so the endpoint is /mcp — passing streamable_http_path="/mcp" here would
+# compose with the mount prefix to /mcp/mcp. Starlette 307-redirects /mcp -> /mcp/,
+# which MCP clients follow. The session-manager lifecycle is run in lifespan.
+_mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/")
+app.mount("/mcp", _mcp_starlette_app)
 
 # CORS Configuration
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]

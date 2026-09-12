@@ -6,12 +6,10 @@ from starlette.routing import Mount, Route, WebSocketRoute
 
 from src.core.authz import require, public
 
-ALLOWED_MOUNTS = {"/static"}
+# /mcp is the MCP streamable endpoint (self-authenticates via the SDK TokenVerifier,
+# per-tool default-deny); /static is framework assets.
+ALLOWED_MOUNTS = {"/mcp", "/static"}
 PUBLIC_FRAMEWORK_PATHS = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
-# Bare Starlette routes that enforce their own auth. The MCP streamable endpoint
-# is grafted onto the app as a Route (not a Mount) and self-authenticates via the
-# SDK TokenVerifier (per-tool default-deny).
-SELF_AUTH_ROUTES = {"/mcp"}
 
 
 def _dependant_is_marked(dependant) -> bool:
@@ -44,13 +42,8 @@ def find_uncovered_routes(app) -> list[str]:
             # No HTTP dependant; require explicit allowlisting when one is added.
             uncovered.append(f"WEBSOCKET {route.path} (websocket routes need explicit review)")
             continue
-        # Bare Starlette Route (e.g. framework health, MCP) — allow only if in the
-        # public set or the self-authenticating set.
-        if (
-            isinstance(route, Route)
-            and route.path not in PUBLIC_FRAMEWORK_PATHS
-            and route.path not in SELF_AUTH_ROUTES
-        ):
+        # Bare Starlette Route (e.g. framework health) — allow only if in the public set.
+        if isinstance(route, Route) and route.path not in PUBLIC_FRAMEWORK_PATHS:
             # FastAPI mounts most things as APIRoute; a bare Route is unusual → flag it.
             uncovered.append(f"ROUTE {route.path} (unexpected bare route)")
     return uncovered
