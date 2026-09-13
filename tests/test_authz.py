@@ -1,4 +1,5 @@
 # tests/test_authz.py
+import httpx
 import pytest
 from fastapi import Depends, FastAPI
 from httpx import AsyncClient
@@ -34,14 +35,14 @@ def test_require_and_public_contract():
 @pytest.mark.asyncio
 async def test_auth_off_allows_everything(monkeypatch):
     monkeypatch.setattr(authz, "auth_enabled", lambda: False)
-    async with AsyncClient(app=_build_app(), base_url="http://t") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=_build_app()), base_url="http://t") as c:
         assert (await c.get("/publish")).status_code == 200  # no key needed when off
 
 
 @pytest.mark.asyncio
 async def test_auth_on_missing_key_401(monkeypatch):
     monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-    async with AsyncClient(app=_build_app(), base_url="http://t") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=_build_app()), base_url="http://t") as c:
         assert (await c.get("/publish")).status_code == 401
         assert (await c.get("/open")).status_code == 200  # public bypasses
 
@@ -53,5 +54,5 @@ async def test_auth_on_insufficient_scope_403(monkeypatch):
                         tenant_id=None, projects=(), role=None)
     app = _build_app()
     app.dependency_overrides[get_identity] = lambda: readonly
-    async with AsyncClient(app=app, base_url="http://t") as c:
+    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         assert (await c.get("/publish")).status_code == 403

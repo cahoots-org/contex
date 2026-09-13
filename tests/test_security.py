@@ -1,5 +1,6 @@
 """Tests for security features"""
 
+import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
@@ -43,7 +44,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_security_headers_present(self, app_with_security_headers):
         """Test that security headers are added to responses"""
-        async with AsyncClient(app=app_with_security_headers, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_with_security_headers), base_url="http://test") as client:
             response = await client.get("/test")
 
             assert response.status_code == 200
@@ -69,7 +70,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_hsts_only_on_https(self, app_with_security_headers):
         """Test that HSTS is only added for HTTPS requests"""
-        async with AsyncClient(app=app_with_security_headers, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_with_security_headers), base_url="http://test") as client:
             response = await client.get("/test")
 
             # HTTP request should not have HSTS header
@@ -85,7 +86,7 @@ class TestSecurityHeaders:
         async def test_endpoint():
             return {"status": "ok"}
 
-        async with AsyncClient(app=app, base_url="https://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://test") as client:
             response = await client.get("/test")
 
             # HTTPS request should have HSTS header
@@ -103,7 +104,7 @@ class TestSecurityHeaders:
         async def test_endpoint():
             return {"status": "ok"}
 
-        async with AsyncClient(app=app, base_url="https://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://test") as client:
             response = await client.get("/test")
 
             # Even for HTTPS, HSTS should not be present when disabled
@@ -112,7 +113,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_csp_frame_ancestors_none(self, app_with_security_headers):
         """Test that CSP includes frame-ancestors 'none'"""
-        async with AsyncClient(app=app_with_security_headers, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app_with_security_headers), base_url="http://test") as client:
             response = await client.get("/test")
 
             csp = response.headers.get("Content-Security-Policy", "")

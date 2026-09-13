@@ -1,5 +1,6 @@
 """Tests for Multi-Tenant Management with PostgreSQL"""
 
+import httpx
 import pytest
 import pytest_asyncio
 
@@ -627,7 +628,7 @@ class TestTenantMiddlewareIdentityDerivation:
         from httpx import AsyncClient
 
         app, raw_key = app_and_key
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get(
                 "/whoami",
                 headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-b"},
@@ -639,7 +640,7 @@ class TestTenantMiddlewareIdentityDerivation:
         from httpx import AsyncClient
 
         app, raw_key = app_and_key
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get(
                 "/whoami",
                 headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-a"},
@@ -652,7 +653,7 @@ class TestTenantMiddlewareIdentityDerivation:
         from httpx import AsyncClient
 
         app, raw_key = app_and_key
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/whoami", headers={"X-API-Key": raw_key})
         assert resp.status_code == 200
         assert resp.json()["tenant_id"] == "tenant-a"
