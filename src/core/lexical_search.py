@@ -28,13 +28,22 @@ class PgFtsLexical:
     async def search(
         self, project_id: str, query: str, top_k: int
     ) -> list[tuple[str, float]]:
+        # OR the query lexemes instead of AND-ing them (#138). plainto_tsquery
+        # AND's every term ('a' & 'b' & 'c'), so a doc matching only a subset
+        # matched nothing and hybrid search degraded to vector-only. Reusing
+        # plainto's parsed text (stemmed, stopword-filtered) and swapping ' & '
+        # for ' | ' keeps tokenization identical while broadening to partial
+        # matches; ts_rank_cd ordering + RRF fusion handle precision.
         sql = text(
             """
-            SELECT node_key,
-                   ts_rank_cd(search_text, plainto_tsquery('english', :q)) AS score
-            FROM embeddings
+            WITH q AS (
+                SELECT replace(plainto_tsquery('english', :q)::text,
+                               ' & ', ' | ')::tsquery AS tsq
+            )
+            SELECT node_key, ts_rank_cd(search_text, q.tsq) AS score
+            FROM embeddings, q
             WHERE project_id = :project_id
-              AND search_text @@ plainto_tsquery('english', :q)
+              AND search_text @@ q.tsq
             ORDER BY score DESC
             LIMIT :top_k
             """
