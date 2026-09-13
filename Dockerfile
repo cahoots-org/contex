@@ -1,5 +1,5 @@
 # Multi-stage build for Context Engine Service
-FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228 as builder
+FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea as builder
 
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     find /opt/venv -name "*.pyo" -delete
 
 # Production stage
-FROM --platform=linux/amd64 python:3.11-slim@sha256:a0939570b38cddeb861b8e75d20b1c8218b21562b18f301171904b544e8cf228
+FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
