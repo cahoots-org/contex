@@ -125,7 +125,7 @@ class WebhookDispatcher:
             with breaker:
                 return await self._send_webhook_internal(url, payload, secret, event_type)
         except CircuitBreakerOpen:
-            print(f"[WebhookDispatcher] ⚠ Circuit breaker OPEN for {url}, skipping")
+            logger.warning("Circuit breaker OPEN, skipping", url=url)
             return False
     
     async def _send_webhook_internal(

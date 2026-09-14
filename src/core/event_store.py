@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Event, EventSequenceCounter
+from src.core.limits import clamp_count
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -117,6 +118,7 @@ class EventStore:
         except (ValueError, TypeError):
             since_sequence = 0
 
+        count = clamp_count(count)
         async with self.db.session() as session:
             result = await session.execute(
                 select(Event)
@@ -160,14 +162,14 @@ class EventStore:
         Returns:
             List of events
         """
+        count = clamp_count(count)
         async with self.db.session() as session:
             query = (
                 select(Event)
                 .where(Event.project_id == project_id)
                 .order_by(Event.sequence.asc())
+                .limit(count)
             )
-            if count:
-                query = query.limit(count)
 
             result = await session.execute(query)
             events = result.scalars().all()
