@@ -19,6 +19,23 @@ from src.core.vector_search import PgVectorSearch
 
 logger = get_logger(__name__)
 
+_MODEL_CACHE: dict[str, SentenceTransformer] = {}
+
+
+def _load_model(model_name: str) -> SentenceTransformer:
+    """Load a SentenceTransformer, cached per process by name.
+
+    The model is stateless for inference, so one instance is shared across all
+    matchers instead of re-loading ~80MB (and re-checking the HuggingFace Hub) on
+    every ContextEngine construction.
+    """
+    model = _MODEL_CACHE.get(model_name)
+    if model is None:
+        logger.info("Loading embedding model", model_name=model_name)
+        model = SentenceTransformer(model_name)
+        _MODEL_CACHE[model_name] = model
+    return model
+
 
 class SemanticDataMatcher:
     """
@@ -51,10 +68,9 @@ class SemanticDataMatcher:
             similarity_threshold: Minimum similarity to match (0-1)
             max_matches: Maximum matches to return per need
         """
-        logger.info("Loading embedding model", model_name=model_name)
         self.db = db
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.model = _load_model(model_name)
         self.threshold = similarity_threshold
         self.max_matches = max_matches
         self.embedding_dim = 384  # all-MiniLM-L6-v2 embedding dimension
