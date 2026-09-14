@@ -68,6 +68,36 @@ def run_migrations_to_head(database_url: str) -> None:
             os.environ["DATABASE_URL"] = prev
 
 
+async def _assert_migratable(url: str) -> None:
+    """Refuse to migrate a populated database that alembic never stamped.
+
+    A database with application tables but no ``alembic_version`` row was created
+    outside the migration chain (e.g. an old ``create_all``). Running
+    ``alembic upgrade head`` against it replays from revision 001 and crash-loops
+    on ``DuplicateTableError``. Fail fast with an actionable message instead — this
+    is exactly the state that once crash-looped production.
+    """
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            if await conn.scalar(text("SELECT to_regclass('public.alembic_version')")) is not None:
+                return
+            table_count = await conn.scalar(
+                text("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+            )
+            if table_count:
+                raise RuntimeError(
+                    "Database has tables but no alembic_version row: it was created "
+                    "outside the migration chain (e.g. create_all). Refusing to run "
+                    "'alembic upgrade head' — it would replay from revision 001 and "
+                    "fail on the existing tables. Reset the database (migrate from "
+                    "empty), or if the schema already matches head, stamp it with "
+                    "'alembic stamp head'."
+                )
+    finally:
+        await engine.dispose()
+
+
 class DatabaseManager:
     """Manages PostgreSQL database connections using SQLAlchemy async."""
 
@@ -162,6 +192,7 @@ class DatabaseManager:
             "DATABASE_URL",
             "postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
         )
+        await _assert_migratable(url)
         await asyncio.to_thread(run_migrations_to_head, url)
 
     async def disconnect(self) -> None:
