@@ -150,8 +150,8 @@ class SemanticDataMatcher:
         # Store original data for context
         data_original = data if isinstance(data, str) else json.dumps(data)
 
-        # pgvector mode - store in PostgreSQL. The lexical FTS index (search_text)
-        # is a generated column maintained by Postgres, so no separate indexing.
+        # pgvector mode - store in PostgreSQL; pg_search BM25 index is maintained
+        # automatically on insert/update via the embeddings_bm25 index.
         async with self.db.session() as session:
             for node in nodes:
                 # Generate node key (combine data_key with node path)

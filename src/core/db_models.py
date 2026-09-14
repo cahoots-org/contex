@@ -12,7 +12,6 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -23,7 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, relationship
 
 
@@ -278,18 +277,6 @@ class Embedding(Base):
     data_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     embedding = mapped_column(Vector(384), nullable=False)  # 384-dim for all-MiniLM-L6-v2
-    # Full-text search vector for lexical (BM25-style) matching, kept in sync by
-    # Postgres itself: a persisted generated column derived from description +
-    # data_original. Backs the GIN index below so PgFtsLexical can query it with
-    # ts_rank_cd/plainto_tsquery without maintaining the tsvector in app code.
-    search_text = mapped_column(
-        TSVECTOR,
-        Computed(
-            "to_tsvector('english', coalesce(description,'') || ' ' || coalesce(data_original,''))",
-            persisted=True,
-        ),
-        nullable=True,
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -299,7 +286,6 @@ class Embedding(Base):
         Index("idx_embeddings_project", "project_id"),
         Index("idx_embeddings_project_node_key", "project_id", "node_key", unique=True),
         Index("idx_embeddings_project_data_key", "project_id", "data_key"),
-        Index("idx_embeddings_search_text", "search_text", postgresql_using="gin"),
         # HNSW ANN index for vector cosine similarity search. Without this, the
         # create_all path (and every test DB) would fall back to a sequential scan
         # for semantic search. Kept in sync with alembic migration 001.
