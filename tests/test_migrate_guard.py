@@ -22,7 +22,11 @@ def _url(dbname: str) -> str:
 @pytest.mark.asyncio
 async def test_migrate_refuses_populated_unstamped_db():
     tmp = "contex_unstamped_guard"
-    admin = create_async_engine(_url("contex"), poolclass=NullPool, isolation_level="AUTOCOMMIT")
+    # CREATE/DROP DATABASE from the test DB itself (always present); a dedicated
+    # maintenance DB like "contex" is not guaranteed in CI.
+    admin = create_async_engine(
+        os.environ["DATABASE_URL"], poolclass=NullPool, isolation_level="AUTOCOMMIT"
+    )
     try:
         async with admin.connect() as conn:
             await conn.execute(text(f'DROP DATABASE IF EXISTS "{tmp}"'))
