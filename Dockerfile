@@ -4,8 +4,9 @@ FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
-# Install system dependencies
+# Install system dependencies (upgrade first to pick up base-image security fixes)
 RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get upgrade -y -o Acquire::Retries=5 && \
     apt-get install -y --fix-missing -o Acquire::Retries=5 \
     gcc \
     g++ \
@@ -33,8 +34,10 @@ FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
-# Install curl for healthcheck
+# Upgrade base-image packages (patches perl-base and other CVEs Trivy flags on the
+# runtime image) and install curl for the healthcheck.
 RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get upgrade -y -o Acquire::Retries=5 && \
     apt-get install -y --fix-missing -o Acquire::Retries=5 curl && \
     rm -rf /var/lib/apt/lists/*
 
