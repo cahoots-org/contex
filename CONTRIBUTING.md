@@ -42,7 +42,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 ### Prerequisites
 
 - Python 3.11+
-- PostgreSQL 16+ with pgvector extension
+- ParadeDB (`paradedb/paradedb:0.25.9-pg18`) — bundles `pg_search` (BM25) + `pgvector`
 - Redis 7.0+ (for pub/sub only)
 - Git
 
@@ -65,12 +65,12 @@ By participating in this project, you agree to maintain a respectful and inclusi
    docker compose up -d postgres redis
 
    # Or manually:
-   # PostgreSQL with pgvector
+   # ParadeDB (bundles pg_search BM25 + pgvector)
    docker run -d -p 5432:5432 \
      -e POSTGRES_DB=contex \
      -e POSTGRES_USER=contex \
      -e POSTGRES_PASSWORD=contex_password \
-     pgvector/pgvector:pg16
+     paradedb/paradedb:0.25.9-pg18
 
    # Redis (for pub/sub only)
    docker run -d -p 6379:6379 redis:7-alpine

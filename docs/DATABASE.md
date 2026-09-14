@@ -1,12 +1,13 @@
 # Database Setup Guide
 
-Contex uses PostgreSQL with pgvector for all persistent storage, including event sourcing, semantic search embeddings, and application data.
+Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persistent storage, including event sourcing, semantic search embeddings, and application data.
 
 ## Overview
 
 **Stack:**
-- **PostgreSQL 16** - Primary database
-- **pgvector** - Vector similarity search extension
+- **ParadeDB (PostgreSQL 18)** - Primary database, bundles `pg_search` (BM25) and `pgvector` extensions
+- **pg_search** - BM25 full-text search (ParadeDB extension)
+- **pgvector** - Vector similarity search extension (bundled with ParadeDB)
 - **SQLAlchemy (async)** - ORM with asyncpg driver
 - **Alembic** - Database migrations
 - **Redis** - Pub/sub notifications only (lightweight)
@@ -20,7 +21,7 @@ The `docker-compose.yml` includes all required services:
 ```yaml
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: paradedb/paradedb:0.25.9-pg18
     environment:
       - POSTGRES_DB=contex
       - POSTGRES_USER=contex
@@ -28,7 +29,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
       interval: 5s
@@ -57,29 +58,27 @@ docker compose up -d
 
 ### Manual Setup
 
-1. **Install PostgreSQL 16+** with pgvector:
+1. **Run ParadeDB** (bundles `pg_search` and `pgvector` — no manual extension build needed):
 
 ```bash
-# macOS
-brew install postgresql@16
-brew install pgvector
-
-# Ubuntu/Debian
-sudo apt install postgresql-16 postgresql-16-pgvector
-
-# From source
-git clone https://github.com/pgvector/pgvector.git
-cd pgvector && make && sudo make install
+docker run -d -p 5432:5432 \
+  -e POSTGRES_DB=contex \
+  -e POSTGRES_USER=contex \
+  -e POSTGRES_PASSWORD=contex_password \
+  -v postgres-data:/var/lib/postgresql \
+  paradedb/paradedb:0.25.9-pg18
 ```
 
-2. **Create database and enable extensions**:
+Both `pg_search` (BM25) and `pgvector` are bundled in the ParadeDB image and are enabled automatically when you run `alembic upgrade head` (or on first boot via the boot migration). No manual `CREATE EXTENSION` steps are required.
+
+2. **Verify extensions are active**:
 
 ```sql
 CREATE DATABASE contex;
 \c contex
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "vector";
+-- Extensions are created by migrations; verify they are loaded:
+SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_search');
 ```
 
 3. **Configure connection**:

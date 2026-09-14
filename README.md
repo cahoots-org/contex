@@ -94,7 +94,7 @@ services:
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
-      - HYBRID_SEARCH_ENABLED=true  # pgvector + Postgres FTS hybrid (RRF)
+      - HYBRID_SEARCH_ENABLED=true  # pgvector + pg_search BM25 hybrid (RRF)
     depends_on:
       postgres:
         condition: service_healthy
