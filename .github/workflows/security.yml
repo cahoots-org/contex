@@ -50,11 +50,13 @@ jobs:
 
       - name: Fail on high severity issues
         run: |
-          # Check for high severity issues (severity >= HIGH, confidence >= MEDIUM)
-          HIGH_COUNT=$(bandit -r src/ -f json 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(len([r for r in data.get('results', []) if r['issue_severity'] == 'HIGH' and r['issue_confidence'] in ['HIGH', 'MEDIUM']]))")
+          # Parse the JSON report written by the scan step above. Re-running bandit
+          # and piping its stdout is unreliable: newer bandit prints a progress bar
+          # to stdout, which corrupts `-f json` output and breaks json parsing.
+          HIGH_COUNT=$(python3 -c "import json; d=json.load(open('bandit-results.json')); print(len([r for r in d.get('results', []) if r['issue_severity'] == 'HIGH' and r['issue_confidence'] in ('HIGH', 'MEDIUM')]))")
           if [ "$HIGH_COUNT" -gt 0 ]; then
             echo "::error::Found $HIGH_COUNT high severity security issues!"
-            bandit -r src/ -ll -ii
+            cat bandit-results.txt
             exit 1
           fi
           echo "No high severity issues found"
