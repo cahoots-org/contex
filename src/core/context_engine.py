@@ -68,16 +68,14 @@ class ContextEngine:
         except Exception:
             # Fallback if tiktoken has issues
             self.tokenizer = None
-            print(
-                "[ContextEngine] ⚠ Tiktoken unavailable, context size limits disabled"
-            )
+            logger.warning("Tiktoken unavailable, context size limits disabled")
 
         # Track registered agents: agent_id -> {project_id, needs, notification_method, ...}
         self.agents: Dict[str, Dict[str, Any]] = {}
 
-        print("[ContextEngine] ✓ Initialized")
+        logger.info("Initialized")
         if self.max_context_size:
-            print(f"[ContextEngine]   Max context size: {self.max_context_size} tokens")
+            logger.debug("Max context size: %s tokens", self.max_context_size)
 
     async def initialize(self):
         """Initialize pgvector index for vector similarity search"""
@@ -99,7 +97,7 @@ class ContextEngine:
                 return toon.encode(data)
             except NotImplementedError:
                 # TOON encoder not yet available, fall back to JSON
-                print("[ContextEngine] ⚠ TOON format requested but not yet implemented, using JSON")
+                logger.warning("TOON format requested but not yet implemented, using JSON")
                 return json.dumps(data, indent=2)
         else:
             return json.dumps(data, indent=2)
@@ -157,10 +155,10 @@ class ContextEngine:
         if total_tokens <= max_tokens:
             return matches  # No truncation needed
 
-        print(
-            f"[ContextEngine] ⚠ Context size ({total_tokens} tokens) exceeds limit ({max_tokens} tokens)"
+        logger.warning(
+            "Context size (%s tokens) exceeds limit (%s tokens)", total_tokens, max_tokens
         )
-        print(f"[ContextEngine]   Truncating to fit budget...")
+        logger.warning("Truncating to fit budget...")
 
         # Phase 1: Keep highest similarity match from each need
         result = {need: [] for need in matches.keys()}
@@ -210,8 +208,8 @@ class ContextEngine:
         original_count = sum(len(need_matches) for need_matches in matches.values())
         truncated_count = sum(len(need_matches) for need_matches in result.values())
 
-        print(
-            f"[ContextEngine]   Kept {truncated_count}/{original_count} matches ({final_tokens} tokens)"
+        logger.warning(
+            "Kept %s/%s matches (%s tokens)", truncated_count, original_count, final_tokens
         )
 
         return result
@@ -241,7 +239,7 @@ class ContextEngine:
         data = event.data
         format_hint = event.data_format
 
-        print(f"[ContextEngine] Publishing data: {project_id}:{data_key}")
+        logger.debug("Publishing data: %s:%s", project_id, data_key)
 
         # 1. Register data with semantic matcher (normalizes and stores)
         await self.semantic_matcher.register_data(
@@ -299,7 +297,7 @@ class ContextEngine:
         needs = registration.data_needs
         last_seen = registration.last_seen_sequence or "0"
 
-        print(f"[ContextEngine] Registering agent: {agent_id} (project: {project_id})")
+        logger.debug("Registering agent: %s (project: %s)", agent_id, project_id)
 
         # 1. Match agent needs to available data
         matches = await self.semantic_matcher.match_agent_needs(project_id, needs)
@@ -368,10 +366,10 @@ class ContextEngine:
             need: len(need_matches) for need, need_matches in matches.items()
         }
 
-        print(f"[ContextEngine] ✓ Agent {agent_id} registered:")
-        print(f"[ContextEngine]   Needs: {len(needs)}")
-        print(f"[ContextEngine]   Data keys: {len(data_keys)}")
-        print(f"[ContextEngine]   Caught up: {len(missed_events)} events")
+        logger.info("Agent %s registered", agent_id)
+        logger.debug("Needs: %s", len(needs))
+        logger.debug("Data keys: %s", len(data_keys))
+        logger.debug("Caught up: %s events", len(missed_events))
 
         return RegistrationResponse(
             status="registered",
@@ -419,7 +417,7 @@ class ContextEngine:
                 serialized_payload = toon.encode(context_payload)
             except NotImplementedError:
                 # TOON encoder not yet available, fall back to JSON
-                print(f"[ContextEngine] ⚠ TOON format requested but not yet implemented, using JSON for {agent_id}")
+                logger.warning("TOON format requested but not yet implemented, using JSON for %s", agent_id)
                 serialized_payload = json.dumps(context_payload)
                 format_type = "json"  # Update format type for logging
         else:
@@ -430,8 +428,8 @@ class ContextEngine:
             # Redis pub/sub
             channel = registration.notification_channel or f"agent:{agent_id}:updates"
             await self.redis.publish(channel, serialized_payload)
-            print(
-                f"[ContextEngine] Sent initial context to {agent_id} via Redis ({format_type.upper()} format)"
+            logger.debug(
+                "Sent initial context to %s via Redis (%s format)", agent_id, format_type.upper()
             )
 
         elif registration.notification_method == "webhook":
@@ -443,12 +441,12 @@ class ContextEngine:
                 secret=registration.webhook_secret,
             )
             if success:
-                print(
-                    f"[ContextEngine] Sent initial context to {agent_id} via webhook ({format_type.upper()} format)"
+                logger.debug(
+                    "Sent initial context to %s via webhook (%s format)", agent_id, format_type.upper()
                 )
             else:
-                print(
-                    f"[ContextEngine] ⚠ Failed to send initial context to {agent_id} via webhook"
+                logger.warning(
+                    "Failed to send initial context to %s via webhook", agent_id
                 )
 
     async def _notify_affected_agents(
@@ -465,11 +463,11 @@ class ContextEngine:
         ]
 
         if not affected_agents:
-            print(f"[ContextEngine] No agents affected by {data_key}")
+            logger.debug("No agents affected by %s", data_key)
             return
 
-        print(
-            f"[ContextEngine] Notifying {len(affected_agents)} agents about {data_key} update"
+        logger.debug(
+            "Notifying %s agents about %s update", len(affected_agents), data_key
         )
 
         for agent_id in affected_agents:
@@ -526,9 +524,9 @@ class ContextEngine:
         """Remove agent registration"""
         if agent_id in self.agents:
             del self.agents[agent_id]
-            print(f"[ContextEngine] Unregistered agent: {agent_id}")
+            logger.info("Unregistered agent: %s", agent_id)
         else:
-            print(f"[ContextEngine] Agent {agent_id} not found")
+            logger.warning("Agent %s not found", agent_id)
 
     def get_registered_agents(self) -> List[str]:
         """Get list of registered agent IDs"""
@@ -556,7 +554,7 @@ class ContextEngine:
         Returns:
             List of matched data sources with similarity scores
         """
-        print(f"[ContextEngine] Ad-hoc query for project {project_id}: '{query}'")
+        logger.debug("Ad-hoc query for project %s: '%s'", project_id, query)
 
         # Pass per-request top_k/threshold through instead of mutating the shared
         # matcher, so concurrent ad-hoc queries can't corrupt each other (#105).
@@ -567,6 +565,6 @@ class ContextEngine:
         # Extract matches for the query
         results = matches.get(query, [])
 
-        print(f"[ContextEngine] Found {len(results)} matches for query")
+        logger.debug("Found %s matches for query", len(results))
 
         return results
