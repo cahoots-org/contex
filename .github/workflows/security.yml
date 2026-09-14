@@ -174,13 +174,16 @@ jobs:
           name: pip-audit-results
           path: pip-audit-results.json
 
-      - name: Check for critical vulnerabilities
+      - name: Report vulnerabilities with fixes
         run: |
-          # Parse results and fail on critical vulnerabilities
-          if pip-audit --format json | python3 -c "import sys, json; data=json.load(sys.stdin); sys.exit(1 if any(v.get('fix_versions') for v in data) else 0)" 2>/dev/null; then
-            echo "No fixable vulnerabilities found"
+          # Parse the JSON report written above (pip-audit's structure is
+          # {"dependencies": [{"vulns": [{"fix_versions": [...]}]}]}). Re-running
+          # and piping stdout is unreliable — the progress spinner corrupts it.
+          FIXABLE=$(python3 -c "import json; d=json.load(open('pip-audit-results.json')); deps=d.get('dependencies', []) if isinstance(d, dict) else d; print(sum(1 for dep in deps for v in dep.get('vulns', []) if v.get('fix_versions')))")
+          if [ "$FIXABLE" -gt 0 ]; then
+            echo "::warning::pip-audit found $FIXABLE vulnerabilities with fixes available"
           else
-            echo "::warning::Some vulnerabilities have fixes available"
+            echo "No fixable vulnerabilities found"
           fi
 
   # SAST with Semgrep

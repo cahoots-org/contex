@@ -46,3 +46,28 @@ async def test_scoped_to_project(db):
     await _seed(db)
     results = await PgFtsLexical(db).search("other-project", "timeout", top_k=10)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_more_query_terms_ranks_higher(db):
+    # BM25 relevance ordering: a doc matching more (and rarer) query terms
+    # outranks one matching fewer. This is the whole point of the pg_search
+    # switch — it guards against the score column / ORDER BY silently breaking.
+    async with db.session() as session:
+        session.add_all([
+            Embedding(project_id="p1", data_key="cfg", node_key="both",
+                      description="database timeout and retry configuration",
+                      data={}, data_original="", data_format="text",
+                      embedding=[0.0] * 384),
+            Embedding(project_id="p1", data_key="cfg", node_key="one",
+                      description="database timeout configuration only",
+                      data={}, data_original="", data_format="text",
+                      embedding=[0.0] * 384),
+        ])
+        await session.commit()
+    results = await PgFtsLexical(db).search("p1", "timeout retry", top_k=10)
+    keys = [k for k, _ in results]
+    assert keys[0] == "both"          # matches both query terms → ranks first
+    assert set(keys) == {"both", "one"}
+    scores = [s for _, s in results]
+    assert scores == sorted(scores, reverse=True)

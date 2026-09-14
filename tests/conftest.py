@@ -96,47 +96,38 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     try:
         await manager.connect_test(database_url)
 
-        # Schema is provisioned once per session by the `_migrated_schema`
-        # fixture via `alembic upgrade head`; here we just connect and, after the
-        # test, clean up the rows it wrote.
-
-        # Ensure the default tenant row exists before every test.  Cleanup
-        # (below) deletes all tenant rows; this re-establishes the invariant
-        # that migration 007 creates so FK-constrained inserts don't fail.
-        await ensure_default_tenant(manager)
+        # Start every test from a clean slate. The schema is provisioned once per
+        # session (`_migrated_schema`); truncating here makes each test immune to
+        # rows left by a prior test — including a prior test whose teardown failed.
+        await _reset_database(manager)
 
         yield manager
 
     finally:
-        # Clean up test data
         if manager.is_connected:
-            try:
-                async with manager.session() as session:
-                    # Delete in reverse order of dependencies
-                    await session.execute(text("DELETE FROM subscriptions"))
-                    await session.execute(text("DELETE FROM webhook_deliveries"))
-                    await session.execute(text("DELETE FROM webhook_endpoints"))
-                    await session.execute(text("DELETE FROM audit_events"))
-                    await session.execute(text("DELETE FROM rate_limit_entries"))
-                    await session.execute(text("DELETE FROM agent_registrations"))
-                    await session.execute(text("DELETE FROM embeddings"))
-                    await session.execute(text("DELETE FROM snapshots"))
-                    await session.execute(text("DELETE FROM events"))
-                    await session.execute(text("DELETE FROM event_sequence_counters"))
-                    await session.execute(text("DELETE FROM service_account_keys"))
-                    await session.execute(text("DELETE FROM service_accounts"))
-                    await session.execute(text("DELETE FROM api_key_roles"))
-                    await session.execute(text("DELETE FROM api_keys"))
-                    await session.execute(text("DELETE FROM tenant_projects"))
-                    # Preserve the default tenant (seeded by migration 007) so
-                    # FK-constrained inserts work in every test regardless of
-                    # db-access path; only default-owned children above are cleared.
-                    await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id != 'default'"))
-                    await session.execute(text("DELETE FROM tenants WHERE tenant_id != 'default'"))
-            except Exception:
-                pass  # Tables might not exist yet
-
             await manager.disconnect()
+
+
+async def _reset_database(manager: DatabaseManager) -> None:
+    """Truncate every app table and re-seed the default tenant.
+
+    One ``TRUNCATE ... CASCADE`` is order-independent and resets serial PKs, so it
+    replaces a hand-maintained, FK-ordered ``DELETE`` list that silently missed
+    new tables and swallowed errors. ``alembic_version`` is preserved so the schema
+    stays at head; the default tenant (migration 007's invariant, required by
+    ``NOT NULL`` tenant FKs) is re-created after the wipe.
+    """
+    async with manager.session() as session:
+        rows = await session.execute(text(
+            "SELECT tablename FROM pg_tables "
+            "WHERE schemaname = 'public' AND tablename <> 'alembic_version'"
+        ))
+        tables = [row[0] for row in rows]
+        if tables:
+            quoted = ", ".join(f'"{t}"' for t in tables)
+            await session.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+            await session.commit()
+    await ensure_default_tenant(manager)
 
 
 @pytest_asyncio.fixture
