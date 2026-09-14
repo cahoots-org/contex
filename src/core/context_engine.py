@@ -14,6 +14,7 @@ from .event_store import EventStore
 from .webhook_dispatcher import WebhookDispatcher
 from .matcher import HybridMatcher
 from .subscriptions import SubscriptionService
+from .limits import clamp_top_k
 from .models import (
     AgentRegistration,
     DataPublishEvent,
@@ -556,6 +557,7 @@ class ContextEngine:
         """
         logger.debug("Ad-hoc query for project %s: '%s'", project_id, query)
 
+        top_k = clamp_top_k(top_k)
         # Pass per-request top_k/threshold through instead of mutating the shared
         # matcher, so concurrent ad-hoc queries can't corrupt each other (#105).
         matches = await self.semantic_matcher.match_agent_needs(

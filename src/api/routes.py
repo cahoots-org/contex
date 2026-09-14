@@ -16,6 +16,7 @@ from src.core.models import (
     MatchedDataSource,
 )
 from src.core.auth import create_api_key, revoke_api_key, list_api_keys, APIKey
+from src.core.limits import check_batch_size
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -1281,6 +1282,10 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
             "results": [...]
         }
     """
+    try:
+        check_batch_size(events, "events")
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     tenant_mgr = get_tenant_manager(request)
     for pid in {e.project_id for e in events}:
         await ensure_project_access(identity, pid, tenant_mgr, create_if_absent=True)
@@ -1372,6 +1377,10 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
             "results": [...]
         }
     """
+    try:
+        check_batch_size(registrations, "registrations")
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     try:
         import time
         from src.core.metrics import record_agent_registered, registration_duration_seconds
