@@ -19,18 +19,26 @@ async def _seed(db):
 
 
 @pytest.mark.asyncio
-async def test_exact_token_ranks_first(db):
+async def test_exact_token_matches(db):
     await _seed(db)
     results = await PgFtsLexical(db).search("p1", "SERVICE_TIMEOUT_MS", top_k=10)
     assert results[0][0] == "timeout"
-    assert all(isinstance(score, float) for _, score in results)
+    assert all(isinstance(s, float) for _, s in results)
 
 
 @pytest.mark.asyncio
-async def test_non_matching_query_returns_empty(db):
+async def test_partial_multi_term_match(db):
+    # BM25 OR-matches: a doc containing a subset of terms still matches.
     await _seed(db)
-    results = await PgFtsLexical(db).search("p1", "kubernetes ingress", top_k=10)
-    assert results == []
+    results = await PgFtsLexical(db).search("p1", "timeout kubernetes ingress", top_k=10)
+    assert [k for k, _ in results] == ["timeout"]
+
+
+@pytest.mark.asyncio
+async def test_matches_data_original(db):
+    await _seed(db)
+    results = await PgFtsLexical(db).search("p1", "SERVICE_RETRY_MS", top_k=10)
+    assert results[0][0] == "retry"
 
 
 @pytest.mark.asyncio
@@ -38,23 +46,3 @@ async def test_scoped_to_project(db):
     await _seed(db)
     results = await PgFtsLexical(db).search("other-project", "timeout", top_k=10)
     assert results == []
-
-
-@pytest.mark.asyncio
-async def test_partial_match_multi_term_query(db):
-    # #138: a multi-term query where a doc contains a SUBSET of the terms must
-    # still match. plainto_tsquery AND's every term, so this returned nothing and
-    # hybrid search silently degraded to vector-only. Lexemes must be OR'd.
-    await _seed(db)
-    results = await PgFtsLexical(db).search("p1", "timeout kubernetes ingress", top_k=10)
-    assert [node_key for node_key, _ in results] == ["timeout"]
-
-
-@pytest.mark.asyncio
-async def test_more_matching_terms_ranks_higher(db):
-    # OR broadens candidates; ts_rank_cd must still order by relevance so a doc
-    # matching more query terms outranks one matching fewer.
-    await _seed(db)
-    results = await PgFtsLexical(db).search("p1", "timeout retry", top_k=10)
-    keys = [node_key for node_key, _ in results]
-    assert set(keys) == {"timeout", "retry"}

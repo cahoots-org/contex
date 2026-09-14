@@ -139,7 +139,7 @@ spec:
 
 ## PostgreSQL Setup
 
-PostgreSQL with pgvector is the primary database for all persistent data.
+ParadeDB (PostgreSQL 18 bundled with `pg_search` BM25 and `pgvector`) is the required database. Stock Postgres images are not supported — migration 008 creates the `pg_search` and `vector` extensions which are only available in the ParadeDB image.
 
 ### Option 1: Bundled PostgreSQL (Helm)
 
@@ -148,8 +148,8 @@ PostgreSQL with pgvector is the primary database for all persistent data.
 postgresql:
   enabled: true
   image:
-    repository: pgvector/pgvector
-    tag: pg16
+    repository: paradedb/paradedb
+    tag: 0.25.9-pg18
   auth:
     database: contex
     username: contex
@@ -182,7 +182,7 @@ contex:
     url: "postgresql+asyncpg://user:pass@db.example.com:5432/contex?sslmode=require"
 ```
 
-> **Note:** Ensure pgvector extension is enabled in your managed PostgreSQL instance.
+> **Note:** Ensure your managed PostgreSQL instance has both `pg_search` and `pgvector` extensions available. ParadeDB-compatible managed offerings (or a self-hosted ParadeDB image) are required; stock Postgres instances lack `pg_search`.
 
 ## Redis Setup (Pub/Sub Only)
 
@@ -556,7 +556,7 @@ spec:
 ✅ **Multiple deployment options**: Helm, Kustomize, raw manifests
 ✅ **Production-ready**: Health checks, autoscaling, monitoring
 ✅ **Secure**: Secrets management, security contexts
-✅ **Scalable**: HPA, resource limits, PostgreSQL with pgvector
+✅ **Scalable**: HPA, resource limits, ParadeDB (pg_search + pgvector)
 ✅ **Observable**: Prometheus metrics, structured logging
 
 Your Contex deployment is ready for production!
