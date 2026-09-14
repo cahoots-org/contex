@@ -54,8 +54,8 @@ Prefer a UI? Open `http://localhost:8001/sandbox`, pick a project, type a need, 
 ## Features
 
 - **Semantic Matching** - AI-powered filtering using sentence transformers
-- **Vector Search** - PostgreSQL + pgvector for efficient semantic similarity search
-- **Hybrid Search** - Combines BM25 lexical search with semantic vector search for better accuracy
+- **Vector Search** - ParadeDB (`pgvector`) for efficient semantic similarity search
+- **Hybrid Search** - Combines BM25 (`pg_search`) lexical search with semantic vector search for better accuracy
 - **Real-time Updates** - Redis pub/sub or webhooks for instant notifications
 - **Schema-Free** - Publish JSON, YAML, CSV, XML, or plain text
 - **Event Sourcing** - Complete audit trail for time-travel queries and compliance
@@ -77,6 +77,8 @@ pip install contex-python
 ```
 
 ### 2. Start Contex Server
+
+Contex requires **ParadeDB** (`paradedb/paradedb`) as its database. ParadeDB bundles `pg_search` (BM25 full-text search) and `pgvector` (embeddings) in a single Postgres-compatible image. Railway deployments should use the ParadeDB template. Stock Postgres images are not supported.
 
 Create a `docker-compose.yml`:
 
@@ -100,7 +102,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: paradedb/paradedb:0.25.9-pg18  # ParadeDB: pg_search (BM25) + pgvector
     environment:
       - POSTGRES_DB=contex
       - POSTGRES_USER=contex
@@ -342,7 +344,7 @@ Contex supports hybrid search that combines:
 - **Semantic Vector Search** - AI-powered understanding of meaning
 - **Reciprocal Rank Fusion (RRF)** - Intelligent merging of both approaches
 
-Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. Hybrid search fuses pgvector similarity with Postgres full-text search using Reciprocal Rank Fusion (RRF).
+Enable hybrid search by setting `HYBRID_SEARCH_ENABLED=true` in your environment. Hybrid search fuses pgvector similarity with `pg_search` BM25 using Reciprocal Rank Fusion (RRF). Both extensions are bundled in the ParadeDB image.
 
 **Benefits:**
 - Better accuracy for queries with specific technical terms
@@ -457,7 +459,7 @@ pip install -e ".[dev]"
 
 - **[Python SDK](sdk/python/README.md)** - Client library documentation
 - **[Security](docs/SECURITY.md)** - Authentication, RBAC, rate limiting
-- **[Database Setup](docs/DATABASE.md)** - PostgreSQL + pgvector configuration
+- **[Database Setup](docs/DATABASE.md)** - ParadeDB (pg_search + pgvector) configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md)** - Time-travel queries and compliance
 - **[RBAC](docs/RBAC.md)** - Role-based access control guide
 - **[Rate Limiting](docs/RATE_LIMITING.md)** - Protection and limits

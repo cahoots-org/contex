@@ -65,7 +65,7 @@ jobs:
 
     services:
       postgres:
-        image: ankane/pgvector:latest
+        image: paradedb/paradedb:0.25.9-pg18
         ports:
           - 5432:5432
         env:
@@ -110,11 +110,11 @@ jobs:
           sleep 2
         done
 
-    - name: Setup pgvector extension
+    - name: Setup extensions
       env:
         PGPASSWORD: contex_password
       run: |
-        psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+        psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_search;"
 
     - name: Run pytest
       env:
