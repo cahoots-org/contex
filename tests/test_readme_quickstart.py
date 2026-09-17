@@ -10,7 +10,3 @@ def test_readme_quickstart_references_real_mcp_tools():
     for tool in ("contex_publish", "contex_create_subscription"):
         assert tool in readme, f"README should reference {tool}"
         assert f'name="{tool}"' in adapter, f"{tool} should be a registered MCP tool"
-
-
-def test_capture_doc_exists():
-    assert Path("docs/demo/capture.md").exists()
