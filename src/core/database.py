@@ -76,6 +76,13 @@ async def _assert_migratable(url: str) -> None:
     ``alembic upgrade head`` against it replays from revision 001 and crash-loops
     on ``DuplicateTableError``. Fail fast with an actionable message instead — this
     is exactly the state that once crash-looped production.
+
+    Extension-owned tables do not count. The ParadeDB image ships ``postgis``,
+    whose ``public.spatial_ref_sys`` exists in every freshly created database, so
+    a plain ``count(*)`` over ``public`` sees it and refuses to migrate an
+    otherwise-empty database — breaking first boot for every new install. Only
+    tables not owned by an extension (``pg_depend.deptype = 'e'``) signal a
+    create_all-origin schema.
     """
     engine = create_async_engine(url, poolclass=NullPool)
     try:
@@ -83,7 +90,15 @@ async def _assert_migratable(url: str) -> None:
             if await conn.scalar(text("SELECT to_regclass('public.alembic_version')")) is not None:
                 return
             table_count = await conn.scalar(
-                text("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+                text(
+                    "SELECT count(*) FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE c.relkind = 'r' AND n.nspname = 'public' "
+                    "AND NOT EXISTS ("
+                    "  SELECT 1 FROM pg_depend d "
+                    "  WHERE d.objid = c.oid AND d.deptype = 'e'"
+                    ")"
+                )
             )
             if table_count:
                 raise RuntimeError(
