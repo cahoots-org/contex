@@ -431,5 +431,4 @@ ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
 ## Related Documentation
 
 - [Event Sourcing](EVENT_SOURCING.md) - How events are stored and queried
-- [Security](SECURITY.md) - Authentication and access control
 - [Metrics](METRICS.md) - Monitoring and observability
