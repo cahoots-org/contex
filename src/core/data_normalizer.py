@@ -14,6 +14,9 @@ from .parsers import (
     CodeParser,
     PlainTextParser,
 )
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DataNormalizer:
@@ -116,7 +119,7 @@ class DataNormalizer:
                 content = " | ".join(content_parts)
 
             except (TypeError, ValueError) as e:
-                print(f"[DataNormalizer] Warning: Failed to serialize data: {type(e).__name__}, using str() fallback")
+                logger.warning("Failed to serialize data, using str() fallback", error_type=type(e).__name__)
                 content = str(normalized_data)
 
             # For chunks, focus on content. Only include data_key if it's meaningful

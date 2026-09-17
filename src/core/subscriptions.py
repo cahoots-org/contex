@@ -9,6 +9,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from src.core.db_models import Subscription
+from src.core.limits import check_needs, clamp_top_k
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 
@@ -29,6 +30,8 @@ class SubscriptionService:
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
     ) -> str:
+        check_needs(needs)
+        top_k = clamp_top_k(top_k)
         sub_id = subscription_id or f"sub_{uuid4().hex}"
         bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold)
         async with self.db.session() as session:
