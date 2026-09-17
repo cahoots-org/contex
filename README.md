@@ -84,7 +84,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Live subscriptions:** materialized, bounded context bundles that re-match themselves when data changes.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
 - **Event sourcing:** stores every change as an immutable event for audit trails and time-travel. See [Event Sourcing](docs/EVENT_SOURCING.md).
-- **Security:** API-key auth, RBAC, and rate limiting, off by default for local dev. See [Security](docs/SECURITY.md).
+- **Security:** API-key auth and RBAC, off by default for local dev. See [Security](docs/SECURITY.md).
 - **Multi-tenancy:** always-on tenant isolation. The default tenant applies when `AUTH_ENABLED=false`, and full identity-derived isolation activates under `AUTH_ENABLED=true`.
 - **Observability:** structured logging, Prometheus metrics, and OpenTelemetry tracing.
 
@@ -106,10 +106,6 @@ export SERVICE_ACCOUNT_JWT_SECRET=$(python -c "import secrets; print(secrets.tok
 
 # Recommended: pepper for API-key hashing (defense in depth)
 export API_KEY_PEPPER=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
-
-# Optional: rate limiting
-export RATE_LIMIT_ENABLED=true
-export RATE_LIMIT_REQUESTS=100  # per minute
 ```
 
 With `AUTH_ENABLED=true`, Contex authenticates every MCP tool call, scopes every request to the caller's tenant (tenant isolation activates automatically), and applies RBAC to who can publish, query, and subscribe. Connectors and other services authenticate as service accounts.
@@ -141,11 +137,10 @@ Contex requires **ParadeDB** (`paradedb/paradedb`) as its database. It bundles `
 
 ## Documentation
 
-- **[Security](docs/SECURITY.md):** authentication, RBAC, rate limiting
+- **[Security](docs/SECURITY.md):** authentication and RBAC
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md):** time-travel queries and compliance
 - **[RBAC](docs/RBAC.md):** role-based access control
-- **[Rate Limiting](docs/RATE_LIMITING.md):** protection and limits
 - **[Metrics](docs/METRICS.md):** Prometheus metrics and monitoring
 - **[Logging](docs/LOGGING.md):** structured logging and observability
 - **[Operational Runbooks](docs/RUNBOOKS.md):** incident response and operations
