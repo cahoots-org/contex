@@ -1,9 +1,8 @@
 services:
   postgres:
     image: paradedb/paradedb:0.25.9-pg18
-    container_name: contex-postgres
     ports:
-      - "5432:5432"
+      - "${CONTEX_PG_PORT:-5432}:5432"
     environment:
       - POSTGRES_DB=contex
       - POSTGRES_USER=contex
@@ -19,9 +18,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: contex-redis
     ports:
-      - "6379:6379"
+      - "${CONTEX_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,12 +32,15 @@ services:
       context: .
       platforms:
         - linux/amd64
-    container_name: contex-app
     ports:
-      - "8001:8001"
+      - "${CONTEX_HTTP_PORT:-8001}:8001"
     environment:
       - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
       - REDIS_URL=redis://redis:6379
+      # Local dev runs open (no auth). The container must bind 0.0.0.0 for
+      # Docker to publish the port, so opt out of protected mode here. Enable
+      # AUTH_ENABLED=true for any network-reachable deployment (see README).
+      - CONTEX_PROTECTED_MODE=false
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
       - MAX_CONTEXT_SIZE=51200
