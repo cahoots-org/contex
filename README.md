@@ -84,7 +84,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Live subscriptions:** materialized, bounded context bundles that re-match themselves when data changes.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
 - **Event sourcing:** stores every change as an immutable event for audit trails and time-travel. See [Event Sourcing](docs/EVENT_SOURCING.md).
-- **Security:** API-key auth and RBAC, off by default for local dev. See [Security](docs/SECURITY.md).
+- **Security:** API-key auth and RBAC, off by default for local dev.
 - **Multi-tenancy:** always-on tenant isolation. The default tenant applies when `AUTH_ENABLED=false`, and full identity-derived isolation activates under `AUTH_ENABLED=true`.
 - **Observability:** structured logging, Prometheus metrics, and OpenTelemetry tracing.
 
@@ -110,7 +110,7 @@ export API_KEY_PEPPER=$(python -c "import secrets; print(secrets.token_urlsafe(3
 
 With `AUTH_ENABLED=true`, Contex authenticates every MCP tool call, scopes every request to the caller's tenant (tenant isolation activates automatically), and applies RBAC to who can publish, query, and subscribe. Connectors and other services authenticate as service accounts.
 
-See the [Security Overview](docs/SECURITY.md) and [RBAC Guide](docs/RBAC.md).
+See the [RBAC Guide](docs/RBAC.md).
 
 ## Roadmap
 
@@ -137,7 +137,6 @@ Contex requires **ParadeDB** (`paradedb/paradedb`) as its database. It bundles `
 
 ## Documentation
 
-- **[Security](docs/SECURITY.md):** authentication and RBAC
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md):** time-travel queries and compliance
 - **[RBAC](docs/RBAC.md):** role-based access control
