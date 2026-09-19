@@ -10,6 +10,8 @@ Agents shouldn't have to fetch their own context. With Contex, an agent declares
 
 Today an agent fetches context itself. It decides what to search for, calls the tool, and stitches the results into its reasoning, turn after turn. And it only ever finds what it already knew to ask for. Contex flips that: the agent subscribes to a need once, and Contex delivers the relevant context and keeps it current as your data changes.
 
+**Context that stays current on its own.** The agent reads its context instead of searching for it every turn, and Contex keeps that context correct as your data changes. When something you publish moves, Contex re-checks the subscriptions it affects and refreshes them. The agent spends no turns re-searching to stay current, and it never runs on stale context.
+
 ## How it works
 
 A producer **publishes** data to Contex in any format (JSON, text, and more), with no schema. An agent **subscribes** by describing a need in plain English. Contex matches the data to the need by meaning and gives the agent a subscription that always holds the current context relevant to that need. When the underlying data changes, the subscription updates itself. The agent re-reads it but never re-queries.
