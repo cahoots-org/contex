@@ -44,6 +44,19 @@ header {
     margin-bottom: 2rem;
 }
 
+header .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+header .logo-mark {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: 10px;
+}
+
 header .logo h1 {
     font-size: 2rem;
     font-weight: 700;
