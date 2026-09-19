@@ -1,10 +1,14 @@
-# Contex
+<p align="center">
+  <img src="docs/assets/social-card.png" alt="Contex — an MCP-native context bus" width="820">
+</p>
 
-**An MCP-native context bus. Your agents declare what they need, and the context comes to them.**
+<p align="center"><b>An MCP-native context bus. Your agents declare what they need, and the context comes to them.</b></p>
 
-[![CI](https://github.com/cahoots-org/contex/actions/workflows/ci.yml/badge.svg)](https://github.com/cahoots-org/contex/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/cahoots-org/contex/actions/workflows/ci.yml"><img src="https://github.com/cahoots-org/contex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
+</p>
 
 Agents shouldn't have to fetch their own context. With Contex, an agent declares what it needs in plain English, and Contex assembles the right context and keeps it current. The agent never formulates a query, calls a search tool, or looks anything up.
 
