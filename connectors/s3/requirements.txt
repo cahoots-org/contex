@@ -1,2 +1,2 @@
+-r ../base/requirements.txt
 boto3>=1.34
-moto[s3]>=5.0

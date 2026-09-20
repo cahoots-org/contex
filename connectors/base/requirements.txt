@@ -1,0 +1,3 @@
+# Runtime deps shared by every connector (the connectors/base framework).
+mcp>=2,<3
+pyyaml>=6,<7
