@@ -1,0 +1,20 @@
+contex:
+  url: http://localhost:8001/mcp
+  project_id: my-app
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  token: ${GITHUB_TOKEN}
+  repos:
+    - cahoots-org/contex
+  resources: [files, issues, pulls]
+  state: all
+
+batch_size: 200
+include_binary: false
+
+paths:
+  exclude:
+    - "*.lock"
+    - "vendor/*"
+    - "*.min.js"
