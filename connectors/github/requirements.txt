@@ -1,2 +1,2 @@
+-r ../base/requirements.txt
 httpx>=0.27,<1
-PyYAML>=6.0

@@ -80,6 +80,56 @@ jobs:
       run: |
         pytest tests/ -v --tb=short
 
+  connectors:
+    name: Connector Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: contex_test
+          POSTGRES_USER: contex
+          POSTGRES_PASSWORD: contex_password
+        options: >-
+          --health-cmd "pg_isready -U contex -d contex_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-connectors-${{ hashFiles('connectors/**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-connectors-
+
+    - name: Install connector dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest==9.1.1 pytest-asyncio==1.4.0
+        pip install -r connectors/postgres/requirements.txt
+        pip install -r connectors/s3/requirements-dev.txt
+        pip install -r connectors/github/requirements.txt
+
+    - name: Run connector tests
+      env:
+        POSTGRES_TEST_DSN: postgresql://contex:contex_password@localhost:5432/contex_test
+      run: |
+        pytest connectors/postgres connectors/s3 connectors/github -v --tb=short
+
   docker:
     name: Verify Docker Build
     runs-on: ubuntu-latest
