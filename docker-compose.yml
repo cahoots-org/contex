@@ -34,6 +34,12 @@ services:
         - linux/amd64
     ports:
       - "${CONTEX_HTTP_PORT:-8001}:8001"
+    # Load .env if present (copy .env.example → .env to set AUTH_ENABLED, secrets,
+    # etc.). Optional so a fresh clone still starts. The environment: values below
+    # take precedence where they overlap, keeping the dev stack self-contained.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
       - REDIS_URL=redis://redis:6379
