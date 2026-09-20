@@ -6,14 +6,19 @@ give direct access to the rate-limit response headers needed for backoff.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
+log = logging.getLogger(__name__)
+
 _BASE = "https://api.github.com"
 _ACCEPT = "application/vnd.github+json"
+# GitHub's current published REST API version. The date advances only when
+# GitHub ships a new version; unknown dates are ignored and fall back to it.
 _API_VERSION = "2022-11-28"
 
 
@@ -35,6 +40,11 @@ class GitHubClient:
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        else:
+            log.warning(
+                "No GitHub token set (source.token) — running unauthenticated: "
+                "60 requests/hour and no access to private repos."
+            )
         self._http = httpx.AsyncClient(
             base_url=_BASE,
             headers=headers,
@@ -99,9 +109,20 @@ def _next_link(link_header: str) -> str | None:
 
 
 def _rate_limit_wait(response: httpx.Response) -> float:
-    """Seconds to sleep based on rate-limit response headers."""
-    remaining = response.headers.get("X-RateLimit-Remaining", "1")
-    if remaining != "0":
+    """Seconds to sleep based on rate-limit response headers.
+
+    Secondary (abuse) limits send ``Retry-After``; primary limits send
+    ``X-RateLimit-Remaining: 0`` with an ``X-RateLimit-Reset`` epoch. A 403/429
+    with neither is a real error (bad token, no access) — wait 0 so the caller
+    raises.
+    """
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            return 60.0
+    if response.headers.get("X-RateLimit-Remaining", "1") != "0":
         return 0.0
     reset = response.headers.get("X-RateLimit-Reset")
     if not reset:

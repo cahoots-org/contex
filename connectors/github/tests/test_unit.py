@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from connectors.base import allowed
-from connectors.github.client import _next_link, _rate_limit_wait
+from connectors.github.client import GitHubClient, _next_link, _rate_limit_wait
 from connectors.github.readers import is_binary_path
 
 
@@ -126,6 +126,28 @@ def test_rate_limit_wait_zero_remaining_no_reset():
 def test_rate_limit_wait_missing_remaining():
     resp = _make_response(200, {})
     assert _rate_limit_wait(resp) == 0.0
+
+
+def test_rate_limit_wait_honors_retry_after():
+    resp = _make_response(429, {"Retry-After": "12", "X-RateLimit-Remaining": "42"})
+    assert _rate_limit_wait(resp) == 12.0
+
+
+def test_rate_limit_wait_retry_after_non_numeric():
+    resp = _make_response(429, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})
+    assert _rate_limit_wait(resp) == 60.0
+
+
+def test_no_token_logs_warning(caplog):
+    with caplog.at_level("WARNING"):
+        GitHubClient("")
+    assert any("unauthenticated" in r.message for r in caplog.records)
+
+
+def test_token_no_warning(caplog):
+    with caplog.at_level("WARNING"):
+        GitHubClient("tok")
+    assert not any("unauthenticated" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
