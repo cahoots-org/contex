@@ -74,6 +74,25 @@ def _build_extensions(config: dict) -> frozenset[str]:
     return frozenset(ext if ext.startswith(".") else f".{ext}" for ext in raw)
 
 
+def _client_kwargs(source: dict) -> dict:
+    """Assemble boto3 S3 client kwargs from the source config.
+
+    ``endpoint_url`` targets S3-compatible stores (MinIO, R2, LocalStack).
+    Credentials fall back to the standard AWS chain when not set explicitly.
+    """
+    kwargs: dict = {}
+    if source.get("region"):
+        kwargs["region_name"] = source["region"]
+    if source.get("endpoint_url"):
+        kwargs["endpoint_url"] = source["endpoint_url"]
+    access_key = source.get("aws_access_key_id") or os.environ.get("AWS_ACCESS_KEY_ID")
+    secret_key = source.get("aws_secret_access_key") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if access_key and secret_key:
+        kwargs["aws_access_key_id"] = access_key
+        kwargs["aws_secret_access_key"] = secret_key
+    return kwargs
+
+
 def read_objects(config: dict) -> Iterator[ChangeEvent]:
     """Yield a ChangeEvent for each eligible object in the configured bucket.
 
@@ -83,18 +102,8 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
     source = config.get("source") or {}
     bucket = source["bucket"]
     prefix = source.get("prefix", "")
-    region = source.get("region")
 
-    aws_kwargs: dict = {}
-    if region:
-        aws_kwargs["region_name"] = region
-    access_key = source.get("aws_access_key_id") or os.environ.get("AWS_ACCESS_KEY_ID")
-    secret_key = source.get("aws_secret_access_key") or os.environ.get("AWS_SECRET_ACCESS_KEY")
-    if access_key and secret_key:
-        aws_kwargs["aws_access_key_id"] = access_key
-        aws_kwargs["aws_secret_access_key"] = secret_key
-
-    client = boto3.client("s3", **aws_kwargs)
+    client = boto3.client("s3", **_client_kwargs(source))
 
     include: list[str] | None = (config.get("keys") or {}).get("include") or None
     exclude: list[str] | None = (config.get("keys") or {}).get("exclude") or None

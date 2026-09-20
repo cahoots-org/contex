@@ -22,7 +22,8 @@ pip install -r connectors/s3/requirements.txt
 
 AWS credentials are read from the standard chain (environment variables,
 `~/.aws/credentials`, instance role). The connector only needs `s3:ListBucket`
-and `s3:GetObject` on the target bucket.
+and `s3:GetObject` on the target bucket. Set `source.endpoint_url` to point at an
+S3-compatible store such as MinIO, Cloudflare R2, or LocalStack.
 
 ## Configuration
 
@@ -38,6 +39,7 @@ source:
   bucket: my-knowledge-bucket
   prefix: docs/                             # optional; defaults to ""
   region: us-east-1
+  # endpoint_url: http://localhost:9000    # optional; for S3-compatible stores
   # Optional explicit credentials (prefer env/instance role instead):
   # aws_access_key_id: ${AWS_ACCESS_KEY_ID}
   # aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}

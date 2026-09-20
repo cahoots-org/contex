@@ -7,6 +7,8 @@ source:
   bucket: my-knowledge-bucket
   prefix: docs/
   region: us-east-1
+  # Optional endpoint for S3-compatible stores (MinIO, Cloudflare R2, LocalStack):
+  # endpoint_url: http://localhost:9000
   # Optional explicit credentials (prefer env/instance role instead):
   # aws_access_key_id: ${AWS_ACCESS_KEY_ID}
   # aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}

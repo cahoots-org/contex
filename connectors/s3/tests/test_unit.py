@@ -11,10 +11,33 @@ import pytest
 
 from connectors.s3.reader import (
     DEFAULT_TEXT_EXTENSIONS,
+    _client_kwargs,
     filter_key,
     is_text_extension,
     object_to_event,
 )
+
+
+class TestClientKwargs:
+    def test_empty_source_yields_no_kwargs(self, monkeypatch):
+        monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        assert _client_kwargs({}) == {}
+
+    def test_region_and_endpoint_passed_through(self):
+        kwargs = _client_kwargs({"region": "us-east-1", "endpoint_url": "http://localhost:9000"})
+        assert kwargs["region_name"] == "us-east-1"
+        assert kwargs["endpoint_url"] == "http://localhost:9000"
+
+    def test_explicit_credentials(self):
+        kwargs = _client_kwargs({"aws_access_key_id": "AK", "aws_secret_access_key": "SK"})
+        assert kwargs["aws_access_key_id"] == "AK"
+        assert kwargs["aws_secret_access_key"] == "SK"
+
+    def test_partial_credentials_ignored(self, monkeypatch):
+        monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        kwargs = _client_kwargs({"aws_access_key_id": "AK"})
+        assert "aws_access_key_id" not in kwargs
 
 
 class TestIsTextExtension:
