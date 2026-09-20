@@ -77,6 +77,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 | Tool | Purpose |
 |------|---------|
 | `contex_publish` | Publishes or updates context data for a project (schema-free). |
+| `contex_publish_batch` | Publishes or updates many items in one call (used by connectors). |
 | `contex_query` | Runs a one-shot semantic query over a project's context (stateless). |
 | `contex_create_subscription` | Creates a live subscription from plain-English needs and returns a `contex://subscriptions/{id}` resource URI. |
 | `contex_delete_subscription` | Deletes a subscription. |
@@ -93,6 +94,23 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Security:** API-key auth and RBAC, off by default for local dev.
 - **Multi-tenancy:** always-on tenant isolation. The default tenant applies when `AUTH_ENABLED=false`, and full identity-derived isolation activates under `AUTH_ENABLED=true`.
 - **Observability:** structured logging, Prometheus metrics, and OpenTelemetry tracing.
+
+## Connectors
+
+Connectors bulk-load an existing source into a Contex project with no glue code. Each is an out-of-process CLI: it reads the source read-only and publishes over MCP as a service account.
+
+| Connector | Loads |
+|-----------|-------|
+| **Postgres** | Rows from the tables you point it at — table/column allow-lists, binary columns skipped. |
+| **S3** | Text-like objects under a bucket/prefix; also MinIO, Cloudflare R2, and LocalStack via `endpoint_url`. |
+| **GitHub** | Files, issues, and pull requests from one or more repos. |
+
+```bash
+pip install -r connectors/postgres/requirements.txt
+python -m connectors.postgres --config connector.yaml
+```
+
+v1 connectors are **bulk snapshots**: a run reads the source and upserts every item by a stable key, so re-running (e.g. on a cron) is the refresh story. They are not live sync, and deletes don't propagate. See [connectors/README.md](connectors/README.md) and each connector's `connector.yaml.example`.
 
 ## Hybrid search
 
@@ -120,10 +138,11 @@ See the [RBAC Guide](docs/RBAC.md).
 
 ## Roadmap
 
-Today, data enters Contex through the publish tool. Your services and agents push what they know. The next major step closes the loop on ingestion so data arrives without glue code:
+[Connectors](#connectors) bulk-load Postgres, S3, and GitHub today, alongside the publish tools. Next, ingestion gets broader and more real-time:
 
-- **Connectors:** independently-scalable connector processes that ingest from common sources (GitHub, Slack, Postgres/CDC, Kafka and Redis streams) and publish into Contex over MCP, built on a generic change-event core so new sources are cheap to add.
-- **Connector SDK:** build your own connectors for niche sources.
+- **More connectors + an SDK:** more first-party sources (Slack, Atlassian) and a framework to build your own for niche ones.
+- **Live sync:** move beyond bulk snapshots to incremental/CDC updates and delete propagation.
+- **Document extraction:** pull text from PDF and DOCX (and OCR) instead of skipping them.
 - **Hardened ingestion:** throughput, idempotency, and incremental reconcile for high-volume streams.
 
 ## Development
@@ -139,10 +158,18 @@ docker compose up -d
 pytest tests/ -v
 ```
 
+Connectors have their own suites and dependencies; run one with, e.g.:
+
+```bash
+pip install -r connectors/s3/requirements-dev.txt
+pytest connectors/s3 -v
+```
+
 Contex requires **ParadeDB** (`paradedb/paradedb`) as its database. It bundles `pg_search` (BM25) and `pgvector` (embeddings) in one Postgres-compatible image. Contex does not support stock Postgres images. See [Database Setup](docs/DATABASE.md). Railway deployments should use the ParadeDB template.
 
 ## Documentation
 
+- **[Connectors](connectors/README.md):** bulk-load Postgres, S3, and GitHub into a project
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md):** time-travel queries and compliance
 - **[RBAC](docs/RBAC.md):** role-based access control
