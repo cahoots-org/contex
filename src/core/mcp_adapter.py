@@ -13,6 +13,7 @@ from mcp.server.subscriptions import InMemorySubscriptionBus
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
+from src.core.limits import check_batch_size
 from src.core.models import DataPublishEvent
 from src.core.rbac import Permission
 
@@ -130,5 +131,26 @@ def build_mcp_server(engine, db_accessor=None):
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
         ))
         return json.dumps({"published": data_key, "sequence": str(seq)})
+
+    @server.tool(name="contex_publish_batch",
+                 description="Publish/update many context items for a project in one call. "
+                             "items is a list of {data_key, data, data_format?}.")
+    async def contex_publish_batch(project_id: str, items: list[dict]) -> str:
+        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
+        try:
+            check_batch_size(items, "items")
+        except ValueError as exc:
+            raise ValueError(str(exc))
+        e = _get_engine()
+        published = 0
+        for item in items:
+            await e.publish_data(DataPublishEvent(
+                project_id=project_id,
+                data_key=item["data_key"],
+                data=item["data"],
+                data_format=item.get("data_format", "json"),
+            ))
+            published += 1
+        return json.dumps({"published": published})
 
     return server, bus
