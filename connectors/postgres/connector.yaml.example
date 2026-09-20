@@ -1,0 +1,21 @@
+contex:
+  url: http://localhost:8001/mcp
+  project_id: my-app
+  service_account_token: ${CONTEX_TOKEN}   # omit when AUTH_ENABLED=false
+
+source:
+  dsn: postgresql://readonly@db.internal:5432/app
+
+batch_size: 500
+include_binary: false
+
+tables:
+  # include: ["public.*"]             # keep only these (glob patterns)
+  exclude: ["audit.*", "public.sessions"]
+
+columns:
+  # include: ["id", "name", "created_at"]   # keep only these (glob patterns)
+  exclude: ["*.password", "*.*_token"]
+
+key_columns:          # for tables lacking a primary key
+  public.events: event_id
