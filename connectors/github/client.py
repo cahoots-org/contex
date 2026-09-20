@@ -17,9 +17,9 @@ log = logging.getLogger(__name__)
 
 _BASE = "https://api.github.com"
 _ACCEPT = "application/vnd.github+json"
-# GitHub's current published REST API version. The date advances only when
-# GitHub ships a new version; unknown dates are ignored and fall back to it.
-_API_VERSION = "2022-11-28"
+# GitHub's current published REST API version (dates advance as GitHub ships
+# new versions): https://docs.github.com/en/rest/about-the-rest-api/api-versions
+_API_VERSION = "2026-03-10"
 
 
 class RateLimitError(Exception):
