@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Contex Query Sandbox{% endblock %}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
     <link rel="stylesheet" href="/static/css/style.css">
@@ -12,8 +15,11 @@
     <div class="container">
         <header>
             <div class="logo">
-                <h1>Contex</h1>
-                <p class="tagline">Semantic Context Routing</p>
+                <img src="/static/logo.png" alt="" class="logo-mark">
+                <div>
+                    <h1>Contex</h1>
+                    <p class="tagline">Context comes to the agent.</p>
+                </div>
             </div>
             <nav>
                 <a href="/docs" target="_blank">API Docs</a>
