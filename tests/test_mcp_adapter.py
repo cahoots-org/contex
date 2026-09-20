@@ -38,3 +38,41 @@ async def test_query_no_matches_returns_empty(db, redis):
     })
     payload = json.loads(result.content[0].text)
     assert payload["matches"] == []
+
+
+@pytest.mark.asyncio
+async def test_contex_publish_batch_publishes_all_items(db, redis):
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    result = await server.call_tool("contex_publish_batch", {
+        "project_id": "batch_p",
+        "items": [
+            {"data_key": "svc.a", "data": {"role": "payments api"}},
+            {"data_key": "svc.b", "data": {"role": "billing worker"}},
+            {"data_key": "svc.c", "data": {"role": "notification dispatcher"}},
+        ],
+    })
+    payload = json.loads(result.content[0].text)
+    assert payload["published"] == 3
+
+    # the batched items are queryable
+    q = await server.call_tool("contex_query", {
+        "project_id": "batch_p", "query": "payments api", "top_k": 5, "threshold": 0.1,
+    })
+    matches = json.loads(q.content[0].text)["matches"]
+    assert any(m["data_key"].startswith("svc.a") for m in matches)
+
+
+@pytest.mark.asyncio
+async def test_contex_publish_batch_rejects_oversized_batch(db, redis, monkeypatch):
+    import src.core.limits as limits
+    monkeypatch.setattr(limits, "MAX_BATCH_SIZE", 2)
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    items = [{"data_key": f"k{i}", "data": {"v": i}} for i in range(3)]
+    with pytest.raises(Exception):
+        await server.call_tool("contex_publish_batch", {"project_id": "p", "items": items})
