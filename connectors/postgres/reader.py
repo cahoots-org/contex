@@ -124,7 +124,11 @@ def read_tables(
     Tables without a PK and no configured ``key_columns`` override are skipped
     with a warning.
     """
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    # A named (server-side) cursor issues DECLARE CURSOR, which requires a
+    # transaction — so we stay out of autocommit. read_only marks the whole
+    # session read-only and gives every table a single consistent snapshot.
+    with psycopg.connect(dsn) as conn:
+        conn.read_only = True
         tables = _discover_tables(conn, tbl_include, tbl_exclude)
         logger.info("discovered %d table(s) after filtering", len(tables))
 
