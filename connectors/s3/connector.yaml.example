@@ -1,0 +1,22 @@
+contex:
+  url: http://localhost:8001/mcp
+  project_id: my-app
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  bucket: my-knowledge-bucket
+  prefix: docs/
+  region: us-east-1
+  # Optional endpoint for S3-compatible stores (MinIO, Cloudflare R2, LocalStack):
+  # endpoint_url: http://localhost:9000
+  # Optional explicit credentials (prefer env/instance role instead):
+  # aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+  # aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+batch_size: 200
+max_object_bytes: 5242880
+
+keys:
+  exclude: ["*.tmp", "archive/*"]
+
+content_types: [".md", ".txt", ".json", ".csv", ".yaml", ".html"]
