@@ -41,8 +41,10 @@ See `connector.yaml.example` for the full schema. Key fields:
 ## Resource mappings
 
 - **File**: key `{owner}/{repo}:{path}`, format `text`
-- **Issue**: key `{owner}/{repo}#{number}`, format `json`
-- **Pull request**: key `{owner}/{repo}!{number}`, format `json`
+- **Issue**: key `{owner}/{repo}#{number}`, format `json` — includes `created_at`,
+  `updated_at`, `closed_at`, and per-comment `created_at`.
+- **Pull request**: key `{owner}/{repo}!{number}`, format `json` — includes
+  `created_at`, `updated_at`, `closed_at`, `merged_at`, and per-comment `created_at`.
 
 Re-running upserts on these stable keys — no duplicates.
 

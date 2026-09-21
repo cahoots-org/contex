@@ -180,13 +180,16 @@ async def test_read_issues_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
                 "state": "open",
                 "labels": [{"name": "bug"}],
                 "user": {"login": "alice"},
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-02-01T00:00:00Z",
+                "closed_at": None,
             }
         ],
         headers=_no_next_headers(),
     )
     httpx_mock.add_response(
         url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/issues/1/comments"),
-        json=[{"user": {"login": "bob"}, "body": "Can reproduce."}],
+        json=[{"user": {"login": "bob"}, "body": "Can reproduce.", "created_at": "2026-01-15T00:00:00Z"}],
         headers=_no_next_headers(),
     )
 
@@ -204,8 +207,11 @@ async def test_read_issues_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.payload["state"] == "open"
     assert ev.payload["labels"] == ["bug"]
     assert ev.payload["author"] == "alice"
+    assert ev.payload["created_at"] == "2026-01-01T00:00:00Z"
+    assert ev.payload["updated_at"] == "2026-02-01T00:00:00Z"
     assert len(ev.payload["comments"]) == 1
     assert ev.payload["comments"][0]["author"] == "bob"
+    assert ev.payload["comments"][0]["created_at"] == "2026-01-15T00:00:00Z"
 
 
 @pytest.mark.anyio
@@ -251,6 +257,9 @@ async def test_read_pulls_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
                 "state": "open",
                 "labels": [{"name": "enhancement"}],
                 "user": {"login": "carol"},
+                "created_at": "2026-03-01T00:00:00Z",
+                "updated_at": "2026-03-05T00:00:00Z",
+                "merged_at": "2026-03-06T00:00:00Z",
             }
         ],
         headers=_no_next_headers(),
@@ -273,4 +282,6 @@ async def test_read_pulls_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.data_format == "json"
     assert ev.payload["title"] == "feat: add GitHub connector"
     assert ev.payload["author"] == "carol"
+    assert ev.payload["created_at"] == "2026-03-01T00:00:00Z"
+    assert ev.payload["merged_at"] == "2026-03-06T00:00:00Z"
     assert ev.payload["comments"] == []

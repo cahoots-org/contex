@@ -112,7 +112,13 @@ async def _fetch_comments(
     comments: list[dict] = []
     path = f"/repos/{owner}/{repo}/issues/{number}/comments"
     async for comment in client.paginate(path):
-        comments.append({"author": _login(comment), "body": comment.get("body", "")})
+        comments.append(
+            {
+                "author": _login(comment),
+                "body": comment.get("body", ""),
+                "created_at": comment.get("created_at", ""),
+            }
+        )
     return comments
 
 
@@ -144,9 +150,18 @@ async def read_issues(
                 "state": issue.get("state", ""),
                 "labels": [lbl.get("name", "") for lbl in issue.get("labels", [])],
                 "author": _login(issue),
+                "created_at": issue.get("created_at", ""),
+                "updated_at": issue.get("updated_at", ""),
+                "closed_at": issue.get("closed_at", ""),
                 "comments": comments,
             },
-            source_meta={"source": "github", "owner": owner, "repo": repo, "number": number},
+            source_meta={
+                "source": "github",
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "updated_at": issue.get("updated_at", ""),
+            },
         )
 
 
@@ -175,9 +190,19 @@ async def read_pulls(
                 "state": pull.get("state", ""),
                 "labels": [lbl.get("name", "") for lbl in pull.get("labels", [])],
                 "author": _login(pull),
+                "created_at": pull.get("created_at", ""),
+                "updated_at": pull.get("updated_at", ""),
+                "closed_at": pull.get("closed_at", ""),
+                "merged_at": pull.get("merged_at", ""),
                 "comments": comments,
             },
-            source_meta={"source": "github", "owner": owner, "repo": repo, "number": number},
+            source_meta={
+                "source": "github",
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "updated_at": pull.get("updated_at", ""),
+            },
         )
 
 
