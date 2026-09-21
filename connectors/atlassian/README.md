@@ -88,6 +88,6 @@ sites are slow; progress is logged per resource.
 ## Running tests
 
 ```bash
-pip install pytest pytest-httpx
+pip install pytest pytest-asyncio -r connectors/atlassian/requirements-dev.txt
 pytest connectors/atlassian -v
 ```
