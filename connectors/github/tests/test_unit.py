@@ -11,7 +11,7 @@ import pytest
 
 from connectors.base import allowed
 from connectors.github.client import GitHubClient, _next_link, _rate_limit_wait
-from connectors.github.readers import is_binary_path
+from connectors.github.readers import commit_to_event, is_binary_path
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +94,53 @@ def test_pull_key():
     owner, repo, number = "cahoots-org", "contex", 7
     key = f"{owner}/{repo}!{number}"
     assert key == "cahoots-org/contex!7"
+
+
+# ---------------------------------------------------------------------------
+# Commit mapping
+# ---------------------------------------------------------------------------
+
+
+def test_commit_to_event_full_metadata():
+    detail = {
+        "sha": "abc123",
+        "html_url": "https://github.com/cahoots-org/contex/commit/abc123",
+        "commit": {
+            "message": "Add currency arg to charge()",
+            "author": {"name": "Ada", "email": "ada@example.com", "date": "2026-02-01T10:00:00Z"},
+            "committer": {"name": "Ada", "email": "ada@example.com", "date": "2026-02-01T10:05:00Z"},
+        },
+        "author": {"login": "ada"},
+        "committer": {"login": "ada"},
+        "parents": [{"sha": "def456"}],
+        "stats": {"additions": 12, "deletions": 3, "total": 15},
+        "files": [
+            {"filename": "payments/charge.py", "status": "modified", "additions": 12, "deletions": 3},
+        ],
+    }
+    ev = commit_to_event("cahoots-org", "contex", detail)
+
+    assert ev.key == "cahoots-org/contex@abc123"
+    assert ev.op == "upsert"
+    assert ev.data_format == "json"
+    assert ev.payload["message"] == "Add currency arg to charge()"
+    assert ev.payload["author"]["login"] == "ada"
+    assert ev.payload["author"]["email"] == "ada@example.com"
+    assert ev.payload["parents"] == ["def456"]
+    assert ev.payload["stats"] == {"additions": 12, "deletions": 3, "total": 15}
+    assert ev.payload["files"] == [
+        {"filename": "payments/charge.py", "status": "modified", "additions": 12, "deletions": 3}
+    ]
+    assert ev.source_meta == {"source": "github", "owner": "cahoots-org", "repo": "contex", "sha": "abc123"}
+
+
+def test_commit_to_event_missing_fields_default_safely():
+    ev = commit_to_event("o", "r", {"sha": "s1", "commit": {}})
+    assert ev.key == "o/r@s1"
+    assert ev.payload["message"] == ""
+    assert ev.payload["files"] == []
+    assert ev.payload["parents"] == []
+    assert ev.payload["stats"] == {"additions": 0, "deletions": 0, "total": 0}
 
 
 # ---------------------------------------------------------------------------

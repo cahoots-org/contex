@@ -18,3 +18,11 @@ paths:
     - "*.lock"
     - "vendor/*"
     - "*.min.js"
+
+# Add "commits" to source.resources to ingest commit history with full metadata
+# (message, author, changed files, and additions/deletions). Each commit needs
+# its own API call, so history is bounded: by default it starts at the latest
+# published release, and a repo with no release is skipped unless you set `since`.
+commits:
+  # since: "2026-01-01T00:00:00Z"   # explicit lower bound; overrides the release default
+  # branch: main                    # ref to read; defaults to the repo's default branch

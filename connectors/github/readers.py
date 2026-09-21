@@ -1,4 +1,4 @@
-"""GitHub resource readers: files, issues, and pull requests.
+"""GitHub resource readers: files, issues, pull requests, and commits.
 
 Each reader is an async generator that yields :class:`~connectors.base.ChangeEvent`
 objects. All I/O goes through :class:`~connectors.github.client.GitHubClient`.
@@ -9,6 +9,8 @@ import base64
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
+
+import httpx
 
 from connectors.base import ChangeEvent, allowed
 
@@ -204,6 +206,119 @@ async def read_pulls(
                 "updated_at": pull.get("updated_at", ""),
             },
         )
+
+
+def commit_to_event(owner: str, repo: str, commit: dict[str, Any]) -> ChangeEvent:
+    """Map a single-commit detail payload to a ChangeEvent.
+
+    ``commit`` is the response from ``GET /repos/{owner}/{repo}/commits/{sha}``,
+    which carries ``stats`` and the changed ``files`` that the list endpoint omits.
+    """
+    sha = commit.get("sha", "")
+    meta = commit.get("commit") or {}
+    author = meta.get("author") or {}
+    committer = meta.get("committer") or {}
+    stats = commit.get("stats") or {}
+    files = [
+        {
+            "filename": f.get("filename", ""),
+            "status": f.get("status", ""),
+            "additions": f.get("additions", 0),
+            "deletions": f.get("deletions", 0),
+        }
+        for f in commit.get("files") or []
+    ]
+    return ChangeEvent(
+        op="upsert",
+        key=f"{owner}/{repo}@{sha}",
+        payload={
+            "sha": sha,
+            "message": meta.get("message", ""),
+            "author": {
+                "name": author.get("name", ""),
+                "email": author.get("email", ""),
+                "login": (commit.get("author") or {}).get("login", ""),
+                "date": author.get("date", ""),
+            },
+            "committer": {
+                "name": committer.get("name", ""),
+                "email": committer.get("email", ""),
+                "login": (commit.get("committer") or {}).get("login", ""),
+                "date": committer.get("date", ""),
+            },
+            "parents": [p.get("sha", "") for p in commit.get("parents") or []],
+            "url": commit.get("html_url", ""),
+            "stats": {
+                "additions": stats.get("additions", 0),
+                "deletions": stats.get("deletions", 0),
+                "total": stats.get("total", 0),
+            },
+            "files": files,
+        },
+        source_meta={"source": "github", "owner": owner, "repo": repo, "sha": sha},
+    )
+
+
+async def _resolve_commit_since(
+    client: GitHubClient, owner: str, repo: str, since: str | None
+) -> str | None:
+    """Resolve the lower bound for commit history.
+
+    An explicit ``since`` wins. Otherwise fall back to the latest published
+    release's date. Returns ``None`` when neither is available, which the caller
+    treats as "skip commits" rather than crawling all of history.
+    """
+    if since:
+        return since
+    try:
+        release = await client.get(f"/repos/{owner}/{repo}/releases/latest")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return None
+        raise
+    return release.get("published_at") or release.get("created_at")
+
+
+async def read_commits(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    *,
+    since: str | None = None,
+    branch: str | None = None,
+) -> AsyncIterator[ChangeEvent]:
+    """Yield one ChangeEvent per commit, with full per-commit metadata.
+
+    History is bounded by ``since`` (an explicit date, else the latest release).
+    Without a bound, commits are skipped rather than crawling all of history.
+    Each commit needs a detail fetch, since the list endpoint omits files/stats.
+    """
+    resolved_since = await _resolve_commit_since(client, owner, repo, since)
+    if resolved_since is None:
+        log.warning(
+            "%s/%s: no commits.since and no published release; skipping commits", owner, repo
+        )
+        return
+
+    if branch is None:
+        repo_data = await client.get(f"/repos/{owner}/{repo}")
+        branch = repo_data.get("default_branch", "main")
+
+    async for commit in client.paginate(
+        f"/repos/{owner}/{repo}/commits",
+        sha=branch,
+        since=resolved_since,
+    ):
+        sha = commit.get("sha")
+        if not sha:
+            continue
+        try:
+            detail = await client.get(f"/repos/{owner}/{repo}/commits/{sha}")
+        except Exception as exc:
+            log.warning("failed to fetch commit %s/%s@%s — %s", owner, repo, sha, exc)
+            continue
+        log.debug("commit %s/%s@%s", owner, repo, sha)
+        yield commit_to_event(owner, repo, detail)
 
 
 def _login(obj: dict[str, Any]) -> str:

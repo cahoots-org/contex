@@ -33,14 +33,23 @@ issues + pulls:
   Postgres `bytea` and S3 text-only rules. Path allow/deny globs apply.
 - **Issues** — title, body, labels, state, author, and comments, per issue.
 - **Pull requests** — title, body, state, author, and comments, per PR.
+- **Commits** (added later, opt-in) — message, author/committer, parents,
+  additions/deletions stats, and the changed-file list, per commit. The list
+  endpoint omits files/stats, so each commit needs a detail fetch; history is
+  bounded (see Selection model) to keep that cost sane. No diffs/patches.
 
 ## Selection model
 
 - `repos` — one or more `owner/repo`.
-- `resources` — subset of `[files, issues, pulls]` (default: all three).
+- `resources` — subset of `[files, issues, pulls, commits]` (default: files,
+  issues, pulls — commits are opt-in).
 - `paths.include` / `paths.exclude` — glob patterns over file paths.
 - `state` — for issues/pulls: `open | closed | all` (default `all`).
 - Binary files skipped by default (`include_binary: false` to override).
+- `commits.since` — lower bound for commit history (default: the latest
+  published release; a repo with no release is skipped unless this is set).
+- `commits.branch` — ref to read commits from (default: the repo's default
+  branch).
 
 ## Mapping
 
@@ -50,6 +59,9 @@ issues + pulls:
   `{title, body, state, labels, author, comments:[...]}`, published as `json`.
 - **Pull request**: `data_key = "{owner}/{repo}!{number}"`; payload same shape
   as issues.
+- **Commit**: `data_key = "{owner}/{repo}@{sha}"`; payload = a dict of
+  `{sha, message, author, committer, parents, url, stats, files:[...]}`,
+  published as `json`.
 
 Re-runs upsert on these keys.
 

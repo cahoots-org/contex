@@ -1,8 +1,8 @@
 # GitHub Connector
 
-Bulk-loads files, issues, and pull requests from one or more GitHub repositories
-into a Contex project. v1 is a snapshot connector: re-run it (e.g. on a cron)
-to refresh. Live sync via webhooks is out of scope.
+Bulk-loads files, issues, pull requests, and commits from one or more GitHub
+repositories into a Contex project. v1 is a snapshot connector: re-run it (e.g.
+on a cron) to refresh. Live sync via webhooks is out of scope.
 
 ## Quick start
 
@@ -31,12 +31,14 @@ See `connector.yaml.example` for the full schema. Key fields:
 | `contex.service_account_token` | Optional service-account token (expand from env) |
 | `source.token` | GitHub PAT with `repo` read scope (or App installation token) |
 | `source.repos` | List of `owner/repo` slugs to ingest |
-| `source.resources` | Subset of `[files, issues, pulls]`; defaults to all three |
+| `source.resources` | Subset of `[files, issues, pulls, commits]`; defaults to `[files, issues, pulls]` |
 | `source.state` | Issue/PR state filter: `open`, `closed`, or `all` (default) |
 | `batch_size` | Items per `contex_publish_batch` call (default 500) |
 | `include_binary` | Include binary files (default `false`) |
 | `paths.include` | Glob allowlist for file paths |
 | `paths.exclude` | Glob denylist for file paths |
+| `commits.since` | Lower bound for commit history (ISO date); defaults to the latest release |
+| `commits.branch` | Ref to read commits from; defaults to the repo's default branch |
 
 ## Resource mappings
 
@@ -45,8 +47,24 @@ See `connector.yaml.example` for the full schema. Key fields:
   `updated_at`, `closed_at`, and per-comment `created_at`.
 - **Pull request**: key `{owner}/{repo}!{number}`, format `json` — includes
   `created_at`, `updated_at`, `closed_at`, `merged_at`, and per-comment `created_at`.
+- **Commit**: key `{owner}/{repo}@{sha}`, format `json`. Payload includes the
+  message, author and committer, parents, additions/deletions stats, and the
+  list of changed files (filename, status, additions, deletions).
 
 Re-running upserts on these stable keys — no duplicates.
+
+## Commits
+
+Commits are opt-in: add `commits` to `source.resources`. Because the GitHub
+list endpoint omits per-commit files and stats, the connector fetches each
+commit's detail individually, so history is bounded to keep the API cost sane:
+
+- By default, commits are read from the latest published release forward.
+- A repo with no published release is skipped unless you set `commits.since`.
+- `commits.since` (an ISO date) overrides the release bound, and
+  `commits.branch` selects the ref.
+
+Diffs and patches are not ingested, only the changed-file list and line stats.
 
 ## Rate limits
 
@@ -64,6 +82,6 @@ repositories will be slow; progress is logged per resource.
 ## Running tests
 
 ```bash
-pip install pytest pytest-anyio pytest-httpx
+pip install pytest -r connectors/github/requirements-dev.txt
 pytest connectors/github
 ```

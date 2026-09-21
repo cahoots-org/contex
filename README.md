@@ -97,7 +97,7 @@ Connectors load an existing source into a Contex project without any glue code. 
 |-----------|-------|
 | **Postgres** | Rows from the tables you choose. Table and column allow-lists. Binary columns skipped. |
 | **S3** | Text objects under a bucket or prefix. Also MinIO, Cloudflare R2, and LocalStack via `endpoint_url`. |
-| **GitHub** | Files, issues, and pull requests from one or more repos. |
+| **GitHub** | Files, issues, pull requests, and commits from one or more repos. |
 | **Atlassian** | Jira issues and Confluence pages from one Atlassian Cloud site. |
 
 ```bash
