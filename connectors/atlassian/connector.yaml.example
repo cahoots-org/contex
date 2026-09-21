@@ -1,0 +1,26 @@
+contex:
+  url: ${CONTEX_URL}
+  project_id: my-app
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  site_url: ${ATLASSIAN_URL}        # e.g. https://your-org.atlassian.net
+  email: ${ATLASSIAN_EMAIL}         # account the API token belongs to
+  token: ${ATLASSIAN_API_KEY}       # Atlassian API token (basic auth)
+  resources: [jira, confluence]     # subset to run just one
+
+  jira:
+    # Omit `projects` to ingest every project you can see.
+    projects: [DEV, CONT]
+    include_comments: true
+    # since: "2026-01-01"           # only issues updated on/after this date
+    # jql: "labels = knowledge"     # extra clause AND-ed into the query
+
+  confluence:
+    # Omit `spaces` to ingest every non-personal space you can see.
+    spaces: [ENGINEERIN, PKB]
+    include_personal: false         # skip ~personal spaces
+    include_comments: true
+    # since: "2026-01-01"           # only pages whose current version is newer
+
+batch_size: 200
