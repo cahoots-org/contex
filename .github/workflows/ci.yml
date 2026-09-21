@@ -123,12 +123,13 @@ jobs:
         pip install -r connectors/postgres/requirements.txt
         pip install -r connectors/s3/requirements-dev.txt
         pip install -r connectors/github/requirements.txt
+        pip install -r connectors/atlassian/requirements.txt
 
     - name: Run connector tests
       env:
         POSTGRES_TEST_DSN: postgresql://contex:contex_password@localhost:5432/contex_test
       run: |
-        pytest connectors/postgres connectors/s3 connectors/github -v --tb=short
+        pytest connectors/postgres connectors/s3 connectors/github connectors/atlassian -v --tb=short
 
   docker:
     name: Verify Docker Build

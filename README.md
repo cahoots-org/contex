@@ -98,6 +98,7 @@ Connectors load an existing source into a Contex project without any glue code. 
 | **Postgres** | Rows from the tables you choose. Table and column allow-lists. Binary columns skipped. |
 | **S3** | Text objects under a bucket or prefix. Also MinIO, Cloudflare R2, and LocalStack via `endpoint_url`. |
 | **GitHub** | Files, issues, and pull requests from one or more repos. |
+| **Atlassian** | Jira issues and Confluence pages from one Atlassian Cloud site. |
 
 ```bash
 pip install -r connectors/postgres/requirements.txt
@@ -143,7 +144,7 @@ See the [RBAC Guide](docs/RBAC.md).
 
 ## Roadmap
 
-- **More connectors:** streaming sources like Redis, Kafka, and message queues that push updates as they happen, plus more batch sources like Slack and Atlassian.
+- **More connectors:** streaming sources like Redis, Kafka, and message queues that push updates as they happen, plus more batch sources like Slack.
 - **Document extraction:** read text from PDF and DOCX files.
 - **Higher throughput:** for high-volume sources.
 
@@ -167,7 +168,7 @@ Contex runs on **ParadeDB** (`paradedb/paradedb`), which bundles `pg_search` (BM
 
 ## Documentation
 
-- **[Connectors](connectors/README.md):** bulk-load Postgres, S3, and GitHub, or write your own
+- **[Connectors](connectors/README.md):** bulk-load Postgres, S3, GitHub, and Atlassian, or write your own
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
 - **[Event Sourcing](docs/EVENT_SOURCING.md):** point-in-time queries and audit trails
 - **[RBAC](docs/RBAC.md):** role-based access control
