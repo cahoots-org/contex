@@ -25,7 +25,7 @@ if _HAVE_PYTEST_HTTPX:
     from pytest_httpx import HTTPXMock
 
 from connectors.github.client import GitHubClient
-from connectors.github.readers import read_files, read_issues, read_pulls
+from connectors.github.readers import read_commits, read_files, read_issues, read_pulls
 
 _API = "https://api.github.com"
 _OWNER = "cahoots-org"
@@ -285,3 +285,104 @@ async def test_read_pulls_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.payload["created_at"] == "2026-03-01T00:00:00Z"
     assert ev.payload["merged_at"] == "2026-03-06T00:00:00Z"
     assert ev.payload["comments"] == []
+
+
+# ---------------------------------------------------------------------------
+# Commits
+# ---------------------------------------------------------------------------
+
+
+def _commit_detail(sha: str) -> dict:
+    return {
+        "sha": sha,
+        "html_url": f"https://github.com/{_SLUG}/commit/{sha}",
+        "commit": {
+            "message": "Add currency arg to charge()",
+            "author": {"name": "Ada", "email": "ada@example.com", "date": "2026-02-01T10:00:00Z"},
+            "committer": {"name": "Ada", "email": "ada@example.com", "date": "2026-02-01T10:05:00Z"},
+        },
+        "author": {"login": "ada"},
+        "committer": {"login": "ada"},
+        "parents": [{"sha": "parent1"}],
+        "stats": {"additions": 12, "deletions": 3, "total": 15},
+        "files": [
+            {"filename": "payments/charge.py", "status": "modified", "additions": 12, "deletions": 3},
+        ],
+    }
+
+
+@pytest.mark.anyio
+async def test_read_commits_bounds_by_latest_release(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/releases/latest",
+        json={"published_at": "2026-01-01T00:00:00Z"},
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}",
+        json={"default_branch": "main"},
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/commits\?"),
+        json=[{"sha": "abc123"}],
+        headers=_no_next_headers(),
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/commits/abc123",
+        json=_commit_detail("abc123"),
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [ev async for ev in read_commits(client, _OWNER, _REPO)]
+
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.key == f"{_SLUG}@abc123"
+    assert ev.data_format == "json"
+    assert ev.payload["message"] == "Add currency arg to charge()"
+    assert ev.payload["author"]["login"] == "ada"
+    assert ev.payload["stats"] == {"additions": 12, "deletions": 3, "total": 15}
+    assert ev.payload["files"][0]["filename"] == "payments/charge.py"
+
+
+@pytest.mark.anyio
+async def test_read_commits_explicit_since_skips_release_lookup(httpx_mock: "HTTPXMock") -> None:
+    # No releases/latest response is registered; requesting it would error,
+    # proving an explicit `since` bypasses the release lookup.
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/commits\?"),
+        json=[{"sha": "s1"}],
+        headers=_no_next_headers(),
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/commits/s1",
+        json=_commit_detail("s1"),
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [
+            ev
+            async for ev in read_commits(
+                client, _OWNER, _REPO, since="2026-06-01T00:00:00Z", branch="main"
+            )
+        ]
+
+    assert [ev.key for ev in events] == [f"{_SLUG}@s1"]
+
+
+@pytest.mark.anyio
+async def test_read_commits_skips_when_no_release_and_no_since(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/releases/latest",
+        status_code=404,
+        json={"message": "Not Found"},
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [ev async for ev in read_commits(client, _OWNER, _REPO)]
+
+    assert events == []

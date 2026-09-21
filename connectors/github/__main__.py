@@ -9,7 +9,7 @@ import sys
 from connectors.base import ContexConfig, load_config, resolve_batch_size, run_connector
 
 from .client import GitHubClient
-from .readers import read_files, read_issues, read_pulls
+from .readers import read_commits, read_files, read_issues, read_pulls
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -46,6 +46,10 @@ async def _run(config_path: str) -> None:
     include_globs: list[str] | None = paths_cfg.get("include") or None
     exclude_globs: list[str] | None = paths_cfg.get("exclude") or None
 
+    commits_cfg = config.get("commits") or {}
+    commit_since: str | None = commits_cfg.get("since") or None
+    commit_branch: str | None = commits_cfg.get("branch") or None
+
     total_published = 0
 
     async with GitHubClient(token) as client:
@@ -69,6 +73,10 @@ async def _run(config_path: str) -> None:
                     events = read_issues(client, owner, repo, state=state)
                 elif resource == "pulls":
                     events = read_pulls(client, owner, repo, state=state)
+                elif resource == "commits":
+                    events = read_commits(
+                        client, owner, repo, since=commit_since, branch=commit_branch
+                    )
                 else:
                     logging.warning("unknown resource type %r — skipping", resource)
                     continue
