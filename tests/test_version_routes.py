@@ -27,7 +27,11 @@ async def engine(db, redis):
     """Real ContextEngine on the live test DB, with the heavy embedding model mocked."""
     with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
         mock_model = Mock()
-        mock_model.encode.return_value = np.array([0.1] * 384, dtype=np.float32)
+        mock_model.encode.side_effect = lambda x, *a, **k: (
+            np.array([0.1] * 384, dtype=np.float32)
+            if isinstance(x, str)
+            else np.array([[0.1] * 384] * len(x), dtype=np.float32)
+        )
         mock_model_cls.return_value = mock_model
 
         engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.5, max_matches=10)
