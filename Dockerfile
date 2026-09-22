@@ -1,5 +1,8 @@
-# Multi-stage build for Context Engine Service
-FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea as builder
+# Multi-stage build for Context Engine Service.
+# Build for the host architecture (no forced --platform), so it runs natively on
+# arm64 (Apple Silicon) instead of under x86 emulation — a large speedup for the
+# torch/sentence-transformers embedding path.
+FROM python:3.12-slim AS builder
 
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
@@ -19,8 +22,16 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
+# CPU-only torch. On amd64, use PyTorch's CPU wheel index to avoid pulling CUDA;
+# on arm64 there is no CUDA build, so the default PyPI aarch64 wheel is CPU-only.
+# TARGETARCH is provided by BuildKit (host arch for a native build).
+ARG TARGETARCH
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+        pip install --no-cache-dir torch; \
+    fi && \
     pip install --no-cache-dir -r requirements.txt && \
     # Remove unnecessary files to reduce image size
     find /opt/venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
@@ -29,7 +40,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     find /opt/venv -name "*.pyo" -delete
 
 # Production stage
-FROM --platform=linux/amd64 python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+FROM python:3.12-slim
 
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
