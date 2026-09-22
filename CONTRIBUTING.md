@@ -66,7 +66,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
    # Or manually:
    # ParadeDB (bundles pg_search BM25 + pgvector)
-   docker run -d -p 5432:5432 \
+   docker run -d -p 5435:5432 \
      -e POSTGRES_DB=contex \
      -e POSTGRES_USER=contex \
      -e POSTGRES_PASSWORD=contex_password \
@@ -78,7 +78,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 4. **Set environment variables**:
    ```bash
-   export DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+   export DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5435/contex"
    export REDIS_URL="redis://localhost:6379"
    ```
 
@@ -442,7 +442,7 @@ pytest tests/ --pdb  # Drop into debugger on failure
 
 ```bash
 # Connect to PostgreSQL CLI
-psql "postgresql://contex:contex_password@localhost:5432/contex"
+psql "postgresql://contex:contex_password@localhost:5435/contex"
 
 # Or with Docker
 docker exec -it contex-postgres-1 psql -U contex -d contex

@@ -27,7 +27,7 @@ services:
       - POSTGRES_USER=contex
       - POSTGRES_PASSWORD=contex_password
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
     healthcheck:
@@ -61,7 +61,7 @@ docker compose up -d
 1. **Run ParadeDB** (bundles `pg_search` and `pgvector` — no manual extension build needed):
 
 ```bash
-docker run -d -p 5432:5432 \
+docker run -d -p 5435:5432 \
   -e POSTGRES_DB=contex \
   -e POSTGRES_USER=contex \
   -e POSTGRES_PASSWORD=contex_password \
@@ -84,7 +84,7 @@ SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_search');
 3. **Configure connection**:
 
 ```bash
-export DATABASE_URL="postgresql+asyncpg://contex:password@localhost:5432/contex"
+export DATABASE_URL="postgresql+asyncpg://contex:password@localhost:5435/contex"
 ```
 
 ## Configuration
@@ -109,7 +109,7 @@ Examples:
 
 ```bash
 # Local development
-DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5435/contex"
 
 # Docker Compose
 DATABASE_URL="postgresql+asyncpg://contex:contex_password@postgres:5432/contex"
@@ -389,7 +389,7 @@ LIMIT 10;
 
 ```bash
 # Test connection
-psql "postgresql://contex:password@localhost:5432/contex"
+psql "postgresql://contex:password@localhost:5435/contex"
 
 # Check logs
 docker logs contex-postgres-1

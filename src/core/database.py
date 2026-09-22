@@ -150,7 +150,7 @@ class DatabaseManager:
 
         url = database_url or os.getenv(
             "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+            "postgresql+asyncpg://contex:contex_password@localhost:5435/contex"
         )
         self._database_url = url
 
@@ -209,7 +209,7 @@ class DatabaseManager:
         """
         url = database_url or self._database_url or os.getenv(
             "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
+            "postgresql+asyncpg://contex:contex_password@localhost:5435/contex",
         )
         await _assert_migratable(url)
         await asyncio.to_thread(run_migrations_to_head, url)

@@ -2,7 +2,7 @@ services:
   postgres:
     image: paradedb/paradedb:0.25.9-pg18
     ports:
-      - "${CONTEX_PG_PORT:-5432}:5432"
+      - "${CONTEX_PG_PORT:-5435}:5432"
     environment:
       - POSTGRES_DB=contex
       - POSTGRES_USER=contex

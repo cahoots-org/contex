@@ -162,7 +162,7 @@ docker compose ps postgres
 docker compose logs postgres --tail=100
 
 # Test connection
-psql "postgresql://contex:contex_password@localhost:5432/contex" -c "SELECT 1"
+psql "postgresql://contex:contex_password@localhost:5435/contex" -c "SELECT 1"
 
 # Check active connections
 psql -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"

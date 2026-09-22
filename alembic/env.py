@@ -18,7 +18,7 @@ config = context.config
 # Override sqlalchemy.url from environment if set
 database_url = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+    "postgresql+asyncpg://contex:contex_password@localhost:5435/contex"
 )
 config.set_main_option("sqlalchemy.url", database_url)
 

@@ -30,7 +30,7 @@ pytestmark = pytest.mark.asyncio
 def _base_url() -> str:
     return os.getenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test",
+        "postgresql+asyncpg://contex:contex_password@localhost:5435/contex_test",
     )
 
 

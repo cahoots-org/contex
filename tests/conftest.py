@@ -19,7 +19,7 @@ from sqlalchemy import text
 # Set test database URL before any imports that might use it
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
+    "postgresql+asyncpg://contex:contex_password@localhost:5435/contex_test"
 )
 
 from src.core.database import DatabaseManager
@@ -40,7 +40,7 @@ class TestDatabaseManager(DatabaseManager):
         """Connect to test database."""
         url = database_url or os.getenv(
             "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
+            "postgresql+asyncpg://contex:contex_password@localhost:5435/contex_test"
         )
 
         self.engine = create_async_engine(
@@ -90,7 +90,7 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
 
     database_url = os.getenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
+        "postgresql+asyncpg://contex:contex_password@localhost:5435/contex_test"
     )
 
     try:
