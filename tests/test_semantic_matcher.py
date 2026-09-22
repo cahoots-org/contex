@@ -19,8 +19,12 @@ class TestSemanticDataMatcher:
         # Mock SentenceTransformer to avoid loading heavy model
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
-            # Return random embedding of correct shape (384,)
-            mock_model.encode.return_value = np.random.rand(384).astype(np.float32)
+            # Simulate batched encode: (n, 384) for a list of texts, (384,) for a single string.
+            mock_model.encode.side_effect = lambda x, *a, **k: (
+                np.random.rand(384).astype(np.float32)
+                if isinstance(x, str)
+                else np.random.rand(len(x), 384).astype(np.float32)
+            )
             mock_model_cls.return_value = mock_model
 
             matcher = SemanticDataMatcher(
@@ -241,7 +245,11 @@ class TestSemanticMatcherConcurrency:
         """
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
-            mock_model.encode.return_value = np.ones(384).astype(np.float32)
+            mock_model.encode.side_effect = lambda x, *a, **k: (
+                np.ones(384, dtype=np.float32)
+                if isinstance(x, str)
+                else np.ones((len(x), 384), dtype=np.float32)
+            )
             mock_model_cls.return_value = mock_model
 
             matcher = SemanticDataMatcher(
