@@ -168,17 +168,20 @@ class SemanticDataMatcher:
 
         # pgvector mode - store in PostgreSQL; pg_search BM25 index is maintained
         # automatically on insert/update via the embeddings_bm25 index.
+        # Batch-encode every node's text in a single call. sentence-transformers
+        # vectorizes a list far more efficiently than repeated single-text calls,
+        # a large win for multi-node items (e.g. an issue or page with many
+        # comments). Output is identical to encoding each node separately.
+        node_keys = [
+            f"{data_key}.{node.path}" if node.path else data_key for node in nodes
+        ]
+        embedding_texts = [node.get_text_content() for node in nodes]
+        embeddings = self.model.encode(embedding_texts, batch_size=64)
+
         async with self.db.session() as session:
-            for node in nodes:
-                # Generate node key (combine data_key with node path)
-                node_key = f"{data_key}.{node.path}" if node.path else data_key
-
-                # Get embedding text from node
-                embedding_text = node.get_text_content()
-
-                # Generate embedding
-                embedding = self.model.encode(embedding_text)
-
+            for node, node_key, embedding_text, embedding in zip(
+                nodes, node_keys, embedding_texts, embeddings
+            ):
                 # Check if embedding exists
                 result = await session.execute(
                     select(Embedding)
