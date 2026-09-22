@@ -5,6 +5,7 @@ Provides async SQLAlchemy engine and session management for Contex.
 """
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from src.core.json_utils import json_safe_default
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -158,6 +160,7 @@ class DatabaseManager:
                 url,
                 echo=echo,
                 poolclass=NullPool,
+                json_serializer=lambda o: json.dumps(o, default=json_safe_default),
             )
         else:
             self.engine = create_async_engine(
@@ -168,6 +171,7 @@ class DatabaseManager:
                 pool_timeout=pool_timeout,
                 pool_recycle=pool_recycle,
                 pool_pre_ping=True,  # Verify connections before use
+                json_serializer=lambda o: json.dumps(o, default=json_safe_default),
             )
 
         self.session_factory = async_sessionmaker(
