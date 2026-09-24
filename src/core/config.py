@@ -7,11 +7,13 @@ from src.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+DEFAULT_DATABASE_URL = "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
+
 
 class DatabaseConfig(BaseModel):
     """PostgreSQL database configuration"""
     url: str = Field(
-        default="postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
+        default=DEFAULT_DATABASE_URL,
         description="PostgreSQL connection URL"
     )
     pool_size: int = Field(default=5, ge=1, le=100, description="Connection pool size")
@@ -118,7 +120,7 @@ class ContexConfig(BaseModel):
                 port=int(os.getenv('CONTEX_PORT', '8001')),
             ),
             database=DatabaseConfig(
-                url=os.getenv('DATABASE_URL', 'postgresql+asyncpg://contex:contex_password@localhost:5432/contex'),
+                url=os.getenv('DATABASE_URL', DEFAULT_DATABASE_URL),
                 pool_size=int(os.getenv('DATABASE_POOL_SIZE', '5')),
                 max_overflow=int(os.getenv('DATABASE_MAX_OVERFLOW', '10')),
                 pool_timeout=float(os.getenv('DATABASE_POOL_TIMEOUT', '30.0')),
