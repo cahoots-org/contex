@@ -442,6 +442,7 @@ class AgentRegistration(Base):
     data_keys: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     last_sequence: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
