@@ -34,10 +34,6 @@ This document contains operational runbooks for common scenarios when running Co
 
 2. **Check application logs:**
    ```bash
-   # Kubernetes
-   kubectl logs -l app=contex --tail=100 -f
-
-   # Docker Compose
    docker compose logs contex --tail=100 -f
    ```
 
@@ -326,59 +322,10 @@ redis-cli info clients
 - Request latency increasing
 - Queue depth growing
 
-**Kubernetes:**
-
-```bash
-# Scale manually
-kubectl scale deployment contex --replicas=5
-
-# Or configure HPA
-kubectl apply -f - <<EOF
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: contex-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: contex
-  minReplicas: 2
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-EOF
-```
-
 **Docker Compose:**
 
 ```bash
 docker compose up -d --scale contex=5
-```
-
-### Vertical Scaling
-
-**When to Scale:**
-- Memory pressure (OOM kills)
-- Single-request operations timing out
-- Embedding computations too slow
-
-**Kubernetes:**
-
-```yaml
-# Update deployment resources
-resources:
-  limits:
-    cpu: "4"
-    memory: "4Gi"
-  requests:
-    cpu: "2"
-    memory: "2Gi"
 ```
 
 ---
@@ -394,50 +341,22 @@ resources:
 - [ ] Monitoring dashboards open
 - [ ] Rollback plan ready
 
-**Kubernetes Rolling Update:**
+**Docker Compose Update:**
 
 ```bash
-# Update image
-kubectl set image deployment/contex contex=contex:v1.2.0
+# Pull the new image and recreate the service
+docker compose pull contex
+docker compose up -d contex
 
-# Monitor rollout
-kubectl rollout status deployment/contex
-
-# Check pods
-kubectl get pods -l app=contex -w
+# Watch logs during rollout
+docker compose logs contex --tail=100 -f
 ```
 
 **Rollback:**
 
 ```bash
-# Immediate rollback
-kubectl rollout undo deployment/contex
-
-# Rollback to specific revision
-kubectl rollout history deployment/contex
-kubectl rollout undo deployment/contex --to-revision=2
-```
-
-### Blue-Green Deployment
-
-**Setup:**
-
-```bash
-# Deploy green version
-kubectl apply -f deployment-green.yaml
-
-# Verify green is healthy
-kubectl get pods -l app=contex,version=green
-
-# Switch traffic
-kubectl patch service contex -p '{"spec":{"selector":{"version":"green"}}}'
-
-# Monitor for issues
-# If problems occur, switch back:
-kubectl patch service contex -p '{"spec":{"selector":{"version":"blue"}}}'
-
-# Cleanup old version after validation
-kubectl delete deployment contex-blue
+# Pin back to the previous image tag and recreate
+docker compose up -d contex
 ```
 
 ---
@@ -464,28 +383,11 @@ docker run --rm -v contex_postgres-data:/data -v $(pwd):/backup \
   alpine tar czf /backup/postgres-backup-$(date +%Y%m%d).tar.gz /data
 ```
 
-**Automated Backup CronJob (Kubernetes):**
+**Automated Backup (cron):**
 
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: postgres-backup
-spec:
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: backup
-            image: postgres:16
-            command:
-            - /bin/sh
-            - -c
-            - |
-              pg_dump -h postgres -U contex -Fc contex > /backup/contex-$(date +%Y%m%d).dump
-          restartPolicy: OnFailure
+```bash
+# /etc/cron.d/contex-backup — daily at 2 AM
+0 2 * * *  contex  pg_dump -h localhost -U contex -Fc contex > /backups/contex-$(date +\%Y\%m\%d).dump
 ```
 
 ### PostgreSQL Recovery
