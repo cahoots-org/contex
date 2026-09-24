@@ -146,3 +146,61 @@ async def test_restore_returns_200_and_appends_event(engine, client):
     )
     assert hist.status_code == 200
     assert hist.json()["versions"][0]["data"] == {"level": "info"}
+
+@pytest.mark.asyncio
+async def test_history_pagination(engine, client):
+    project_id = "ver-page"
+    data_key = "config"
+    for i in range(5):
+        await _publish(engine, project_id, data_key, {"n": i})
+
+    page1 = await client.get(
+        f"/api/v1/versions/projects/{project_id}/data/{data_key}/history",
+        params={"limit": 2, "offset": 0},
+    )
+    page2 = await client.get(
+        f"/api/v1/versions/projects/{project_id}/data/{data_key}/history",
+        params={"limit": 2, "offset": 2},
+    )
+
+    assert page1.status_code == 200, page1.text
+    assert page2.status_code == 200, page2.text
+    assert [v["data"]["n"] for v in page1.json()["versions"]] == [4, 3]
+    assert [v["data"]["n"] for v in page2.json()["versions"]] == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_history_not_truncated_beyond_10k(engine, client):
+    """A key whose events sit beyond the old 10k cap still returns correct history.
+
+    Regression for #120: the endpoint used to load the whole project log capped
+    at 10k and filter in Python, silently dropping newer events. Seed >10k events
+    directly, then confirm the endpoint returns the newest ones.
+    """
+    from src.core.db_models import Event, EventSequenceCounter
+
+    project_id = "ver-big"
+    data_key = "config"
+    async with engine.db.session() as session:
+        session.add(EventSequenceCounter(project_id=project_id, last_sequence=10_002))
+        session.add_all(
+            Event(
+                project_id=project_id,
+                event_type="config_updated",
+                data={data_key: {"n": i}},
+                data_key=data_key,
+                sequence=i,
+            )
+            for i in range(1, 10_003)
+        )
+        await session.commit()
+
+    resp = await client.get(
+        f"/api/v1/versions/projects/{project_id}/data/{data_key}/history",
+        params={"limit": 2},
+    )
+
+    assert resp.status_code == 200, resp.text
+    versions = resp.json()["versions"]
+    assert [v["sequence"] for v in versions] == ["10002", "10001"]
+    assert [v["data"]["n"] for v in versions] == [10002, 10001]
