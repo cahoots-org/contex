@@ -276,10 +276,22 @@ class TestContextEngine:
 
         assert info is None
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Agents track node-level keys (data_key.node_path) but "
+        "_notify_affected_agents matches on the top-level data_key, so "
+        "data_update notifications are never delivered for structured data. "
+        "See issue #109.",
+    )
     @pytest.mark.asyncio
     async def test_publish_notifies_affected_agents(self, context_engine, redis):
-        """Test that publishing data notifies affected agents"""
-        # Register agent first
+        """Test that publishing data delivers a data_update to a matched agent"""
+        await context_engine.publish_data(
+            DataPublishEvent(
+                project_id="proj1", data_key="app_config", data={"setting": "value"}
+            )
+        )
+
         await context_engine.register_agent(
             AgentRegistration(
                 agent_id="agent1",
@@ -288,19 +300,29 @@ class TestContextEngine:
             )
         )
 
-        # Subscribe to agent's channel
         pubsub = redis.pubsub()
         await pubsub.subscribe("agent:agent1:updates")
 
-        # Publish matching data
-        await context_engine.publish_data(
+        sequence = await context_engine.publish_data(
             DataPublishEvent(
-                project_id="proj1", data_key="app_config", data={"setting": "value"}
+                project_id="proj1", data_key="app_config", data={"setting": "updated"}
             )
         )
 
-        # Check if notification was sent (would need to listen for it)
-        # This is a basic test - in practice you'd want to actually listen
+        message = None
+        for _ in range(20):
+            candidate = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=0.1
+            )
+            if candidate is not None:
+                message = candidate
+                break
+
+        assert message is not None, "expected a notification on the agent's channel"
+        payload = json.loads(message["data"])
+        assert payload["type"] == "data_update"
+        assert payload["data_key"] == "app_config"
+        assert payload["sequence"] == sequence
 
     @pytest.mark.asyncio
     async def test_multiple_agents_same_need(self, context_engine):
