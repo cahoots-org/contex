@@ -91,6 +91,7 @@ class FeaturesConfig(BaseModel):
     similarity_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="Similarity threshold")
     max_matches: int = Field(default=10, ge=1, le=100, description="Maximum matches per query")
     max_context_size: int = Field(default=51200, ge=1024, le=1048576, description="Maximum context size in tokens")
+    max_upload_size: int = Field(default=52428800, ge=1024, description="Maximum upload/import body size in bytes")
     hybrid_search_enabled: bool = Field(default=False, description="Enable hybrid search with RRF")
     rrf_k: int = Field(default=60, ge=1, le=1000, description="RRF constant (typical value: 60)")
     vector_boost: float = Field(default=1.0, ge=0.1, le=10.0, description="Vector rank boost multiplier")
@@ -151,6 +152,7 @@ class ContexConfig(BaseModel):
                 similarity_threshold=float(os.getenv('SIMILARITY_THRESHOLD', '0.5')),
                 max_matches=int(os.getenv('MAX_MATCHES', '10')),
                 max_context_size=int(os.getenv('MAX_CONTEXT_SIZE', '51200')),
+                max_upload_size=int(os.getenv('CONTEX_MAX_UPLOAD_SIZE', '52428800')),
                 hybrid_search_enabled=os.getenv('HYBRID_SEARCH_ENABLED', 'false').lower() == 'true',
                 rrf_k=int(os.getenv('RRF_K', '60')),
                 vector_boost=float(os.getenv('VECTOR_BOOST', '1.0')),
