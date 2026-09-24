@@ -712,7 +712,9 @@ async def register_agent(registration: AgentRegistration, request: Request):
 
         start_time = time.time()
         engine = request.app.state.context_engine
-        response = await engine.register_agent(registration)
+        response = await engine.register_agent(
+            registration, created_by=ctx.get("actor_id")
+        )
         duration = time.time() - start_time
 
         # Record metrics
@@ -758,6 +760,23 @@ async def register_agent(registration: AgentRegistration, request: Request):
         )
 
         return response
+    except PermissionError as e:
+        logger.warning("Rejected agent hijack",
+                    agent_id=registration.agent_id,
+                    project_id=registration.project_id,
+                    error=str(e))
+        await audit_log(
+            event_type=AuditEventType.AGENT_REGISTERED,
+            action=f"Rejected hijack of agent '{registration.agent_id}'",
+            project_id=registration.project_id,
+            resource_type="agent",
+            resource_id=registration.agent_id,
+            result="failure",
+            severity=AuditEventSeverity.WARNING,
+            details={"error": str(e)},
+            **ctx
+        )
+        raise
     except Exception as e:
         logger.error("Failed to register agent",
                     agent_id=registration.agent_id,
@@ -1416,6 +1435,7 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
         check_batch_size(registrations, "registrations")
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
+    ctx = _get_request_context(request)
     try:
         import time
         from src.core.metrics import record_agent_registered, registration_duration_seconds
@@ -1430,7 +1450,9 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
 
         for registration in registrations:
             try:
-                response = await engine.register_agent(registration)
+                response = await engine.register_agent(
+                    registration, created_by=ctx.get("actor_id")
+                )
                 record_agent_registered(
                     registration.project_id,
                     registration.notification_method
@@ -1443,6 +1465,26 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
                     "notification_channel": response.notification_channel
                 })
                 successful += 1
+            except PermissionError as e:
+                await audit_log(
+                    event_type=AuditEventType.AGENT_REGISTERED,
+                    action=f"Rejected hijack of agent '{registration.agent_id}'",
+                    project_id=registration.project_id,
+                    resource_type="agent",
+                    resource_id=registration.agent_id,
+                    result="failure",
+                    severity=AuditEventSeverity.WARNING,
+                    details={"error": str(e)},
+                    **ctx
+                )
+                results.append({
+                    "status": "failed",
+                    "agent_id": registration.agent_id,
+                    "project_id": registration.project_id,
+                    "error": str(e)
+                })
+                failed += 1
+                logger.warning(f"Rejected hijack of {registration.agent_id}: {e}")
             except Exception as e:
                 results.append({
                     "status": "failed",

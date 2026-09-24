@@ -172,6 +172,7 @@ class ExportImportManager:
                             "notification_channel": row.notification_channel,
                             "webhook_url": row.webhook_url,
                             "data_keys": row.data_keys,
+                            "created_by": row.created_by,
                         },
                         "last_seen": row.last_seen.isoformat() if row.last_seen else None,
                         "last_sequence": row.last_sequence,
@@ -479,6 +480,7 @@ class ExportImportManager:
                         webhook_url=data.get("webhook_url"),
                         data_keys=data.get("data_keys", []),
                         last_sequence=agent.get("last_sequence"),
+                        created_by=data.get("created_by"),
                         data=data,
                     )
                     session.add(new_agent)
