@@ -19,9 +19,8 @@ def check_hardened_config() -> None:
     """
     if os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL) == DEFAULT_DATABASE_URL:
         logger.warning(
-            "Using the built-in default database credentials - safe for local "
-            "development only; set DATABASE_URL to a unique password for any "
-            "network-reachable deployment"
+            "Using built-in default database credentials - set DATABASE_URL "
+            "before any network-reachable deployment"
         )
 
     if not auth_enabled():
