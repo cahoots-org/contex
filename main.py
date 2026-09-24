@@ -310,7 +310,12 @@ _mcp_server, _mcp_bus = build_mcp_server(
 # ("/"), so the endpoint is /mcp — passing streamable_http_path="/mcp" here would
 # compose with the mount prefix to /mcp/mcp. Starlette 307-redirects /mcp -> /mcp/,
 # which MCP clients follow. The session-manager lifecycle is run in lifespan.
-_mcp_starlette_app = _mcp_server.streamable_http_app(streamable_http_path="/")
+# The transport is unauthenticated, so the idle timeout is tightened from the SDK
+# default of 1800s to 600s to limit accumulation of orphaned sessions.
+_mcp_starlette_app = _mcp_server.streamable_http_app(
+    streamable_http_path="/",
+    session_idle_timeout=600,
+)
 app.mount("/mcp", _mcp_starlette_app)
 
 # CORS Configuration

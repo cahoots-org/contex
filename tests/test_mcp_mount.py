@@ -19,3 +19,9 @@ def test_build_mcp_server_is_wired_in_main():
     import inspect
     src = inspect.getsource(main)
     assert "build_mcp_server" in src and "run_bridge" in src and "session_manager" in src
+
+
+def test_mcp_session_idle_timeout_is_tightened():
+    # The MCP streamable-HTTP transport is unauthenticated; a shorter idle timeout
+    # limits how long orphaned sessions from an initialize loop can accumulate.
+    assert main._mcp_server.session_manager.session_idle_timeout == 600
