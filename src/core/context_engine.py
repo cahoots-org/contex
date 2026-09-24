@@ -8,7 +8,10 @@ import toon_format as toon
 from typing import Dict, List, Any, Optional
 from redis.asyncio import Redis
 
+from sqlalchemy import select
+
 from .database import DatabaseManager
+from .db_models import AgentRegistration as AgentRegistrationRow
 from .semantic_matcher import SemanticDataMatcher
 from .event_store import EventStore
 from .webhook_dispatcher import WebhookDispatcher
@@ -23,6 +26,10 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Owner marker for agents registered before ownership tracking (or without a
+# caller identity). Treated as unowned so re-registration stays open.
+SYSTEM_OWNER = "system"
 
 
 class ContextEngine:
@@ -281,17 +288,76 @@ class ContextEngine:
 
         return sequence
 
+    async def _resolve_agent_owner(
+        self, agent_id: str, project_id: str
+    ) -> Optional[str]:
+        """Return the recorded owner of an agent, or None if not yet registered.
+
+        The durable ``agent_registrations`` row is authoritative (it survives
+        restarts); the in-memory dict is consulted as a fallback.
+        """
+        try:
+            async with self.db.session() as session:
+                row = await session.execute(
+                    select(AgentRegistrationRow.created_by).where(
+                        AgentRegistrationRow.agent_id == agent_id,
+                        AgentRegistrationRow.project_id == project_id,
+                    )
+                )
+                owner = row.scalar_one_or_none()
+                if owner is not None:
+                    return owner
+        except Exception:
+            logger.exception("Failed to resolve owner for agent %s", agent_id)
+
+        existing = self.agents.get(agent_id)
+        return existing.get("created_by") if existing else None
+
+    async def _persist_agent_owner(
+        self,
+        registration: AgentRegistration,
+        notification_channel: str,
+        webhook_url: Optional[str],
+        data_keys: List[str],
+        last_sequence: str,
+        created_by: str,
+    ) -> None:
+        """Upsert the agent's durable registration row, preserving its owner."""
+        async with self.db.session() as session:
+            row = await session.get(AgentRegistrationRow, registration.agent_id)
+            if row is None:
+                row = AgentRegistrationRow(
+                    agent_id=registration.agent_id,
+                    project_id=registration.project_id,
+                    created_by=created_by,
+                )
+                session.add(row)
+            row.project_id = registration.project_id
+            row.needs = list(registration.data_needs)
+            row.notification_method = registration.notification_method
+            row.response_format = registration.response_format
+            row.notification_channel = notification_channel
+            row.webhook_url = webhook_url
+            row.data_keys = data_keys
+            row.last_sequence = last_sequence
+
     async def register_agent(
-        self, registration: AgentRegistration
+        self, registration: AgentRegistration, created_by: Optional[str] = None
     ) -> RegistrationResponse:
         """
         Agent registers with semantic data needs.
 
         Args:
             registration: Agent registration request
+            created_by: Identity of the caller; recorded as the owner on first
+                registration and required to match on re-registration.
 
         Returns:
             Registration response with matched data
+
+        Raises:
+            PermissionError: Re-registration attempted by a caller that does
+                not own the existing agent_id.
         """
         agent_id = registration.agent_id
         project_id = registration.project_id
@@ -299,6 +365,20 @@ class ContextEngine:
         last_seen = registration.last_seen_sequence or "0"
 
         logger.debug("Registering agent: %s (project: %s)", agent_id, project_id)
+
+        owner = await self._resolve_agent_owner(agent_id, project_id)
+        if owner is not None and owner != SYSTEM_OWNER and owner != created_by:
+            logger.warning(
+                "Rejected re-registration of agent %s by %s (owner: %s)",
+                agent_id,
+                created_by,
+                owner,
+            )
+            raise PermissionError(
+                f"Agent '{agent_id}' is owned by another caller"
+            )
+        # First registration records the owner; re-registration keeps it stable.
+        effective_owner = owner if owner is not None else (created_by or SYSTEM_OWNER)
 
         # 1. Match agent needs to available data
         matches = await self.semantic_matcher.match_agent_needs(project_id, needs)
@@ -326,19 +406,25 @@ class ContextEngine:
                 data_keys.add(match["data_key"])
 
         # 6. Store agent registration
+        webhook_url = (
+            str(registration.webhook_url) if registration.webhook_url else None
+        )
         self.agents[agent_id] = {
             "project_id": project_id,
             "needs": needs,
             "notification_method": registration.notification_method,
             "response_format": registration.response_format,  # TOON or JSON
             "channel": notification_channel,  # For Redis
-            "webhook_url": (
-                str(registration.webhook_url) if registration.webhook_url else None
-            ),
+            "webhook_url": webhook_url,
             "webhook_secret": registration.webhook_secret,
             "data_keys": list(data_keys),
             "last_sequence": last_seen,
+            "created_by": effective_owner,
         }
+        await self._persist_agent_owner(
+            registration, notification_channel, webhook_url, list(data_keys),
+            last_seen, effective_owner,
+        )
 
         # 7. Send initial context to agent
         await self._send_initial_context(agent_id, matches, registration)
