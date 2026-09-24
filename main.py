@@ -425,7 +425,7 @@ app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 @app.get("/health", dependencies=[Depends(public)])
 async def root_health():
     """
-    Root-level health check endpoint for Docker/Kubernetes.
+    Root-level health check endpoint for Docker and platform health probes.
 
     This is separate from /api/health to avoid API versioning complexity
     and ensure health checks work reliably without authentication.

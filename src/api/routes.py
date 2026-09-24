@@ -76,7 +76,7 @@ async def health(request: Request):
 
 @router.get("/health/ready", dependencies=[Depends(public)])
 async def readiness(request: Request):
-    """Readiness check for Kubernetes"""
+    """Readiness check for orchestrators and load balancers"""
     from src.core.health import HealthChecker
     from fastapi.responses import JSONResponse
     
@@ -90,7 +90,7 @@ async def readiness(request: Request):
 
 @router.get("/health/live", dependencies=[Depends(public)])
 async def liveness(request: Request):
-    """Liveness check for Kubernetes"""
+    """Liveness check for orchestrators and load balancers"""
     from src.core.health import HealthChecker
     
     if hasattr(request.app.state, 'health_checker'):

@@ -48,7 +48,7 @@ class GracefulShutdown:
     
     def setup(self):
         """Setup signal handlers"""
-        # Handle SIGTERM (Kubernetes sends this)
+        # Handle SIGTERM (sent by Docker and container platforms on shutdown)
         signal.signal(signal.SIGTERM, self._signal_handler)
         
         # Handle SIGINT (Ctrl+C)

@@ -110,7 +110,7 @@ body:
         - Docker Compose
         - Docker
         - Local (Python)
-        - Kubernetes
+        - Railway
         - Other
     validations:
       required: true

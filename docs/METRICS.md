@@ -325,36 +325,6 @@ volumes:
   grafana-storage:
 ```
 
-### Kubernetes
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: contex
-  labels:
-    app: contex
-spec:
-  ports:
-    - port: 8001
-      name: http
-  selector:
-    app: contex
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: contex
-spec:
-  selector:
-    matchLabels:
-      app: contex
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
-```
-
 ## Best Practices
 
 ### 1. Monitor Key Metrics
