@@ -280,7 +280,7 @@ async def create_endpoint(
 
     except Exception as e:
         logger.error("Failed to create webhook endpoint", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/endpoints", response_model=List[EndpointResponse], dependencies=[Depends(require(Permission.VIEW_WEBHOOKS))])

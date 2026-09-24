@@ -218,7 +218,7 @@ async def create_service_account(
 
     except Exception as e:
         logger.error("Failed to create service account", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("", response_model=List[ServiceAccountResponse], dependencies=[Depends(require(Permission.VIEW_SERVICE_ACCOUNTS))])
