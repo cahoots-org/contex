@@ -81,7 +81,7 @@ async def get_version_history(
                     project_id=project_id,
                     data_key=data_key,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/projects/{project_id}/data/{data_key}/version/{sequence}", dependencies=[Depends(require(Permission.VIEW_VERSION_HISTORY))])
@@ -133,7 +133,7 @@ async def get_specific_version(
                     data_key=data_key,
                     sequence=sequence,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/projects/{project_id}/data/{data_key}/diff", dependencies=[Depends(require(Permission.VIEW_VERSION_HISTORY))])
@@ -178,7 +178,7 @@ async def diff_versions(
                     project_id=project_id,
                     data_key=data_key,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/projects/{project_id}/data/{data_key}/restore/{sequence}", dependencies=[Depends(require(Permission.RESTORE_VERSION))])
@@ -237,4 +237,4 @@ async def restore_version(
                     data_key=data_key,
                     sequence=sequence,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise

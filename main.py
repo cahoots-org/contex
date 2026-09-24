@@ -18,6 +18,7 @@ from src.core import ContextEngine
 from src.core.db_models import APIKey as APIKeyModel
 from src.core.keyhash import hash_api_key
 from src.core.logging import setup_logging, get_logger
+from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
 from src.core.database import init_database
@@ -297,6 +298,13 @@ app = FastAPI(
 @app.exception_handler(PermissionError)
 async def _permission_denied_handler(request, exc):
     return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
+
+# Global sanitizing handler for uncaught exceptions: logs the full error
+# server-side and returns a generic 500 so internals never leak. Registered
+# for Exception only, so FastAPI still routes HTTPException (4xx/5xx) to its
+# own handler and their intentional detail is preserved.
+register_exception_handlers(app)
 
 
 # Build the MCP server at module level with a lazy engine accessor so the

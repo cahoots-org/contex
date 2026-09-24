@@ -142,7 +142,7 @@ async def create_key(name: str, request: Request, identity: Identity = Depends(g
             details={"key_name": name, "error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/auth/keys", response_model=List[APIKey], dependencies=[Depends(require(Permission.LIST_API_KEYS))])
@@ -152,7 +152,7 @@ async def list_keys(request: Request, identity: Identity = Depends(get_identity)
         db = request.app.state.db
         return await list_api_keys(db, tenant_id=identity.tenant_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.delete("/auth/keys/{key_id}", dependencies=[Depends(require(Permission.REVOKE_API_KEY))])
@@ -197,7 +197,7 @@ async def revoke_key(key_id: str, request: Request, identity: Identity = Depends
             details={"error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/admin/rate-limits", dependencies=[Depends(require(Permission.VIEW_RATE_LIMITS))])
@@ -214,7 +214,7 @@ async def get_rate_limits(request: Request):
             "limits": status
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/auth/roles", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
@@ -269,7 +269,7 @@ async def assign_role_endpoint(
             details={"role": role, "error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/auth/roles", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
@@ -289,7 +289,7 @@ async def list_roles_endpoint(request: Request):
             for r in roles
         ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/auth/roles/{key_id}", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
@@ -311,7 +311,7 @@ async def get_role_endpoint(key_id: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.delete("/auth/roles/{key_id}", dependencies=[Depends(require(Permission.MANAGE_ROLES))])
@@ -349,7 +349,7 @@ async def revoke_role_endpoint(key_id: str, request: Request):
             details={"error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/auth/permissions", dependencies=[Depends(require())])
@@ -494,7 +494,7 @@ async def publish_data(event: DataPublishEvent, request: Request, identity: Iden
             details={"data_format": event.data_format or "json", "error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 UPLOAD_FORMAT_MAP = {
@@ -657,7 +657,7 @@ async def upload_document(
             details={"data_format": data_format, "filename": file.filename, "error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/agents/register", response_model=RegistrationResponse, dependencies=[Depends(require(Permission.REGISTER_AGENT))])
@@ -752,7 +752,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
             details={"error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.delete("/agents/{agent_id}", dependencies=[Depends(require(Permission.DELETE_AGENT))])
@@ -902,7 +902,7 @@ async def get_project_data(
                 details={"format": format, "error": str(e)},
                 **ctx
             )
-            raise HTTPException(status_code=500, detail=str(e))
+            raise
 
     # Standard data listing
     data_keys = await engine.semantic_matcher.get_registered_data(project_id)
@@ -1050,7 +1050,7 @@ async def query_project(project_id: str, query_req: QueryRequest, request: Reque
             # Default JSON response
             return response_data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/admin/cleanup", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
@@ -1082,7 +1082,7 @@ async def cleanup_all_projects(request: Request):
         }
     except Exception as e:
         logger.error("Cleanup failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/admin/cleanup/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
@@ -1115,7 +1115,7 @@ async def cleanup_project(project_id: str, request: Request, identity: Identity 
         logger.error("Project cleanup failed",
                     project_id=project_id,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.get("/admin/retention/{project_id}", dependencies=[Depends(require(Permission.SYSTEM_CLEANUP))])
@@ -1143,7 +1143,7 @@ async def get_retention_stats(project_id: str, request: Request, identity: Ident
         logger.error("Failed to get retention stats",
                     project_id=project_id,
                     error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 # ========================================================================
@@ -1244,7 +1244,7 @@ async def import_project(
             details={"format": format, "error": str(e)},
             **ctx
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 # ============================================================================
@@ -1343,7 +1343,7 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
         raise
     except Exception as e:
         logger.error(f"Batch publish failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
 
 
 @router.post("/batch/register", response_model=dict, dependencies=[Depends(require(Permission.REGISTER_AGENT))])
@@ -1437,4 +1437,4 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
 
     except Exception as e:
         logger.error(f"Batch registration failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
