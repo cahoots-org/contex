@@ -263,7 +263,7 @@ class ContextEngine:
         event_type = event.event_type or f"{data_key}_updated"
         sequence = await self.event_store.append_event(
             project_id, event_type, event_data,
-            tenant_id=tenant_id, source=source, actor=actor,
+            tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
         )
 
         # 3. Notify agents that depend on this data

@@ -35,6 +35,7 @@ class EventStore:
         data: Dict[str, Any],
         tenant_id: Optional[str] = None,
         *,
+        data_key: Optional[str] = None,
         source: str = "api",
         actor: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -46,6 +47,7 @@ class EventStore:
             event_type: Event type (e.g., "tech_stack_updated")
             data: Event data
             tenant_id: Optional tenant identifier
+            data_key: Data key this event concerns; denormalized for key-scoped queries
             source: Who/what produced the event (default: "api")
             actor: Optional dict with actor_id, actor_type, actor_ip
 
@@ -72,6 +74,7 @@ class EventStore:
                 tenant_id=tenant_id,
                 event_type=event_type,
                 data=data,
+                data_key=data_key,
                 sequence=sequence,
                 source=source,
                 actor_id=actor.get("actor_id"),
@@ -192,6 +195,52 @@ class EventStore:
             )
 
             return event_list
+
+    async def get_events_for_key(
+        self,
+        project_id: str,
+        data_key: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get events for a single data key, newest first.
+
+        Filters by ``data_key`` in SQL (served by the
+        ``(project_id, data_key, sequence DESC)`` index) so a project's whole
+        event log is never loaded to answer a per-key query.
+
+        Args:
+            project_id: Project identifier
+            data_key: Data key to filter by
+            limit: Maximum number of events to return
+            offset: Number of matching events to skip (pagination)
+
+        Returns:
+            List of events ordered by sequence descending
+        """
+        limit = clamp_count(limit)
+        offset = max(0, offset)
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Event)
+                .where(Event.project_id == project_id)
+                .where(Event.data_key == data_key)
+                .order_by(Event.sequence.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            events = result.scalars().all()
+
+            return [
+                {
+                    "sequence": str(e.sequence),
+                    "event_type": e.event_type,
+                    "data": e.data,
+                    "source": e.source,
+                }
+                for e in events
+            ]
 
     async def get_latest_sequence(self, project_id: str) -> Optional[str]:
         """

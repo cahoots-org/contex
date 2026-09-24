@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from src.core.event_store import EventStore
-from src.core.db_models import Event, Tenant
+from src.core.db_models import Event, EventSequenceCounter, Tenant
 from src.core.models import DataPublishEvent
 
 
@@ -277,3 +277,73 @@ async def test_append_event_provenance_defaults(db):
         assert row.actor_id is None     # unauthenticated
         assert row.actor_type is None
         assert row.actor_ip is None
+
+
+@pytest.mark.asyncio
+async def test_get_events_for_key_filters_by_key(db):
+    """Only events matching the requested data_key are returned."""
+    store = EventStore(db)
+    await store.append_event("proj-key", "tech_stack_updated", {"tech_stack": 1}, data_key="tech_stack")
+    await store.append_event("proj-key", "config_updated", {"config": "a"}, data_key="config")
+    await store.append_event("proj-key", "tech_stack_updated", {"tech_stack": 2}, data_key="tech_stack")
+
+    events = await store.get_events_for_key("proj-key", "tech_stack")
+
+    assert len(events) == 2
+    assert {e["data"]["tech_stack"] for e in events} == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_get_events_for_key_newest_first(db):
+    """Events are ordered by sequence descending."""
+    store = EventStore(db)
+    seq1 = await store.append_event("proj-order", "k_updated", {"k": 1}, data_key="k")
+    seq2 = await store.append_event("proj-order", "k_updated", {"k": 2}, data_key="k")
+    seq3 = await store.append_event("proj-order", "k_updated", {"k": 3}, data_key="k")
+
+    events = await store.get_events_for_key("proj-order", "k")
+
+    assert [e["sequence"] for e in events] == [seq3, seq2, seq1]
+
+
+@pytest.mark.asyncio
+async def test_get_events_for_key_pagination(db):
+    """limit and offset page through matching events, newest first."""
+    store = EventStore(db)
+    for i in range(5):
+        await store.append_event("proj-page", "k_updated", {"k": i}, data_key="k")
+
+    page1 = await store.get_events_for_key("proj-page", "k", limit=2, offset=0)
+    page2 = await store.get_events_for_key("proj-page", "k", limit=2, offset=2)
+
+    assert [e["data"]["k"] for e in page1] == [4, 3]
+    assert [e["data"]["k"] for e in page2] == [2, 1]
+
+
+@pytest.mark.asyncio
+async def test_get_events_for_key_not_truncated_beyond_10k(db):
+    """A key with >10k events returns correct, non-truncated newest-first history.
+
+    Regression for #120: the old path loaded the whole project log capped at
+    10k and filtered in Python, silently truncating. The key-scoped query must
+    reach the newest events no matter how many total events precede them.
+    """
+    store = EventStore(db)
+    async with db.session() as session:
+        session.add(EventSequenceCounter(project_id="proj-big", last_sequence=10_005))
+        session.add_all(
+            Event(
+                project_id="proj-big",
+                event_type="k_updated",
+                data={"k": i},
+                data_key="k",
+                sequence=i,
+            )
+            for i in range(1, 10_006)
+        )
+        await session.commit()
+
+    newest = await store.get_events_for_key("proj-big", "k", limit=3)
+
+    assert [e["sequence"] for e in newest] == ["10005", "10004", "10003"]
+    assert [e["data"]["k"] for e in newest] == [10005, 10004, 10003]

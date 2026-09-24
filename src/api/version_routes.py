@@ -7,6 +7,7 @@ Instead of separate versioning system, versions are derived from event stream.
 from fastapi import APIRouter, Depends, Request, HTTPException
 from src.core.authz import require, public
 from src.core.rbac import Permission
+from src.core.limits import MAX_EVENT_COUNT
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +39,7 @@ async def get_version_history(
     data_key: str,
     request: Request,
     limit: int = 100,
+    offset: int = 0,
 ):
     """
     Get version history for a data key (from event stream).
@@ -46,28 +48,23 @@ async def get_version_history(
         project_id: Project identifier
         data_key: Data key
         limit: Maximum number of versions to return
+        offset: Number of versions to skip (pagination)
 
     Returns:
-        List of versions (events) for the data key
+        List of versions (events) for the data key, most recent first
     """
     try:
         engine = request.app.state.context_engine
 
-        # TODO(#120): full-scan of the project's event log. This loads up to
-        # 10k events into memory and filters in Python; replace with a
-        # key-scoped query once #120 lands.
-        all_events = await engine.event_store.get_all_events(project_id, count=10000)
+        events = await engine.event_store.get_events_for_key(
+            project_id, data_key, limit=limit, offset=offset
+        )
 
-        versions = []
-        for event in all_events:
-            version = _extract_version(event, data_key)
-            if version is not None:
-                versions.append(version)
-
-        # Sort by sequence (most recent first) and limit. Sequences are
-        # monotonic integers-as-strings, so sort numerically.
-        versions.sort(key=lambda v: int(v["sequence"]), reverse=True)
-        versions = versions[:limit]
+        versions = [
+            version
+            for event in events
+            if (version := _extract_version(event, data_key)) is not None
+        ]
 
         return {
             "project_id": project_id,
@@ -105,11 +102,11 @@ async def get_specific_version(
     try:
         engine = request.app.state.context_engine
 
-        # TODO(#120): full-scan of the project's event log to find one sequence;
-        # replace with a direct sequence lookup once #120 lands.
-        all_events = await engine.event_store.get_all_events(project_id, count=10000)
+        events = await engine.event_store.get_events_for_key(
+            project_id, data_key, limit=MAX_EVENT_COUNT
+        )
 
-        for event in all_events:
+        for event in events:
             if event.get("sequence") != sequence:
                 continue
 
