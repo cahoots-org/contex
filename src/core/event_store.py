@@ -35,6 +35,7 @@ class EventStore:
         data: Dict[str, Any],
         tenant_id: Optional[str] = None,
         *,
+        data_key: Optional[str] = None,
         source: str = "api",
         actor: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -46,6 +47,7 @@ class EventStore:
             event_type: Event type (e.g., "tech_stack_updated")
             data: Event data
             tenant_id: Optional tenant identifier
+            data_key: Data key this event concerns; denormalized for key-scoped queries
             source: Who/what produced the event (default: "api")
             actor: Optional dict with actor_id, actor_type, actor_ip
 
@@ -72,6 +74,7 @@ class EventStore:
                 tenant_id=tenant_id,
                 event_type=event_type,
                 data=data,
+                data_key=data_key,
                 sequence=sequence,
                 source=source,
                 actor_id=actor.get("actor_id"),

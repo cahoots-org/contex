@@ -203,6 +203,7 @@ class Event(TenantScopedMixin, Base):
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
     event_type: Mapped[str] = mapped_column(String(255), nullable=False)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    data_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source: Mapped[str] = mapped_column(
         String(50), nullable=False, server_default="api"
@@ -218,6 +219,12 @@ class Event(TenantScopedMixin, Base):
         Index("idx_events_project_sequence", "project_id", "sequence", unique=True),
         Index("idx_events_project_created", "project_id", "created_at"),
         Index("idx_events_tenant", "tenant_id"),
+        Index(
+            "idx_events_project_data_key_sequence",
+            "project_id",
+            "data_key",
+            sequence.desc(),
+        ),
     )
 
 
