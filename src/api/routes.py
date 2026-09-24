@@ -599,7 +599,14 @@ async def upload_document(
             data_format=data_format,
         )
         engine = request.app.state.context_engine
-        sequence = await engine.publish_data(event)
+        actor = {
+            "actor_id": ctx["actor_id"],
+            "actor_type": ctx["actor_type"],
+            "actor_ip": ctx["actor_ip"],
+        }
+        sequence = await engine.publish_data(
+            event, source="api", actor=actor, tenant_id=ctx.get("tenant_id"),
+        )
         duration = time.time() - start_time
 
         # Record metrics
@@ -1296,6 +1303,12 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
         logger.info(f"Batch publishing {len(events)} items")
         start_time = time.time()
         engine = request.app.state.context_engine
+        ctx = _get_request_context(request)
+        actor = {
+            "actor_id": ctx["actor_id"],
+            "actor_type": ctx["actor_type"],
+            "actor_ip": ctx["actor_ip"],
+        }
 
         results = []
         successful = 0
@@ -1303,7 +1316,9 @@ async def batch_publish_data(events: List[DataPublishEvent], request: Request, i
 
         for event in events:
             try:
-                sequence = await engine.publish_data(event)
+                sequence = await engine.publish_data(
+                    event, source="api", actor=actor, tenant_id=ctx.get("tenant_id"),
+                )
                 record_event_published(event.project_id, event.data_format or "json")
                 results.append({
                     "status": "success",

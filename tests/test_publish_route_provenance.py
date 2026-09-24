@@ -76,6 +76,113 @@ async def test_publish_route_stamps_provenance():
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.asyncio
+async def test_batch_publish_stamps_provenance():
+    """The batch publish route must forward server-attested source/actor/tenant_id to publish_data."""
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def _seed_principal(request: Request, call_next):
+        request.state.api_key_id = "test-key"
+        request.state.tenant_id = "t1"
+        request.state.request_id = "req-1"
+        return await call_next(request)
+
+    app.include_router(api_router, prefix="/api/v1")
+
+    mock_engine = MagicMock()
+    mock_engine.publish_data = AsyncMock(return_value="42")
+    app.state.context_engine = mock_engine
+    app.state.db = MagicMock()
+
+    with (
+        patch("src.api.routes.ensure_project_access", new=AsyncMock()),
+        patch("src.api.routes.audit_log", new=AsyncMock()),
+        patch("src.api.routes.emit_webhook", new=AsyncMock()),
+        patch("src.core.metrics.record_event_published", new=MagicMock()),
+        patch("src.core.metrics.publish_duration_seconds", new=_chainable_histogram()),
+    ):
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/batch/publish",
+                json=[{"project_id": "batch-prov", "data_key": "k", "data": {"x": 1}}],
+            )
+
+    mock_engine.publish_data.assert_awaited_once()
+    call_args = mock_engine.publish_data.call_args
+
+    assert call_args.kwargs["source"] == "api", (
+        f"Expected source='api', got: {call_args.kwargs.get('source')!r}"
+    )
+    assert call_args.kwargs["tenant_id"] == "t1", (
+        f"Expected tenant_id='t1', got: {call_args.kwargs.get('tenant_id')!r}"
+    )
+    actor = call_args.kwargs["actor"]
+    assert actor["actor_id"] == "test-key", (
+        f"Expected actor_id='test-key', got: {actor.get('actor_id')!r}"
+    )
+    assert actor["actor_type"] == "api_key", (
+        f"Expected actor_type='api_key', got: {actor.get('actor_type')!r}"
+    )
+    assert "actor_ip" in actor, f"Expected 'actor_ip' key in actor dict, got: {actor!r}"
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_upload_document_stamps_provenance():
+    """The file-upload route must forward server-attested source/actor/tenant_id to publish_data."""
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def _seed_principal(request: Request, call_next):
+        request.state.api_key_id = "test-key"
+        request.state.tenant_id = "t1"
+        request.state.request_id = "req-1"
+        return await call_next(request)
+
+    app.include_router(api_router, prefix="/api/v1")
+
+    mock_engine = MagicMock()
+    mock_engine.publish_data = AsyncMock(return_value="42")
+    app.state.context_engine = mock_engine
+    app.state.db = MagicMock()
+
+    with (
+        patch("src.api.routes.ensure_project_access", new=AsyncMock()),
+        patch("src.api.routes.audit_log", new=AsyncMock()),
+        patch("src.api.routes.emit_webhook", new=AsyncMock()),
+        patch("src.core.metrics.record_event_published", new=MagicMock()),
+        patch("src.core.metrics.publish_duration_seconds", new=_chainable_histogram()),
+    ):
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/data/upload",
+                data={"project_id": "upload-prov", "data_key": "k"},
+                files={"file": ("notes.txt", b"hello world", "text/plain")},
+            )
+
+    mock_engine.publish_data.assert_awaited_once()
+    call_args = mock_engine.publish_data.call_args
+
+    assert call_args.kwargs["source"] == "api", (
+        f"Expected source='api', got: {call_args.kwargs.get('source')!r}"
+    )
+    assert call_args.kwargs["tenant_id"] == "t1", (
+        f"Expected tenant_id='t1', got: {call_args.kwargs.get('tenant_id')!r}"
+    )
+    actor = call_args.kwargs["actor"]
+    assert actor["actor_id"] == "test-key", (
+        f"Expected actor_id='test-key', got: {actor.get('actor_id')!r}"
+    )
+    assert actor["actor_type"] == "api_key", (
+        f"Expected actor_type='api_key', got: {actor.get('actor_type')!r}"
+    )
+    assert "actor_ip" in actor, f"Expected 'actor_ip' key in actor dict, got: {actor!r}"
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+
 def _chainable_histogram():
     """Return a MagicMock whose .labels(...).observe(...) chain succeeds."""
     mock = MagicMock()
