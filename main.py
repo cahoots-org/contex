@@ -25,6 +25,7 @@ from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
+from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
 REDIS_MODE = os.getenv("REDIS_MODE", "standalone")
@@ -373,10 +374,11 @@ if AUTH_ENABLED:
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
 
-# Rate limiting is intentionally left UNWIRED for now: the RateLimitMiddleware
-# path table shares the same broken-path-matching bug tracked for the removed
-# middleware (see #38). A follow-up will re-introduce rate limiting correctly.
-logger.warning("Rate limiting is DISABLED (pending #38 path-matching fix)")
+# Rate limiting always runs, independent of AUTH_ENABLED. It is added before the
+# tenant middleware so that it executes after tenant/tracing have populated
+# request.state and the X-API-Key header is available for key derivation.
+app.add_middleware(RateLimitMiddleware)
+logger.info("Rate limiting middleware enabled")
 
 # Tenant middleware always runs: it sets the default-tenant context in demo mode
 # and enforces identity-derived tenant + quotas when auth is on.

@@ -198,3 +198,124 @@ class TestRateLimitMiddleware:
         # Query should still work (different key)
         allowed, _ = await limiter.check_rate_limit(query_key, limit)
         assert allowed
+
+
+class TestRateLimitConfig:
+    """Test env-configurable rate limit configuration"""
+
+    def test_defaults(self, monkeypatch):
+        """Config falls back to sane defaults when no env vars are set"""
+        for var in (
+            "RATE_LIMIT_PUBLISH",
+            "RATE_LIMIT_REGISTER",
+            "RATE_LIMIT_QUERY",
+            "RATE_LIMIT_ADMIN",
+            "RATE_LIMIT_DEFAULT",
+            "RATE_LIMIT_WINDOW",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        config = RateLimitConfig.from_env()
+        assert config.query == 200
+        assert config.publish == 100
+        assert config.register == 50
+        assert config.admin == 20
+        assert config.default == 60
+        assert config.window == 60
+
+    def test_env_override(self, monkeypatch):
+        """Env vars override the defaults"""
+        monkeypatch.setenv("RATE_LIMIT_QUERY", "7")
+        monkeypatch.setenv("RATE_LIMIT_WINDOW", "3")
+
+        config = RateLimitConfig.from_env()
+        assert config.query == 7
+        assert config.window == 3
+
+
+class TestRateLimitMiddlewareEnforcement:
+    """Test wired-up middleware enforcement, IP keying, and env overrides"""
+
+    def _build_app(self, db):
+        app = FastAPI()
+        app.state.db = db
+        app.add_middleware(RateLimitMiddleware)
+
+        @app.get("/api/v1/query")
+        async def query():
+            return {"status": "ok"}
+
+        @app.get("/health")
+        async def health():
+            return {"status": "healthy"}
+
+        @app.get("/docs")
+        async def docs():
+            return {"status": "docs"}
+
+        return app
+
+    @pytest.mark.asyncio
+    async def test_returns_429_when_limit_exceeded(self, db, monkeypatch):
+        """The request past the configured limit gets a 429 with headers"""
+        monkeypatch.setenv("RATE_LIMIT_QUERY", "3")
+        monkeypatch.setenv("RATE_LIMIT_WINDOW", "60")
+        app = self._build_app(db)
+
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for _ in range(3):
+                response = await client.get("/api/v1/query", headers={"X-API-Key": "k"})
+                assert response.status_code == 200
+                assert "X-RateLimit-Limit" in response.headers
+                assert response.headers["X-RateLimit-Limit"] == "3"
+
+            blocked = await client.get("/api/v1/query", headers={"X-API-Key": "k"})
+            assert blocked.status_code == 429
+            assert blocked.headers["X-RateLimit-Limit"] == "3"
+            assert blocked.headers["X-RateLimit-Remaining"] == "0"
+            assert "X-RateLimit-Reset" in blocked.headers
+            assert "Retry-After" in blocked.headers
+
+    @pytest.mark.asyncio
+    async def test_keyed_by_ip_when_no_api_key(self, db, monkeypatch):
+        """Without an API key, distinct client IPs get independent buckets"""
+        monkeypatch.setenv("RATE_LIMIT_QUERY", "2")
+        app = self._build_app(db)
+
+        transport_a = httpx.ASGITransport(app=app, client=("10.0.0.1", 1234))
+        transport_b = httpx.ASGITransport(app=app, client=("10.0.0.2", 1234))
+
+        async with AsyncClient(transport=transport_a, base_url="http://test") as client_a:
+            for _ in range(2):
+                assert (await client_a.get("/api/v1/query")).status_code == 200
+            assert (await client_a.get("/api/v1/query")).status_code == 429
+
+        async with AsyncClient(transport=transport_b, base_url="http://test") as client_b:
+            # Different IP -> independent bucket, still allowed
+            assert (await client_b.get("/api/v1/query")).status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_health_is_exempt(self, db, monkeypatch):
+        """/health is never throttled and carries no rate limit headers"""
+        monkeypatch.setenv("RATE_LIMIT_DEFAULT", "1")
+        app = self._build_app(db)
+
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            for _ in range(5):
+                response = await client.get("/health")
+                assert response.status_code == 200
+                assert "X-RateLimit-Limit" not in response.headers
+
+    @pytest.mark.asyncio
+    async def test_docs_gets_ip_limit(self, db, monkeypatch):
+        """/docs is rate limited via the IP-based default bucket"""
+        monkeypatch.setenv("RATE_LIMIT_DEFAULT", "2")
+        app = self._build_app(db)
+
+        transport = httpx.ASGITransport(app=app, client=("10.0.0.9", 4321))
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            for _ in range(2):
+                response = await client.get("/docs")
+                assert response.status_code == 200
+                assert "X-RateLimit-Limit" in response.headers
+            assert (await client.get("/docs")).status_code == 429
