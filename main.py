@@ -364,6 +364,12 @@ ENABLE_HSTS = os.getenv("ENABLE_HSTS", "true").lower() == "true"
 app.add_middleware(SecurityHeadersMiddleware, enable_hsts=ENABLE_HSTS)
 logger.info("Security headers middleware enabled", hsts=ENABLE_HSTS)
 
+# Global body-size limit (defense-in-depth): bounds every request body so no
+# handler can buffer an unbounded payload, even with a spoofed Content-Length.
+from src.core.upload_limits import BodyLimitMiddleware
+app.add_middleware(BodyLimitMiddleware)
+logger.info("Body-limit middleware enabled")
+
 # Add security middleware stack (order matters - executed in reverse)
 from src.core.tracing_middleware import TracingMiddleware
 from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware
