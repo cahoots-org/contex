@@ -2,7 +2,7 @@ services:
   postgres:
     image: paradedb/paradedb:0.25.9-pg18
     ports:
-      - "${CONTEX_PG_PORT:-5432}:5432"
+      - "127.0.0.1:${CONTEX_PG_PORT:-5432}:5432"
     environment:
       - POSTGRES_DB=contex
       - POSTGRES_USER=contex
@@ -19,7 +19,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${CONTEX_REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${CONTEX_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
