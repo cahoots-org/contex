@@ -354,8 +354,13 @@ class TestContextEngine:
 
         response = await context_engine.register_agent(registration)
 
-        # Agent should not match data from proj1
-        # (depends on semantic matcher project isolation)
+        # Agent in proj2 must not match data published to proj1.
+        assert response.matched_needs["data"] == 0
+
+        cross_project = await context_engine.semantic_matcher.match_agent_needs(
+            "proj2", ["data"]
+        )
+        assert cross_project["data"] == []
 
     @pytest.mark.asyncio
     async def test_agent_tracks_data_dependencies(self, context_engine):
