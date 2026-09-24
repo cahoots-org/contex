@@ -134,6 +134,7 @@ class EventStore:
                     "sequence": str(e.sequence),
                     "event_type": e.event_type,
                     "data": e.data,
+                    "source": e.source,
                 }
                 for e in events
             ]
@@ -179,6 +180,7 @@ class EventStore:
                     "sequence": str(e.sequence),
                     "event_type": e.event_type,
                     "data": e.data,
+                    "source": e.source,
                 }
                 for e in events
             ]

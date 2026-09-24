@@ -129,7 +129,7 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
-        ))
+        ), source='mcp')
         return json.dumps({"published": data_key, "sequence": str(seq)})
 
     @server.tool(name="contex_publish_batch",
@@ -149,7 +149,7 @@ def build_mcp_server(engine, db_accessor=None):
                 data_key=item["data_key"],
                 data=item["data"],
                 data_format=item.get("data_format", "json"),
-            ))
+            ), source='mcp')
             published += 1
         return json.dumps({"published": published})
 
