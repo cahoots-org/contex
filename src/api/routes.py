@@ -17,6 +17,12 @@ from src.core.models import (
 )
 from src.core.auth import create_api_key, revoke_api_key, list_api_keys, APIKey
 from src.core.limits import check_batch_size
+from src.core.upload_limits import (
+    RequestBodyTooLarge,
+    get_max_upload_size,
+    stream_request_body,
+    stream_upload_file,
+)
 from src.core.logging import get_logger
 from src.core.audit import (
     audit_log,
@@ -514,8 +520,6 @@ UPLOAD_FORMAT_MAP = {
 
 BINARY_FORMATS = {"pdf", "docx"}
 
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
-
 
 @router.post("/data/upload", response_model=dict, dependencies=[Depends(require(Permission.PUBLISH_DATA))])
 async def upload_document(
@@ -566,13 +570,24 @@ async def upload_document(
     try:
         from src.core.metrics import record_event_published, publish_duration_seconds
 
-        # Read file content
-        content = await file.read()
+        max_upload_size = get_max_upload_size()
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                if int(declared) > max_upload_size:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Maximum size is {max_upload_size // (1024 * 1024)} MB"
+                    )
+            except ValueError:
+                pass
 
-        if len(content) > MAX_UPLOAD_SIZE:
+        try:
+            content = await stream_upload_file(file, max_upload_size)
+        except RequestBodyTooLarge:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB"
+                detail=f"File too large. Maximum size is {max_upload_size // (1024 * 1024)} MB"
             )
 
         # For text-based formats, decode bytes to string
@@ -1186,8 +1201,13 @@ async def import_project(
         if format not in ["json", "toon"]:
             raise HTTPException(status_code=400, detail="Format must be 'json' or 'toon'")
 
-        # Read request body
-        body = await request.body()
+        try:
+            body = await stream_request_body(request, get_max_upload_size())
+        except RequestBodyTooLarge as exc:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Import too large. Maximum size is {exc.max_size // (1024 * 1024)} MB"
+            )
         data = body.decode("utf-8")
 
         db = request.app.state.db
