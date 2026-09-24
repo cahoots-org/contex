@@ -1,8 +1,9 @@
 """Rate limiting using PostgreSQL sliding window algorithm"""
 
 import asyncio
+import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -32,7 +33,7 @@ def _record_rate_limited_event(
                 event_type=AuditEventType.SECURITY_RATE_LIMITED,
                 action=f"Rate limit exceeded on {endpoint}",
                 actor_id=api_key_id,
-                actor_type="api_key" if api_key_id != "anonymous" else None,
+                actor_type="api_key" if api_key_id else None,
                 actor_ip=actor_ip,
                 tenant_id=tenant_id,
                 endpoint=endpoint,
@@ -46,18 +47,47 @@ def _record_rate_limited_event(
         pass  # Don't fail request if audit fails
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read a positive integer from the environment, ignoring blanks."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return int(raw)
+
+
+@dataclass(frozen=True)
 class RateLimitConfig:
-    """Rate limit configuration for different operations"""
+    """Per-endpoint rate limits (requests per window) and the window size."""
 
-    # Default limits (requests per minute)
-    PUBLISH_DATA = 100
-    REGISTER_AGENT = 50
-    QUERY = 200
-    ADMIN = 20
-    DEFAULT = 60
+    publish: int = 100
+    register: int = 50
+    query: int = 200
+    admin: int = 20
+    default: int = 60
+    window: int = 60
 
-    # Window size in seconds
-    WINDOW_SIZE = 60
+    @classmethod
+    def from_env(cls) -> "RateLimitConfig":
+        """Build a config from environment variables, falling back to defaults."""
+        return cls(
+            publish=_env_int("RATE_LIMIT_PUBLISH", 100),
+            register=_env_int("RATE_LIMIT_REGISTER", 50),
+            query=_env_int("RATE_LIMIT_QUERY", 200),
+            admin=_env_int("RATE_LIMIT_ADMIN", 20),
+            default=_env_int("RATE_LIMIT_DEFAULT", 60),
+            window=_env_int("RATE_LIMIT_WINDOW", 60),
+        )
+
+
+def build_endpoint_limits(config: "RateLimitConfig") -> dict[str, int]:
+    """Map route prefixes (as actually mounted at /api/v1/*) to their limits."""
+    return {
+        "/api/v1/publish": config.publish,
+        "/api/v1/register": config.register,
+        "/api/v1/query": config.query,
+        "/auth/": config.admin,
+        "/admin/": config.admin,
+    }
 
 
 class RateLimiter:
@@ -70,7 +100,7 @@ class RateLimiter:
         self,
         key: str,
         limit: int,
-        window: int = RateLimitConfig.WINDOW_SIZE
+        window: int = 60
     ) -> tuple[bool, dict]:
         """
         Check if request is within rate limit.
@@ -156,57 +186,54 @@ class RateLimiter:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limits on API endpoints"""
 
+    EXEMPT_PATHS = frozenset({"/health"})
+
     def __init__(self, app):
         super().__init__(app)
-
-        # Define rate limits per endpoint pattern
-        self.endpoint_limits = {
-            "/api/publish": RateLimitConfig.PUBLISH_DATA,
-            "/api/register": RateLimitConfig.REGISTER_AGENT,
-            "/api/query": RateLimitConfig.QUERY,
-            "/auth/": RateLimitConfig.ADMIN,
-            "/admin/": RateLimitConfig.ADMIN,
-        }
+        self.config = RateLimitConfig.from_env()
+        self.endpoint_limits = build_endpoint_limits(self.config)
 
     def get_rate_limit_for_path(self, path: str) -> int:
         """Get rate limit for a given path"""
         for pattern, limit in self.endpoint_limits.items():
             if path.startswith(pattern):
                 return limit
-        return RateLimitConfig.DEFAULT
+        return self.config.default
 
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health checks and docs
-        if request.url.path in ["/health", "/", "/docs", "/openapi.json", "/redoc"]:
+        # Liveness probes are never throttled.
+        if request.url.path in self.EXEMPT_PATHS:
             return await call_next(request)
 
-        # Get database from app state
         db: DatabaseManager = request.app.state.db
         limiter = RateLimiter(db)
 
-        # Get API key from request (set by APIKeyMiddleware)
-        api_key = request.headers.get("X-API-Key", "anonymous")
-
-        # Build rate limit key
         path = request.url.path
         limit = self.get_rate_limit_for_path(path)
+
+        # Prefer per-API-key limiting; fall back to per-client-IP when auth is off.
+        api_key = request.headers.get("X-API-Key")
+        actor_ip = request.client.host if request.client else None
+        principal = api_key if api_key else f"ip:{actor_ip or 'unknown'}"
 
         # Include project_id in key if available (for project-level limits)
         project_id = request.path_params.get("project_id") or request.query_params.get("project_id")
         if project_id:
-            rate_key = f"{api_key}:{path}:{project_id}"
+            rate_key = f"{principal}:{path}:{project_id}"
         else:
-            rate_key = f"{api_key}:{path}"
+            rate_key = f"{principal}:{path}"
 
-        # Check rate limit
-        allowed, info = await limiter.check_rate_limit(rate_key, limit)
+        try:
+            allowed, info = await limiter.check_rate_limit(rate_key, limit, self.config.window)
+        except Exception:
+            # Fail open: a broken limiter backend must not take down the API.
+            logger.warning("Rate limiter unavailable, allowing request", path=path, exc_info=True)
+            return await call_next(request)
 
         if not allowed:
-            # Record audit event for rate limiting
-            actor_ip = request.client.host if request.client else None
             tenant_id = getattr(request.state, 'tenant_id', None)
             _record_rate_limited_event(
-                api_key_id=api_key if api_key != "anonymous" else None,
+                api_key_id=api_key,
                 endpoint=path,
                 limit=limit,
                 actor_ip=actor_ip,
@@ -241,22 +268,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 async def get_rate_limit_status(db: DatabaseManager, api_key: str) -> dict:
     """Get current rate limit status for an API key"""
-    limiter = RateLimiter(db)
-
-    endpoint_limits = {
-        "/api/publish": RateLimitConfig.PUBLISH_DATA,
-        "/api/register": RateLimitConfig.REGISTER_AGENT,
-        "/api/query": RateLimitConfig.QUERY,
-        "/auth/": RateLimitConfig.ADMIN,
-        "/admin/": RateLimitConfig.ADMIN,
-    }
+    config = RateLimitConfig.from_env()
+    endpoint_limits = build_endpoint_limits(config)
 
     status = {}
     for endpoint, limit in endpoint_limits.items():
         rate_key = f"{api_key}:{endpoint}"
         # Just check status without adding a new entry
         now = datetime.now(timezone.utc)
-        window_start = now - timedelta(seconds=RateLimitConfig.WINDOW_SIZE)
+        window_start = now - timedelta(seconds=config.window)
 
         async with db.session() as session:
             result = await session.execute(
@@ -267,7 +287,7 @@ async def get_rate_limit_status(db: DatabaseManager, api_key: str) -> dict:
             current_count = result.scalar() or 0
 
         remaining = max(0, limit - current_count)
-        reset = int(now.timestamp() + RateLimitConfig.WINDOW_SIZE)
+        reset = int(now.timestamp() + config.window)
 
         status[endpoint] = {
             "limit": limit,
