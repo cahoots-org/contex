@@ -88,6 +88,13 @@ By participating in this project, you agree to maintain a respectful and inclusi
    ```
 
 6. **Run tests**:
+
+   The suite runs against a separate `contex_test` database. `docker compose up`
+   creates it automatically on first start. If you started Postgres another way
+   (the manual `docker run` above, or an existing data volume), create it once:
+   ```bash
+   psql "postgresql://contex:contex_password@localhost:5432/contex" -c 'CREATE DATABASE contex_test;'
+   ```
    ```bash
    pytest tests/ -v
    ```
