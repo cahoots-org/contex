@@ -25,3 +25,21 @@ class PgVectorSearch:
                 .limit(top_k)
             )
             return [(row.node_key, float(row.similarity)) for row in result]
+
+    async def score(
+        self, project_id: str, query: str, node_keys: list[str]
+    ) -> dict[str, float]:
+        """Cosine similarity for specific node_keys (keys without an embedding are omitted)."""
+        if not node_keys:
+            return {}
+        query_vec = self.model.encode(query).tolist()
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(
+                    Embedding.node_key,
+                    (1 - Embedding.embedding.cosine_distance(query_vec)).label("similarity"),
+                )
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key.in_(node_keys))
+            )
+            return {row.node_key: float(row.similarity) for row in result}

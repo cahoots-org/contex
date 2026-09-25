@@ -23,12 +23,15 @@ class HybridSearchService:
         vector_hits = await self.vector_search.search(project_id, query, top_k)
         lexical_hits = await self.lexical_search.search(project_id, query, top_k)
         cosine = dict(vector_hits)
+        # Lexical-only hits fell outside the vector ranker's top_k window but are
+        # still real embeddings; score them directly so they aren't dropped just
+        # for ranking low semantically. This is where hybrid earns its keep.
+        missing = [doc_id for doc_id, _ in lexical_hits if doc_id not in cosine]
+        cosine.update(await self.vector_search.score(project_id, query, missing))
         rankings = [
             [doc_id for doc_id, _ in vector_hits],
             [doc_id for doc_id, _ in lexical_hits],
         ]
         fused = rrf_fuse(rankings, k=self.k)
-        # ponytail: drop lexical-only hits (no cosine to report); compute cosine
-        # for them if pure-lexical recall ever matters.
         ranked = [(doc_id, cosine[doc_id]) for doc_id, _ in fused if doc_id in cosine]
         return ranked[:top_k]
