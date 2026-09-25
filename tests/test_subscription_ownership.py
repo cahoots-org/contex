@@ -8,7 +8,7 @@ from src.core.tenant import DEFAULT_TENANT_ID
 
 
 class _StubMatcher:
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None):
+    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
         return {n: [{"data_key": "k", "similarity": 0.9, "data": {}, "description": "d"}] for n in needs}
 
 

@@ -16,6 +16,14 @@ from src.core.authz import auth_enabled
 logger = logging.getLogger(__name__)
 
 
+def _since_from_scope(scope):
+    """Extract the recency cutoff (``scope["since"]``, ISO-8601) as a datetime."""
+    if not scope:
+        return None
+    raw = scope.get("since")
+    return datetime.fromisoformat(raw) if raw else None
+
+
 def _assert_sub_tenant(row, tenant_id):
     if auth_enabled() and tenant_id is not None and row.tenant_id != tenant_id:
         raise PermissionError("Permission denied")
@@ -33,7 +41,8 @@ class SubscriptionService:
         check_needs(needs)
         top_k = clamp_top_k(top_k)
         sub_id = subscription_id or f"sub_{uuid4().hex}"
-        bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold)
+        since = _since_from_scope(scope)
+        bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
@@ -82,7 +91,8 @@ class SubscriptionService:
         changed_ids: list[str] = []
         for sub in subs:
             try:
-                new_bundle = await self.matcher.match(project_id, sub.needs, top_k=sub.top_k, threshold=sub.threshold)  # computed fully first
+                since = _since_from_scope(sub.scope)
+                new_bundle = await self.matcher.match(project_id, sub.needs, top_k=sub.top_k, threshold=sub.threshold, since=since)  # computed fully first
                 if new_bundle == sub.bundle:
                     continue
                 now = datetime.now(timezone.utc)  # single timestamp for both DB + event

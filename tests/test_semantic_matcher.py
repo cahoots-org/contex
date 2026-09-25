@@ -1,10 +1,12 @@
 """Tests for semantic data matching with PostgreSQL/pgvector"""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
 import numpy as np
+from sqlalchemy import text
 from unittest.mock import Mock, AsyncMock, patch
 from src.core.semantic_matcher import SemanticDataMatcher
 from src.core.models import DataPublishEvent
@@ -243,15 +245,18 @@ class TestSemanticMatcherConcurrency:
         match, so a call with ``top_k=k`` must return exactly ``min(k, N)``
         results regardless of what any concurrent call requests.
         """
-        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
-            mock_model = Mock()
-            mock_model.encode.side_effect = lambda x, *a, **k: (
-                np.ones(384, dtype=np.float32)
-                if isinstance(x, str)
-                else np.ones((len(x), 384), dtype=np.float32)
-            )
-            mock_model_cls.return_value = mock_model
-
+        # Patch _load_model (not SentenceTransformer) so the mock never lands in
+        # the process-wide _MODEL_CACHE under the real model name and leak into
+        # the real-embedding tests.
+        mock_model = Mock()
+        mock_model.encode.side_effect = lambda x, *a, **k: (
+            np.ones(384, dtype=np.float32)
+            if isinstance(x, str)
+            else np.ones((len(x), 384), dtype=np.float32)
+        )
+        with patch(
+            "src.core.semantic_matcher._load_model", return_value=mock_model
+        ):
             matcher = SemanticDataMatcher(
                 db=db,
                 model_name="all-MiniLM-L6-v2",
@@ -287,6 +292,110 @@ class TestSemanticMatcherConcurrency:
                 f"requested top_k={requested} but got {got} matches; "
                 "concurrent requests cross-contaminated shared state"
             )
+
+
+class TestSemanticMatcherTimeWindow:
+    """`since` restricts matches to rows created/updated on or after a cutoff.
+
+    Uses an identical-embedding model (threshold 0 ⇒ every row matches on
+    similarity) so tests isolate the time predicate. Row timestamps are aged
+    directly in the DB to simulate stale vs. fresh content.
+    """
+
+    @pytest_asyncio.fixture
+    async def matcher(self, db):
+        # Patch _load_model (not SentenceTransformer) so the mock is never stored
+        # in the process-wide _MODEL_CACHE under the real model name, which would
+        # otherwise leak into the real-embedding tests.
+        mock_model = Mock()
+        mock_model.encode.side_effect = lambda x, *a, **k: (
+            np.ones(384, dtype=np.float32)
+            if isinstance(x, str)
+            else np.ones((len(x), 384), dtype=np.float32)
+        )
+        with patch(
+            "src.core.semantic_matcher._load_model", return_value=mock_model
+        ):
+            matcher = SemanticDataMatcher(
+                db=db,
+                model_name="all-MiniLM-L6-v2",
+                similarity_threshold=0.5,
+                max_matches=10,
+            )
+            await matcher.initialize_index()
+            return matcher
+
+    async def _set_timestamps(self, db, data_key, *, created_at, updated_at=None):
+        async with db.session() as session:
+            await session.execute(
+                text(
+                    "UPDATE embeddings SET created_at = :c, updated_at = :u "
+                    "WHERE data_key = :k"
+                ),
+                {"c": created_at, "u": updated_at, "k": data_key},
+            )
+            await session.commit()
+
+    @staticmethod
+    def _data_keys(need_matches):
+        # A match's data_key is the node_key (`<data_key>.<path>`); reduce to the
+        # published data_key for assertions.
+        return {m["data_key"].split(".", 1)[0] for m in need_matches}
+
+    @pytest.mark.asyncio
+    async def test_since_excludes_older_rows(self, matcher, db):
+        now = datetime.now(timezone.utc)
+        await matcher.register_data("projt", "fresh", {"v": 1})
+        await matcher.register_data("projt", "stale", {"v": 2})
+        await self._set_timestamps(
+            db, "stale", created_at=now - timedelta(days=800)
+        )
+
+        cutoff = now - timedelta(days=365)
+        matches = await matcher.match_agent_needs(
+            "projt", ["anything"], threshold=0.0, since=cutoff
+        )
+
+        keys = self._data_keys(matches["anything"])
+        assert "fresh" in keys
+        assert "stale" not in keys
+
+    @pytest.mark.asyncio
+    async def test_since_none_returns_everything(self, matcher, db):
+        now = datetime.now(timezone.utc)
+        await matcher.register_data("projt", "fresh", {"v": 1})
+        await matcher.register_data("projt", "stale", {"v": 2})
+        await self._set_timestamps(
+            db, "stale", created_at=now - timedelta(days=800)
+        )
+
+        matches = await matcher.match_agent_needs(
+            "projt", ["anything"], threshold=0.0
+        )
+
+        keys = self._data_keys(matches["anything"])
+        assert keys == {"fresh", "stale"}
+
+    @pytest.mark.asyncio
+    async def test_since_uses_updated_at_when_present(self, matcher, db):
+        """A row created long ago but recently updated is within the window."""
+        now = datetime.now(timezone.utc)
+        await matcher.register_data("projt", "revived", {"v": 1})
+        # Created 800 days ago, but re-published 10 days ago.
+        await self._set_timestamps(
+            db,
+            "revived",
+            created_at=now - timedelta(days=800),
+            updated_at=now - timedelta(days=10),
+        )
+
+        cutoff = now - timedelta(days=365)
+        matches = await matcher.match_agent_needs(
+            "projt", ["anything"], threshold=0.0, since=cutoff
+        )
+
+        keys = self._data_keys(matches["anything"])
+        assert "revived" in keys
 
     @pytest.mark.asyncio
     async def test_concurrent_threshold_do_not_cross_contaminate(self, matcher):
@@ -435,3 +544,35 @@ class TestSemanticMatcherHybridSearch:
         assert results, "hybrid search returned no results"
         keys = [r["data_key"] for r in results]
         assert any("user_auth" in k for k in keys)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_hybrid_since_filters_old_data(self, hybrid_matcher, db):
+        """`since` must apply in hybrid mode (both vector and lexical rankers)."""
+        await hybrid_matcher.register_data(
+            "projhyt", "fresh_auth", {"method": "JWT", "flow": "OAuth2"}
+        )
+        await hybrid_matcher.register_data(
+            "projhyt", "stale_auth", {"method": "JWT", "flow": "OAuth2"}
+        )
+        now = datetime.now(timezone.utc)
+        async with db.session() as session:
+            await session.execute(
+                text(
+                    "UPDATE embeddings SET created_at = :c, updated_at = NULL "
+                    "WHERE data_key = :k"
+                ),
+                {"c": now - timedelta(days=800), "k": "stale_auth"},
+            )
+            await session.commit()
+
+        matches = await hybrid_matcher.match_agent_needs(
+            "projhyt", ["authentication and security"],
+            since=now - timedelta(days=365),
+        )
+        keys = {
+            r["data_key"].split(".", 1)[0]
+            for r in matches.get("authentication and security", [])
+        }
+        assert "fresh_auth" in keys
+        assert "stale_auth" not in keys

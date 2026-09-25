@@ -5,6 +5,7 @@ import json
 import logging
 import tiktoken
 import toon_format as toon
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from redis.asyncio import Redis
 
@@ -624,7 +625,8 @@ class ContextEngine:
         return self.agents.get(agent_id)
 
     async def query_project_data(
-        self, project_id: str, query: str, top_k: int = 5, threshold: Optional[float] = None
+        self, project_id: str, query: str, top_k: int = 5,
+        threshold: Optional[float] = None, since: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """
         Ad-hoc semantic query of project data without agent registration.
@@ -637,6 +639,8 @@ class ContextEngine:
             query: Natural language query
             top_k: Maximum number of results to return
             threshold: Optional similarity threshold override (0-1)
+            since: Optional cutoff; only match data created or updated on or
+                after this time.
 
         Returns:
             List of matched data sources with similarity scores
@@ -647,7 +651,7 @@ class ContextEngine:
         # Pass per-request top_k/threshold through instead of mutating the shared
         # matcher, so concurrent ad-hoc queries can't corrupt each other (#105).
         matches = await self.semantic_matcher.match_agent_needs(
-            project_id, [query], top_k=top_k, threshold=threshold
+            project_id, [query], top_k=top_k, threshold=threshold, since=since
         )
 
         # Extract matches for the query

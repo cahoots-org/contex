@@ -76,3 +76,80 @@ async def test_contex_publish_batch_rejects_oversized_batch(db, redis, monkeypat
     items = [{"data_key": f"k{i}", "data": {"v": i}} for i in range(3)]
     with pytest.raises(Exception):
         await server.call_tool("contex_publish_batch", {"project_id": "p", "items": items})
+
+
+async def _age_row(db, data_key, *, created_at):
+    from sqlalchemy import text
+    async with db.session() as session:
+        await session.execute(
+            text("UPDATE embeddings SET created_at = :c, updated_at = NULL WHERE data_key = :k"),
+            {"c": created_at, "k": data_key},
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_contex_query_since_filters_old_data(db, redis):
+    from datetime import datetime, timedelta, timezone
+
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.0, max_matches=10)
+    await engine.initialize()
+    await engine.publish_data(DataPublishEvent(
+        project_id="tw", data_key="fresh", data={"purpose": "payments api"}, data_format="json",
+    ))
+    await engine.publish_data(DataPublishEvent(
+        project_id="tw", data_key="stale", data={"purpose": "payments api"}, data_format="json",
+    ))
+    now = datetime.now(timezone.utc)
+    await _age_row(db, "stale", created_at=now - timedelta(days=800))
+
+    server, _ = build_mcp_server(engine)
+    result = await server.call_tool("contex_query", {
+        "project_id": "tw", "query": "payments api", "top_k": 10, "threshold": 0.0,
+        "since": (now - timedelta(days=365)).isoformat(),
+    })
+    keys = {m["data_key"].split(".", 1)[0] for m in json.loads(result.content[0].text)["matches"]}
+    assert "fresh" in keys
+    assert "stale" not in keys
+
+
+@pytest.mark.asyncio
+async def test_contex_query_rejects_bad_since(db, redis):
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.0, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+    with pytest.raises(Exception):
+        await server.call_tool("contex_query", {
+            "project_id": "tw", "query": "x", "since": "not-a-date",
+        })
+
+
+@pytest.mark.asyncio
+async def test_subscription_scope_since_filters_bundle(db, redis):
+    from datetime import datetime, timedelta, timezone
+
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.0, max_matches=10)
+    await engine.initialize()
+    await engine.publish_data(DataPublishEvent(
+        project_id="tws", data_key="fresh", data={"purpose": "payments api"}, data_format="json",
+    ))
+    await engine.publish_data(DataPublishEvent(
+        project_id="tws", data_key="stale", data={"purpose": "payments api"}, data_format="json",
+    ))
+    now = datetime.now(timezone.utc)
+    await _age_row(db, "stale", created_at=now - timedelta(days=800))
+
+    server, _ = build_mcp_server(engine)
+    result = await server.call_tool("contex_create_subscription", {
+        "project_id": "tws", "needs": ["payments api"], "top_k": 10, "threshold": 0.0,
+        "since": (now - timedelta(days=365)).isoformat(),
+    })
+    sub_id = json.loads(result.content[0].text)["subscription_id"]
+
+    bundle = await engine.subscriptions.get_bundle(sub_id)
+    keys = {
+        m["data_key"].split(".", 1)[0]
+        for hits in bundle.values() for m in hits
+    }
+    assert "fresh" in keys
+    assert "stale" not in keys

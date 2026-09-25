@@ -9,10 +9,10 @@ class _StubRanker:
         # ranking's own scores, plus any extras outside the top_k window.
         self._scores = {**dict(ranking), **(scores or {})}
 
-    async def search(self, project_id, query, top_k):
+    async def search(self, project_id, query, top_k, since=None):
         return self._ranking[:top_k]
 
-    async def score(self, project_id, query, node_keys):
+    async def score(self, project_id, query, node_keys, since=None):
         return {k: self._scores[k] for k in node_keys if k in self._scores}
 
 
