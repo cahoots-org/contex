@@ -707,8 +707,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
         logger.info("Registering agent",
                    agent_id=registration.agent_id,
                    project_id=registration.project_id,
-                   needs_count=len(registration.data_needs),
-                   notification_method=registration.notification_method)
+                   needs_count=len(registration.data_needs))
 
         start_time = time.time()
         engine = request.app.state.context_engine
@@ -720,7 +719,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
         # Record metrics
         record_agent_registered(
             registration.project_id,
-            registration.notification_method or "redis"
+            "webhook" if registration.webhook_url else "mcp"
         )
         registration_duration_seconds.labels(project_id=registration.project_id).observe(duration)
 
@@ -733,7 +732,7 @@ async def register_agent(registration: AgentRegistration, request: Request):
             resource_id=registration.agent_id,
             details={
                 "data_needs_count": len(registration.data_needs),
-                "notification_method": registration.notification_method or "redis",
+                "notification_method": "webhook" if registration.webhook_url else "mcp",
                 "matched_needs_count": sum(response.matched_needs.values()),
                 "duration_ms": round(duration * 1000, 2),
             },
@@ -1455,14 +1454,13 @@ async def batch_register_agents(registrations: List[AgentRegistration], request:
                 )
                 record_agent_registered(
                     registration.project_id,
-                    registration.notification_method
+                    "webhook" if registration.webhook_url else "mcp"
                 )
                 results.append({
                     "status": "success",
                     "agent_id": registration.agent_id,
                     "project_id": registration.project_id,
                     "matched_needs": response.matched_needs,
-                    "notification_channel": response.notification_channel
                 })
                 successful += 1
             except PermissionError as e:

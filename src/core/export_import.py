@@ -474,7 +474,10 @@ class ExportImportManager:
                         project_id=data.get("project_id", project_id),
                         tenant_id=data.get("tenant_id"),
                         needs=data.get("needs", []),
-                        notification_method=data.get("notification_method", "redis"),
+                        notification_method=data.get(
+                            "notification_method",
+                            "webhook" if data.get("webhook_url") else "mcp",
+                        ),
                         response_format=data.get("response_format", "json"),
                         notification_channel=data.get("notification_channel"),
                         webhook_url=data.get("webhook_url"),

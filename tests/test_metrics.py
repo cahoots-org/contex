@@ -38,14 +38,14 @@ class TestMetricsCounters:
         """Test recording agent registration"""
         initial = agents_registered_total.labels(
             project_id="test-proj",
-            notification_method="redis"
+            notification_method="mcp"
         )._value.get()
-        
-        record_agent_registered("test-proj", "redis")
-        
+
+        record_agent_registered("test-proj", "mcp")
+
         final = agents_registered_total.labels(
             project_id="test-proj",
-            notification_method="redis"
+            notification_method="mcp"
         )._value.get()
         
         assert final > initial
@@ -259,22 +259,22 @@ class TestMetricsLabels:
     
     def test_metrics_with_different_notification_methods(self):
         """Test that metrics track different notification methods"""
-        record_agent_registered("test-proj", "redis")
+        record_agent_registered("test-proj", "mcp")
         record_agent_registered("test-proj", "webhook")
-        record_agent_registered("test-proj", "redis")
-        
-        redis_count = agents_registered_total.labels(
+        record_agent_registered("test-proj", "mcp")
+
+        mcp_count = agents_registered_total.labels(
             project_id="test-proj",
-            notification_method="redis"
+            notification_method="mcp"
         )._value.get()
-        
+
         webhook_count = agents_registered_total.labels(
             project_id="test-proj",
             notification_method="webhook"
         )._value.get()
-        
-        # Redis should have more registrations
-        assert redis_count > webhook_count
+
+        # MCP should have more registrations
+        assert mcp_count > webhook_count
 
 
 class TestMetricsMiddleware:
