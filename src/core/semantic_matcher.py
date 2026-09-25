@@ -15,6 +15,7 @@ from src.core.hybrid_search_service import HybridSearchService
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
+from src.core.recency import recency_filter
 from src.core.vector_search import PgVectorSearch
 
 logger = get_logger(__name__)
@@ -230,6 +231,7 @@ class SemanticDataMatcher:
         needs: List[str],
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
+        since: Optional[datetime] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Match agent semantic needs to available data.
@@ -242,6 +244,8 @@ class SemanticDataMatcher:
             needs: List of semantic needs (natural language)
             top_k: Per-request max matches per need; defaults to the instance value.
             threshold: Per-request min similarity (0-1); defaults to the instance value.
+            since: When set, only match data created or updated on or after this
+                time (compared against ``COALESCE(updated_at, created_at)``).
 
         Returns:
             Dict mapping needs to matched data sources:
@@ -269,6 +273,7 @@ class SemanticDataMatcher:
                         project_id=project_id,
                         query=need,
                         top_k=effective_max * 2,
+                        since=since,
                     )
 
                     candidates = []
@@ -313,7 +318,7 @@ class SemanticDataMatcher:
                 # pgvector cosine distance query
                 # cosine_distance returns distance (0 = identical, 2 = opposite)
                 # similarity = 1 - distance (for normalized vectors)
-                result = await session.execute(
+                stmt = (
                     select(
                         Embedding,
                         (1 - Embedding.embedding.cosine_distance(need_embedding.tolist())).label("similarity"),
@@ -322,6 +327,10 @@ class SemanticDataMatcher:
                     .order_by(Embedding.embedding.cosine_distance(need_embedding.tolist()))
                     .limit(effective_max * 2)
                 )
+                recency = recency_filter(since)
+                if recency is not None:
+                    stmt = stmt.where(recency)
+                result = await session.execute(stmt)
 
                 candidates = []
                 for row in result:

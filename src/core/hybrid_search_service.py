@@ -1,6 +1,9 @@
 """Backend-agnostic hybrid search: fuse a vector ranker and a lexical ranker via RRF."""
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Optional
+
 from src.core.rank_fusion import rrf_fuse
 
 
@@ -11,7 +14,8 @@ class HybridSearchService:
         self.k = k
 
     async def search(
-        self, project_id: str, query: str, top_k: int
+        self, project_id: str, query: str, top_k: int,
+        since: Optional[datetime] = None,
     ) -> list[tuple[str, float]]:
         """Return (node_key, cosine_similarity) ordered by RRF fusion.
 
@@ -20,14 +24,14 @@ class HybridSearchService:
         it stays on the same 0-1 scale as vector-only search. RRF's own weights
         (~1/(k+rank)) are ordinal and not comparable to cosine.
         """
-        vector_hits = await self.vector_search.search(project_id, query, top_k)
-        lexical_hits = await self.lexical_search.search(project_id, query, top_k)
+        vector_hits = await self.vector_search.search(project_id, query, top_k, since=since)
+        lexical_hits = await self.lexical_search.search(project_id, query, top_k, since=since)
         cosine = dict(vector_hits)
         # Lexical-only hits fell outside the vector ranker's top_k window but are
         # still real embeddings; score them directly so they aren't dropped just
         # for ranking low semantically. This is where hybrid earns its keep.
         missing = [doc_id for doc_id, _ in lexical_hits if doc_id not in cosine]
-        cosine.update(await self.vector_search.score(project_id, query, missing))
+        cosine.update(await self.vector_search.score(project_id, query, missing, since=since))
         rankings = [
             [doc_id for doc_id, _ in vector_hits],
             [doc_id for doc_id, _ in lexical_hits],

@@ -8,7 +8,7 @@ class _FakeSemanticMatcher:
 
     # top_k/threshold are accepted so match() can call us, but not recorded here;
     # pass-through is asserted by test_matcher_threads_top_k_and_threshold_per_request.
-    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         self.calls.append((project_id, tuple(needs)))
         return {n: [{"data_key": "k", "similarity": 0.8, "data": {}, "description": None}] for n in needs}
 
@@ -30,7 +30,7 @@ async def test_matcher_threads_top_k_and_threshold_per_request():
         def __init__(self):
             self.calls = []
 
-        async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None):
+        async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
             self.calls.append((project_id, tuple(needs), top_k, threshold))
             return {n: [] for n in needs}
 
@@ -72,7 +72,7 @@ async def test_matcher_passes_through_empty_matches():
         def __init__(self):
             self.calls = []
 
-        async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None):
+        async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
             self.calls.append((project_id, tuple(needs)))
             # each need maps to an empty list — no matches found
             return {n: [] for n in needs}

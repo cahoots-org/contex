@@ -8,7 +8,8 @@ without changing callers.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol
+from datetime import datetime
+from typing import Any, Optional, Protocol
 
 
 class Matcher(Protocol):
@@ -19,6 +20,7 @@ class Matcher(Protocol):
         metadata: dict | None = None,
         top_k: int | None = None,
         threshold: float | None = None,
+        since: Optional[datetime] = None,
     ) -> dict[str, list[dict[str, Any]]]:
         ...
 
@@ -34,8 +36,9 @@ class HybridMatcher:
         metadata: dict | None = None,
         top_k: int | None = None,
         threshold: float | None = None,
+        since: Optional[datetime] = None,
     ) -> dict[str, list[dict[str, Any]]]:
         # Pass per-request params straight through; nothing is mutated on the matcher (#105).
         return await self.semantic_matcher.match_agent_needs(
-            project_id, needs, top_k=top_k, threshold=threshold
+            project_id, needs, top_k=top_k, threshold=threshold, since=since
         )
