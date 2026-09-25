@@ -231,6 +231,96 @@ class TestContextEngine:
         await context_engine.unregister_agent("nonexistent")
 
     @pytest.mark.asyncio
+    async def test_register_agent_records_owner(self, context_engine):
+        """First registration records the caller as created_by."""
+        await context_engine.register_agent(
+            AgentRegistration(
+                agent_id="agent1", project_id="proj1", data_needs=["data"]
+            ),
+            created_by="key-A",
+        )
+
+        assert context_engine.agents["agent1"]["created_by"] == "key-A"
+
+    @pytest.mark.asyncio
+    async def test_owner_can_reregister(self, context_engine):
+        """The recorded owner may re-register the same agent_id."""
+        reg = AgentRegistration(
+            agent_id="agent1",
+            project_id="proj1",
+            data_needs=["data"],
+            webhook_url="https://original.example.com/hook",
+            notification_method="webhook",
+        )
+        await context_engine.register_agent(reg, created_by="key-A")
+
+        updated = AgentRegistration(
+            agent_id="agent1",
+            project_id="proj1",
+            data_needs=["data"],
+            webhook_url="https://updated.example.com/hook",
+            notification_method="webhook",
+        )
+        await context_engine.register_agent(updated, created_by="key-A")
+
+        assert (
+            context_engine.agents["agent1"]["webhook_url"]
+            == "https://updated.example.com/hook"
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_owner_reregister_rejected(self, context_engine):
+        """A different caller cannot hijack an existing agent_id."""
+        await context_engine.register_agent(
+            AgentRegistration(
+                agent_id="agent1",
+                project_id="proj1",
+                data_needs=["data"],
+                webhook_url="https://victim.example.com/hook",
+                notification_method="webhook",
+            ),
+            created_by="key-A",
+        )
+
+        with pytest.raises(PermissionError):
+            await context_engine.register_agent(
+                AgentRegistration(
+                    agent_id="agent1",
+                    project_id="proj1",
+                    data_needs=["data"],
+                    webhook_url="https://attacker.example.com/hook",
+                    notification_method="webhook",
+                ),
+                created_by="key-B",
+            )
+
+        # Victim's webhook must be untouched by the failed hijack.
+        assert (
+            context_engine.agents["agent1"]["webhook_url"]
+            == "https://victim.example.com/hook"
+        )
+
+    @pytest.mark.asyncio
+    async def test_system_owned_agent_accepts_reregister(self, context_engine):
+        """Legacy/system-owned agents are not locked out on re-registration."""
+        await context_engine.register_agent(
+            AgentRegistration(
+                agent_id="legacy", project_id="proj1", data_needs=["data"]
+            ),
+            created_by="system",
+        )
+
+        # Any caller may re-register a system-owned agent.
+        await context_engine.register_agent(
+            AgentRegistration(
+                agent_id="legacy", project_id="proj1", data_needs=["data"]
+            ),
+            created_by="key-B",
+        )
+
+        assert context_engine.agents["legacy"]["created_by"] == "system"
+
+    @pytest.mark.asyncio
     async def test_get_registered_agents(self, context_engine):
         """Test getting list of registered agents"""
         # Register multiple agents
