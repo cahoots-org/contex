@@ -227,7 +227,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatc
     await _ensure_tenant(db, "tenant-B")
 
     class _StubMatcher:
-        async def match(self, project_id, needs, top_k=None, threshold=None):
+        async def match(self, project_id, needs, top_k=None, threshold=None, since=None):
             return {n: [] for n in needs}
 
     svc = SubscriptionService(db, _StubMatcher(), redis)
