@@ -29,6 +29,10 @@ COPY connectors/${CONNECTOR} /app/connectors/${CONNECTOR}
 RUN mkdir -p /etc/contex && \
     cp /app/connectors/${CONNECTOR}/connector.template.yaml /etc/contex/connector.yaml
 
+# Drop root: the connector only reads config and streams to Contex over MCP.
+RUN useradd --system --create-home --uid 10001 connector
+USER connector
+
 # A build-arg does not survive into an exec-form ENTRYPOINT, so promote it to an
 # env var and resolve the module in a shell at runtime.
 ENV CONNECTOR=${CONNECTOR}
