@@ -1,0 +1,14 @@
+# Fully env-driven config for the Postgres connector image. Every value is a
+# ${VAR} placeholder expanded from the environment at load time, so
+# `docker run -e ...` needs no file mount. Power users can mount their own yaml
+# over this path (default /etc/contex/connector.yaml) for table/column filters
+# and key-column overrides.
+contex:
+  url: ${CONTEX_URL}
+  project_id: ${CONTEX_PROJECT_ID}
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  dsn: ${POSTGRES_DSN}
+
+batch_size: ${CONTEX_BATCH_SIZE}

@@ -40,6 +40,40 @@ See `connector.yaml.example` for the full schema. Key fields:
 | `commits.since` | Lower bound for commit history (ISO date); defaults to the latest release |
 | `commits.branch` | Ref to read commits from; defaults to the repo's default branch |
 
+## Run the container image
+
+The published image `ghcr.io/cahoots-org/contex-connector-github` is fully
+env-driven — no config file needed. `GITHUB_REPOS` takes a single `owner/repo`
+slug:
+
+```bash
+docker run --rm \
+  -e CONTEX_URL=http://contex:8001/mcp \
+  -e CONTEX_PROJECT_ID=my-app \
+  -e CONTEX_TOKEN=svc_... \
+  -e GITHUB_TOKEN=ghp_... \
+  -e GITHUB_REPOS=cahoots-org/contex \
+  ghcr.io/cahoots-org/contex-connector-github:latest
+```
+
+| Env var | Maps to | Notes |
+|---|---|---|
+| `CONTEX_URL` | `contex.url` | MCP endpoint |
+| `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
+| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `GITHUB_TOKEN` | `source.token` | PAT with `repo` read scope |
+| `GITHUB_REPOS` | `source.repos` | A single `owner/repo` slug |
+| `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
+
+The image ingests `files, issues, pulls`. To ingest several repos, add
+`commits`, or change path/state filters, mount your own yaml over the baked
+default:
+
+```bash
+docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
+  ghcr.io/cahoots-org/contex-connector-github:latest
+```
+
 ## Resource mappings
 
 - **File**: key `{owner}/{repo}:{path}`, format `text`

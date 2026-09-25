@@ -47,6 +47,41 @@ See `connector.yaml.example` for the full schema. Key fields:
 | `source.confluence.since` | Only pages whose current version is newer |
 | `batch_size` | Items per `contex_publish_batch` call (default 500) |
 
+## Run the container image
+
+The published image `ghcr.io/cahoots-org/contex-connector-atlassian` is fully
+env-driven — no config file needed:
+
+```bash
+docker run --rm \
+  -e CONTEX_URL=http://contex:8001/mcp \
+  -e CONTEX_PROJECT_ID=my-app \
+  -e CONTEX_TOKEN=svc_... \
+  -e ATLASSIAN_URL=https://your-org.atlassian.net \
+  -e ATLASSIAN_EMAIL=you@your-org.com \
+  -e ATLASSIAN_API_KEY=... \
+  ghcr.io/cahoots-org/contex-connector-atlassian:latest
+```
+
+| Env var | Maps to | Notes |
+|---|---|---|
+| `CONTEX_URL` | `contex.url` | MCP endpoint |
+| `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
+| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `ATLASSIAN_URL` | `source.site_url` | Site base URL (`https://org.atlassian.net`) |
+| `ATLASSIAN_EMAIL` | `source.email` | Account the API token belongs to |
+| `ATLASSIAN_API_KEY` | `source.token` | Atlassian API token (basic auth) |
+| `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
+
+The image ingests both `jira` and `confluence` across every project/space you
+can see. To scope to specific projects or spaces (or add JQL / `since` filters),
+mount your own yaml over the baked default:
+
+```bash
+docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
+  ghcr.io/cahoots-org/contex-connector-atlassian:latest
+```
+
 ## Resource mappings
 
 - **Jira issue**: key `jira:{ISSUE-KEY}` (e.g. `jira:DEV-2946`), format `json`.
