@@ -76,8 +76,7 @@ class TestContexAsyncClient:
             "matched_needs": {
                 "tech stack": 3,
                 "api specs": 2
-            },
-            "notification_channel": "agent:test-agent:updates"
+            }
         }
 
         with patch.object(client, '_request', new_callable=AsyncMock) as mock_request:
@@ -96,7 +95,6 @@ class TestContexAsyncClient:
             assert response.caught_up_events == 5
             assert response.current_sequence == "42"
             assert response.matched_needs == {"tech stack": 3, "api specs": 2}
-            assert response.notification_channel == "agent:test-agent:updates"
 
             # Verify the request was made correctly
             mock_request.assert_called_once()
@@ -113,8 +111,7 @@ class TestContexAsyncClient:
             "project_id": "proj",
             "caught_up_events": 0,
             "current_sequence": "0",
-            "matched_needs": {},
-            "notification_channel": "webhook"
+            "matched_needs": {}
         }
 
         with patch.object(client, '_request', new_callable=AsyncMock) as mock_request:
@@ -124,7 +121,6 @@ class TestContexAsyncClient:
                 agent_id="webhook-agent",
                 project_id="proj",
                 data_needs=["data"],
-                notification_method="webhook",
                 webhook_url="https://example.com/hook",
                 webhook_secret="secret"
             )
@@ -132,7 +128,6 @@ class TestContexAsyncClient:
             # Verify webhook params were sent
             call_args = mock_request.call_args
             request_body = call_args[1]["json"]
-            assert request_body["notification_method"] == "webhook"
             assert request_body["webhook_url"] == "https://example.com/hook"
             assert request_body["webhook_secret"] == "secret"
 
@@ -305,8 +300,7 @@ class TestContexSyncClient:
             "project_id": "proj",
             "caught_up_events": 0,
             "current_sequence": "0",
-            "matched_needs": {},
-            "notification_channel": "ch"
+            "matched_needs": {}
         }
 
         client = ContexClient(url="http://localhost:8001")
@@ -365,8 +359,7 @@ class TestResponseParsing:
             "project_id": "empty-project",
             "caught_up_events": 0,
             "current_sequence": "0",
-            "matched_needs": {},
-            "notification_channel": "agent:new-agent:updates"
+            "matched_needs": {}
         }
 
         with patch.object(client, '_request', new_callable=AsyncMock) as mock_request:
@@ -390,8 +383,7 @@ class TestResponseParsing:
             "project_id": "busy-project",
             "caught_up_events": 10000,
             "current_sequence": "50000",
-            "matched_needs": {"events": 100},
-            "notification_channel": "agent:lagging-agent:updates"
+            "matched_needs": {"events": 100}
         }
 
         with patch.object(client, '_request', new_callable=AsyncMock) as mock_request:

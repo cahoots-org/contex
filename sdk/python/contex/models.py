@@ -8,7 +8,7 @@ Last synced with server: 2024-11-30
 """
 
 from typing import Any, Dict, List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DataEvent(BaseModel):
@@ -34,9 +34,13 @@ class AgentRegistration(BaseModel):
     """
     Agent registration request.
 
-    Sent to Contex when an agent wants to register for data updates.
+    Sent to Contex when an agent wants to register for data updates. Delivery is
+    inferred: a ``webhook_url`` selects HTTP webhook delivery; without one the
+    agent receives updates over the internal MCP push bridge.
     Matches server's AgentRegistration in src/core/models.py.
     """
+    model_config = ConfigDict(extra="forbid")
+
     agent_id: str = Field(..., description="Unique agent identifier")
     project_id: str = Field(..., description="Project identifier")
     data_needs: List[str] = Field(
@@ -48,13 +52,9 @@ class AgentRegistration(BaseModel):
             "completed tasks and patterns",
         ],
     )
-    notification_method: Literal["redis", "webhook"] = Field(
-        default="redis",
-        description="How to notify agent of updates: 'redis' (pub/sub) or 'webhook' (HTTP POST)"
-    )
     webhook_url: Optional[str] = Field(
         default=None,
-        description="Webhook URL (required when notification_method='webhook')"
+        description="Webhook URL; without it updates are pushed over MCP"
     )
     webhook_secret: Optional[str] = Field(
         default=None,
@@ -108,7 +108,6 @@ class RegistrationResponse(BaseModel):
         caught_up_events: Number of missed events sent during registration
         current_sequence: Latest event sequence number in the project
         matched_needs: Dict mapping each need to number of data items that matched
-        notification_channel: Redis channel or webhook URL for notifications
     """
     status: str = Field(..., description="'registered' or 'error'")
     agent_id: str = Field(..., description="Registered agent ID")
@@ -124,10 +123,6 @@ class RegistrationResponse(BaseModel):
     matched_needs: Dict[str, int] = Field(
         ...,
         description="Number of matches found for each semantic need"
-    )
-    notification_channel: str = Field(
-        ...,
-        description="Channel where agent will receive updates"
     )
 
 
