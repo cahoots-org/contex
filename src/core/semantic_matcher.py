@@ -272,7 +272,11 @@ class SemanticDataMatcher:
                     )
 
                     candidates = []
-                    for node_key, fused_score in fused:
+                    for node_key, similarity in fused:
+                        # Hybrid reports cosine similarity (RRF only orders), so
+                        # the threshold applies the same as the vector path.
+                        if similarity < effective_threshold:
+                            continue
                         # Fetch full data from PostgreSQL database
                         async with self.db.session() as session:
                             db_result = await session.execute(
@@ -285,7 +289,7 @@ class SemanticDataMatcher:
                             if embedding_row:
                                 candidates.append({
                                     "data_key": node_key,
-                                    "similarity": float(fused_score),
+                                    "similarity": float(similarity),
                                     "data": embedding_row.data,
                                     "description": embedding_row.description,
                                 })
