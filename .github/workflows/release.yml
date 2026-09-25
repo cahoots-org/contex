@@ -55,6 +55,11 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
         fi
 
+        # Normalize to a bare version. Downstream steps prepend "v" for the
+        # tag and release name, so a v-prefixed input (e.g. v0.3.5) would
+        # otherwise double to vv0.3.5.
+        VERSION="${VERSION#v}"
+
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=v$VERSION" >> $GITHUB_OUTPUT
         echo "Releasing version: $VERSION"
