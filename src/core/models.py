@@ -1,11 +1,18 @@
 """Data models for Context Engine v2"""
 
 from typing import List, Dict, Any, Optional, Literal
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class AgentRegistration(BaseModel):
-    """Agent registration request"""
+    """Agent registration request.
+
+    Delivery is inferred: a ``webhook_url`` selects HTTP webhook delivery;
+    without one the agent receives updates over the internal MCP push bridge.
+    Clients cannot select a Redis channel, so unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     agent_id: str = Field(..., description="Unique agent identifier")
     project_id: str = Field(..., description="Project this agent works on")
@@ -29,22 +36,10 @@ class AgentRegistration(BaseModel):
         description="Preferred data format: 'toon' (40% fewer tokens), 'json', 'yaml', 'toml', 'csv', 'xml', 'markdown', or 'text'",
     )
 
-    # Notification method: redis or webhook
-    notification_method: Literal["redis", "webhook"] = Field(
-        default="redis",
-        description="How to notify agent of updates: 'redis' (pub/sub) or 'webhook' (HTTP POST)",
-    )
-
-    # Redis pub/sub configuration (used when notification_method='redis')
-    notification_channel: Optional[str] = Field(
-        default=None,
-        description="Redis pub/sub channel for updates (defaults to agent:{agent_id}:updates)",
-    )
-
-    # Webhook configuration (used when notification_method='webhook')
+    # Webhook configuration: presence of webhook_url selects webhook delivery.
     webhook_url: Optional[HttpUrl] = Field(
         default=None,
-        description="HTTP endpoint to POST updates to (required when notification_method='webhook')",
+        description="HTTP endpoint to POST updates to; without it updates are pushed over MCP",
     )
     webhook_secret: Optional[str] = Field(
         default=None,
@@ -112,9 +107,6 @@ class RegistrationResponse(BaseModel):
     current_sequence: str = Field(..., description="Latest event sequence number")
     matched_needs: Dict[str, int] = Field(
         ..., description="Number of matches found for each semantic need"
-    )
-    notification_channel: str = Field(
-        ..., description="Channel where agent will receive updates"
     )
 
 

@@ -179,7 +179,6 @@ class TestWebhookIntegration:
             agent_id="webhook-agent",
             project_id="proj1",
             data_needs=["API documentation"],
-            notification_method="webhook",
             webhook_url="https://example.com/webhook",
             webhook_secret="my-secret",
         )
@@ -206,37 +205,21 @@ class TestWebhookIntegration:
             assert agent_info["webhook_secret"] == "my-secret"
 
     @pytest.mark.asyncio
-    async def test_register_agent_webhook_requires_url(self, context_engine):
-        """Test that webhook registration requires URL"""
-        registration = AgentRegistration(
-            agent_id="webhook-agent",
+    async def test_webhook_and_mcp_agents_coexist(self, context_engine):
+        """Test that webhook and MCP-push agents can coexist"""
+        # Register MCP agent (no webhook_url)
+        mcp_reg = AgentRegistration(
+            agent_id="mcp-agent",
             project_id="proj1",
             data_needs=["API documentation"],
-            notification_method="webhook",
-            # Missing webhook_url
         )
-
-        with pytest.raises(ValueError, match="webhook_url is required"):
-            await context_engine.register_agent(registration)
-
-    @pytest.mark.asyncio
-    async def test_webhook_and_redis_agents_coexist(self, context_engine):
-        """Test that webhook and Redis agents can coexist"""
-        # Register Redis agent
-        redis_reg = AgentRegistration(
-            agent_id="redis-agent",
-            project_id="proj1",
-            data_needs=["API documentation"],
-            notification_method="redis",
-        )
-        await context_engine.register_agent(redis_reg)
+        await context_engine.register_agent(mcp_reg)
 
         # Register webhook agent
         webhook_reg = AgentRegistration(
             agent_id="webhook-agent",
             project_id="proj1",
             data_needs=["API documentation"],
-            notification_method="webhook",
             webhook_url="https://example.com/webhook",
         )
 
@@ -249,14 +232,14 @@ class TestWebhookIntegration:
 
         # Both should be registered
         agents = context_engine.get_registered_agents()
-        assert "redis-agent" in agents
+        assert "mcp-agent" in agents
         assert "webhook-agent" in agents
 
-        # They should have different notification methods
-        redis_info = context_engine.get_agent_info("redis-agent")
+        # They should have different (inferred) notification methods
+        mcp_info = context_engine.get_agent_info("mcp-agent")
         webhook_info = context_engine.get_agent_info("webhook-agent")
 
-        assert redis_info["notification_method"] == "redis"
+        assert mcp_info["notification_method"] == "mcp"
         assert webhook_info["notification_method"] == "webhook"
 
     @pytest.mark.asyncio

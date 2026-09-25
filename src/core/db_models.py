@@ -434,7 +434,7 @@ class AgentRegistration(Base):
         String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
     )
     needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    notification_method: Mapped[str] = mapped_column(String(20), nullable=False, default="redis")
+    notification_method: Mapped[str] = mapped_column(String(20), nullable=False, default="mcp")
     response_format: Mapped[str] = mapped_column(String(20), nullable=False, default="json")
     notification_channel: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     webhook_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

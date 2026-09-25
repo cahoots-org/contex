@@ -53,7 +53,7 @@ async def main():
         
         print(f"✅ Agent registered!")
         print(f"  • Matched needs: {response.matched_needs}")
-        print(f"  • Notification channel: {response.notification_channel}")
+        print(f"  • Caught-up events: {response.caught_up_events}")
         
         # 4. Query for data
         print("\n🔍 Querying for data...")

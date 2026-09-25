@@ -7,6 +7,7 @@ drift between SDK and server.
 """
 
 import pytest
+from pydantic import ValidationError
 from contex.models import (
     DataEvent,
     AgentRegistration,
@@ -73,7 +74,7 @@ class TestAgentRegistration:
             data_needs=["tech stack", "coding standards"]
         )
         assert reg.agent_id == "task-decomposer"
-        assert reg.notification_method == "redis"  # default
+        assert reg.webhook_url is None
         assert reg.last_seen_sequence == "0"  # default
 
     def test_webhook_registration(self):
@@ -82,13 +83,31 @@ class TestAgentRegistration:
             agent_id="webhook-agent",
             project_id="proj_123",
             data_needs=["events"],
-            notification_method="webhook",
             webhook_url="https://example.com/webhook",
             webhook_secret="secret123"
         )
-        assert reg.notification_method == "webhook"
         assert reg.webhook_url == "https://example.com/webhook"
         assert reg.webhook_secret == "secret123"
+
+    def test_notification_method_rejected(self):
+        """The removed notification_method field must be rejected (#58)."""
+        with pytest.raises(ValidationError):
+            AgentRegistration(
+                agent_id="a",
+                project_id="p",
+                data_needs=["d"],
+                notification_method="redis",
+            )
+
+    def test_notification_channel_rejected(self):
+        """The removed notification_channel field must be rejected (#58)."""
+        with pytest.raises(ValidationError):
+            AgentRegistration(
+                agent_id="a",
+                project_id="p",
+                data_needs=["d"],
+                notification_channel="x",
+            )
 
     def test_registration_with_sequence(self):
         """Test registration with last_seen_sequence for catch-up"""
@@ -121,8 +140,7 @@ class TestRegistrationResponse:
             "matched_needs": {
                 "tech stack": 3,
                 "coding standards": 2
-            },
-            "notification_channel": "agent:task-decomposer:updates"
+            }
         }
 
         response = RegistrationResponse(**server_response)
@@ -133,7 +151,6 @@ class TestRegistrationResponse:
         assert response.caught_up_events == 5
         assert response.current_sequence == "42"
         assert response.matched_needs == {"tech stack": 3, "coding standards": 2}
-        assert response.notification_channel == "agent:task-decomposer:updates"
 
     def test_parse_server_response_no_matches(self):
         """Test parsing server response when no data matches"""
@@ -143,8 +160,7 @@ class TestRegistrationResponse:
             "project_id": "empty_proj",
             "caught_up_events": 0,
             "current_sequence": "0",
-            "matched_needs": {},
-            "notification_channel": "agent:new-agent:updates"
+            "matched_needs": {}
         }
 
         response = RegistrationResponse(**server_response)
@@ -166,8 +182,7 @@ class TestRegistrationResponse:
                 "database schemas": 2,
                 "API endpoints": 10,
                 "event models": 1
-            },
-            "notification_channel": "agent:analyzer:updates"
+            }
         }
 
         response = RegistrationResponse(**server_response)
@@ -185,8 +200,7 @@ class TestRegistrationResponse:
             "project_id": "proj",
             "caught_up_events": 0,
             "current_sequence": "0",
-            "matched_needs": {},
-            "notification_channel": "ch"
+            "matched_needs": {}
         }
 
         response = RegistrationResponse(**minimal_response)
@@ -198,7 +212,6 @@ class TestRegistrationResponse:
         assert response.caught_up_events == 0
         assert response.current_sequence == "0"
         assert response.matched_needs == {}
-        assert response.notification_channel == "ch"
 
     def test_total_matches_calculation(self):
         """Test calculating total matches from matched_needs dict"""
@@ -208,8 +221,7 @@ class TestRegistrationResponse:
             project_id="proj",
             caught_up_events=0,
             current_sequence="0",
-            matched_needs={"need1": 5, "need2": 3, "need3": 2},
-            notification_channel="ch"
+            matched_needs={"need1": 5, "need2": 3, "need3": 2}
         )
 
         total = sum(response.matched_needs.values())
@@ -321,7 +333,6 @@ class TestModelCompatibility:
             agent_id="test-agent",
             project_id="test-proj",
             data_needs=["technical requirements", "API specifications"],
-            notification_method="redis",
             last_seen_sequence="0"
         )
 
@@ -340,8 +351,7 @@ class TestModelCompatibility:
             "matched_needs": {
                 "technical requirements": 2,
                 "API specifications": 1
-            },
-            "notification_channel": f"agent:{request.agent_id}:updates"
+            }
         }
 
         # 3. Client parses response

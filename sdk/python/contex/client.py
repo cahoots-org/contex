@@ -211,23 +211,24 @@ class ContexAsyncClient:
         agent_id: str,
         project_id: str,
         data_needs: List[str],
-        notification_method: str = "redis",
         webhook_url: Optional[str] = None,
         webhook_secret: Optional[str] = None,
         last_seen_sequence: str = "0",
     ) -> RegistrationResponse:
         """
         Register an agent with Contex.
-        
+
+        Delivery is inferred: pass ``webhook_url`` for HTTP webhook delivery;
+        without it the agent receives updates over the internal MCP push bridge.
+
         Args:
             agent_id: Unique agent identifier
             project_id: Project identifier
             data_needs: List of data needs in natural language
-            notification_method: Notification method (redis or webhook)
-            webhook_url: Webhook URL (if using webhook notifications)
+            webhook_url: Webhook URL for HTTP delivery (omit for MCP push)
             webhook_secret: Webhook secret for HMAC verification
             last_seen_sequence: Last seen sequence number
-        
+
         Returns:
             Registration response with matched needs count
 
@@ -243,7 +244,6 @@ class ContexAsyncClient:
             agent_id=agent_id,
             project_id=project_id,
             data_needs=data_needs,
-            notification_method=notification_method,
             webhook_url=webhook_url,
             webhook_secret=webhook_secret,
             last_seen_sequence=last_seen_sequence,

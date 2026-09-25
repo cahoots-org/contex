@@ -134,21 +134,19 @@ class TestContextEngine:
         assert response.status == "registered"
         assert response.agent_id == "agent1"
         assert response.project_id == "proj1"
-        assert response.notification_channel == "agent:agent1:updates"
 
     @pytest.mark.asyncio
-    async def test_register_agent_with_custom_channel(self, context_engine):
-        """Test registering agent with custom notification channel"""
+    async def test_register_agent_without_webhook_is_mcp(self, context_engine):
+        """An agent with no webhook_url is delivered over the MCP bridge."""
         registration = AgentRegistration(
             agent_id="agent1",
             project_id="proj1",
             data_needs=["tech stack"],
-            notification_channel="custom:channel",
         )
 
-        response = await context_engine.register_agent(registration)
+        await context_engine.register_agent(registration)
 
-        assert response.notification_channel == "custom:channel"
+        assert context_engine.get_agent_info("agent1")["notification_method"] == "mcp"
 
     @pytest.mark.asyncio
     async def test_register_agent_matches_existing_data(self, context_engine):
@@ -250,7 +248,6 @@ class TestContextEngine:
             project_id="proj1",
             data_needs=["data"],
             webhook_url="https://original.example.com/hook",
-            notification_method="webhook",
         )
         await context_engine.register_agent(reg, created_by="key-A")
 
@@ -259,7 +256,6 @@ class TestContextEngine:
             project_id="proj1",
             data_needs=["data"],
             webhook_url="https://updated.example.com/hook",
-            notification_method="webhook",
         )
         await context_engine.register_agent(updated, created_by="key-A")
 
@@ -277,7 +273,6 @@ class TestContextEngine:
                 project_id="proj1",
                 data_needs=["data"],
                 webhook_url="https://victim.example.com/hook",
-                notification_method="webhook",
             ),
             created_by="key-A",
         )
@@ -289,7 +284,6 @@ class TestContextEngine:
                     project_id="proj1",
                     data_needs=["data"],
                     webhook_url="https://attacker.example.com/hook",
-                    notification_method="webhook",
                 ),
                 created_by="key-B",
             )

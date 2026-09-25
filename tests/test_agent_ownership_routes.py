@@ -74,7 +74,6 @@ async def _register(client, agent_id, url):
             "agent_id": agent_id,
             "project_id": "proj1",
             "data_needs": ["data"],
-            "notification_method": "webhook",
             "webhook_url": url,
         },
     )
@@ -160,7 +159,6 @@ async def test_batch_registration_enforces_ownership_per_item(app):
                         "agent_id": "owned1",
                         "project_id": "proj1",
                         "data_needs": ["data"],
-                        "notification_method": "webhook",
                         "webhook_url": "https://attacker.example.com/hook",
                     },
                     {

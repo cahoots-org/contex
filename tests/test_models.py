@@ -25,18 +25,38 @@ class TestAgentRegistration:
         assert registration.project_id == "test-project"
         assert len(registration.data_needs) == 2
         assert registration.last_seen_sequence == "0"
-        assert registration.notification_channel is None
+        assert registration.webhook_url is None
 
-    def test_registration_with_custom_channel(self):
-        """Test registration with custom notification channel"""
+    def test_registration_with_webhook(self):
+        """Test registration with a webhook URL selects webhook delivery"""
         registration = AgentRegistration(
             agent_id="test-agent",
             project_id="test-project",
             data_needs=["tech stack"],
-            notification_channel="custom:channel:name",
+            webhook_url="https://example.com/hook",
         )
 
-        assert registration.notification_channel == "custom:channel:name"
+        assert str(registration.webhook_url) == "https://example.com/hook"
+
+    def test_notification_method_field_is_rejected(self):
+        """The client-facing redis notification_method field is removed (#58)."""
+        with pytest.raises(ValidationError):
+            AgentRegistration(
+                agent_id="test-agent",
+                project_id="test-project",
+                data_needs=["tech stack"],
+                notification_method="redis",
+            )
+
+    def test_notification_channel_field_is_rejected(self):
+        """Clients can no longer pick a Redis channel (#58)."""
+        with pytest.raises(ValidationError):
+            AgentRegistration(
+                agent_id="test-agent",
+                project_id="test-project",
+                data_needs=["tech stack"],
+                notification_channel="custom:channel:name",
+            )
 
     def test_registration_with_last_seen(self):
         """Test registration with last seen sequence"""
@@ -144,14 +164,12 @@ class TestRegistrationResponse:
             caught_up_events=5,
             current_sequence="1234567890-0",
             matched_needs={"tech stack": 3, "API docs": 2},
-            notification_channel="agent:test-agent:updates",
         )
 
         assert response.status == "registered"
         assert response.agent_id == "test-agent"
         assert response.caught_up_events == 5
         assert response.matched_needs["tech stack"] == 3
-        assert response.notification_channel == "agent:test-agent:updates"
 
     def test_response_serialization(self):
         """Test that response can be serialized to dict"""
@@ -162,7 +180,6 @@ class TestRegistrationResponse:
             caught_up_events=0,
             current_sequence="0",
             matched_needs={},
-            notification_channel="test:channel",
         )
 
         data = response.model_dump()

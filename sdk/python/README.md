@@ -42,7 +42,7 @@ async def main():
         )
         
         print(f"Matched needs: {response.matched_needs}")
-        print(f"Notification channel: {response.notification_channel}")
+        print(f"Caught-up events: {response.caught_up_events}")
         
         # Query for data
         results = await client.query(
@@ -118,17 +118,32 @@ await client.publish(
 
 ### Registering Agents
 
+Delivery is inferred from `webhook_url`: pass one for HTTP webhook delivery;
+omit it and updates are pushed to your MCP client over the internal bridge.
+Clients cannot subscribe to Redis directly.
+
 ```python
+# MCP push (default): no webhook_url — updates arrive over MCP
 response = await client.register_agent(
     agent_id="agent-1",                    # Unique agent ID
     project_id="my-app",                   # Project ID
     data_needs=["config", "secrets"],      # Data needs (natural language)
-    notification_method="redis",           # redis or webhook
-    webhook_url="https://...",             # Optional webhook URL
-    webhook_secret="secret",               # Optional webhook secret
     last_seen_sequence="0",                # Last seen sequence
 )
+
+# Webhook delivery: provide a webhook_url (and optional secret)
+response = await client.register_agent(
+    agent_id="agent-2",
+    project_id="my-app",
+    data_needs=["config", "secrets"],
+    webhook_url="https://example.com/hook",  # Selects webhook delivery
+    webhook_secret="secret",                 # Optional HMAC secret
+)
 ```
+
+> **Migration:** the removed `notification_method="redis"` mode is gone.
+> Direct Redis subscription is no longer client-facing. If you used `redis`,
+> switch to a `webhook_url` for HTTP delivery, or omit it to receive MCP push.
 
 ### Querying Data
 

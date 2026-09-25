@@ -196,7 +196,6 @@ class TestAgentRegistration:
         assert isinstance(response.caught_up_events, int)
         assert isinstance(response.current_sequence, str)
         assert isinstance(response.matched_needs, dict)
-        assert isinstance(response.notification_channel, str)
 
     @pytest.mark.asyncio
     async def test_register_agent_with_matches(self, async_client, unique_project_id, unique_agent_id):
@@ -239,18 +238,6 @@ class TestAgentRegistration:
 
         assert response.status == "registered"
         assert response.matched_needs == {} or sum(response.matched_needs.values()) == 0
-
-    @pytest.mark.asyncio
-    async def test_register_agent_notification_channel(self, async_client, unique_project_id, unique_agent_id):
-        """Test that notification channel is correctly set"""
-        response = await async_client.register_agent(
-            agent_id=unique_agent_id,
-            project_id=unique_project_id,
-            data_needs=["data"]
-        )
-
-        assert response.notification_channel is not None
-        assert unique_agent_id in response.notification_channel
 
     @pytest.mark.asyncio
     async def test_register_agent_catch_up(self, async_client, unique_project_id, unique_agent_id):

@@ -79,7 +79,7 @@ class ContextEngine:
             self.tokenizer = None
             logger.warning("Tiktoken unavailable, context size limits disabled")
 
-        # Track registered agents: agent_id -> {project_id, needs, notification_method, ...}
+        # Track registered agents: agent_id -> {project_id, needs, webhook_url, ...}
         self.agents: Dict[str, Dict[str, Any]] = {}
 
         logger.info("Initialized")
@@ -317,7 +317,7 @@ class ContextEngine:
     async def _persist_agent_owner(
         self,
         registration: AgentRegistration,
-        notification_channel: str,
+        notification_method: str,
         webhook_url: Optional[str],
         data_keys: List[str],
         last_sequence: str,
@@ -335,9 +335,9 @@ class ContextEngine:
                 session.add(row)
             row.project_id = registration.project_id
             row.needs = list(registration.data_needs)
-            row.notification_method = registration.notification_method
+            row.notification_method = notification_method
             row.response_format = registration.response_format
-            row.notification_channel = notification_channel
+            row.notification_channel = None
             row.webhook_url = webhook_url
             row.data_keys = data_keys
             row.last_sequence = last_sequence
@@ -388,34 +388,25 @@ class ContextEngine:
         if self.max_context_size:
             matches = self._truncate_matches(matches, self.max_context_size)
 
-        # 3. Validate notification configuration
-        if registration.notification_method == "webhook":
-            if not registration.webhook_url:
-                raise ValueError(
-                    "webhook_url is required when notification_method='webhook'"
-                )
-
-        # 4. Determine notification channel (for Redis mode)
-        notification_channel = (
-            registration.notification_channel or f"agent:{agent_id}:updates"
+        # 3. Infer delivery: a webhook_url selects webhook delivery, otherwise
+        # updates are pushed over the internal MCP bridge.
+        webhook_url = (
+            str(registration.webhook_url) if registration.webhook_url else None
         )
+        notification_method = "webhook" if webhook_url else "mcp"
 
-        # 5. Track which data keys this agent depends on
+        # 4. Track which data keys this agent depends on
         data_keys = set()
         for need_matches in matches.values():
             for match in need_matches:
                 data_keys.add(match["data_key"])
 
-        # 6. Store agent registration
-        webhook_url = (
-            str(registration.webhook_url) if registration.webhook_url else None
-        )
+        # 5. Store agent registration
         self.agents[agent_id] = {
             "project_id": project_id,
             "needs": needs,
-            "notification_method": registration.notification_method,
+            "notification_method": notification_method,
             "response_format": registration.response_format,  # TOON or JSON
-            "channel": notification_channel,  # For Redis
             "webhook_url": webhook_url,
             "webhook_secret": registration.webhook_secret,
             "data_keys": list(data_keys),
@@ -423,33 +414,20 @@ class ContextEngine:
             "created_by": effective_owner,
         }
         await self._persist_agent_owner(
-            registration, notification_channel, webhook_url, list(data_keys),
+            registration, notification_method, webhook_url, list(data_keys),
             last_seen, effective_owner,
         )
 
-        # 7. Send initial context to agent
+        # 6. Send initial context to agent
         await self._send_initial_context(agent_id, matches, registration)
 
-        # 8. Catch up missed events
+        # 7. Catch up missed events
         missed_events = await self.event_store.get_events_since(project_id, last_seen)
 
-        for event in missed_events:
-            await self.redis.publish(
-                notification_channel,
-                json.dumps(
-                    {
-                        "type": "event",
-                        "sequence": event["sequence"],
-                        "event_type": event["event_type"],
-                        "data": event["data"],
-                    }
-                ),
-            )
-
-        # 9. Get current sequence
+        # 8. Get current sequence
         current_sequence = await self.event_store.get_latest_sequence(project_id) or "0"
 
-        # 10. Build response
+        # 9. Build response
         matched_counts = {
             need: len(need_matches) for need, need_matches in matches.items()
         }
@@ -466,7 +444,6 @@ class ContextEngine:
             caught_up_events=len(missed_events),
             current_sequence=current_sequence,
             matched_needs=matched_counts,
-            notification_channel=notification_channel,
         )
 
     async def _send_initial_context(
@@ -475,9 +452,14 @@ class ContextEngine:
         matches: Dict[str, List[Dict[str, Any]]],
         registration: AgentRegistration,
     ):
-        """Send initial matched context to agent via Redis or webhook"""
+        """Send initial matched context to a webhook agent.
 
-        # Convert matches to MatchedDataSource format
+        MCP agents (no webhook_url) receive context via the internal push
+        bridge, so there is nothing to deliver directly here.
+        """
+        if not registration.webhook_url:
+            return
+
         context = {}
         for need, need_matches in matches.items():
             context[need] = [
@@ -490,59 +472,28 @@ class ContextEngine:
                 for match in need_matches
             ]
 
-        # Format the context according to agent's preference
-        format_type = registration.response_format
-        context_payload = {
-            "type": "initial_context",
-            "agent_id": agent_id,
-            "format": format_type,
-            "context": context,
-        }
-
-        # Serialize based on format
-        if format_type == "toon":
-            try:
-                serialized_payload = toon.encode(context_payload)
-            except NotImplementedError:
-                # TOON encoder not yet available, fall back to JSON
-                logger.warning("TOON format requested but not yet implemented, using JSON for %s", agent_id)
-                serialized_payload = json.dumps(context_payload)
-                format_type = "json"  # Update format type for logging
+        success = await self.webhook_dispatcher.send_initial_context(
+            url=str(registration.webhook_url),
+            agent_id=agent_id,
+            context=context,
+            secret=registration.webhook_secret,
+        )
+        if success:
+            logger.debug("Sent initial context to %s via webhook", agent_id)
         else:
-            serialized_payload = json.dumps(context_payload)
-
-        # Send via appropriate method
-        if registration.notification_method == "redis":
-            # Redis pub/sub
-            channel = registration.notification_channel or f"agent:{agent_id}:updates"
-            await self.redis.publish(channel, serialized_payload)
-            logger.debug(
-                "Sent initial context to %s via Redis (%s format)", agent_id, format_type.upper()
+            logger.warning(
+                "Failed to send initial context to %s via webhook", agent_id
             )
-
-        elif registration.notification_method == "webhook":
-            # HTTP webhook
-            success = await self.webhook_dispatcher.send_initial_context(
-                url=str(registration.webhook_url),
-                agent_id=agent_id,
-                context=context,
-                secret=registration.webhook_secret,
-            )
-            if success:
-                logger.debug(
-                    "Sent initial context to %s via webhook (%s format)", agent_id, format_type.upper()
-                )
-            else:
-                logger.warning(
-                    "Failed to send initial context to %s via webhook", agent_id
-                )
 
     async def _notify_affected_agents(
         self, project_id: str, data_key: str, data: Dict[str, Any], sequence: str
     ):
-        """Notify agents that depend on this data key via Redis or webhook"""
+        """Notify webhook agents that depend on this data key.
 
-        # Find agents that depend on this data
+        MCP agents are pushed to over the internal subscription bridge, so only
+        webhook delivery is dispatched here.
+        """
+
         affected_agents = [
             agent_id
             for agent_id, agent_info in self.agents.items()
@@ -560,39 +511,8 @@ class ContextEngine:
 
         for agent_id in affected_agents:
             agent_info = self.agents[agent_id]
-            format_type = agent_info.get("response_format", "toon")
 
-            # Build update payload
-            # For binary data, omit the raw bytes from notifications;
-            # agents will re-query for matched context instead
-            if isinstance(data, (bytes, bytearray)):
-                notification_data = {"_binary": True, "_size_bytes": len(data)}
-            else:
-                notification_data = data
-            update_payload = {
-                "type": "data_update",
-                "sequence": sequence,
-                "data_key": data_key,
-                "format": format_type,
-                "data": notification_data,
-            }
-
-            # Serialize based on format
-            if format_type == "toon":
-                try:
-                    serialized_payload = toon.encode(update_payload)
-                except NotImplementedError:
-                    # TOON encoder not yet available, fall back to JSON
-                    serialized_payload = json.dumps(update_payload)
-            else:
-                serialized_payload = json.dumps(update_payload)
-
-            # Send via appropriate method
-            if agent_info["notification_method"] == "redis":
-                # Redis pub/sub
-                await self.redis.publish(agent_info["channel"], serialized_payload)
-
-            elif agent_info["notification_method"] == "webhook":
+            if agent_info["notification_method"] == "webhook":
                 # HTTP webhook (fire and forget - don't block on delivery)
                 asyncio.create_task(
                     self.webhook_dispatcher.send_data_update(
