@@ -13,10 +13,22 @@ class HybridSearchService:
     async def search(
         self, project_id: str, query: str, top_k: int
     ) -> list[tuple[str, float]]:
+        """Return (node_key, cosine_similarity) ordered by RRF fusion.
+
+        RRF fuses the vector and lexical rankings for ordering only; the score
+        reported per result is the cosine similarity from the vector ranker, so
+        it stays on the same 0-1 scale as vector-only search. RRF's own weights
+        (~1/(k+rank)) are ordinal and not comparable to cosine.
+        """
         vector_hits = await self.vector_search.search(project_id, query, top_k)
         lexical_hits = await self.lexical_search.search(project_id, query, top_k)
+        cosine = dict(vector_hits)
         rankings = [
             [doc_id for doc_id, _ in vector_hits],
             [doc_id for doc_id, _ in lexical_hits],
         ]
-        return rrf_fuse(rankings, k=self.k)[:top_k]
+        fused = rrf_fuse(rankings, k=self.k)
+        # ponytail: drop lexical-only hits (no cosine to report); compute cosine
+        # for them if pure-lexical recall ever matters.
+        ranked = [(doc_id, cosine[doc_id]) for doc_id, _ in fused if doc_id in cosine]
+        return ranked[:top_k]
