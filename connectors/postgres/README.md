@@ -47,6 +47,36 @@ python -m connectors.postgres --config connector.yaml
 
 Add `--log-level DEBUG` for verbose query-level output.
 
+## Run the container image
+
+The published image `ghcr.io/cahoots-org/contex-connector-postgres` is fully
+env-driven — no config file needed:
+
+```bash
+docker run --rm \
+  -e CONTEX_URL=http://contex:8001/mcp \
+  -e CONTEX_PROJECT_ID=my-app \
+  -e CONTEX_TOKEN=svc_... \
+  -e POSTGRES_DSN=postgresql://readonly@db.internal:5432/app \
+  ghcr.io/cahoots-org/contex-connector-postgres:latest
+```
+
+| Env var | Maps to | Notes |
+|---|---|---|
+| `CONTEX_URL` | `contex.url` | MCP endpoint |
+| `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
+| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `POSTGRES_DSN` | `source.dsn` | Read-only DSN for the source database |
+| `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
+
+For table/column filters or `key_columns` overrides, mount your own yaml over
+the baked default:
+
+```bash
+docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
+  ghcr.io/cahoots-org/contex-connector-postgres:latest
+```
+
 ## Selection model
 
 - **tables.include / tables.exclude** — glob patterns over `schema.table`.  All

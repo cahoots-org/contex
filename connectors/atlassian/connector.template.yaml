@@ -1,0 +1,18 @@
+# Fully env-driven config for the Atlassian connector image. Every scalar is a
+# ${VAR} placeholder expanded from the environment at load time, so
+# `docker run -e ...` needs no file mount. With no project/space allow-lists it
+# ingests every Jira project and non-personal Confluence space you can see; to
+# scope those (or add JQL / since filters) mount your own yaml over this path
+# (default /etc/contex/connector.yaml).
+contex:
+  url: ${CONTEX_URL}
+  project_id: ${CONTEX_PROJECT_ID}
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  site_url: ${ATLASSIAN_URL}
+  email: ${ATLASSIAN_EMAIL}
+  token: ${ATLASSIAN_API_KEY}
+  resources: [jira, confluence]
+
+batch_size: ${CONTEX_BATCH_SIZE}

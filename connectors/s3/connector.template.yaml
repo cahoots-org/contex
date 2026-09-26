@@ -1,0 +1,20 @@
+# Fully env-driven config for the S3 connector image. Every value is a ${VAR}
+# placeholder expanded from the environment at load time, so `docker run -e ...`
+# needs no file mount. Power users can mount their own yaml over this path
+# (default /etc/contex/connector.yaml) for list-based key/content-type filters.
+contex:
+  url: ${CONTEX_URL}
+  project_id: ${CONTEX_PROJECT_ID}
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  bucket: ${S3_BUCKET}
+  prefix: ${S3_PREFIX}
+  region: ${AWS_REGION}
+  # Optional; set for S3-compatible stores (MinIO, R2, LocalStack).
+  endpoint_url: ${S3_ENDPOINT_URL}
+  # Optional explicit credentials; prefer the standard AWS chain / instance role.
+  aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
+batch_size: ${CONTEX_BATCH_SIZE}

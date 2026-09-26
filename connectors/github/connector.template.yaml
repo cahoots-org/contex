@@ -1,0 +1,17 @@
+# Fully env-driven config for the GitHub connector image. Every scalar is a
+# ${VAR} placeholder expanded from the environment at load time, so
+# `docker run -e ...` needs no file mount. GITHUB_REPOS takes a single owner/repo
+# slug; to ingest several repos (or to change resources/path filters) mount your
+# own yaml over this path (default /etc/contex/connector.yaml).
+contex:
+  url: ${CONTEX_URL}
+  project_id: ${CONTEX_PROJECT_ID}
+  service_account_token: ${CONTEX_TOKEN}
+
+source:
+  token: ${GITHUB_TOKEN}
+  repos:
+    - ${GITHUB_REPOS}
+  resources: [files, issues, pulls]
+
+batch_size: ${CONTEX_BATCH_SIZE}

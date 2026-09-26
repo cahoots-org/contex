@@ -65,6 +65,44 @@ python -m connectors.s3 --config connector.yaml
 Progress is logged to stdout. The final line reports published item and batch
 counts.
 
+## Running the container image
+
+The published image `ghcr.io/cahoots-org/contex-connector-s3` is fully
+env-driven — no config file needed:
+
+```bash
+docker run --rm \
+  -e CONTEX_URL=http://contex:8001/mcp \
+  -e CONTEX_PROJECT_ID=my-app \
+  -e CONTEX_TOKEN=svc_... \
+  -e S3_BUCKET=my-knowledge-bucket \
+  -e S3_PREFIX=docs/ \
+  -e AWS_REGION=us-east-1 \
+  -e AWS_ACCESS_KEY_ID=... \
+  -e AWS_SECRET_ACCESS_KEY=... \
+  ghcr.io/cahoots-org/contex-connector-s3:latest
+```
+
+| Env var | Maps to | Notes |
+|---|---|---|
+| `CONTEX_URL` | `contex.url` | MCP endpoint |
+| `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
+| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `S3_BUCKET` | `source.bucket` | Bucket to ingest |
+| `S3_PREFIX` | `source.prefix` | Optional; defaults to `""` |
+| `AWS_REGION` | `source.region` | Optional |
+| `S3_ENDPOINT_URL` | `source.endpoint_url` | Optional; for S3-compatible stores (MinIO, R2, LocalStack) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | credentials | Optional; falls back to the standard AWS chain / instance role |
+| `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
+
+For list-based key or content-type filters, mount your own yaml over the baked
+default:
+
+```bash
+docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
+  ghcr.io/cahoots-org/contex-connector-s3:latest
+```
+
 ## Limitations
 
 - **Not live sync.** Refresh by re-running; S3 event notifications are out of
