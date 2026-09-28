@@ -120,6 +120,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest==9.1.1 pytest-asyncio==1.4.0
+        pip install -r connectors/base/requirements.txt
         pip install -r connectors/postgres/requirements.txt
         pip install -r connectors/s3/requirements-dev.txt
         pip install -r connectors/github/requirements-dev.txt
@@ -129,7 +130,7 @@ jobs:
       env:
         POSTGRES_TEST_DSN: postgresql://contex:contex_password@localhost:5432/contex_test
       run: |
-        pytest connectors/postgres connectors/s3 connectors/github connectors/atlassian -v --tb=short
+        pytest connectors/base connectors/postgres connectors/s3 connectors/github connectors/atlassian -v --tb=short
 
   docker:
     name: Verify Docker Build
