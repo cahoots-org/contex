@@ -4,7 +4,6 @@ import json
 import asyncio
 import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
-from src.api.deps import get_tenant_manager
 from src.core.authz import require, public, get_identity
 from src.core.identity import Identity
 from src.core.ownership import ensure_project_access
@@ -18,10 +17,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.web.live import stream_subscription_updates
 from src.core.logging import get_logger
 from src.core.db_models import Embedding
+from src.core.tenant import TenantManager
 
 router = APIRouter()
 
 logger = get_logger(__name__)
+
+
+def get_tenant_manager(request: Request) -> TenantManager:
+    """FastAPI dependency: build a TenantManager bound to the request's db."""
+    return TenantManager(request.app.state.db)
 
 # Setup templates
 templates_dir = Path(__file__).parent / "templates"
