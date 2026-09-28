@@ -2,11 +2,9 @@
 
 import pytest
 import pytest_asyncio
-from datetime import datetime, timedelta, timezone
 
 from src.core.retention import RetentionManager, get_retention_manager_from_env
 from src.core.event_store import EventStore
-from src.core.db_models import AgentRegistration
 
 
 @pytest_asyncio.fixture
@@ -15,7 +13,6 @@ async def retention_manager(db):
     return RetentionManager(
         db=db,
         events_ttl_days=1,  # 1 day for testing
-        agent_inactive_days=1,
         max_events_per_project=100,
     )
 
@@ -35,12 +32,10 @@ class TestRetentionManager:
         manager = RetentionManager(
             db=db,
             events_ttl_days=30,
-            agent_inactive_days=7,
             max_events_per_project=10000,
         )
 
         assert manager.events_ttl_days == 30
-        assert manager.agent_inactive_days == 7
         assert manager.max_events_per_project == 10000
 
     @pytest.mark.asyncio
@@ -73,7 +68,6 @@ class TestRetentionManager:
         manager = RetentionManager(
             db=db,
             events_ttl_days=30,
-            agent_inactive_days=7,
             max_events_per_project=10,
         )
 
@@ -111,53 +105,6 @@ class TestRetentionManager:
         assert trimmed == 0
 
     @pytest.mark.asyncio
-    async def test_cleanup_stale_agents(self, db, retention_manager):
-        """Test cleaning up stale agent registrations"""
-        # Add an active agent (last_seen = now)
-        async with db.session() as session:
-            active_agent = AgentRegistration(
-                agent_id="active_agent",
-                project_id="proj1",
-                needs=["data"],
-                last_seen=datetime.now(timezone.utc),
-            )
-            session.add(active_agent)
-
-            # Add a stale agent (last_seen = 2 days ago)
-            stale_agent = AgentRegistration(
-                agent_id="stale_agent",
-                project_id="proj1",
-                needs=["data"],
-                last_seen=datetime.now(timezone.utc) - timedelta(days=2),
-            )
-            session.add(stale_agent)
-
-        # Clean up stale agents
-        cleaned = await retention_manager.cleanup_stale_agents()
-
-        # Should have cleaned up the stale agent
-        assert cleaned == 1
-
-        # Verify active agent still exists
-        from sqlalchemy import select
-        async with db.session() as session:
-            result = await session.execute(
-                select(AgentRegistration).where(
-                    AgentRegistration.agent_id == "active_agent"
-                )
-            )
-            active = result.scalar_one_or_none()
-            assert active is not None
-
-            result = await session.execute(
-                select(AgentRegistration).where(
-                    AgentRegistration.agent_id == "stale_agent"
-                )
-            )
-            stale = result.scalar_one_or_none()
-            assert stale is None
-
-    @pytest.mark.asyncio
     async def test_cleanup_project(self, db, event_store):
         """Test cleanup for a specific project"""
         project_id = "cleanup_project"
@@ -166,7 +113,6 @@ class TestRetentionManager:
         manager = RetentionManager(
             db=db,
             events_ttl_days=30,
-            agent_inactive_days=7,
             max_events_per_project=10,
         )
 
@@ -195,22 +141,11 @@ class TestRetentionManager:
             for i in range(50):
                 await event_store.append_event(project_id, f"event_{i}", {"data": i})
 
-        # Add a stale agent
-        async with db.session() as session:
-            stale_agent = AgentRegistration(
-                agent_id="global_stale_agent",
-                project_id="proj1",
-                needs=["data"],
-                last_seen=datetime.now(timezone.utc) - timedelta(days=2),
-            )
-            session.add(stale_agent)
-
         # Run global cleanup
         stats = await retention_manager.cleanup_all_projects()
 
         # Verify stats
         assert stats["projects_processed"] == 3
-        assert stats["agents_cleaned"] == 1
 
     @pytest.mark.asyncio
     async def test_get_retention_stats(self, db, event_store, retention_manager):
@@ -253,26 +188,22 @@ class TestRetentionManagerFromEnv:
         """Test creating manager with default environment values"""
         # Clear env vars to test defaults
         monkeypatch.delenv("RETENTION_EVENTS_TTL_DAYS", raising=False)
-        monkeypatch.delenv("RETENTION_AGENT_INACTIVE_DAYS", raising=False)
         monkeypatch.delenv("RETENTION_MAX_EVENTS_PER_PROJECT", raising=False)
 
         manager = get_retention_manager_from_env(db)
 
         assert manager.events_ttl_days == 30
-        assert manager.agent_inactive_days == 7
         assert manager.max_events_per_project == 10000
 
     @pytest.mark.asyncio
     async def test_get_from_env_custom(self, db, monkeypatch):
         """Test creating manager with custom environment values"""
         monkeypatch.setenv("RETENTION_EVENTS_TTL_DAYS", "60")
-        monkeypatch.setenv("RETENTION_AGENT_INACTIVE_DAYS", "14")
         monkeypatch.setenv("RETENTION_MAX_EVENTS_PER_PROJECT", "5000")
 
         manager = get_retention_manager_from_env(db)
 
         assert manager.events_ttl_days == 60
-        assert manager.agent_inactive_days == 14
         assert manager.max_events_per_project == 5000
 
 
@@ -286,13 +217,6 @@ class TestRetentionEdgeCases:
 
         assert stats["events_cleaned_by_age"] == 0
         assert stats["events_trimmed"] == 0
-
-    @pytest.mark.asyncio
-    async def test_cleanup_no_stale_agents(self, db, retention_manager):
-        """Test cleanup when no stale agents exist"""
-        cleaned = await retention_manager.cleanup_stale_agents()
-
-        assert cleaned == 0
 
     @pytest.mark.asyncio
     async def test_trim_nonexistent_project(self, db, retention_manager):
