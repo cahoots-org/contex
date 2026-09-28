@@ -204,27 +204,6 @@ async def lifespan(app: FastAPI):
     app.state.audit_logger = audit_logger
     logger.info("Audit logging initialized", retention_days=audit_retention_days)
 
-    # Data versioning removed - now built on event sourcing (see /api/v1/versions endpoint)
-    app.state.version_manager = None
-    logger.info("Data versioning via event sourcing")
-
-    # Initialize webhooks
-    webhooks_enabled = os.getenv("WEBHOOKS_ENABLED", "true").lower() == "true"
-    if webhooks_enabled:
-        from src.core.webhooks import init_webhook_manager
-        webhook_timeout = int(os.getenv("WEBHOOK_TIMEOUT", "30"))
-        webhook_retries = int(os.getenv("WEBHOOK_MAX_RETRIES", "3"))
-        webhook_manager = init_webhook_manager(
-            db,
-            default_timeout=webhook_timeout,
-            max_retries=webhook_retries
-        )
-        app.state.webhook_manager = webhook_manager
-        logger.info("Webhooks initialized", timeout=webhook_timeout, max_retries=webhook_retries)
-    else:
-        app.state.webhook_manager = None
-        logger.info("Webhooks disabled")
-
     # Instrument Redis with tracing (TracerProvider initialized at module level)
     try:
         from src.core.tracing import get_tracing_manager
@@ -246,9 +225,7 @@ async def lifespan(app: FastAPI):
     print("=" * 60)
     print()
     print("Web UI: http://localhost:8001/")
-    print("API Docs: http://localhost:8001/api/docs")
-    print("Health: http://localhost:8001/api/health")
-    print("Metrics: http://localhost:8001/api/metrics")
+    print("MCP endpoint: http://localhost:8001/mcp")
 
     if auth_enabled():
         print("Security: API Key Auth + RBAC + Rate Limiting ENABLED")
@@ -404,32 +381,6 @@ logger.info("Tenant middleware enabled")
 static_dir = Path(__file__).parent / "src" / "web" / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-
-# Mount API routes
-from src.api import router as api_router
-from src.api.tenant_routes import router as tenant_router
-from src.api.audit_routes import router as audit_router
-from src.api.service_account_routes import router as service_account_router
-from src.api.webhook_routes import router as webhook_router
-from src.api.version_routes import router as version_router
-
-# Mount v1 API (primary)
-app.include_router(api_router, prefix="/api/v1", tags=["API v1"])
-
-# Mount tenant management API
-app.include_router(tenant_router)
-
-# Mount audit API
-app.include_router(audit_router)
-
-# Mount Service Account API
-app.include_router(service_account_router)
-
-# Mount Webhook API
-app.include_router(webhook_router)
-
-# Mount Versioning API (built on event sourcing)
-app.include_router(version_router)
 
 # Mount Web UI routes
 from src.web import router as web_router
