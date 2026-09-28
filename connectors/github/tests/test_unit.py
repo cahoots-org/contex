@@ -34,6 +34,13 @@ from connectors.github.readers import commit_to_event, is_binary_path
         ("dist/bundle.js", False),
         ("dist/bundle.min.js", False),
         ("image.JPEG", True),
+        # serialized / ML data blobs (the checked-in NLTK pickle that blocked ingestion)
+        ("artclass/data/nltk_data/tokenizers/punkt/PY3/english.pickle", True),
+        ("model.pkl", True),
+        ("weights.npy", True),
+        ("vectors.npz", True),
+        ("clf.joblib", True),
+        ("ranker.model", True),
     ],
 )
 def test_is_binary_path(path: str, expected: bool) -> None:

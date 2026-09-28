@@ -36,6 +36,8 @@ _BINARY_EXTENSIONS = frozenset(
         # documents / data
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
         ".sqlite", ".db",
+        # serialized / ML data (binary; e.g. checked-in NLTK or model blobs)
+        ".pickle", ".pkl", ".npy", ".npz", ".model", ".joblib",
         # other binary
         ".bin", ".dat", ".class",
     }

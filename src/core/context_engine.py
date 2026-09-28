@@ -19,6 +19,17 @@ from .models import DataPublishEvent
 logger = logging.getLogger(__name__)
 
 
+def _strip_nul_bytes(value: Any) -> Any:
+    """Recursively remove NUL (0x00), which Postgres rejects in text/JSONB columns."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {k: _strip_nul_bytes(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_strip_nul_bytes(v) for v in value]
+    return value
+
+
 class ContextEngine:
     """
     Context Engine: Embedding-based semantic matching for agent context discovery.
@@ -227,7 +238,7 @@ class ContextEngine:
         """
         project_id = event.project_id
         data_key = event.data_key
-        data = event.data
+        data = _strip_nul_bytes(event.data)
         format_hint = event.data_format
 
         logger.debug("Publishing data: %s:%s", project_id, data_key)
