@@ -70,7 +70,6 @@ class Tenant(Base):
     projects: Mapped[List["TenantProject"]] = relationship(back_populates="tenant")
     api_keys: Mapped[List["APIKey"]] = relationship(back_populates="tenant")
     service_accounts: Mapped[List["ServiceAccount"]] = relationship(back_populates="tenant")
-    agents: Mapped[List["AgentRegistration"]] = relationship(back_populates="tenant")
 
 
 class TenantUsage(Base):
@@ -356,42 +355,6 @@ class RateLimitEntry(Base):
 
     __table_args__ = (
         Index("idx_rate_limit_key_time", "rate_key", "request_time"),
-    )
-
-
-class AgentRegistration(Base):
-    """Agent Registration model."""
-
-    __tablename__ = "agent_registrations"
-
-    agent_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
-    )
-    needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    notification_method: Mapped[str] = mapped_column(String(20), nullable=False, default="mcp")
-    response_format: Mapped[str] = mapped_column(String(20), nullable=False, default="json")
-    notification_channel: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    webhook_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    webhook_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    data_keys: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    last_sequence: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # Relationships
-    tenant: Mapped[Optional["Tenant"]] = relationship(back_populates="agents")
-
-    __table_args__ = (
-        Index("idx_agent_project", "project_id"),
-        Index("idx_agent_tenant", "tenant_id"),
-        Index("idx_agent_last_seen", "last_seen"),
     )
 
 

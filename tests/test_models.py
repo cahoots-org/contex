@@ -3,79 +3,9 @@
 import pytest
 from pydantic import ValidationError
 from src.core.models import (
-    AgentRegistration,
     DataPublishEvent,
-    RegistrationResponse,
     MatchedDataSource,
 )
-
-
-class TestAgentRegistration:
-    """Test AgentRegistration model"""
-
-    def test_create_basic_registration(self):
-        """Test creating a basic agent registration"""
-        registration = AgentRegistration(
-            agent_id="test-agent",
-            project_id="test-project",
-            data_needs=["tech stack", "API documentation"],
-        )
-
-        assert registration.agent_id == "test-agent"
-        assert registration.project_id == "test-project"
-        assert len(registration.data_needs) == 2
-        assert registration.last_seen_sequence == "0"
-        assert registration.webhook_url is None
-
-    def test_registration_with_webhook(self):
-        """Test registration with a webhook URL selects webhook delivery"""
-        registration = AgentRegistration(
-            agent_id="test-agent",
-            project_id="test-project",
-            data_needs=["tech stack"],
-            webhook_url="https://example.com/hook",
-        )
-
-        assert str(registration.webhook_url) == "https://example.com/hook"
-
-    def test_notification_method_field_is_rejected(self):
-        """The client-facing redis notification_method field is removed (#58)."""
-        with pytest.raises(ValidationError):
-            AgentRegistration(
-                agent_id="test-agent",
-                project_id="test-project",
-                data_needs=["tech stack"],
-                notification_method="redis",
-            )
-
-    def test_notification_channel_field_is_rejected(self):
-        """Clients can no longer pick a Redis channel (#58)."""
-        with pytest.raises(ValidationError):
-            AgentRegistration(
-                agent_id="test-agent",
-                project_id="test-project",
-                data_needs=["tech stack"],
-                notification_channel="custom:channel:name",
-            )
-
-    def test_registration_with_last_seen(self):
-        """Test registration with last seen sequence"""
-        registration = AgentRegistration(
-            agent_id="test-agent",
-            project_id="test-project",
-            data_needs=["tech stack"],
-            last_seen_sequence="1234567890-0",
-        )
-
-        assert registration.last_seen_sequence == "1234567890-0"
-
-    def test_validation_requires_fields(self):
-        """Test that validation requires all required fields"""
-        with pytest.raises(ValidationError):
-            AgentRegistration(
-                agent_id="test-agent",
-                # Missing project_id and data_needs
-            )
 
 
 class TestDataPublishEvent:
@@ -150,39 +80,3 @@ class TestMatchedDataSource:
         MatchedDataSource(
             data_key="test", similarity=1.5, data={}
         )  # Should not validate bounds
-
-
-class TestRegistrationResponse:
-    """Test RegistrationResponse model"""
-
-    def test_create_response(self):
-        """Test creating a registration response"""
-        response = RegistrationResponse(
-            status="registered",
-            agent_id="test-agent",
-            project_id="test-project",
-            caught_up_events=5,
-            current_sequence="1234567890-0",
-            matched_needs={"tech stack": 3, "API docs": 2},
-        )
-
-        assert response.status == "registered"
-        assert response.agent_id == "test-agent"
-        assert response.caught_up_events == 5
-        assert response.matched_needs["tech stack"] == 3
-
-    def test_response_serialization(self):
-        """Test that response can be serialized to dict"""
-        response = RegistrationResponse(
-            status="registered",
-            agent_id="test-agent",
-            project_id="test-project",
-            caught_up_events=0,
-            current_sequence="0",
-            matched_needs={},
-        )
-
-        data = response.model_dump()
-        assert isinstance(data, dict)
-        assert data["status"] == "registered"
-        assert data["agent_id"] == "test-agent"
