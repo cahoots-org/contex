@@ -27,11 +27,6 @@ class Permission(str, Enum):
     PUBLISH_DATA = "publish_data"
     QUERY_DATA = "query_data"
 
-    # Agent operations
-    REGISTER_AGENT = "register_agent"
-    LIST_AGENTS = "list_agents"
-    DELETE_AGENT = "delete_agent"
-
     # Admin operations
     CREATE_API_KEY = "create_api_key"
     LIST_API_KEYS = "list_api_keys"
@@ -76,9 +71,6 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.VIEW_VERSION_HISTORY,
     },
     Role.CONSUMER: {
-        Permission.REGISTER_AGENT,
-        Permission.LIST_AGENTS,
-        Permission.DELETE_AGENT,
         Permission.QUERY_DATA,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
@@ -88,7 +80,6 @@ ROLE_PERMISSIONS: dict[Role, Set[Permission]] = {
         Permission.QUERY_DATA,
         Permission.VIEW_PROJECT_DATA,
         Permission.VIEW_PROJECT_EVENTS,
-        Permission.LIST_AGENTS,
         Permission.VIEW_VERSION_HISTORY,
     },
 }

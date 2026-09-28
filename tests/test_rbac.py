@@ -65,7 +65,6 @@ class TestRoles:
         """Test that all permissions are defined"""
         assert Permission.PUBLISH_DATA == "publish_data"
         assert Permission.QUERY_DATA == "query_data"
-        assert Permission.REGISTER_AGENT == "register_agent"
 
     def test_admin_has_all_permissions(self):
         """Test that admin role has all permissions"""
@@ -83,10 +82,6 @@ class TestRoles:
         assert Permission.PUBLISH_DATA in publisher_perms
         assert Permission.VIEW_PROJECT_DATA in publisher_perms
 
-        # Publishers cannot manage agents
-        assert Permission.REGISTER_AGENT not in publisher_perms
-        assert Permission.DELETE_AGENT not in publisher_perms
-
         # Publishers cannot manage API keys
         assert Permission.CREATE_API_KEY not in publisher_perms
 
@@ -94,10 +89,8 @@ class TestRoles:
         """Test consumer role permissions"""
         consumer_perms = ROLE_PERMISSIONS[Role.CONSUMER]
 
-        # Consumers can register agents and query
-        assert Permission.REGISTER_AGENT in consumer_perms
+        # Consumers can query
         assert Permission.QUERY_DATA in consumer_perms
-        assert Permission.LIST_AGENTS in consumer_perms
 
         # Consumers cannot publish
         assert Permission.PUBLISH_DATA not in consumer_perms
@@ -112,12 +105,9 @@ class TestRoles:
         # Readonly can only query and view
         assert Permission.QUERY_DATA in readonly_perms
         assert Permission.VIEW_PROJECT_DATA in readonly_perms
-        assert Permission.LIST_AGENTS in readonly_perms
 
         # Readonly cannot modify anything
         assert Permission.PUBLISH_DATA not in readonly_perms
-        assert Permission.REGISTER_AGENT not in readonly_perms
-        assert Permission.DELETE_AGENT not in readonly_perms
 
 
 class TestRoleAssignment:
@@ -248,8 +238,8 @@ class TestPermissionChecking:
         # Publisher cannot publish to non-assigned projects
         assert not role_assignment.has_permission(Permission.PUBLISH_DATA, "proj2")
 
-        # Publisher cannot register agents (not in role permissions)
-        assert not role_assignment.has_permission(Permission.REGISTER_AGENT, "proj1")
+        # Publisher lacks admin permissions (not in role permissions)
+        assert not role_assignment.has_permission(Permission.CREATE_API_KEY, "proj1")
 
     @pytest.mark.asyncio
     async def test_has_permission_all_projects(self, db):
@@ -302,11 +292,11 @@ class TestPermissionChecking:
         assert check_permission(Role.PUBLISHER, Permission.PUBLISH_DATA)
         assert not check_permission(Role.PUBLISHER, Permission.CREATE_API_KEY)
 
-        # Consumer can register agents but not publish
-        assert check_permission(Role.CONSUMER, Permission.REGISTER_AGENT)
+        # Consumer can query but not publish
+        assert check_permission(Role.CONSUMER, Permission.QUERY_DATA)
         assert not check_permission(Role.CONSUMER, Permission.PUBLISH_DATA)
 
         # Readonly can only view
         assert check_permission(Role.READONLY, Permission.QUERY_DATA)
         assert not check_permission(Role.READONLY, Permission.PUBLISH_DATA)
-        assert not check_permission(Role.READONLY, Permission.REGISTER_AGENT)
+        assert not check_permission(Role.READONLY, Permission.CREATE_API_KEY)
