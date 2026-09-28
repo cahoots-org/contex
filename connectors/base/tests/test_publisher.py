@@ -1,11 +1,4 @@
-"""Unit tests for ContexPublisher error handling.
-
-Regression guard for the masking bug: when contex_publish_batch returns an error
-result, publish_batch must surface the server's message, not blow up parsing the
-plain error string as JSON (which hid real failures behind "Expecting value").
-
-The async method is driven with asyncio.run() so no async plugin is needed.
-"""
+"""Unit tests for ContexPublisher.publish_batch error handling."""
 from __future__ import annotations
 
 import asyncio

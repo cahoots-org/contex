@@ -54,9 +54,6 @@ class ContexPublisher:
             "contex_publish_batch",
             {"project_id": self._config.project_id, "items": items},
         )
-        # On a tool error the content is a plain error string, not JSON. Surface it
-        # rather than letting json.loads raise a misleading "Expecting value" decode
-        # error that hides the real server-side failure.
         text = result.content[0].text if result.content else ""
         if result.isError:
             raise RuntimeError(f"contex_publish_batch failed: {text or 'unknown error'}")

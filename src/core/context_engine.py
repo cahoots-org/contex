@@ -20,15 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _strip_nul_bytes(value: Any) -> Any:
-    """Recursively remove NUL (0x00) from any strings in a published value.
-
-    Postgres cannot store 0x00 in a text or JSONB column, so a single NUL byte
-    anywhere in published content fails the INSERT and, with it, the whole
-    publish/batch. The usual source is text decoded from a mis-detected binary
-    file (e.g. a .pickle decoded with errors="replace", which keeps NUL because
-    it is valid UTF-8). Strip it once here, at the boundary every connector and
-    both MCP publish tools route through.
-    """
+    """Recursively remove NUL (0x00), which Postgres rejects in text/JSONB columns."""
     if isinstance(value, str):
         return value.replace("\x00", "")
     if isinstance(value, dict):
@@ -246,8 +238,6 @@ class ContextEngine:
         """
         project_id = event.project_id
         data_key = event.data_key
-        # Strip NUL bytes up front: Postgres rejects 0x00 in text/JSONB, and this
-        # is the single path both register_data and the event store fan out from.
         data = _strip_nul_bytes(event.data)
         format_hint = event.data_format
 
