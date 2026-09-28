@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 
 from src.core.database import DatabaseManager
-from src.core.db_models import Event, Embedding, AgentRegistration
+from src.core.db_models import Event, Embedding
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 class RetentionManager:
     """
-    Manages data retention policies for events, embeddings, and agent registrations.
+    Manages data retention policies for events and embeddings.
 
     Features:
     - Configurable TTL for events
@@ -27,7 +27,6 @@ class RetentionManager:
         self,
         db: DatabaseManager,
         events_ttl_days: int = 30,
-        agent_inactive_days: int = 7,
         max_events_per_project: int = 10000,
     ):
         """
@@ -36,17 +35,14 @@ class RetentionManager:
         Args:
             db: Database manager
             events_ttl_days: Days to keep events (default: 30)
-            agent_inactive_days: Days before cleaning up inactive agents (default: 7)
             max_events_per_project: Maximum events per project (default: 10000)
         """
         self.db = db
         self.events_ttl_days = events_ttl_days
-        self.agent_inactive_days = agent_inactive_days
         self.max_events_per_project = max_events_per_project
 
         logger.info("Retention manager initialized",
                    events_ttl_days=events_ttl_days,
-                   agent_inactive_days=agent_inactive_days,
                    max_events_per_project=max_events_per_project)
 
     async def cleanup_old_events(self, project_id: str) -> int:
@@ -144,34 +140,6 @@ class RetentionManager:
                         error=str(e))
             return 0
 
-    async def cleanup_stale_agents(self) -> int:
-        """
-        Remove agent registrations that haven't been active for agent_inactive_days.
-
-        Returns:
-            Number of agents cleaned up
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self.agent_inactive_days)
-
-        try:
-            async with self.db.session() as session:
-                result = await session.execute(
-                    delete(AgentRegistration)
-                    .where(AgentRegistration.last_seen < cutoff)
-                )
-                deleted = result.rowcount
-
-                if deleted > 0:
-                    logger.info("Cleaned up stale agents",
-                               agents_deleted=deleted,
-                               inactive_days=self.agent_inactive_days)
-
-                return deleted
-
-        except Exception as e:
-            logger.error("Failed to cleanup stale agents", error=str(e))
-            return 0
-
     async def cleanup_project(self, project_id: str) -> dict:
         """
         Run all cleanup operations for a project.
@@ -220,7 +188,6 @@ class RetentionManager:
             "projects_processed": len(project_ids),
             "total_events_cleaned_by_age": 0,
             "total_events_trimmed": 0,
-            "agents_cleaned": 0,
         }
 
         # Clean up each project
@@ -228,9 +195,6 @@ class RetentionManager:
             project_stats = await self.cleanup_project(project_id)
             stats["total_events_cleaned_by_age"] += project_stats["events_cleaned_by_age"]
             stats["total_events_trimmed"] += project_stats["events_trimmed"]
-
-        # Clean up stale agents
-        stats["agents_cleaned"] = await self.cleanup_stale_agents()
 
         logger.info("Global cleanup complete", **stats)
 
@@ -253,7 +217,6 @@ class RetentionManager:
             "newest_event": None,
             "retention_config": {
                 "events_ttl_days": self.events_ttl_days,
-                "agent_inactive_days": self.agent_inactive_days,
                 "max_events_per_project": self.max_events_per_project,
             },
         }
@@ -303,7 +266,6 @@ def get_retention_manager_from_env(db: DatabaseManager) -> RetentionManager:
 
     Environment variables:
         RETENTION_EVENTS_TTL_DAYS: Days to keep events (default: 30)
-        RETENTION_AGENT_INACTIVE_DAYS: Days before cleaning inactive agents (default: 7)
         RETENTION_MAX_EVENTS_PER_PROJECT: Max events per project (default: 10000)
 
     Args:
@@ -313,12 +275,10 @@ def get_retention_manager_from_env(db: DatabaseManager) -> RetentionManager:
         RetentionManager instance
     """
     events_ttl_days = int(os.getenv("RETENTION_EVENTS_TTL_DAYS", "30"))
-    agent_inactive_days = int(os.getenv("RETENTION_AGENT_INACTIVE_DAYS", "7"))
     max_events_per_project = int(os.getenv("RETENTION_MAX_EVENTS_PER_PROJECT", "10000"))
 
     return RetentionManager(
         db=db,
         events_ttl_days=events_ttl_days,
-        agent_inactive_days=agent_inactive_days,
         max_events_per_project=max_events_per_project,
     )

@@ -8,7 +8,7 @@ import toon_format as toon
 from sqlalchemy import select
 
 from src.core.database import DatabaseManager
-from src.core.db_models import Event, Embedding, AgentRegistration
+from src.core.db_models import Event, Embedding
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,7 +19,7 @@ class ExportImportManager:
     Manages project data export and import operations.
 
     Features:
-    - Export all project data (events, embeddings, agent registrations)
+    - Export all project data (events, embeddings)
     - Import with validation
     - Support for JSON and TOON formats
     - Maintains data integrity
@@ -41,7 +41,6 @@ class ExportImportManager:
         format: Literal["json", "toon"] = "json",
         include_events: bool = True,
         include_embeddings: bool = True,
-        include_agents: bool = True,
     ) -> str:
         """
         Export all project data.
@@ -51,7 +50,6 @@ class ExportImportManager:
             format: Export format (json or toon)
             include_events: Include event stream data
             include_embeddings: Include embeddings data
-            include_agents: Include agent registrations
 
         Returns:
             Serialized project data in specified format
@@ -76,12 +74,6 @@ class ExportImportManager:
             embeddings = await self._export_embeddings(project_id)
             export_data["data"]["embeddings"] = embeddings
             logger.info("Exported embeddings", project_id=project_id, count=len(embeddings))
-
-        # Export agent registrations
-        if include_agents:
-            agents = await self._export_agents(project_id)
-            export_data["data"]["agents"] = agents
-            logger.info("Exported agents", project_id=project_id, count=len(agents))
 
         # Serialize to requested format
         if format == "toon":
@@ -147,41 +139,6 @@ class ExportImportManager:
             logger.error("Failed to export embeddings", project_id=project_id, error=str(e))
 
         return embeddings
-
-    async def _export_agents(self, project_id: str) -> List[Dict[str, Any]]:
-        """Export all agent registrations for the project"""
-        agents = []
-
-        try:
-            async with self.db.session() as session:
-                result = await session.execute(
-                    select(AgentRegistration)
-                    .where(AgentRegistration.project_id == project_id)
-                )
-                rows = result.scalars().all()
-
-                for row in rows:
-                    agents.append({
-                        "agent_id": row.agent_id,
-                        "data": {
-                            "project_id": row.project_id,
-                            "tenant_id": row.tenant_id,
-                            "needs": row.needs,
-                            "notification_method": row.notification_method,
-                            "response_format": row.response_format,
-                            "notification_channel": row.notification_channel,
-                            "webhook_url": row.webhook_url,
-                            "data_keys": row.data_keys,
-                            "created_by": row.created_by,
-                        },
-                        "last_seen": row.last_seen.isoformat() if row.last_seen else None,
-                        "last_sequence": row.last_sequence,
-                    })
-
-        except Exception as e:
-            logger.error("Failed to export agents", project_id=project_id, error=str(e))
-
-        return agents
 
     async def import_project(
         self,
@@ -250,7 +207,6 @@ class ExportImportManager:
             "project_id": project_id,
             "events_imported": 0,
             "embeddings_imported": 0,
-            "agents_imported": 0,
         }
 
         # Import events
@@ -266,14 +222,6 @@ class ExportImportManager:
             stats["embeddings_imported"] = await self._import_embeddings(
                 project_id,
                 parsed_data["data"]["embeddings"],
-                overwrite
-            )
-
-        # Import agents
-        if "agents" in parsed_data["data"]:
-            stats["agents_imported"] = await self._import_agents(
-                project_id,
-                parsed_data["data"]["agents"],
                 overwrite
             )
 
@@ -320,11 +268,6 @@ class ExportImportManager:
                 if "embeddings" in data_section:
                     if not isinstance(data_section["embeddings"], list):
                         errors.append("'embeddings' must be a list")
-
-                # Validate agents structure
-                if "agents" in data_section:
-                    if not isinstance(data_section["agents"], list):
-                        errors.append("'agents' must be a list")
 
         return {
             "valid": len(errors) == 0,
@@ -432,66 +375,4 @@ class ExportImportManager:
 
         except Exception as e:
             logger.error("Failed to import embeddings", error=str(e))
-            return 0
-
-    async def _import_agents(
-        self,
-        project_id: str,
-        agents: List[Dict[str, Any]],
-        overwrite: bool = False
-    ) -> int:
-        """Import agent registrations"""
-        from sqlalchemy import delete
-
-        try:
-            async with self.db.session() as session:
-                # If overwriting, delete existing agents for this project
-                if overwrite:
-                    await session.execute(
-                        delete(AgentRegistration).where(AgentRegistration.project_id == project_id)
-                    )
-
-                imported = 0
-                for agent in agents:
-                    agent_id = agent.get("agent_id")
-                    if not agent_id:
-                        continue
-
-                    data = agent.get("data", {})
-
-                    # Check if exists (when not overwriting)
-                    if not overwrite:
-                        result = await session.execute(
-                            select(AgentRegistration)
-                            .where(AgentRegistration.agent_id == agent_id)
-                        )
-                        if result.scalar_one_or_none():
-                            continue
-
-                    # Create agent registration
-                    new_agent = AgentRegistration(
-                        agent_id=agent_id,
-                        project_id=data.get("project_id", project_id),
-                        tenant_id=data.get("tenant_id"),
-                        needs=data.get("needs", []),
-                        notification_method=data.get(
-                            "notification_method",
-                            "webhook" if data.get("webhook_url") else "mcp",
-                        ),
-                        response_format=data.get("response_format", "json"),
-                        notification_channel=data.get("notification_channel"),
-                        webhook_url=data.get("webhook_url"),
-                        data_keys=data.get("data_keys", []),
-                        last_sequence=agent.get("last_sequence"),
-                        created_by=data.get("created_by"),
-                        data=data,
-                    )
-                    session.add(new_agent)
-                    imported += 1
-
-            logger.info("Imported agents", count=imported)
-            return imported
-
-        except Exception as e:
-            logger.error("Failed to import agents", error=str(e))
             return 0

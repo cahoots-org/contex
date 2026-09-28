@@ -1,16 +1,16 @@
 # tests/test_tenant_isolation.py
-"""End-to-end multi-tenant isolation matrix.
+"""Multi-tenant isolation on the surviving surfaces (service layer + sandbox).
 
-Proves that the ownership checks actually isolate tenants at the HTTP and
-service layers, and that isolation is a no-op when auth is off.
+Proves that ownership checks isolate tenants at the SubscriptionService layer
+and on the /sandbox SSE route. The REST-route isolation cases were removed with
+the REST API teardown (#189); the durable guarantees live at the service layer
+(exercised by MCP) and the sandbox, both covered below.
 
 Transport: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), ...) —
 no lifespan runs; app.state.db is wired in each test that needs real DB access.
-Ownership and auth checks run before any handler body that needs the engine,
-so 403s are delivered without requiring Redis / context engine init.
+The ownership check runs before any handler body that needs the engine, so a 403
+is delivered without requiring Redis / context engine init.
 """
-import hashlib
-import secrets
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -20,7 +20,7 @@ from sqlalchemy import text
 from main import app
 from src.core.authz import get_identity
 from src.core.identity import Identity
-from src.core.rbac import Permission, Role, expand_role
+from src.core.rbac import Role, expand_role
 from src.core.subscriptions import SubscriptionService
 
 
@@ -76,146 +76,7 @@ async def _seed_tenant_project(db, tenant_id: str, project_id: str) -> None:
         await session.commit()
 
 
-def _stub_context_engine() -> MagicMock:
-    """Minimal stub so handler bodies after the ownership check don't AttributeError."""
-    engine = MagicMock()
-    engine.semantic_matcher = MagicMock()
-    engine.semantic_matcher.get_registered_data = AsyncMock(return_value=[])
-    engine.publish_data = AsyncMock(return_value="1")
-    engine.event_store = MagicMock()
-    engine.event_store.get_events_since = AsyncMock(return_value=[])
-    return engine
-
-
-async def _seed_api_key(db, key_id: str, tenant_id: str) -> None:
-    """Insert a minimal api_keys row for tenant_id (no real hash needed)."""
-    async with db.session() as session:
-        await session.execute(
-            text(
-                "INSERT INTO api_keys (key_id, key_hash, name, prefix, scopes, tenant_id)"
-                " VALUES (:kid, :hash, :name, 'ck_tst', '{}', :tid)"
-            ),
-            {
-                "kid": key_id,
-                "hash": hashlib.sha256(secrets.token_bytes(16)).hexdigest(),
-                "name": f"key-{key_id}",
-                "tid": tenant_id,
-            },
-        )
-        await session.commit()
-
-
-# ── Case 1: cross-tenant project data → 403; own project → not 403 ─────────────
-
-
-@pytest.mark.asyncio
-async def test_cross_tenant_project_data_is_403(db, monkeypatch):
-    """tenant-A identity gets 403 on tenant-B's project."""
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
-    await _seed_tenant_project(db, "tenant-A", "proj-a")
-    await _seed_tenant_project(db, "tenant-B", "proj-b")
-
-    app.state.db = db
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-            r = await c.get("/api/v1/projects/proj-b/data")
-        assert r.status_code == 403
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_own_project_data_is_not_403(db, monkeypatch):
-    """tenant-A identity gets non-403 on its own project."""
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-
-    await _ensure_tenant(db, "tenant-A")
-    await _seed_tenant_project(db, "tenant-A", "proj-a")
-
-    app.state.db = db
-    app.state.context_engine = _stub_context_engine()
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-            r = await c.get("/api/v1/projects/proj-a/data")
-        assert r.status_code != 403
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ── Case 2: GET /auth/keys returns only caller's tenant keys ────────────────────
-
-
-@pytest.mark.asyncio
-async def test_list_keys_scoped_to_caller_tenant(db, monkeypatch):
-    """GET /auth/keys returns only tenant-A's keys when called as tenant-A."""
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
-    await _seed_api_key(db, "key-a1", "tenant-A")
-    await _seed_api_key(db, "key-a2", "tenant-A")
-    await _seed_api_key(db, "key-b1", "tenant-B")
-
-    app.state.db = db
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-            r = await c.get("/api/v1/auth/keys")
-        assert r.status_code == 200
-        ids = {k["key_id"] for k in r.json()}
-        assert "key-a1" in ids
-        assert "key-a2" in ids
-        assert "key-b1" not in ids
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ── Case 3: publish to new project → binds to tenant-A ─────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_publish_new_project_binds_to_tenant_a(db, monkeypatch):
-    """Publishing to an unowned project binds it to the caller's tenant."""
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-
-    await _ensure_tenant(db, "tenant-A")
-    # proj-new is intentionally absent from tenant_projects
-
-    app.state.db = db
-    app.state.context_engine = _stub_context_engine()
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-            r = await c.post(
-                "/api/v1/data/publish",
-                json={"project_id": "proj-new", "data_key": "dk1", "data": {"x": 1}},
-            )
-        # Ownership auto-binding happens; handler may 500 if engine isn't full, but not 403.
-        assert r.status_code != 403
-
-        # Assert the tenant_projects row was created for tenant-A.
-        async with db.session() as session:
-            row = (await session.execute(
-                text(
-                    "SELECT tenant_id FROM tenant_projects"
-                    " WHERE project_id = 'proj-new'"
-                )
-            )).first()
-        assert row is not None and row[0] == "tenant-A"
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ── Case 4: subscription ownership at service layer ─────────────────────────────
+# ── subscription ownership at service layer ─────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -237,7 +98,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatc
         await svc.get_bundle(sub_id, tenant_id="tenant-A")
 
 
-# ── Case 5: /sandbox/subscribe cross-tenant → 403 ──────────────────────────────
+# ── /sandbox/subscribe cross-tenant → 403 ──────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -264,29 +125,5 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
                 params={"project_id": "proj-b-sub", "need": "auth tokens"},
             )
         assert r.status_code == 403
-    finally:
-        app.dependency_overrides.clear()
-
-
-# ── Case 6: auth OFF → cross-tenant call is NOT 403 ───────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_cross_tenant_data_not_403_when_auth_off(db, monkeypatch):
-    """With auth off, cross-tenant project access is not blocked."""
-    monkeypatch.setenv("AUTH_ENABLED", "false")
-
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
-    await _seed_tenant_project(db, "tenant-B", "proj-b-off")
-
-    app.state.db = db
-    app.state.context_engine = _stub_context_engine()
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
-            r = await c.get("/api/v1/projects/proj-b-off/data")
-        assert r.status_code != 403
     finally:
         app.dependency_overrides.clear()

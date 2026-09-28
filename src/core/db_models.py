@@ -70,8 +70,6 @@ class Tenant(Base):
     projects: Mapped[List["TenantProject"]] = relationship(back_populates="tenant")
     api_keys: Mapped[List["APIKey"]] = relationship(back_populates="tenant")
     service_accounts: Mapped[List["ServiceAccount"]] = relationship(back_populates="tenant")
-    webhook_endpoints: Mapped[List["WebhookEndpoint"]] = relationship(back_populates="tenant")
-    agents: Mapped[List["AgentRegistration"]] = relationship(back_populates="tenant")
 
 
 class TenantUsage(Base):
@@ -344,69 +342,6 @@ class AuditEvent(Base):
     )
 
 
-class WebhookEndpoint(Base):
-    """Webhook Endpoint model."""
-
-    __tablename__ = "webhook_endpoints"
-
-    endpoint_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
-    )
-    url: Mapped[str] = mapped_column(Text, nullable=False)
-    secret: Mapped[str] = mapped_column(Text, nullable=False)
-    events: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    categories: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    project_ids: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
-    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # Relationships
-    tenant: Mapped[Optional["Tenant"]] = relationship(back_populates="webhook_endpoints")
-    deliveries: Mapped[List["WebhookDelivery"]] = relationship(back_populates="endpoint")
-
-    __table_args__ = (
-        Index("idx_webhook_tenant", "tenant_id"),
-        Index("idx_webhook_active", "is_active"),
-    )
-
-
-class WebhookDelivery(Base):
-    """Webhook Delivery log."""
-
-    __tablename__ = "webhook_deliveries"
-
-    delivery_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    endpoint_id: Mapped[str] = mapped_column(
-        String(255), ForeignKey("webhook_endpoints.endpoint_id", ondelete="CASCADE"), nullable=False
-    )
-    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    response_body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-
-    # Relationships
-    endpoint: Mapped["WebhookEndpoint"] = relationship(back_populates="deliveries")
-
-    __table_args__ = (
-        Index("idx_webhook_delivery_endpoint", "endpoint_id"),
-    )
-
-
 class RateLimitEntry(Base):
     """Rate Limit Entry - sliding window rate limiting."""
 
@@ -420,42 +355,6 @@ class RateLimitEntry(Base):
 
     __table_args__ = (
         Index("idx_rate_limit_key_time", "rate_key", "request_time"),
-    )
-
-
-class AgentRegistration(Base):
-    """Agent Registration model."""
-
-    __tablename__ = "agent_registrations"
-
-    agent_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    tenant_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=True
-    )
-    needs: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    notification_method: Mapped[str] = mapped_column(String(20), nullable=False, default="mcp")
-    response_format: Mapped[str] = mapped_column(String(20), nullable=False, default="json")
-    notification_channel: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    webhook_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    webhook_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    data_keys: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    last_sequence: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    # Relationships
-    tenant: Mapped[Optional["Tenant"]] = relationship(back_populates="agents")
-
-    __table_args__ = (
-        Index("idx_agent_project", "project_id"),
-        Index("idx_agent_tenant", "tenant_id"),
-        Index("idx_agent_last_seen", "last_seen"),
     )
 
 

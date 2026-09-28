@@ -1,6 +1,5 @@
 """Main Context Engine orchestrator"""
 
-import asyncio
 import json
 import logging
 import tiktoken
@@ -9,28 +8,15 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from redis.asyncio import Redis
 
-from sqlalchemy import select
-
 from .database import DatabaseManager
-from .db_models import AgentRegistration as AgentRegistrationRow
 from .semantic_matcher import SemanticDataMatcher
 from .event_store import EventStore
-from .webhook_dispatcher import WebhookDispatcher
 from .matcher import HybridMatcher
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
-from .models import (
-    AgentRegistration,
-    DataPublishEvent,
-    RegistrationResponse,
-    MatchedDataSource,
-)
+from .models import DataPublishEvent
 
 logger = logging.getLogger(__name__)
-
-# Owner marker for agents registered before ownership tracking (or without a
-# caller identity). Treated as unowned so re-registration stays open.
-SYSTEM_OWNER = "system"
 
 
 class ContextEngine:
@@ -68,7 +54,6 @@ class ContextEngine:
             db, HybridMatcher(self.semantic_matcher), redis
         )
         self.event_store = EventStore(db)
-        self.webhook_dispatcher = WebhookDispatcher()
         self.max_context_size = max_context_size
 
         # Initialize tokenizer for context size estimation (cl100k_base is GPT-4 tokenizer)
@@ -78,9 +63,6 @@ class ContextEngine:
             # Fallback if tiktoken has issues
             self.tokenizer = None
             logger.warning("Tiktoken unavailable, context size limits disabled")
-
-        # Track registered agents: agent_id -> {project_id, needs, webhook_url, ...}
-        self.agents: Dict[str, Dict[str, Any]] = {}
 
         logger.info("Initialized")
         if self.max_context_size:
@@ -274,12 +256,11 @@ class ContextEngine:
             tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
         )
 
-        # 3. Notify agents that depend on this data
-        await self._notify_affected_agents(project_id, data_key, data, sequence)
-
-        # Reconcile persistent subscriptions against the new data (inline).
+        # Reconcile persistent subscriptions against the new data (inline). This
+        # is the notification path: MCP subscribers are pushed to over the
+        # internal bridge as reconcile re-matches affected subscriptions.
         # A reconcile/matcher failure must not fail the publish (spec §6):
-        # the event is already appended and agents already notified.
+        # the event is already appended.
         try:
             await self.subscriptions.reconcile_project(project_id, data_key)
         except Exception:
@@ -288,261 +269,6 @@ class ContextEngine:
             )
 
         return sequence
-
-    async def _resolve_agent_owner(
-        self, agent_id: str, project_id: str
-    ) -> Optional[str]:
-        """Return the recorded owner of an agent, or None if not yet registered.
-
-        The durable ``agent_registrations`` row is authoritative (it survives
-        restarts); the in-memory dict is consulted as a fallback.
-        """
-        try:
-            async with self.db.session() as session:
-                row = await session.execute(
-                    select(AgentRegistrationRow.created_by).where(
-                        AgentRegistrationRow.agent_id == agent_id,
-                        AgentRegistrationRow.project_id == project_id,
-                    )
-                )
-                owner = row.scalar_one_or_none()
-                if owner is not None:
-                    return owner
-        except Exception:
-            logger.exception("Failed to resolve owner for agent %s", agent_id)
-
-        existing = self.agents.get(agent_id)
-        return existing.get("created_by") if existing else None
-
-    async def _persist_agent_owner(
-        self,
-        registration: AgentRegistration,
-        notification_method: str,
-        webhook_url: Optional[str],
-        data_keys: List[str],
-        last_sequence: str,
-        created_by: str,
-    ) -> None:
-        """Upsert the agent's durable registration row, preserving its owner."""
-        async with self.db.session() as session:
-            row = await session.get(AgentRegistrationRow, registration.agent_id)
-            if row is None:
-                row = AgentRegistrationRow(
-                    agent_id=registration.agent_id,
-                    project_id=registration.project_id,
-                    created_by=created_by,
-                )
-                session.add(row)
-            row.project_id = registration.project_id
-            row.needs = list(registration.data_needs)
-            row.notification_method = notification_method
-            row.response_format = registration.response_format
-            row.notification_channel = None
-            row.webhook_url = webhook_url
-            row.data_keys = data_keys
-            row.last_sequence = last_sequence
-
-    async def register_agent(
-        self, registration: AgentRegistration, created_by: Optional[str] = None
-    ) -> RegistrationResponse:
-        """
-        Agent registers with semantic data needs.
-
-        Args:
-            registration: Agent registration request
-            created_by: Identity of the caller; recorded as the owner on first
-                registration and required to match on re-registration.
-
-        Returns:
-            Registration response with matched data
-
-        Raises:
-            PermissionError: Re-registration attempted by a caller that does
-                not own the existing agent_id.
-        """
-        agent_id = registration.agent_id
-        project_id = registration.project_id
-        needs = registration.data_needs
-        last_seen = registration.last_seen_sequence or "0"
-
-        logger.debug("Registering agent: %s (project: %s)", agent_id, project_id)
-
-        owner = await self._resolve_agent_owner(agent_id, project_id)
-        if owner is not None and owner != SYSTEM_OWNER and owner != created_by:
-            logger.warning(
-                "Rejected re-registration of agent %s by %s (owner: %s)",
-                agent_id,
-                created_by,
-                owner,
-            )
-            raise PermissionError(
-                f"Agent '{agent_id}' is owned by another caller"
-            )
-        # First registration records the owner; re-registration keeps it stable.
-        effective_owner = owner if owner is not None else (created_by or SYSTEM_OWNER)
-
-        # 1. Match agent needs to available data
-        matches = await self.semantic_matcher.match_agent_needs(project_id, needs)
-
-        # 2. Truncate matches if they exceed context size limit
-        if self.max_context_size:
-            matches = self._truncate_matches(matches, self.max_context_size)
-
-        # 3. Infer delivery: a webhook_url selects webhook delivery, otherwise
-        # updates are pushed over the internal MCP bridge.
-        webhook_url = (
-            str(registration.webhook_url) if registration.webhook_url else None
-        )
-        notification_method = "webhook" if webhook_url else "mcp"
-
-        # 4. Track which data keys this agent depends on
-        data_keys = set()
-        for need_matches in matches.values():
-            for match in need_matches:
-                data_keys.add(match["data_key"])
-
-        # 5. Store agent registration
-        self.agents[agent_id] = {
-            "project_id": project_id,
-            "needs": needs,
-            "notification_method": notification_method,
-            "response_format": registration.response_format,  # TOON or JSON
-            "webhook_url": webhook_url,
-            "webhook_secret": registration.webhook_secret,
-            "data_keys": list(data_keys),
-            "last_sequence": last_seen,
-            "created_by": effective_owner,
-        }
-        await self._persist_agent_owner(
-            registration, notification_method, webhook_url, list(data_keys),
-            last_seen, effective_owner,
-        )
-
-        # 6. Send initial context to agent
-        await self._send_initial_context(agent_id, matches, registration)
-
-        # 7. Catch up missed events
-        missed_events = await self.event_store.get_events_since(project_id, last_seen)
-
-        # 8. Get current sequence
-        current_sequence = await self.event_store.get_latest_sequence(project_id) or "0"
-
-        # 9. Build response
-        matched_counts = {
-            need: len(need_matches) for need, need_matches in matches.items()
-        }
-
-        logger.info("Agent %s registered", agent_id)
-        logger.debug("Needs: %s", len(needs))
-        logger.debug("Data keys: %s", len(data_keys))
-        logger.debug("Caught up: %s events", len(missed_events))
-
-        return RegistrationResponse(
-            status="registered",
-            agent_id=agent_id,
-            project_id=project_id,
-            caught_up_events=len(missed_events),
-            current_sequence=current_sequence,
-            matched_needs=matched_counts,
-        )
-
-    async def _send_initial_context(
-        self,
-        agent_id: str,
-        matches: Dict[str, List[Dict[str, Any]]],
-        registration: AgentRegistration,
-    ):
-        """Send initial matched context to a webhook agent.
-
-        MCP agents (no webhook_url) receive context via the internal push
-        bridge, so there is nothing to deliver directly here.
-        """
-        if not registration.webhook_url:
-            return
-
-        context = {}
-        for need, need_matches in matches.items():
-            context[need] = [
-                MatchedDataSource(
-                    data_key=match["data_key"],
-                    similarity=match["similarity"],
-                    data=match["data"],
-                    description=match.get("description"),
-                ).model_dump()
-                for match in need_matches
-            ]
-
-        success = await self.webhook_dispatcher.send_initial_context(
-            url=str(registration.webhook_url),
-            agent_id=agent_id,
-            context=context,
-            secret=registration.webhook_secret,
-        )
-        if success:
-            logger.debug("Sent initial context to %s via webhook", agent_id)
-        else:
-            logger.warning(
-                "Failed to send initial context to %s via webhook", agent_id
-            )
-
-    async def _notify_affected_agents(
-        self, project_id: str, data_key: str, data: Dict[str, Any], sequence: str
-    ):
-        """Notify webhook agents that depend on this data key.
-
-        MCP agents are pushed to over the internal subscription bridge, so only
-        webhook delivery is dispatched here.
-        """
-
-        affected_agents = [
-            agent_id
-            for agent_id, agent_info in self.agents.items()
-            if agent_info["project_id"] == project_id
-            and data_key in agent_info["data_keys"]
-        ]
-
-        if not affected_agents:
-            logger.debug("No agents affected by %s", data_key)
-            return
-
-        logger.debug(
-            "Notifying %s agents about %s update", len(affected_agents), data_key
-        )
-
-        for agent_id in affected_agents:
-            agent_info = self.agents[agent_id]
-
-            if agent_info["notification_method"] == "webhook":
-                # HTTP webhook (fire and forget - don't block on delivery)
-                asyncio.create_task(
-                    self.webhook_dispatcher.send_data_update(
-                        url=agent_info["webhook_url"],
-                        agent_id=agent_id,
-                        sequence=sequence,
-                        data_key=data_key,
-                        data=data,
-                        secret=agent_info.get("webhook_secret"),
-                    )
-                )
-
-            # Update agent's last sequence
-            agent_info["last_sequence"] = sequence
-
-    async def unregister_agent(self, agent_id: str):
-        """Remove agent registration"""
-        if agent_id in self.agents:
-            del self.agents[agent_id]
-            logger.info("Unregistered agent: %s", agent_id)
-        else:
-            logger.warning("Agent %s not found", agent_id)
-
-    def get_registered_agents(self) -> List[str]:
-        """Get list of registered agent IDs"""
-        return list(self.agents.keys())
-
-    def get_agent_info(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        """Get info about a registered agent"""
-        return self.agents.get(agent_id)
 
     async def query_project_data(
         self, project_id: str, query: str, top_k: int = 5,
