@@ -3,13 +3,10 @@
 from src.core.metrics import (
     http_requests_total,
     active_requests,
-    tenant_requests_total,
-    tenant_quota_exceeded_total,
     record_http_request,
     increment_active_requests,
     decrement_active_requests,
     record_tenant_request,
-    record_tenant_quota_exceeded,
     get_metrics,
 )
 
@@ -39,12 +36,6 @@ class TestMetricsCounters:
         """Tenant request metric is aggregate: no tenant_id label (see #78)."""
         record_tenant_request("GET", "/x")
         assert "tenant_id" not in get_metrics().decode("utf-8")
-
-    def test_record_tenant_quota_exceeded(self):
-        """Quota-exceeded metric records by resource only."""
-        initial = tenant_quota_exceeded_total.labels(resource="events")._value.get()
-        record_tenant_quota_exceeded("events")
-        assert tenant_quota_exceeded_total.labels(resource="events")._value.get() > initial
 
 
 class TestMetricsGauges:

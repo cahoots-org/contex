@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, update
+from sqlalchemy import select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Tenant as TenantModel
@@ -225,149 +225,6 @@ class TenantManager:
 
             return self._record_to_model(record)
 
-    async def update_tenant(
-        self,
-        tenant_id: str,
-        name: Optional[str] = None,
-        plan: Optional[TenantPlan] = None,
-        quotas: Optional[TenantQuotas] = None,
-        settings: Optional[Dict[str, Any]] = None,
-        is_active: Optional[bool] = None,
-    ) -> Optional[Tenant]:
-        """
-        Update tenant properties.
-
-        Args:
-            tenant_id: Tenant identifier
-            name: New display name
-            plan: New plan (updates quotas automatically unless custom quotas provided)
-            quotas: Custom quotas (overrides plan defaults)
-            settings: Updated settings (merged with existing)
-            is_active: Active status
-
-        Returns:
-            Updated Tenant object, None if not found
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
-            )
-            record = result.scalar_one_or_none()
-
-            if not record:
-                return None
-
-            if name is not None:
-                record.name = name
-            if plan is not None:
-                record.plan = plan.value
-                if quotas is None:
-                    record.quotas = TenantQuotas.for_plan(plan).model_dump()
-            if quotas is not None:
-                record.quotas = quotas.model_dump()
-            if settings is not None:
-                current_settings = record.settings or {}
-                current_settings.update(settings)
-                record.settings = current_settings
-            if is_active is not None:
-                record.is_active = is_active
-
-            record.updated_at = datetime.now(UTC)
-
-            logger.info("Tenant updated", tenant_id=tenant_id)
-
-            return self._record_to_model(record)
-
-    async def delete_tenant(self, tenant_id: str, force: bool = False) -> bool:
-        """
-        Delete a tenant and all associated data.
-
-        Args:
-            tenant_id: Tenant identifier
-            force: If True, delete even if tenant has data
-
-        Returns:
-            True if deleted, False if not found
-
-        Raises:
-            ValueError: If tenant has data and force=False
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(TenantModel).where(TenantModel.tenant_id == tenant_id)
-            )
-            record = result.scalar_one_or_none()
-
-            if not record:
-                return False
-
-            # Check for data if not forcing
-            if not force:
-                usage = await self.get_usage(tenant_id)
-                if usage and (usage.projects_count > 0 or usage.api_keys_count > 0):
-                    raise ValueError(
-                        f"Tenant has {usage.projects_count} projects and "
-                        f"{usage.api_keys_count} API keys. Use force=True to delete."
-                    )
-
-            # Delete tenant projects
-            await session.execute(
-                delete(TenantProjectModel).where(TenantProjectModel.tenant_id == tenant_id)
-            )
-
-            # Delete usage record
-            await session.execute(
-                delete(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
-            )
-
-            # Delete tenant record (cascades will handle related records)
-            await session.execute(
-                delete(TenantModel).where(TenantModel.tenant_id == tenant_id)
-            )
-
-            logger.warning("Tenant deleted", tenant_id=tenant_id, force=force)
-
-            return True
-
-    async def list_tenants(
-        self,
-        plan: Optional[TenantPlan] = None,
-        is_active: Optional[bool] = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> List[Tenant]:
-        """
-        List tenants with optional filtering.
-
-        Args:
-            plan: Filter by plan
-            is_active: Filter by active status
-            limit: Maximum results
-            offset: Skip first N results
-
-        Returns:
-            List of Tenant objects
-        """
-        async with self.db.session() as session:
-            query = select(TenantModel)
-
-            if plan is not None:
-                query = query.where(TenantModel.plan == plan.value)
-            if is_active is not None:
-                query = query.where(TenantModel.is_active == is_active)
-
-            query = query.order_by(TenantModel.created_at.desc())
-            query = query.offset(offset).limit(limit)
-
-            result = await session.execute(query)
-            records = result.scalars().all()
-
-            return [self._record_to_model(r) for r in records]
-
-    # ============================================================
-    # Usage Tracking
-    # ============================================================
-
     async def get_usage(self, tenant_id: str) -> Optional[TenantUsage]:
         """
         Get current usage for a tenant.
@@ -428,29 +285,6 @@ class TenantManager:
             record.last_updated = datetime.now(UTC)
 
             return new_value
-
-    async def reset_monthly_usage(self, tenant_id: str) -> None:
-        """
-        Reset monthly usage counters (call on billing cycle).
-
-        Args:
-            tenant_id: Tenant identifier
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(TenantUsageModel).where(TenantUsageModel.tenant_id == tenant_id)
-            )
-            record = result.scalar_one_or_none()
-
-            if record:
-                record.events_this_month = 0
-                record.last_updated = datetime.now(UTC)
-
-                logger.info("Monthly usage reset", tenant_id=tenant_id)
-
-    # ============================================================
-    # Quota Enforcement
-    # ============================================================
 
     async def check_quota(
         self,
@@ -556,47 +390,6 @@ class TenantManager:
         # Return the full project key for namespacing
         return f"{tenant_id}:project:{project_id}"
 
-    async def remove_project(self, tenant_id: str, project_id: str) -> bool:
-        """
-        Remove a project from a tenant.
-
-        Args:
-            tenant_id: Tenant identifier
-            project_id: Project identifier
-
-        Returns:
-            True if removed, False if not found
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                delete(TenantProjectModel)
-                .where(TenantProjectModel.tenant_id == tenant_id)
-                .where(TenantProjectModel.project_id == project_id)
-            )
-
-            if result.rowcount > 0:
-                await self.increment_usage(tenant_id, "projects_count", -1)
-                return True
-
-        return False
-
-    async def list_projects(self, tenant_id: str) -> List[str]:
-        """
-        List all projects for a tenant.
-
-        Args:
-            tenant_id: Tenant identifier
-
-        Returns:
-            List of project IDs
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(TenantProjectModel.project_id)
-                .where(TenantProjectModel.tenant_id == tenant_id)
-            )
-            return [row[0] for row in result]
-
     async def get_project_tenant(self, project_id: str) -> Optional[str]:
         """
         Get the tenant ID for a project.
@@ -617,72 +410,6 @@ class TenantManager:
 
     # ============================================================
     # API Key Association
-    # ============================================================
-
-    async def add_api_key(self, tenant_id: str, key_id: str) -> None:
-        """
-        Associate an API key with a tenant.
-
-        Args:
-            tenant_id: Tenant identifier
-            key_id: API key ID
-
-        Raises:
-            ValueError: If quota exceeded
-        """
-        from src.core.db_models import APIKey as APIKeyModel
-
-        await self.enforce_quota(tenant_id, "api_keys")
-
-        # Update the API key's tenant_id
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(APIKeyModel).where(APIKeyModel.key_id == key_id)
-            )
-            api_key = result.scalar_one_or_none()
-            if api_key:
-                api_key.tenant_id = tenant_id
-
-        await self.increment_usage(tenant_id, "api_keys_count")
-
-    async def remove_api_key(self, tenant_id: str, key_id: str) -> bool:
-        """
-        Remove API key association from a tenant.
-
-        Note: This just updates the usage counter.
-        The actual API key record should be updated separately.
-
-        Args:
-            tenant_id: Tenant identifier
-            key_id: API key ID
-
-        Returns:
-            True if removed
-        """
-        await self.increment_usage(tenant_id, "api_keys_count", -1)
-        return True
-
-    async def get_api_key_tenant(self, key_id: str) -> Optional[str]:
-        """
-        Get the tenant ID for an API key.
-
-        Args:
-            key_id: API key ID
-
-        Returns:
-            Tenant ID if found
-        """
-        from src.core.db_models import APIKey as APIKeyModel
-
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(APIKeyModel.tenant_id).where(APIKeyModel.key_id == key_id)
-            )
-            row = result.first()
-            return row[0] if row else None
-
-    # ============================================================
-    # Helper Methods
     # ============================================================
 
     def _record_to_model(self, record: TenantModel) -> Tenant:

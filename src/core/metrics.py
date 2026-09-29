@@ -47,13 +47,6 @@ tenant_requests_total = Counter(
     registry=registry,
 )
 
-tenant_quota_exceeded_total = Counter(
-    'contex_tenant_quota_exceeded_total',
-    'Total quota exceeded events',
-    ['resource'],
-    registry=registry,
-)
-
 
 def get_metrics() -> bytes:
     """Return current metrics in Prometheus exposition format."""
@@ -80,8 +73,3 @@ def decrement_active_requests():
 def record_tenant_request(method: str, endpoint: str):
     """Record a tenant-scoped request (tenant_id not labeled; see #78)."""
     tenant_requests_total.labels(method=method, endpoint=endpoint).inc()
-
-
-def record_tenant_quota_exceeded(resource: str):
-    """Record a quota-exceeded event (tenant_id not labeled; see #78)."""
-    tenant_quota_exceeded_total.labels(resource=resource).inc()
