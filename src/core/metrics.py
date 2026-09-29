@@ -51,14 +51,6 @@ queries_total = Counter(
     registry=registry
 )
 
-# Webhook metrics
-webhooks_sent_total = Counter(
-    'contex_webhooks_sent_total',
-    'Total number of webhooks sent',
-    ['status'],
-    registry=registry
-)
-
 # HTTP metrics
 http_requests_total = Counter(
     'contex_http_requests_total',
@@ -239,21 +231,6 @@ embedding_cache_size = Gauge(
 # RETRY METRICS
 # ============================================================================
 
-# Webhook retry counter
-webhook_retries_total = Counter(
-    'contex_webhook_retries_total',
-    'Total number of webhook retry attempts',
-    registry=registry
-)
-
-# Webhook retry delay histogram
-webhook_retry_delay_seconds = Histogram(
-    'contex_webhook_retry_delay_seconds',
-    'Webhook retry delay in seconds',
-    buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0),
-    registry=registry
-)
-
 # Generic retry counter (for other operations)
 retries_total = Counter(
     'contex_retries_total',
@@ -306,11 +283,12 @@ fallback_cache_misses_total = Counter(
 # TENANT METRICS
 # ============================================================================
 
-# Tenant request counter
+# Tenant request counter. Deliberately unlabeled by tenant_id: exposing raw
+# tenant IDs via /metrics let a scraper enumerate every tenant (#78).
 tenant_requests_total = Counter(
     'contex_tenant_requests_total',
-    'Total requests per tenant',
-    ['tenant_id', 'method', 'endpoint'],
+    'Total tenant-scoped requests',
+    ['method', 'endpoint'],
     registry=registry
 )
 
@@ -366,11 +344,11 @@ tenant_storage_used_mb = Gauge(
     registry=registry
 )
 
-# Tenant quota exceeded counter
+# Tenant quota exceeded counter. Unlabeled by tenant_id (see #78).
 tenant_quota_exceeded_total = Counter(
     'contex_tenant_quota_exceeded_total',
-    'Total quota exceeded events per tenant',
-    ['tenant_id', 'resource'],
+    'Total quota exceeded events',
+    ['resource'],
     registry=registry
 )
 
@@ -475,11 +453,6 @@ def record_query(project_id: str, status: str):
     queries_total.labels(project_id=project_id, status=status).inc()
 
 
-def record_webhook_sent(status: str):
-    """Record webhook sent"""
-    webhooks_sent_total.labels(status=status).inc()
-
-
 def record_http_request(method: str, endpoint: str, status_code: int):
     """Record HTTP request"""
     http_requests_total.labels(
@@ -543,10 +516,9 @@ def record_retry_exhausted(operation: str):
 # TENANT METRIC RECORDING FUNCTIONS
 # ============================================================================
 
-def record_tenant_request(tenant_id: str, method: str, endpoint: str):
-    """Record a request for a tenant"""
+def record_tenant_request(method: str, endpoint: str):
+    """Record a tenant-scoped request (tenant_id intentionally not labeled; see #78)"""
     tenant_requests_total.labels(
-        tenant_id=tenant_id,
         method=method,
         endpoint=endpoint
     ).inc()
@@ -589,10 +561,9 @@ def update_tenant_resource_usage(
         tenant_storage_used_mb.labels(tenant_id=tenant_id).set(storage_mb)
 
 
-def record_tenant_quota_exceeded(tenant_id: str, resource: str):
-    """Record a quota exceeded event for a tenant"""
+def record_tenant_quota_exceeded(resource: str):
+    """Record a quota exceeded event (tenant_id intentionally not labeled; see #78)"""
     tenant_quota_exceeded_total.labels(
-        tenant_id=tenant_id,
         resource=resource
     ).inc()
 

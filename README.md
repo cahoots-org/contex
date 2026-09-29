@@ -84,7 +84,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Hybrid search:** combines vector similarity and BM25 keyword matching.
 - **Live subscriptions:** matched context that refreshes when your data changes.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
-- **Event sourcing:** stores every change as an immutable event, for audit trails and point-in-time queries. See [Event Sourcing](docs/EVENT_SOURCING.md).
+- **Event sourcing:** stores every change as an immutable event, powering audit trails and version history.
 - **Security:** API-key auth and RBAC, off by default for local dev.
 - **Multi-tenancy:** always-on tenant isolation. A default tenant when auth is off, full per-identity isolation when it's on.
 - **Observability:** structured logging, Prometheus metrics, and OpenTelemetry tracing.
@@ -170,7 +170,6 @@ Contex runs on **ParadeDB** (`paradedb/paradedb`), which bundles `pg_search` (BM
 
 - **[Connectors](connectors/README.md):** bulk-load Postgres, S3, GitHub, and Atlassian, or write your own
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
-- **[Event Sourcing](docs/EVENT_SOURCING.md):** point-in-time queries and audit trails
 - **[RBAC](docs/RBAC.md):** role-based access control
 - **[Metrics](docs/METRICS.md):** Prometheus metrics
 - **[Logging](docs/LOGGING.md):** structured logging

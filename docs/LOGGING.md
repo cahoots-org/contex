@@ -93,7 +93,7 @@ logger.info("Agent registered",
            agent_id="agent-123",
            project_id="proj-456",
            needs_count=5,
-           notification_method="webhook")
+           notification_method="mcp")
 ```
 
 Output:
@@ -105,7 +105,7 @@ Output:
   "agent_id": "agent-123",
   "project_id": "proj-456",
   "needs_count": 5,
-  "notification_method": "webhook"
+  "notification_method": "mcp"
 }
 ```
 

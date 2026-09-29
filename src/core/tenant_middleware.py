@@ -18,20 +18,20 @@ from src.core.tenant import (
 logger = get_logger(__name__)
 
 
-def _record_tenant_metrics(tenant_id: str, method: str, endpoint: str):
+def _record_tenant_metrics(method: str, endpoint: str):
     """Record tenant request metrics (lazy import to avoid circular deps)"""
     try:
         from src.core.metrics import record_tenant_request
-        record_tenant_request(tenant_id, method, endpoint)
+        record_tenant_request(method, endpoint)
     except Exception:
         pass  # Don't fail requests if metrics fail
 
 
-def _record_quota_exceeded(tenant_id: str, resource: str):
+def _record_quota_exceeded(resource: str):
     """Record quota exceeded metrics"""
     try:
         from src.core.metrics import record_tenant_quota_exceeded
-        record_tenant_quota_exceeded(tenant_id, resource)
+        record_tenant_quota_exceeded(resource)
     except Exception:
         pass
 
@@ -69,7 +69,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "/sandbox",
             "/static",
             "/favicon.ico",
-            "/api/v1/metrics",
+            "/metrics",
         ]
 
     async def dispatch(self, request: Request, call_next):
@@ -136,7 +136,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         method=request.method)
 
             # Record tenant metrics
-            _record_tenant_metrics(tenant_id, request.method, path)
+            _record_tenant_metrics(request.method, path)
 
             return await call_next(request)
 
@@ -241,7 +241,7 @@ class TenantQuotaMiddleware(BaseHTTPMiddleware):
                                  resource=resource,
                                  message=message)
                     # Record quota exceeded metric
-                    _record_quota_exceeded(tenant_id, resource)
+                    _record_quota_exceeded(resource)
                     return JSONResponse(
                         status_code=429,
                         content={

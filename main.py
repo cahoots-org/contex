@@ -6,9 +6,11 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
+from src.core.metrics import get_metrics
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
@@ -192,11 +194,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Vector index initialization failed", error=str(e))
 
-    # Initialize health checker
-    from src.core.health import HealthChecker
-    health_checker = HealthChecker(db, redis, context_engine)
-    logger.info("Health checker initialized")
-
     # Initialize audit logging
     from src.core.audit import init_audit_logger
     audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
@@ -237,7 +234,6 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.context_engine = context_engine
     app.state.redis = redis
-    app.state.health_checker = health_checker
 
     run_startup_checks(app)
 
@@ -389,18 +385,32 @@ app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 # Root-level health endpoint (for Docker health checks)
 @app.get("/health", dependencies=[Depends(public)])
 async def root_health():
-    """
-    Root-level health check endpoint for Docker and platform health probes.
+    """Liveness probe for Docker and platform health checks.
 
-    This is separate from /api/health to avoid API versioning complexity
-    and ensure health checks work reliably without authentication.
+    Deliberately returns nothing beyond a liveness signal: this endpoint is
+    unauthenticated, so it must not disclose versions, component status, or any
+    other internal infrastructure detail (issue #79).
     """
-    # Basic health check - just verify the app is responding
-    return {
-        "status": "healthy",
-        "service": "contex",
-        "version": "0.2.0"
-    }
+    return {"status": "healthy"}
+
+
+# Prometheus scrape endpoint. Gated by METRICS_TOKEN so it is never
+# unauthenticated (issue #78): disabled entirely when the env var is unset,
+# and otherwise requires `Authorization: Bearer <METRICS_TOKEN>`. Both the
+# unconfigured and the wrong-token cases return 404 so the endpoint's
+# existence is not disclosed.
+METRICS_TOKEN = os.getenv("METRICS_TOKEN")
+
+
+@app.get("/metrics", dependencies=[Depends(public)])
+async def metrics(request: Request):
+    if not METRICS_TOKEN:
+        raise HTTPException(status_code=404)
+    provided = request.headers.get("authorization", "")
+    if not secrets.compare_digest(provided, f"Bearer {METRICS_TOKEN}"):
+        raise HTTPException(status_code=404)
+    return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
+
 
 # Root redirect to sandbox
 from fastapi.responses import RedirectResponse

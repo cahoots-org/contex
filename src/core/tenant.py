@@ -36,7 +36,6 @@ class TenantQuotas(BaseModel):
     max_events_per_month: int = Field(default=10000, description="Maximum events per month")
     max_storage_mb: int = Field(default=100, description="Maximum storage in MB")
     max_requests_per_minute: int = Field(default=100, description="Rate limit per minute")
-    webhook_enabled: bool = Field(default=True, description="Whether webhooks are enabled")
 
     @classmethod
     def for_plan(cls, plan: TenantPlan) -> "TenantQuotas":
@@ -49,7 +48,6 @@ class TenantQuotas(BaseModel):
                 max_events_per_month=1000,
                 max_storage_mb=10,
                 max_requests_per_minute=30,
-                webhook_enabled=False,
             ),
             TenantPlan.STARTER: cls(
                 max_projects=3,
@@ -58,7 +56,6 @@ class TenantQuotas(BaseModel):
                 max_events_per_month=10000,
                 max_storage_mb=100,
                 max_requests_per_minute=100,
-                webhook_enabled=True,
             ),
             TenantPlan.PRO: cls(
                 max_projects=10,
@@ -67,7 +64,6 @@ class TenantQuotas(BaseModel):
                 max_events_per_month=100000,
                 max_storage_mb=1000,
                 max_requests_per_minute=500,
-                webhook_enabled=True,
             ),
             TenantPlan.ENTERPRISE: cls(
                 max_projects=100,
@@ -76,7 +72,6 @@ class TenantQuotas(BaseModel):
                 max_events_per_month=1000000,
                 max_storage_mb=10000,
                 max_requests_per_minute=2000,
-                webhook_enabled=True,
             ),
         }
         return quotas.get(plan, cls())

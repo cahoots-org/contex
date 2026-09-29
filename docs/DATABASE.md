@@ -342,20 +342,18 @@ ALTER TABLE events SET (autovacuum_vacuum_scale_factor = 0.1);
 ### Health Check
 
 ```bash
-# Check database connectivity
-curl http://localhost:8001/api/v1/health
+# Liveness probe (unauthenticated; returns only a liveness signal)
+curl http://localhost:8001/health
 
-# Response includes database status
+# Response
 {
-  "status": "healthy",
-  "database": "connected",
-  "redis": "connected"
+  "status": "healthy"
 }
 ```
 
 ### Prometheus Metrics
 
-Available at `/api/v1/metrics`:
+Available at `/metrics` (gated by `METRICS_TOKEN`; see [METRICS.md](METRICS.md)):
 
 ```
 contex_db_connections_active
@@ -430,5 +428,4 @@ ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
 
 ## Related Documentation
 
-- [Event Sourcing](EVENT_SOURCING.md) - How events are stored and queried
 - [Metrics](METRICS.md) - Monitoring and observability

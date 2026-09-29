@@ -45,10 +45,6 @@ class Permission(str, Enum):
     MANAGE_TENANTS = "manage_tenants"
     VIEW_TENANTS = "view_tenants"
 
-    # Webhooks
-    MANAGE_WEBHOOKS = "manage_webhooks"
-    VIEW_WEBHOOKS = "view_webhooks"
-
     # Service accounts
     MANAGE_SERVICE_ACCOUNTS = "manage_service_accounts"
     VIEW_SERVICE_ACCOUNTS = "view_service_accounts"
