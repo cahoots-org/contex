@@ -283,11 +283,12 @@ fallback_cache_misses_total = Counter(
 # TENANT METRICS
 # ============================================================================
 
-# Tenant request counter
+# Tenant request counter. Deliberately unlabeled by tenant_id: exposing raw
+# tenant IDs via /metrics let a scraper enumerate every tenant (#78).
 tenant_requests_total = Counter(
     'contex_tenant_requests_total',
-    'Total requests per tenant',
-    ['tenant_id', 'method', 'endpoint'],
+    'Total tenant-scoped requests',
+    ['method', 'endpoint'],
     registry=registry
 )
 
@@ -343,11 +344,11 @@ tenant_storage_used_mb = Gauge(
     registry=registry
 )
 
-# Tenant quota exceeded counter
+# Tenant quota exceeded counter. Unlabeled by tenant_id (see #78).
 tenant_quota_exceeded_total = Counter(
     'contex_tenant_quota_exceeded_total',
-    'Total quota exceeded events per tenant',
-    ['tenant_id', 'resource'],
+    'Total quota exceeded events',
+    ['resource'],
     registry=registry
 )
 
@@ -515,10 +516,9 @@ def record_retry_exhausted(operation: str):
 # TENANT METRIC RECORDING FUNCTIONS
 # ============================================================================
 
-def record_tenant_request(tenant_id: str, method: str, endpoint: str):
-    """Record a request for a tenant"""
+def record_tenant_request(method: str, endpoint: str):
+    """Record a tenant-scoped request (tenant_id intentionally not labeled; see #78)"""
     tenant_requests_total.labels(
-        tenant_id=tenant_id,
         method=method,
         endpoint=endpoint
     ).inc()
@@ -561,10 +561,9 @@ def update_tenant_resource_usage(
         tenant_storage_used_mb.labels(tenant_id=tenant_id).set(storage_mb)
 
 
-def record_tenant_quota_exceeded(tenant_id: str, resource: str):
-    """Record a quota exceeded event for a tenant"""
+def record_tenant_quota_exceeded(resource: str):
+    """Record a quota exceeded event (tenant_id intentionally not labeled; see #78)"""
     tenant_quota_exceeded_total.labels(
-        tenant_id=tenant_id,
         resource=resource
     ).inc()
 

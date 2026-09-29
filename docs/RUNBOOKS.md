@@ -127,7 +127,7 @@ This document contains operational runbooks for common scenarios when running Co
 
 4. **Check health endpoint:**
    ```bash
-   curl -s http://localhost:8001/api/v1/health | jq .
+   curl -s http://localhost:8001/health | jq .
    ```
 
 **Resolution:**
@@ -598,10 +598,10 @@ psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec
 
 ```bash
 # Quick health check
-curl -s http://localhost:8001/api/v1/health | jq .
+curl -s http://localhost:8001/health | jq .
 
-# Metrics endpoint
-curl -s http://localhost:8001/api/v1/metrics | head -100
+# Metrics endpoint (requires METRICS_TOKEN; disabled when unset)
+curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics | head -100
 
 # PostgreSQL quick check
 psql -c "SELECT 1" && psql -c "SELECT count(*) FROM events;"

@@ -6,9 +6,11 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
+from src.core.metrics import get_metrics
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
@@ -390,6 +392,25 @@ async def root_health():
     other internal infrastructure detail (issue #79).
     """
     return {"status": "healthy"}
+
+
+# Prometheus scrape endpoint. Gated by METRICS_TOKEN so it is never
+# unauthenticated (issue #78): disabled entirely when the env var is unset,
+# and otherwise requires `Authorization: Bearer <METRICS_TOKEN>`. Both the
+# unconfigured and the wrong-token cases return 404 so the endpoint's
+# existence is not disclosed.
+METRICS_TOKEN = os.getenv("METRICS_TOKEN")
+
+
+@app.get("/metrics", dependencies=[Depends(public)])
+async def metrics(request: Request):
+    if not METRICS_TOKEN:
+        raise HTTPException(status_code=404)
+    provided = request.headers.get("authorization", "")
+    if not secrets.compare_digest(provided, f"Bearer {METRICS_TOKEN}"):
+        raise HTTPException(status_code=404)
+    return Response(content=get_metrics(), media_type=CONTENT_TYPE_LATEST)
+
 
 # Root redirect to sandbox
 from fastapi.responses import RedirectResponse

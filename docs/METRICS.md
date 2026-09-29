@@ -4,11 +4,17 @@ Contex exposes Prometheus metrics for comprehensive monitoring and observability
 
 ## Quick Start
 
+The `/metrics` endpoint is gated by the `METRICS_TOKEN` environment variable. It
+is **disabled** (returns 404) when `METRICS_TOKEN` is unset, and otherwise
+requires `Authorization: Bearer $METRICS_TOKEN`. This keeps metrics off the
+public, unauthenticated surface. Metric labels never contain tenant or project
+IDs, so a scraper cannot enumerate them.
+
 ### Access Metrics
 
 ```bash
-# View metrics endpoint
-curl http://localhost:8001/metrics
+# View metrics endpoint (METRICS_TOKEN must be set on the server)
+curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics
 ```
 
 ### Prometheus Configuration
@@ -21,6 +27,9 @@ scrape_configs:
       - targets: ['localhost:8001']
     metrics_path: '/metrics'
     scrape_interval: 15s
+    authorization:
+      type: Bearer
+      credentials: '<METRICS_TOKEN>'
 ```
 
 ## Available Metrics
@@ -31,7 +40,7 @@ scrape_configs:
 
 **`contex_agents_registered_total{project_id, notification_method}`**
 - Total number of agents registered
-- Labels: `project_id`, `notification_method` (redis/webhook)
+- Labels: `project_id`, `notification_method` (mcp)
 
 **`contex_agents_unregistered_total{project_id}`**
 - Total number of agents unregistered
@@ -48,12 +57,6 @@ scrape_configs:
 **`contex_queries_total{project_id, status}`**
 - Total number of queries executed
 - Labels: `project_id`, `status` (success/error)
-
-#### Webhook Metrics
-
-**`contex_webhooks_sent_total{status}`**
-- Total number of webhooks sent
-- Labels: `status` (success/error/timeout)
 
 #### HTTP Metrics
 
@@ -367,7 +370,7 @@ Create dashboards for:
 
 ### Metrics Not Appearing
 
-1. **Check endpoint**: `curl http://localhost:8001/metrics`
+1. **Check endpoint**: `curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics` (returns 404 if `METRICS_TOKEN` is unset)
 2. **Verify Prometheus config**: Check `prometheus.yml`
 3. **Check Prometheus targets**: Visit `http://localhost:9090/targets`
 

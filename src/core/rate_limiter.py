@@ -186,7 +186,7 @@ class RateLimiter:
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limits on API endpoints"""
 
-    EXEMPT_PATHS = frozenset({"/health"})
+    EXEMPT_PATHS = frozenset({"/health", "/metrics"})
 
     def __init__(self, app):
         super().__init__(app)
