@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Optional, Set
 
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKeyRole as APIKeyRoleModel
@@ -22,39 +22,17 @@ class Role(str, Enum):
 
 
 class Permission(str, Enum):
-    """Granular permissions"""
+    """Granular permissions enforced on the MCP tool surface."""
     # Data operations
     PUBLISH_DATA = "publish_data"
     QUERY_DATA = "query_data"
-
-    # Admin operations
-    CREATE_API_KEY = "create_api_key"
-    LIST_API_KEYS = "list_api_keys"
-    REVOKE_API_KEY = "revoke_api_key"
-    MANAGE_ROLES = "manage_roles"
-    VIEW_RATE_LIMITS = "view_rate_limits"
 
     # Project operations
     VIEW_PROJECT_DATA = "view_project_data"
     VIEW_PROJECT_EVENTS = "view_project_events"
 
-    # System operations (cross-project)
-    SYSTEM_CLEANUP = "system_cleanup"
-
-    # Tenant admin
-    MANAGE_TENANTS = "manage_tenants"
-    VIEW_TENANTS = "view_tenants"
-
-    # Service accounts
-    MANAGE_SERVICE_ACCOUNTS = "manage_service_accounts"
-    VIEW_SERVICE_ACCOUNTS = "view_service_accounts"
-
-    # Audit
-    VIEW_AUDIT = "view_audit"
-
     # Versioning
     VIEW_VERSION_HISTORY = "view_version_history"
-    RESTORE_VERSION = "restore_version"
 
 
 # Role to permissions mapping
@@ -153,95 +131,6 @@ async def assign_role(
     return role_assignment
 
 
-async def get_role(db: DatabaseManager, key_id: str) -> Optional[APIKeyRole]:
-    """
-    Get the role assignment for an API key.
-
-    Args:
-        db: Database manager
-        key_id: API key ID
-
-    Returns:
-        APIKeyRole if found, None otherwise
-    """
-    async with db.session() as session:
-        result = await session.execute(
-            select(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
-        )
-        role_record = result.scalar_one_or_none()
-
-        if not role_record:
-            # Default to readonly if no role assigned
-            return APIKeyRole(
-                key_id=key_id,
-                role=Role.READONLY,
-                projects=[]
-            )
-
-        return APIKeyRole(
-            key_id=key_id,
-            role=Role(role_record.role),
-            projects=role_record.projects or []
-        )
-
-
-async def revoke_role(db: DatabaseManager, key_id: str) -> bool:
-    """
-    Revoke role assignment for an API key.
-
-    Args:
-        db: Database manager
-        key_id: API key ID
-
-    Returns:
-        True if role was revoked, False if no role existed
-    """
-    async with db.session() as session:
-        result = await session.execute(
-            delete(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
-        )
-
-        if result.rowcount > 0:
-            logger.info("Role revoked", key_id=key_id)
-            return True
-
-    return False
-
-
-async def list_roles(db: DatabaseManager) -> List[APIKeyRole]:
-    """
-    List all role assignments.
-
-    Args:
-        db: Database manager
-
-    Returns:
-        List of APIKeyRole objects
-    """
-    async with db.session() as session:
-        result = await session.execute(select(APIKeyRoleModel))
-        role_records = result.scalars().all()
-
-        return [
-            APIKeyRole(
-                key_id=r.key_id,
-                role=Role(r.role),
-                projects=r.projects or []
-            )
-            for r in role_records
-        ]
-
-
 def expand_role(role: Role) -> frozenset[Permission]:
     """Expand a role preset into its permission set."""
     return frozenset(ROLE_PERMISSIONS[role])
-
-
-def get_role_permissions(role: Role) -> Set[Permission]:
-    """Get all permissions for a role"""
-    return ROLE_PERMISSIONS[role].copy()
-
-
-def check_permission(role: Role, permission: Permission) -> bool:
-    """Check if a role has a specific permission"""
-    return permission in ROLE_PERMISSIONS[role]

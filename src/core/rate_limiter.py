@@ -57,12 +57,8 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class RateLimitConfig:
-    """Per-endpoint rate limits (requests per window) and the window size."""
+    """Requests allowed per window, applied uniformly to every non-exempt path."""
 
-    publish: int = 100
-    register: int = 50
-    query: int = 200
-    admin: int = 20
     default: int = 60
     window: int = 60
 
@@ -70,24 +66,9 @@ class RateLimitConfig:
     def from_env(cls) -> "RateLimitConfig":
         """Build a config from environment variables, falling back to defaults."""
         return cls(
-            publish=_env_int("RATE_LIMIT_PUBLISH", 100),
-            register=_env_int("RATE_LIMIT_REGISTER", 50),
-            query=_env_int("RATE_LIMIT_QUERY", 200),
-            admin=_env_int("RATE_LIMIT_ADMIN", 20),
             default=_env_int("RATE_LIMIT_DEFAULT", 60),
             window=_env_int("RATE_LIMIT_WINDOW", 60),
         )
-
-
-def build_endpoint_limits(config: "RateLimitConfig") -> dict[str, int]:
-    """Map route prefixes (as actually mounted at /api/v1/*) to their limits."""
-    return {
-        "/api/v1/publish": config.publish,
-        "/api/v1/register": config.register,
-        "/api/v1/query": config.query,
-        "/auth/": config.admin,
-        "/admin/": config.admin,
-    }
 
 
 class RateLimiter:
@@ -191,14 +172,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
         self.config = RateLimitConfig.from_env()
-        self.endpoint_limits = build_endpoint_limits(self.config)
-
-    def get_rate_limit_for_path(self, path: str) -> int:
-        """Get rate limit for a given path"""
-        for pattern, limit in self.endpoint_limits.items():
-            if path.startswith(pattern):
-                return limit
-        return self.config.default
 
     async def dispatch(self, request: Request, call_next):
         # Liveness probes are never throttled.
@@ -209,7 +182,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limiter = RateLimiter(db)
 
         path = request.url.path
-        limit = self.get_rate_limit_for_path(path)
+        limit = self.config.default
 
         # Prefer per-API-key limiting; fall back to per-client-IP when auth is off.
         api_key = request.headers.get("X-API-Key")

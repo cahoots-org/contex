@@ -27,15 +27,6 @@ def _record_tenant_metrics(method: str, endpoint: str):
         pass  # Don't fail requests if metrics fail
 
 
-def _record_quota_exceeded(resource: str):
-    """Record quota exceeded metrics"""
-    try:
-        from src.core.metrics import record_tenant_quota_exceeded
-        record_tenant_quota_exceeded(resource)
-    except Exception:
-        pass
-
-
 class _TenantSpoofingError(Exception):
     """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
 
@@ -183,76 +174,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
             raise _TenantSpoofingError()
 
         return identity.tenant_id
-
-
-class TenantQuotaMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to enforce tenant quotas on write operations.
-
-    This middleware checks quotas before allowing:
-    - Creating projects
-    - Creating agents
-    - Publishing events
-    - Creating API keys
-
-    Should be added after TenantMiddleware.
-    """
-
-    # Map of paths to quota resources
-    QUOTA_CHECKS = {
-        "/api/v1/data/publish": ("events", 1),
-        "/api/v1/agents/register": ("agents", 1),
-        "/api/v1/projects": ("projects", 1),
-        "/api/v1/auth/keys": ("api_keys", 1),
-    }
-
-    def __init__(self, app, enabled: bool = True):
-        super().__init__(app)
-        self.enabled = enabled
-
-    async def dispatch(self, request: Request, call_next):
-        # Skip if disabled or not a write operation
-        if not self.enabled or request.method not in ["POST", "PUT"]:
-            return await call_next(request)
-
-        # Skip if no tenant context
-        tenant_id = getattr(request.state, 'tenant_id', None)
-        if not tenant_id:
-            return await call_next(request)
-
-        # Check if this path requires quota check
-        path = request.url.path
-        for check_path, (resource, amount) in self.QUOTA_CHECKS.items():
-            if path.startswith(check_path):
-                # Get manager
-                manager = getattr(request.state, 'tenant_manager', None)
-                if not manager:
-                    db = request.app.state.db
-                    manager = TenantManager(db)
-
-                # Check quota
-                allowed, message = await manager.check_quota(
-                    tenant_id, resource, amount
-                )
-
-                if not allowed:
-                    logger.warning("Quota exceeded",
-                                 tenant_id=tenant_id,
-                                 resource=resource,
-                                 message=message)
-                    # Record quota exceeded metric
-                    _record_quota_exceeded(resource)
-                    return JSONResponse(
-                        status_code=429,
-                        content={
-                            "detail": message,
-                            "error_code": "QUOTA_EXCEEDED",
-                            "resource": resource,
-                        }
-                    )
-                break
-
-        return await call_next(request)
 
 
 def get_tenant_id(request: Request) -> str:

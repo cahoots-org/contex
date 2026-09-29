@@ -205,31 +205,20 @@ class TestRateLimitConfig:
 
     def test_defaults(self, monkeypatch):
         """Config falls back to sane defaults when no env vars are set"""
-        for var in (
-            "RATE_LIMIT_PUBLISH",
-            "RATE_LIMIT_REGISTER",
-            "RATE_LIMIT_QUERY",
-            "RATE_LIMIT_ADMIN",
-            "RATE_LIMIT_DEFAULT",
-            "RATE_LIMIT_WINDOW",
-        ):
+        for var in ("RATE_LIMIT_DEFAULT", "RATE_LIMIT_WINDOW"):
             monkeypatch.delenv(var, raising=False)
 
         config = RateLimitConfig.from_env()
-        assert config.query == 200
-        assert config.publish == 100
-        assert config.register == 50
-        assert config.admin == 20
         assert config.default == 60
         assert config.window == 60
 
     def test_env_override(self, monkeypatch):
         """Env vars override the defaults"""
-        monkeypatch.setenv("RATE_LIMIT_QUERY", "7")
+        monkeypatch.setenv("RATE_LIMIT_DEFAULT", "7")
         monkeypatch.setenv("RATE_LIMIT_WINDOW", "3")
 
         config = RateLimitConfig.from_env()
-        assert config.query == 7
+        assert config.default == 7
         assert config.window == 3
 
 
@@ -258,7 +247,7 @@ class TestRateLimitMiddlewareEnforcement:
     @pytest.mark.asyncio
     async def test_returns_429_when_limit_exceeded(self, db, monkeypatch):
         """The request past the configured limit gets a 429 with headers"""
-        monkeypatch.setenv("RATE_LIMIT_QUERY", "3")
+        monkeypatch.setenv("RATE_LIMIT_DEFAULT", "3")
         monkeypatch.setenv("RATE_LIMIT_WINDOW", "60")
         app = self._build_app(db)
 
@@ -279,7 +268,7 @@ class TestRateLimitMiddlewareEnforcement:
     @pytest.mark.asyncio
     async def test_keyed_by_ip_when_no_api_key(self, db, monkeypatch):
         """Without an API key, distinct client IPs get independent buckets"""
-        monkeypatch.setenv("RATE_LIMIT_QUERY", "2")
+        monkeypatch.setenv("RATE_LIMIT_DEFAULT", "2")
         app = self._build_app(db)
 
         transport_a = httpx.ASGITransport(app=app, client=("10.0.0.1", 1234))

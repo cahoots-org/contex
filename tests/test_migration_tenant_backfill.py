@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from src.core.db_models import Subscription, APIKey, ServiceAccount, Event
+from src.core.db_models import Subscription, APIKey, Event
 from src.core.subscriptions import SubscriptionService
 from src.core.tenant import DEFAULT_TENANT_ID
 
@@ -84,43 +84,6 @@ async def test_api_key_explicit_null_via_raw_sql_raises_integrity_error(db):
                     "name": "test_key",
                     "prefix": "test_",
                     "scopes": ["read"],
-                },
-            )
-            await session.flush()
-
-
-@pytest.mark.asyncio
-async def test_service_account_without_tenant_id_defaults_to_default(db):
-    async with db.session() as session:
-        session.add(ServiceAccount(
-            account_id="sa_test_1",
-            name="test_sa",
-            account_type="service",
-        ))
-        await session.commit()
-
-    async with db.session() as session:
-        row = (await session.execute(
-            select(ServiceAccount).where(ServiceAccount.account_id == "sa_test_1")
-        )).scalar_one()
-        assert row.tenant_id == DEFAULT_TENANT_ID
-
-
-@pytest.mark.asyncio
-async def test_service_account_explicit_null_via_raw_sql_raises_integrity_error(db):
-    async with db.session() as session:
-        with pytest.raises(IntegrityError):
-            await session.execute(
-                text(
-                    "INSERT INTO service_accounts "
-                    "(account_id, name, account_type, tenant_id, role) "
-                    "VALUES (:account_id, :name, :account_type, NULL, :role)"
-                ),
-                {
-                    "account_id": "sa_test_2_raw",
-                    "name": "test_sa",
-                    "account_type": "service",
-                    "role": "readonly",
                 },
             )
             await session.flush()

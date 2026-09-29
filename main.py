@@ -265,7 +265,12 @@ app = FastAPI(
     title="Contex",
     description="Semantic context routing for AI agents",
     version="0.2.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # No REST API remains, so the auto-generated OpenAPI/Swagger/ReDoc pages
+    # would only advertise the internal /health, /metrics and /sandbox routes.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 @app.exception_handler(PermissionError)
@@ -345,7 +350,7 @@ logger.info("Body-limit middleware enabled")
 
 # Add security middleware stack (order matters - executed in reverse)
 from src.core.tracing_middleware import TracingMiddleware
-from src.core.tenant_middleware import TenantMiddleware, TenantQuotaMiddleware
+from src.core.tenant_middleware import TenantMiddleware
 
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
@@ -368,8 +373,7 @@ app.add_middleware(RateLimitMiddleware)
 logger.info("Rate limiting middleware enabled")
 
 # Tenant middleware always runs: it sets the default-tenant context in demo mode
-# and enforces identity-derived tenant + quotas when auth is on.
-app.add_middleware(TenantQuotaMiddleware)
+# and enforces the identity-derived tenant when auth is on.
 app.add_middleware(TenantMiddleware)
 logger.info("Tenant middleware enabled")
 
