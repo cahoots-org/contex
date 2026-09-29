@@ -428,5 +428,4 @@ ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
 
 ## Related Documentation
 
-- [Event Sourcing](EVENT_SOURCING.md) - How events are stored and queried
 - [Metrics](METRICS.md) - Monitoring and observability
