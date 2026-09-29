@@ -265,7 +265,12 @@ app = FastAPI(
     title="Contex",
     description="Semantic context routing for AI agents",
     version="0.2.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # No REST API remains, so the auto-generated OpenAPI/Swagger/ReDoc pages
+    # would only advertise the internal /health, /metrics and /sandbox routes.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 @app.exception_handler(PermissionError)

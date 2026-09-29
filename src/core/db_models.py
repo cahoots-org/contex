@@ -202,27 +202,6 @@ class EventSequenceCounter(Base):
     )
 
 
-class Snapshot(Base):
-    """Snapshot model - project state snapshots."""
-
-    __tablename__ = "snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    sequence: Mapped[str] = mapped_column(String(255), nullable=False)
-    timestamp: Mapped[float] = mapped_column(Float, nullable=False)
-    data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    __table_args__ = (
-        Index("idx_snapshots_project", "project_id"),
-        Index("idx_snapshots_project_sequence", "project_id", "sequence", unique=True),
-    )
-
-
 class Embedding(Base):
     """Embedding model - semantic vector storage with pgvector."""
 
