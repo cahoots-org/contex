@@ -324,7 +324,7 @@ def set_context(name: str, context: Dict[str, Any]):
         set_context("agent", {
             "agent_id": "agent-123",
             "project_id": "proj-456",
-            "notification_method": "webhook"
+            "notification_method": "mcp"
         })
         ```
     """

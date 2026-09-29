@@ -51,14 +51,6 @@ queries_total = Counter(
     registry=registry
 )
 
-# Webhook metrics
-webhooks_sent_total = Counter(
-    'contex_webhooks_sent_total',
-    'Total number of webhooks sent',
-    ['status'],
-    registry=registry
-)
-
 # HTTP metrics
 http_requests_total = Counter(
     'contex_http_requests_total',
@@ -238,21 +230,6 @@ embedding_cache_size = Gauge(
 # ============================================================================
 # RETRY METRICS
 # ============================================================================
-
-# Webhook retry counter
-webhook_retries_total = Counter(
-    'contex_webhook_retries_total',
-    'Total number of webhook retry attempts',
-    registry=registry
-)
-
-# Webhook retry delay histogram
-webhook_retry_delay_seconds = Histogram(
-    'contex_webhook_retry_delay_seconds',
-    'Webhook retry delay in seconds',
-    buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 30.0),
-    registry=registry
-)
 
 # Generic retry counter (for other operations)
 retries_total = Counter(
@@ -473,11 +450,6 @@ def record_event_published(project_id: str, data_format: str):
 def record_query(project_id: str, status: str):
     """Record query execution"""
     queries_total.labels(project_id=project_id, status=status).inc()
-
-
-def record_webhook_sent(status: str):
-    """Record webhook sent"""
-    webhooks_sent_total.labels(status=status).inc()
 
 
 def record_http_request(method: str, endpoint: str, status_code: int):

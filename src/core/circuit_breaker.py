@@ -1,4 +1,4 @@
-"""Circuit breaker pattern for webhook reliability"""
+"""Circuit breaker pattern for protecting calls to unreliable dependencies."""
 
 import time
 from enum import Enum
@@ -71,14 +71,14 @@ class CircuitBreaker:
     - HALF_OPEN: Testing if service recovered
     
     Usage:
-        breaker = CircuitBreaker(name="webhook-service")
-        
+        breaker = CircuitBreaker(name="embedding-service")
+
         try:
             with breaker:
-                result = await send_webhook(...)
+                result = await call_dependency(...)
         except CircuitBreakerOpen:
             # Handle circuit open
-            logger.warning("Circuit breaker open, skipping webhook")
+            logger.warning("Circuit breaker open, skipping call")
     """
     
     def __init__(

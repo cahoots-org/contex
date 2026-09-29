@@ -7,7 +7,6 @@ from src.core.metrics import (
     agents_registered_total,
     events_published_total,
     queries_total,
-    webhooks_sent_total,
     http_requests_total,
     # Histograms
     embedding_duration_seconds,
@@ -21,7 +20,6 @@ from src.core.metrics import (
     record_agent_registered,
     record_event_published,
     record_query,
-    record_webhook_sent,
     record_http_request,
     update_registered_agents_count,
     update_redis_connections,
@@ -79,16 +77,6 @@ class TestMetricsCounters:
             project_id="test-proj",
             status="success"
         )._value.get()
-        
-        assert final > initial
-    
-    def test_record_webhook_sent(self):
-        """Test recording webhook sent"""
-        initial = webhooks_sent_total.labels(status="success")._value.get()
-        
-        record_webhook_sent("success")
-        
-        final = webhooks_sent_total.labels(status="success")._value.get()
         
         assert final > initial
     
@@ -256,25 +244,6 @@ class TestMetricsLabels:
         
         # JSON should have more events
         assert json_count > yaml_count
-    
-    def test_metrics_with_different_notification_methods(self):
-        """Test that metrics track different notification methods"""
-        record_agent_registered("test-proj", "mcp")
-        record_agent_registered("test-proj", "webhook")
-        record_agent_registered("test-proj", "mcp")
-
-        mcp_count = agents_registered_total.labels(
-            project_id="test-proj",
-            notification_method="mcp"
-        )._value.get()
-
-        webhook_count = agents_registered_total.labels(
-            project_id="test-proj",
-            notification_method="webhook"
-        )._value.get()
-
-        # MCP should have more registrations
-        assert mcp_count > webhook_count
 
 
 class TestMetricsMiddleware:

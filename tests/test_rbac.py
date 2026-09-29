@@ -32,7 +32,7 @@ async def create_api_key(db, key_id: str) -> None:
 
 def test_new_subsystem_permissions_exist():
     """Test that new subsystem permissions exist"""
-    for name in ("MANAGE_TENANTS", "VIEW_TENANTS", "MANAGE_WEBHOOKS", "VIEW_WEBHOOKS",
+    for name in ("MANAGE_TENANTS", "VIEW_TENANTS",
                  "MANAGE_SERVICE_ACCOUNTS", "VIEW_SERVICE_ACCOUNTS", "VIEW_AUDIT",
                  "VIEW_VERSION_HISTORY", "RESTORE_VERSION"):
         assert hasattr(Permission, name)
