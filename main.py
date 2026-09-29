@@ -192,11 +192,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Vector index initialization failed", error=str(e))
 
-    # Initialize health checker
-    from src.core.health import HealthChecker
-    health_checker = HealthChecker(db, redis, context_engine)
-    logger.info("Health checker initialized")
-
     # Initialize audit logging
     from src.core.audit import init_audit_logger
     audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
@@ -237,7 +232,6 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.context_engine = context_engine
     app.state.redis = redis
-    app.state.health_checker = health_checker
 
     run_startup_checks(app)
 
@@ -389,18 +383,13 @@ app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 # Root-level health endpoint (for Docker health checks)
 @app.get("/health", dependencies=[Depends(public)])
 async def root_health():
-    """
-    Root-level health check endpoint for Docker and platform health probes.
+    """Liveness probe for Docker and platform health checks.
 
-    This is separate from /api/health to avoid API versioning complexity
-    and ensure health checks work reliably without authentication.
+    Deliberately returns nothing beyond a liveness signal: this endpoint is
+    unauthenticated, so it must not disclose versions, component status, or any
+    other internal infrastructure detail (issue #79).
     """
-    # Basic health check - just verify the app is responding
-    return {
-        "status": "healthy",
-        "service": "contex",
-        "version": "0.2.0"
-    }
+    return {"status": "healthy"}
 
 # Root redirect to sandbox
 from fastapi.responses import RedirectResponse
