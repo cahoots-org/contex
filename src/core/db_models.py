@@ -69,7 +69,6 @@ class Tenant(Base):
     usage: Mapped[Optional["TenantUsage"]] = relationship(back_populates="tenant", uselist=False)
     projects: Mapped[List["TenantProject"]] = relationship(back_populates="tenant")
     api_keys: Mapped[List["APIKey"]] = relationship(back_populates="tenant")
-    service_accounts: Mapped[List["ServiceAccount"]] = relationship(back_populates="tenant")
 
 
 class TenantUsage(Base):
@@ -146,48 +145,6 @@ class APIKeyRole(Base):
 
     # Relationships
     api_key: Mapped["APIKey"] = relationship(back_populates="role")
-
-
-class ServiceAccount(TenantScopedMixin, Base):
-    """Service Account model."""
-
-    __tablename__ = "service_accounts"
-
-    account_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    account_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), nullable=False, default="readonly")
-    allowed_projects: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    scopes: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
-    keys: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    last_active: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    total_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Relationships
-    tenant: Mapped[Optional["Tenant"]] = relationship(back_populates="service_accounts")
-    key_mappings: Mapped[List["ServiceAccountKey"]] = relationship(back_populates="account")
-
-
-class ServiceAccountKey(Base):
-    """Service Account Key mapping."""
-
-    __tablename__ = "service_account_keys"
-
-    key_hash: Mapped[str] = mapped_column(String(255), primary_key=True)
-    account_id: Mapped[str] = mapped_column(
-        String(255), ForeignKey("service_accounts.account_id", ondelete="CASCADE"), nullable=False
-    )
-    key_id: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # Relationships
-    account: Mapped["ServiceAccount"] = relationship(back_populates="key_mappings")
 
 
 class Event(TenantScopedMixin, Base):
