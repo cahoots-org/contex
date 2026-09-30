@@ -1,20 +1,45 @@
-/* Contex Query Sandbox Styles */
+/* Contex Query Sandbox Styles
+   Colors mirror design/tokens.css (the canonical brand palette): a midnight-navy
+   canvas the cyan->red-orange context stream disperses across. Cyan is the one
+   interactive accent; the gradient is the single "wow" per view.
+   ponytail: values duplicated from design/tokens.css — no CSS build step here;
+   keep in sync if the brand tokens change. */
 
 :root {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --secondary: #64748b;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --bg: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --text-muted: #64748b;
-    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    /* Spectrum stops (the stream heating up, source -> tail) */
+    --brand-cyan: #2fd4e6;
+    --brand-blue: #3e6bf6;
+    --brand-violet: #9b30fb;
+    --brand-magenta: #e836fb;
+    --brand-pink: #ff2e93;
+    --brand-red: #ff4a2e;
+    --stream: linear-gradient(90deg, var(--brand-cyan) 0%, var(--brand-blue) 18%,
+        #5b34f5 30%, var(--brand-violet) 44%, var(--brand-magenta) 60%,
+        var(--brand-pink) 82%, var(--brand-red) 100%);
+    --stream-soft: linear-gradient(135deg, rgba(47,212,230,.14),
+        rgba(155,48,251,.14), rgba(255,74,46,.14));
+
+    /* Interactive accent = cyan (the mark); it stays put while the stream moves */
+    --primary: #2fd4e6;
+    --primary-hover: #5fe3f2;
+    --secondary: #8a97b3;
+    --success: #2fd6a0;
+    --warning: #f5b23e;
+    --danger: #f2495f;
+
+    /* Dark canvas; elevation climbs by getting lighter navy, never grayer */
+    --bg: #111829;            /* cards, panels (surface-1)        */
+    --bg-secondary: #0a0e1a;  /* page + inset wells (surface-0)   */
+    --bg-tertiary: #19223a;   /* raised code/payload (surface-2)  */
+    --border: #263355;        /* hairline                         */
+    --border-strong: #35446b;
+    --text: #f2f6ff;
+    --text-muted: #8a97b3;
+    --text-on-accent: #06121f; /* text on cyan/gradient fills     */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --ring: 0 0 0 3px rgba(47, 212, 230, 0.45); /* keyboard focus  */
+    --glow: 0 0 24px rgba(47, 212, 230, 0.35);
 }
 
 * {
@@ -148,7 +173,7 @@ main {
     flex-direction: row;
     gap: 0;
     min-height: 600px;
-    border: 2px solid #cbd5e1;
+    border: 2px solid var(--border-strong);
     border-radius: 0.75rem;
     overflow: hidden;
 }
@@ -162,7 +187,7 @@ main {
 }
 
 .query-panel {
-    border-right: 3px solid #94a3b8;
+    border-right: 3px solid var(--border-strong);
 }
 
 /* Responsive - Stack when narrow or portrait */
@@ -173,7 +198,7 @@ main {
 
     .query-panel {
         border-right: none;
-        border-bottom: 3px solid #94a3b8;
+        border-bottom: 3px solid var(--border-strong);
     }
 }
 
@@ -302,7 +327,7 @@ main {
 .form-group input:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    box-shadow: var(--ring);
 }
 
 .form-group small {
@@ -344,16 +369,17 @@ button,
 
 .btn-primary,
 button[type="submit"] {
-    background: var(--primary);
-    color: white;
+    background: var(--stream);
+    color: var(--text-on-accent);
     display: inline-block;
     width: auto;
     padding: 0.75rem 1.5rem;
 }
 
 .btn-primary:hover,
-button[type="submit]:hover {
-    background: var(--primary-hover);
+button[type="submit"]:hover {
+    box-shadow: var(--glow);
+    transform: translateY(-1px);
 }
 
 .btn-secondary {
@@ -536,13 +562,13 @@ button:disabled {
 }
 
 .similarity-score.high {
-    background: #dcfce7;
-    color: #166534;
+    background: rgba(47, 214, 160, 0.15);
+    color: var(--success);
 }
 
 .similarity-score.medium {
-    background: #fef3c7;
-    color: #92400e;
+    background: rgba(245, 178, 62, 0.15);
+    color: var(--warning);
 }
 
 .token-count {
@@ -784,9 +810,9 @@ table tr:hover {
 }
 
 .token-savings-banner {
-    background: #dcfce7;
-    border: 1px solid #86efac;
-    color: #166534;
+    background: rgba(47, 214, 160, 0.13);
+    border: 1px solid rgba(47, 214, 160, 0.3);
+    color: var(--success);
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     margin-bottom: 1rem;
@@ -852,37 +878,37 @@ footer {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.45) !important;
 }
 
 .refresh-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, var(--brand-cyan) 0%, var(--brand-blue) 100%) !important;
+    color: var(--text-on-accent) !important;
 }
 
 .refresh-btn:hover {
     transform: translateY(-2px) rotate(90deg) !important;
-    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3) !important;
+    box-shadow: 0 4px 12px rgba(47, 212, 230, 0.4) !important;
 }
 
 .expand-btn {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, #2fd6a0 0%, #1fae82 100%) !important;
+    color: var(--text-on-accent) !important;
 }
 
 .expand-btn:hover {
     transform: translateY(-2px) scale(1.1) !important;
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3) !important;
+    box-shadow: 0 4px 12px rgba(47, 214, 160, 0.35) !important;
 }
 
 .collapse-btn {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
-    color: white !important;
+    background: linear-gradient(135deg, #f5b23e 0%, #d9902a 100%) !important;
+    color: var(--text-on-accent) !important;
 }
 
 .collapse-btn:hover {
     transform: translateY(-2px) scale(0.9) !important;
-    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3) !important;
+    box-shadow: 0 4px 12px rgba(245, 178, 62, 0.35) !important;
 }
 
 .icon-button:active {
@@ -905,7 +931,7 @@ footer {
 
 .format-toggle:hover {
     border-color: var(--primary);
-    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+    box-shadow: 0 2px 8px rgba(47, 212, 230, 0.25);
 }
 
 .toggle-label {
@@ -1097,9 +1123,11 @@ footer {
 /* Subscription Panel */
 .subscription-panel {
     padding: 2rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--bg);
+    background-image: var(--stream-soft);
+    border: 1px solid var(--border);
     border-radius: 12px;
-    color: white;
+    color: var(--text);
     min-height: 400px;
 }
 
@@ -1107,6 +1135,11 @@ footer {
     margin-top: 0;
     margin-bottom: 0.5rem;
     font-size: 1.75rem;
+    background: var(--stream);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    width: fit-content;
 }
 
 .subscription-panel > p {
@@ -1211,8 +1244,8 @@ footer {
 }
 
 .update-item {
-    background: rgba(255, 255, 255, 0.1);
-    border-left: 3px solid #4ade80;
+    background: rgba(255, 255, 255, 0.06);
+    border-left: 3px solid var(--success);
     padding: 1rem;
     margin-bottom: 0.75rem;
     border-radius: 6px;
@@ -1253,8 +1286,8 @@ footer {
 }
 
 .similarity-badge {
-    background: #4ade80;
-    color: #1e293b;
+    background: var(--success);
+    color: var(--text-on-accent);
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;
@@ -1272,15 +1305,15 @@ footer {
 
 /* Sandbox Watch (live subscription) results */
 .watch-item {
-    border: 1px solid #2b2f3a;
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 10px 12px;
     margin: 10px 0;
 }
-.watch-key { font-weight: 600; }
+.watch-key { font-weight: 600; color: var(--primary); }
 .watch-item pre { margin: 6px 0 0; white-space: pre-wrap; }
 .flash { animation: flash 1.2s ease; }
 @keyframes flash {
-    0% { background: #14351f; }
+    0% { background: rgba(47, 212, 230, 0.18); }
     100% { background: transparent; }
 }
