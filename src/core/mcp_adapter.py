@@ -18,6 +18,7 @@ from src.core.identity import resolve_identity
 from src.core.limits import check_batch_size
 from src.core.models import DataPublishEvent
 from src.core.rbac import Permission
+from src.core.version import VERSION
 
 
 def _parse_since(since: Optional[str]) -> Optional[datetime]:
@@ -94,7 +95,7 @@ def build_mcp_server(engine, db_accessor=None):
                 required_scopes=None,               # per-tool checks live in handlers
             ),
         )
-    server = MCPServer(name="contex", version="0.3.0", subscriptions=bus, **auth_kwargs)
+    server = MCPServer(name="contex", version=VERSION, subscriptions=bus, **auth_kwargs)
 
     def _get_engine():
         """Resolve the engine, supporting both concrete instances and lazy callables."""

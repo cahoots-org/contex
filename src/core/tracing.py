@@ -13,6 +13,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 from .logging import get_logger
+from .version import VERSION
 
 logger = get_logger(__name__)
 
@@ -32,7 +33,7 @@ class TracingManager:
     def __init__(
         self,
         service_name: str = "contex",
-        service_version: str = "0.3.0",
+        service_version: str = VERSION,
         enable_console_export: bool = False,
         enable_otlp_export: bool = True,
         otlp_endpoint: Optional[str] = None,
@@ -218,7 +219,7 @@ def get_tracing_manager() -> Optional[TracingManager]:
 
 def initialize_tracing(
     service_name: str = "contex",
-    service_version: str = "0.3.0",
+    service_version: str = VERSION,
     enable_console_export: bool = None,
     enable_otlp_export: bool = None,
     otlp_endpoint: str = None,
