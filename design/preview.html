@@ -28,8 +28,10 @@
   .hero { position: relative; padding: var(--space-24) 0 var(--space-16); overflow: hidden; }
   .stream-field { position: absolute; inset: 0; z-index: 0;
     background:
-      radial-gradient(60% 120% at 78% 50%, rgba(62,107,246,.28), transparent 60%),
-      radial-gradient(30% 80% at 58% 50%, rgba(47,212,230,.30), transparent 60%);
+      radial-gradient(55% 120% at 88% 50%, rgba(255,74,46,.24), transparent 60%),
+      radial-gradient(45% 110% at 74% 50%, rgba(232,54,251,.26), transparent 60%),
+      radial-gradient(35% 100% at 62% 50%, rgba(62,107,246,.28), transparent 60%),
+      radial-gradient(26% 80% at 54% 50%, rgba(47,212,230,.32), transparent 60%);
     filter: blur(4px);
   }
   .hero > * { position: relative; z-index: 1; }
@@ -117,14 +119,17 @@
     <p class="eyebrow">Color</p>
     <h2 class="title">Brand &amp; surfaces</h2>
     <div class="grid swatches">
-      <div class="swatch"><div class="chip" style="background:var(--stream)"></div><div class="meta"><b>Stream</b><code>cyan → blue</code></div></div>
+      <div class="swatch" style="grid-column:span 2"><div class="chip" style="background:var(--stream)"></div><div class="meta"><b>Stream</b><code>cyan → red‑orange</code></div></div>
       <div class="swatch"><div class="chip" style="background:var(--brand-cyan)"></div><div class="meta"><b>Cyan</b><code>#2fd4e6</code></div></div>
       <div class="swatch"><div class="chip" style="background:var(--brand-blue)"></div><div class="meta"><b>Blue</b><code>#3e6bf6</code></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--brand-indigo)"></div><div class="meta"><b>Indigo</b><code>#5b34f5</code></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--brand-violet)"></div><div class="meta"><b>Violet</b><code>#9b30fb</code></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--brand-magenta)"></div><div class="meta"><b>Magenta</b><code>#e836fb</code></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--brand-pink)"></div><div class="meta"><b>Pink</b><code>#ff2e93</code></div></div>
+      <div class="swatch"><div class="chip" style="background:var(--brand-red)"></div><div class="meta"><b>Red‑orange</b><code>#ff4a2e</code></div></div>
       <div class="swatch"><div class="chip" style="background:var(--brand-ink)"></div><div class="meta"><b>Ink</b><code>#0a0e1a</code></div></div>
       <div class="swatch"><div class="chip" style="background:var(--surface-1)"></div><div class="meta"><b>Surface 1</b><code>#111829</code></div></div>
       <div class="swatch"><div class="chip" style="background:var(--surface-2)"></div><div class="meta"><b>Surface 2</b><code>#19223a</code></div></div>
-      <div class="swatch"><div class="chip" style="background:var(--text-muted)"></div><div class="meta"><b>Muted</b><code>#8a97b3</code></div></div>
-      <div class="swatch"><div class="chip" style="background:var(--success)"></div><div class="meta"><b>Success</b><code>#2fd6a0</code></div></div>
     </div>
   </section>
 
