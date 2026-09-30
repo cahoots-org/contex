@@ -1,8 +1,9 @@
 # Contex Design System
 
 A design language derived directly from the Contex mark and banner: a pure‑white
-wordmark that **dissolves into a cyan‑to‑blue particle stream** on deep midnight
-navy. Context, streaming out to agents.
+wordmark that **dissolves into a particle stream running the full spectrum —
+cyan at the source, heating through blue, violet and magenta to a red‑orange
+tail** — on deep midnight navy. Context, streaming out to agents.
 
 Use this file as the brief when designing any Contex surface with Claude. Tokens
 live in [`tokens.css`](./tokens.css); [`preview.html`](./preview.html) renders
@@ -13,10 +14,11 @@ them.
 ## The one idea
 
 Everything hangs on a single device — **the context stream**: a gradient that
-runs **cyan at the source → blue as it disperses**, always left‑to‑right, like
-the particles trailing off the mark. Spend your boldness here and nowhere else.
-One stream moment per view (a hero, a primary action, a key metric). Everything
-around it stays quiet: dark navy, white and blue‑gray text, generous space.
+runs **cyan at the source → red‑orange as it fully disperses**, passing through
+blue, violet and magenta, always left‑to‑right, like the particles trailing off
+the mark. Spend your boldness here and nowhere else. One stream moment per view
+(a hero, a primary action, a key metric). Everything around it stays quiet: dark
+navy, white and blue‑gray text, generous space.
 
 > If a screen has two "wow" moments, it has none. Pick the one.
 
@@ -29,9 +31,14 @@ Three colors make something read as Contex; the rest is scaffolding.
 | Token | Hex | Use |
 |---|---|---|
 | `--brand-ink` | `#0a0e1a` | The canvas. Nearly everything sits on it. |
-| `--brand-cyan` | `#2fd4e6` | The stream's source. Primary accent, focus, links. |
-| `--brand-blue` | `#3e6bf6` | The stream dispersed. Secondary accent, gradient end. |
-| `--stream` | cyan→blue | The signature gradient. Primary buttons, hero, key data. |
+| `--brand-cyan` | `#2fd4e6` | The stream's source. **The** interactive accent: focus, links, icons. |
+| `--brand-blue` → `--brand-red` | `#3e6bf6`…`#ff4a2e` | The stream heating up: blue, indigo, violet, magenta, pink, red‑orange. Gradient stops. |
+| `--stream` | cyan→red‑orange | The signature gradient. Primary buttons, hero, key data. |
+
+Cyan stays the one *interactive* accent (it's the mark, and it stays put while
+the gradient does the moving); `--accent-warm` (`#ff2e93`) is the hot end, for a
+single sparing highlight. Keep `--danger` (a cool crimson) distinct from the
+gradient's warm tail — semantic red is an alert, not the brand.
 
 Surfaces climb by getting **lighter navy**, never by adding gray:
 `--surface-0` (page) → `--surface-1` (cards) → `--surface-2` (hover) →
@@ -42,7 +49,7 @@ secondary copy), `--text-subtle` (captions). Semantic colors
 (`--success`/`--warning`/`--danger`) are tuned to sit on navy — use the `-quiet`
 tint as the fill and the solid color for the text/icon.
 
-**Don't:** put the cyan→blue gradient on large flat areas (it becomes wallpaper
+**Don't:** put the stream gradient on large flat areas (it becomes wallpaper
 and kills the signature). Keep it to type, thin accents, small fills, and one
 hero.
 
@@ -136,7 +143,7 @@ body on `--surface-0` below AA). Build these in silently; don't announce them.
 ## Using this with Claude
 
 Paste this file (and `tokens.css`) into the design brief. The rules that matter
-most, in order: **(1)** one cyan→blue stream moment per view; **(2)** dark navy
+most, in order: **(1)** one cyan→red‑orange stream moment per view; **(2)** dark navy
 canvas, elevation by lighter navy; **(3)** Poppins display / Hanken body /
 JetBrains mono; **(4)** rounded radii; **(5)** the gradient never becomes
 wallpaper.

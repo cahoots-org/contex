@@ -9,15 +9,30 @@
 
 :root {
   /* --- Brand core ---------------------------------------------------------
-     The three colors that make something read as Contex. Everything else is
-     scaffolding around these. */
-  --brand-cyan: #2fd4e6;   /* the stream at its source (near the mark)        */
-  --brand-blue: #3e6bf6;   /* the stream as it disperses outward             */
-  --brand-ink:  #0a0e1a;   /* the canvas the stream lives on                 */
+     The spectrum the mark disperses into: a cold cyan source that heats up
+     through blue, violet and magenta to a red-orange tail. Cyan and the
+     gradient are what make something read as Contex; the rest is scaffolding. */
+  --brand-cyan:    #2fd4e6;  /* the stream at its source (near the mark)      */
+  --brand-blue:    #3e6bf6;  /* early dispersal                              */
+  --brand-indigo:  #5b34f5;  /* deepening                                    */
+  --brand-violet:  #9b30fb;  /* midstream                                    */
+  --brand-magenta: #e836fb;  /* heating up                                   */
+  --brand-pink:    #ff2e93;  /* hotter                                       */
+  --brand-red:     #ff4a2e;  /* the tail, fully dispersed                    */
+  --brand-ink:     #0a0e1a;  /* the canvas the stream lives on               */
 
-  /* The signature gradient — always flows source(cyan) -> dispersed(blue). */
-  --stream: linear-gradient(90deg, var(--brand-cyan) 0%, var(--brand-blue) 100%);
-  --stream-soft: linear-gradient(90deg, rgba(47,212,230,.16), rgba(62,107,246,.16));
+  /* The signature gradient — always flows source(cyan) -> tail(red-orange),
+     left to right, like the particles trailing off the mark. */
+  --stream: linear-gradient(90deg,
+    var(--brand-cyan)    0%,
+    var(--brand-blue)   18%,
+    var(--brand-indigo) 30%,
+    var(--brand-violet) 44%,
+    var(--brand-magenta) 60%,
+    var(--brand-pink)   82%,
+    var(--brand-red)   100%);
+  --stream-soft: linear-gradient(90deg,
+    rgba(47,212,230,.15), rgba(155,48,251,.15), rgba(255,74,46,.15));
 
   /* --- Surfaces (dark canvas, elevation = lighter navy) ------------------- */
   --surface-0: #0a0e1a;    /* page background                                 */
@@ -33,16 +48,23 @@
   --text-subtle: #5f6d8c;  /* tertiary, captions                             */
   --text-on-accent: #06121f; /* text sitting on cyan/blue fills             */
 
-  /* --- Accents ------------------------------------------------------------ */
+  /* --- Accents ------------------------------------------------------------
+     Cyan stays the one interactive accent (focus, links, icons) — it's the
+     mark and it stays put while the gradient does the moving. The warm end is
+     available for a second, sparing highlight. */
   --accent:        var(--brand-cyan);
-  --accent-strong: var(--brand-blue);
-  --accent-quiet:  rgba(47,212,230,.12);   /* tint fills                     */
+  --accent-strong: var(--brand-violet);
+  --accent-warm:   var(--brand-pink);        /* the hot end, used sparingly  */
+  --accent-quiet:  rgba(47,212,230,.12);      /* tint fills                   */
+  --accent-warm-quiet: rgba(255,46,147,.12);
   --link:          #57dcec;
 
-  /* --- Semantic (tuned to the navy canvas) -------------------------------- */
+  /* --- Semantic (tuned to the navy canvas) --------------------------------
+     Danger is a cool crimson so it never reads as the brand's red-orange tail;
+     warning owns the warm-amber lane. */
   --success: #2fd6a0;  --success-quiet: rgba(47,214,160,.13);
   --warning: #f5b23e;  --warning-quiet: rgba(245,178,62,.13);
-  --danger:  #f0554e;  --danger-quiet:  rgba(240,85,78,.13);
+  --danger:  #f2495f;  --danger-quiet:  rgba(242,73,95,.14);
   --info:    var(--brand-blue); --info-quiet: rgba(62,107,246,.13);
 
   /* --- Type --------------------------------------------------------------- */
