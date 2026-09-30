@@ -47,7 +47,7 @@ class SemanticDataMatcher:
     Key features:
     - PostgreSQL-backed persistent storage (survives restarts)
     - Native vector similarity search via pgvector
-    - Optional hybrid search (pgvector + Postgres FTS fused with RRF)
+    - Optional hybrid search (pgvector + pg_search BM25, fused with RRF)
     - Auto-generates descriptions from data structure
     - Fast embedding-based similarity matching
     - Handles schema evolution gracefully
@@ -77,7 +77,7 @@ class SemanticDataMatcher:
         self.embedding_dim = 384  # all-MiniLM-L6-v2 embedding dimension
         self.node_converter = NodeConverter()
 
-        # Initialize hybrid search if enabled: pgvector (vector) + Postgres FTS
+        # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
         # (lexical) fused with backend-agnostic RRF. Single database, no extra
         # stateful services.
         self.hybrid_search = None
@@ -89,7 +89,7 @@ class SemanticDataMatcher:
                     lexical_search=PgFtsLexical(db),
                     k=rrf_k,
                 )
-                logger.info("Hybrid search enabled (pgvector + Postgres FTS, RRF)")
+                logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
             except Exception as e:
                 logger.warning("Failed to initialize hybrid search", error=str(e))
                 self.hybrid_search = None
@@ -236,7 +236,7 @@ class SemanticDataMatcher:
         """
         Match agent semantic needs to available data.
 
-        Uses hybrid search (pgvector + Postgres FTS fused with RRF) if enabled,
+        Uses hybrid search (pgvector + pg_search BM25, fused with RRF) if enabled,
         otherwise uses pgvector cosine-similarity search.
 
         Args:
