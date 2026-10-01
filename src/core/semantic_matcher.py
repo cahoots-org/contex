@@ -38,6 +38,17 @@ def _load_model(model_name: str) -> SentenceTransformer:
     return model
 
 
+def _embedding_text(data_key: str, node) -> str:
+    """Node text to embed and index, prefixed with its source key.
+
+    Prepending data_key (e.g. "owner/repo:content/types/page_data.py") gives
+    every chunk its provenance: a query naming the file or path now matches, and
+    lexical search indexes that path per chunk instead of only the bare content.
+    """
+    text = node.get_text_content()
+    return f"{data_key}\n{text}" if data_key else text
+
+
 class SemanticDataMatcher:
     """
     Matches agent semantic needs to available project data using embeddings.
@@ -192,7 +203,7 @@ class SemanticDataMatcher:
         node_keys = [
             f"{data_key}.{node.path}" if node.path else data_key for node in nodes
         ]
-        embedding_texts = [node.get_text_content() for node in nodes]
+        embedding_texts = [_embedding_text(data_key, node) for node in nodes]
         embeddings = self.model.encode(embedding_texts, batch_size=64)
 
         async with self.db.session() as session:
