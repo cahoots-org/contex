@@ -43,10 +43,10 @@ def test_allow_secrets_disables_scanner():
     assert resolve_secret_scanner({"allow_secrets": True}) is None
 
 
-def test_default_protects_and_extra_patterns_add_to_builtins():
-    s = resolve_secret_scanner({"secrets": {"extra_file_patterns": ["*.secret"]}})
+def test_default_protects_and_configured_patterns_add_to_builtins():
+    s = resolve_secret_scanner({"secrets": {"files": ["*.secret"]}})
     assert s is not None
-    assert s.reason("r:vault.secret", "x") is not None   # extra pattern
+    assert s.reason("r:vault.secret", "x") is not None   # configured pattern
     assert s.reason("r:.env", "x") is not None            # built-in still applies
 
 

@@ -37,8 +37,8 @@ refresh story. See each connector's design spec under
   secrets:               # optional, only when protecting
     scan_content: true   # also scan file *contents* (layer 2), not just names
     # Both lists ADD to the built-ins (they never replace them):
-    extra_file_patterns: []     # filename globs to treat as secrets, e.g. "*.secret"
-    extra_content_patterns: []  # regexes; skip any item whose text matches, e.g. "ACME_[A-Z0-9]{32}"
+    files: []            # extra secret filename globs, e.g. "*.secret"
+    content: []          # extra secret-content regexes, e.g. "ACME_[A-Z0-9]{32}"
   ```
 
 ## Writing a connector
