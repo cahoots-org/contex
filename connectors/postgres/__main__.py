@@ -6,7 +6,13 @@ import asyncio
 import logging
 import sys
 
-from connectors.base import ContexConfig, load_config, resolve_batch_size, run_connector
+from connectors.base import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_secret_scanner,
+    run_connector,
+)
 
 from .reader import read_tables
 
@@ -67,6 +73,7 @@ async def _main(config_path: str) -> None:
     config = load_config(config_path)
     contex_config = ContexConfig.from_dict(config)
     batch_size = resolve_batch_size(config)
+    secret_scanner = resolve_secret_scanner(config)
 
     events = _read_events(config)
 
@@ -74,7 +81,10 @@ async def _main(config_path: str) -> None:
         logger.info("published %d rows so far …", published)
 
     logger.info("starting Postgres connector — project=%s batch_size=%d", contex_config.project_id, batch_size)
-    stats = await run_connector(contex_config, events, batch_size=batch_size, progress=_progress)
+    stats = await run_connector(
+        contex_config, events, batch_size=batch_size,
+        secret_scanner=secret_scanner, progress=_progress,
+    )
     logger.info("done — published %d rows in %d batch(es)", stats.published, stats.batches)
 
 

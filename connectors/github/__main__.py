@@ -12,6 +12,7 @@ from connectors.base import (
     resolve_batch_size,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
+    resolve_secret_scanner,
     run_connector,
 )
 
@@ -43,6 +44,7 @@ async def _run(config_path: str) -> None:
     batch_size = resolve_batch_size(config)
     max_file_bytes = resolve_max_file_bytes(config)
     max_batch_bytes = resolve_max_batch_bytes(config)
+    secret_scanner = resolve_secret_scanner(config)
 
     source = config.get("source") or {}
     token: str = source.get("token", "")
@@ -101,6 +103,7 @@ async def _run(config_path: str) -> None:
                     events,
                     batch_size=batch_size,
                     max_batch_bytes=max_batch_bytes,
+                    secret_scanner=secret_scanner,
                     progress=_progress,
                 )
                 total_published += stats.published

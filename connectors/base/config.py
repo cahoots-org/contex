@@ -58,6 +58,30 @@ def resolve_max_batch_bytes(config: dict) -> int:
     return int(config.get("max_batch_bytes") or DEFAULT_MAX_BATCH_BYTES)
 
 
+def resolve_secret_scanner(config: dict):
+    """Build the secret-ingestion guard from config, or None when disabled.
+
+    Protection is on by default. ``allow_secrets: true`` (secrets are wanted as
+    context) returns None — no scanning. Otherwise an optional ``secrets:`` block
+    tunes it: ``scan_content`` (default true) and ``file_patterns`` /
+    ``content_patterns`` lists that *extend* the built-in defaults.
+    """
+    from .secrets import (
+        DEFAULT_SECRET_CONTENT_PATTERNS,
+        DEFAULT_SECRET_FILE_PATTERNS,
+        SecretScanner,
+    )
+
+    if bool(config.get("allow_secrets", False)):
+        return None
+    sec = config.get("secrets") or {}
+    return SecretScanner(
+        file_patterns=(*DEFAULT_SECRET_FILE_PATTERNS, *(sec.get("file_patterns") or ())),
+        content_patterns=(*DEFAULT_SECRET_CONTENT_PATTERNS, *(sec.get("content_patterns") or ())),
+        scan_content=bool(sec.get("scan_content", True)),
+    )
+
+
 @dataclass
 class ContexConfig:
     """Where a connector publishes: the MCP endpoint, project, and token."""
