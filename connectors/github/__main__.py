@@ -6,7 +6,14 @@ import asyncio
 import logging
 import sys
 
-from connectors.base import ContexConfig, load_config, resolve_batch_size, run_connector
+from connectors.base import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_max_batch_bytes,
+    resolve_max_file_bytes,
+    run_connector,
+)
 
 from .client import GitHubClient
 from .readers import read_commits, read_files, read_issues, read_pulls
@@ -34,6 +41,8 @@ async def _run(config_path: str) -> None:
     config = load_config(config_path)
     contex_cfg = ContexConfig.from_dict(config)
     batch_size = resolve_batch_size(config)
+    max_file_bytes = resolve_max_file_bytes(config)
+    max_batch_bytes = resolve_max_batch_bytes(config)
 
     source = config.get("source") or {}
     token: str = source.get("token", "")
@@ -68,6 +77,7 @@ async def _run(config_path: str) -> None:
                         include=include_globs,
                         exclude=exclude_globs,
                         include_binary=include_binary,
+                        max_file_bytes=max_file_bytes,
                     )
                 elif resource == "issues":
                     events = read_issues(client, owner, repo, state=state)
@@ -90,6 +100,7 @@ async def _run(config_path: str) -> None:
                     contex_cfg,
                     events,
                     batch_size=batch_size,
+                    max_batch_bytes=max_batch_bytes,
                     progress=_progress,
                 )
                 total_published += stats.published

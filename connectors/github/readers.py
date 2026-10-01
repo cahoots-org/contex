@@ -60,6 +60,7 @@ async def read_files(
     include: list[str] | None = None,
     exclude: list[str] | None = None,
     include_binary: bool = False,
+    max_file_bytes: int | None = None,
 ) -> AsyncIterator[ChangeEvent]:
     """Yield one ChangeEvent per text file on the default branch."""
     repo_data = await client.get(f"/repos/{owner}/{repo}")
@@ -73,6 +74,13 @@ async def read_files(
 
     for blob in blobs:
         path: str = blob.get("path", "")
+        # The tree carries each blob's size, so an oversized file is skipped
+        # without ever fetching it — these are binaries/fixtures/generated data
+        # (and the binary-extension list can't name every one, e.g. .pkg).
+        size = blob.get("size")
+        if max_file_bytes is not None and size is not None and size > max_file_bytes:
+            log.info("skip oversized %s/%s:%s (%s bytes > %d)", owner, repo, path, size, max_file_bytes)
+            continue
         if not include_binary and is_binary_path(path):
             log.debug("skip binary %s/%s:%s", owner, repo, path)
             continue

@@ -12,7 +12,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .change_event import ChangeEvent
-from .config import ContexConfig, load_config, resolve_batch_size
+from .config import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_max_batch_bytes,
+    resolve_max_file_bytes,
+)
 from .globs import allowed, matches_any
 from .publisher import ContexPublisher
 from .runner import RunStats, run
@@ -26,6 +32,8 @@ __all__ = [
     "load_config",
     "matches_any",
     "resolve_batch_size",
+    "resolve_max_batch_bytes",
+    "resolve_max_file_bytes",
     "run",
     "run_connector",
 ]
@@ -36,7 +44,14 @@ async def run_connector(
     events,
     batch_size: int = 500,
     progress: Callable[[int], None] | None = None,
+    max_batch_bytes: int | None = None,
 ) -> RunStats:
     """Open a publisher for ``config`` and publish ``events`` through it."""
     async with ContexPublisher(config) as publisher:
-        return await run(events, publisher, batch_size=batch_size, progress=progress)
+        return await run(
+            events,
+            publisher,
+            batch_size=batch_size,
+            progress=progress,
+            max_batch_bytes=max_batch_bytes,
+        )
