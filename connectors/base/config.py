@@ -66,10 +66,9 @@ def resolve_secret_scanner(config: dict):
     tunes it:
 
     - ``scan_content`` (default true) — also scan file *contents*, not just names.
-    - ``files`` — extra filename globs (e.g. ``"*.secret"``) treated as secrets,
-      added to the built-in secret-file list.
-    - ``content`` — extra regexes added to the built-in content markers; an item
-      whose text matches any is skipped.
+    - ``files`` — filename globs (e.g. ``"*.secret"``) added to the built-in
+      secret-file list.
+    - ``content`` — regexes added to the built-in content markers.
     """
     from .secrets import (
         DEFAULT_SECRET_CONTENT_PATTERNS,
