@@ -74,7 +74,7 @@ class SemanticDataMatcher:
         self.model = _load_model(model_name)
         self.threshold = similarity_threshold
         self.max_matches = max_matches
-        self.embedding_dim = 384  # all-MiniLM-L6-v2 embedding dimension
+        self.embedding_dim = self.model.get_sentence_embedding_dimension()
         self.node_converter = NodeConverter()
 
         # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
@@ -116,6 +116,22 @@ class SemanticDataMatcher:
                 raise RuntimeError(
                     "pgvector extension is required but not installed."
                 ) from e
+
+            # The pgvector column is a fixed dimension; a model whose output
+            # dimension differs would fail every insert. Fail fast at startup
+            # with an actionable message instead.
+            column_dim = await session.scalar(
+                text(
+                    "SELECT atttypmod FROM pg_attribute "
+                    "WHERE attrelid = 'embeddings'::regclass AND attname = 'embedding'"
+                )
+            )
+            if column_dim is not None and column_dim != self.embedding_dim:
+                raise RuntimeError(
+                    f"EMBED_MODEL {self.model_name!r} produces {self.embedding_dim}-dim "
+                    f"vectors but the embeddings column is {column_dim}-dim. Migrate the "
+                    f"column to vector({self.embedding_dim}) and re-embed."
+                )
 
     async def register_data(
         self,

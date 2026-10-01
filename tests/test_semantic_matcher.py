@@ -21,6 +21,7 @@ class TestSemanticDataMatcher:
         # Mock SentenceTransformer to avoid loading heavy model
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
             # Simulate batched encode: (n, 384) for a list of texts, (384,) for a single string.
             mock_model.encode.side_effect = lambda x, *a, **k: (
                 np.random.rand(384).astype(np.float32)
@@ -249,6 +250,7 @@ class TestSemanticMatcherConcurrency:
         # the process-wide _MODEL_CACHE under the real model name and leak into
         # the real-embedding tests.
         mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
         mock_model.encode.side_effect = lambda x, *a, **k: (
             np.ones(384, dtype=np.float32)
             if isinstance(x, str)
@@ -308,6 +310,7 @@ class TestSemanticMatcherTimeWindow:
         # in the process-wide _MODEL_CACHE under the real model name, which would
         # otherwise leak into the real-embedding tests.
         mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 384
         mock_model.encode.side_effect = lambda x, *a, **k: (
             np.ones(384, dtype=np.float32)
             if isinstance(x, str)
