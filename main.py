@@ -14,6 +14,7 @@ from src.core.metrics import get_metrics
 from src.core.authz_coverage import assert_authz_coverage
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
+from src.core.upload_limits import get_max_upload_size
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.core import ContextEngine
@@ -299,9 +300,12 @@ _mcp_server, _mcp_bus = build_mcp_server(
 # which MCP clients follow. The session-manager lifecycle is run in lifespan.
 # The transport is unauthenticated, so the idle timeout is tightened from the SDK
 # default of 1800s to 600s to limit accumulation of orphaned sessions.
+# max_request_body_size: raise the SDK's 4 MiB cap (it 413s before parsing) to our
+# upload limit, so CONTEX_MAX_UPLOAD_SIZE is the single real ceiling.
 _mcp_starlette_app = _mcp_server.streamable_http_app(
     streamable_http_path="/",
     session_idle_timeout=600,
+    max_request_body_size=get_max_upload_size(),
 )
 app.mount("/mcp", _mcp_starlette_app)
 
