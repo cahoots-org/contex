@@ -45,7 +45,7 @@ sentry-sdk[fastapi]==2.69.1
 
 # Distributed Tracing (OpenTelemetry)
 opentelemetry-api==1.44.0
-opentelemetry-sdk==1.44.0
+opentelemetry-sdk==1.45.0
 opentelemetry-instrumentation-fastapi==0.65b0
 opentelemetry-instrumentation-redis==0.65b0
 opentelemetry-exporter-otlp==1.44.0
