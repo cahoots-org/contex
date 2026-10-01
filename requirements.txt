@@ -43,12 +43,13 @@ PyJWT==2.15.0
 # Error tracking
 sentry-sdk[fastapi]==2.69.1
 
-# Distributed Tracing (OpenTelemetry)
-opentelemetry-api==1.44.0
+# Distributed Tracing (OpenTelemetry) — versions are coupled: stable 1.45.x
+# pairs with instrumentation 0.66b0; bump them together or pip won't resolve.
+opentelemetry-api==1.45.0
 opentelemetry-sdk==1.45.0
-opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-instrumentation-fastapi==0.66b0
 opentelemetry-instrumentation-redis==0.66b0
-opentelemetry-exporter-otlp==1.44.0
+opentelemetry-exporter-otlp==1.45.0
 
 # Testing
 pytest==9.1.1
