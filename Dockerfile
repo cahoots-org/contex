@@ -52,11 +52,16 @@ RUN apt-get update -o Acquire::Retries=5 && \
     apt-get install -y --fix-missing -o Acquire::Retries=5 curl && \
     rm -rf /var/lib/apt/lists/*
 
+# Build version stamped by the release workflow; "dev" for local builds. Read at
+# runtime via src/core/version.py so the server self-reports the real build.
+ARG CONTEX_VERSION=dev
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    CONTEX_VERSION=${CONTEX_VERSION}
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv

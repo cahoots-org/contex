@@ -156,6 +156,8 @@ jobs:
         tags: |
           ghcr.io/${{ github.repository }}:latest
           ghcr.io/${{ github.repository }}:${{ needs.determine-version.outputs.version }}
+        build-args: |
+          CONTEX_VERSION=${{ needs.determine-version.outputs.version }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
