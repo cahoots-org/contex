@@ -27,6 +27,19 @@ refresh story. See each connector's design spec under
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.
+- **Secret guard** — on by default, the runner drops any item that is or
+  contains a secret (`.env`, `*.pem`, `id_rsa`, private-key blocks, `AKIA…` /
+  `ghp_…` / Slack / Google keys) before it is published, and counts the drops in
+  `RunStats.skipped_secrets`. Configure in `connector.yaml`:
+
+  ```yaml
+  allow_secrets: false   # the switch: true ingests secrets as-is (no scanning)
+  secrets:               # optional, only when protecting
+    scan_content: true   # also scan file *contents* (layer 2), not just names
+    # Both lists ADD to the built-ins (they never replace them):
+    files: []            # secret filename globs, e.g. "*.secret"
+    content: []          # secret-content regexes, e.g. "ACME_[A-Z0-9]{32}"
+  ```
 
 ## Writing a connector
 

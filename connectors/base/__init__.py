@@ -18,6 +18,7 @@ from .config import (
     resolve_batch_size,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
+    resolve_secret_scanner,
 )
 from .globs import allowed, matches_any
 from .publisher import ContexPublisher
@@ -34,6 +35,7 @@ __all__ = [
     "resolve_batch_size",
     "resolve_max_batch_bytes",
     "resolve_max_file_bytes",
+    "resolve_secret_scanner",
     "run",
     "run_connector",
 ]
@@ -45,6 +47,7 @@ async def run_connector(
     batch_size: int = 500,
     progress: Callable[[int], None] | None = None,
     max_batch_bytes: int | None = None,
+    secret_scanner=None,
 ) -> RunStats:
     """Open a publisher for ``config`` and publish ``events`` through it."""
     async with ContexPublisher(config) as publisher:
@@ -54,4 +57,5 @@ async def run_connector(
             batch_size=batch_size,
             progress=progress,
             max_batch_bytes=max_batch_bytes,
+            secret_scanner=secret_scanner,
         )

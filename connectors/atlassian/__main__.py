@@ -12,7 +12,13 @@ import json
 import logging
 import sys
 
-from connectors.base import ContexConfig, load_config, resolve_batch_size, run_connector
+from connectors.base import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_secret_scanner,
+    run_connector,
+)
 
 from .client import AtlassianClient
 from .readers import read_confluence_pages, read_jira_issues
@@ -100,6 +106,7 @@ async def _run(config_path: str, dry_run: int) -> None:
 
         contex_cfg = ContexConfig.from_dict(config)
         batch_size = resolve_batch_size(config)
+        secret_scanner = resolve_secret_scanner(config)
         total = 0
         for resource in resources:
             events = _reader_for(resource, client, source)
@@ -111,7 +118,8 @@ async def _run(config_path: str, dry_run: int) -> None:
                 logging.info("  %s: %d published", _r, n)
 
             stats = await run_connector(
-                contex_cfg, events, batch_size=batch_size, progress=_progress
+                contex_cfg, events, batch_size=batch_size,
+                secret_scanner=secret_scanner, progress=_progress,
             )
             total += stats.published
             logging.info("finished %s: %d items in %d batches", resource, stats.published, stats.batches)

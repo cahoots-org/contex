@@ -5,7 +5,13 @@ import argparse
 import asyncio
 import logging
 
-from connectors.base import ContexConfig, load_config, resolve_batch_size, run_connector
+from connectors.base import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_secret_scanner,
+    run_connector,
+)
 
 from .reader import read_objects
 
@@ -23,6 +29,7 @@ async def _main(config_path: str) -> None:
     config = load_config(config_path)
     contex_config = ContexConfig.from_dict(config)
     batch_size = resolve_batch_size(config)
+    secret_scanner = resolve_secret_scanner(config)
 
     logger.info(
         "starting S3 import: bucket=%s prefix=%s",
@@ -37,6 +44,7 @@ async def _main(config_path: str) -> None:
         contex_config,
         read_objects(config),
         batch_size=batch_size,
+        secret_scanner=secret_scanner,
         progress=progress,
     )
 
