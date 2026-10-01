@@ -549,11 +549,32 @@ class CSVNodeParser(BaseNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         if format_hint == "csv":
             return True
-        if isinstance(data, str):
-            # Check for CSV pattern (commas, multiple lines)
-            lines = data.strip().split('\n')
-            if len(lines) > 1:
-                return ',' in data
+        return isinstance(data, str) and self._looks_like_csv(data)
+
+    @staticmethod
+    def _looks_like_csv(text: str) -> bool:
+        """Content sniff: real CSV has rows with a consistent delimiter count.
+
+        "Contains a comma" is not enough — source code and prose are full of
+        commas but vary wildly in count per line (imports, call signatures, bare
+        statements). Require a single delimiter whose per-line count is >= 1 and
+        identical across nearly every line, which code never is. Biased toward
+        "not CSV": a real CSV misread as text is cheap; code shredded into bogus
+        CSV rows (DictReader keys off line 1) poisons or drops the whole file.
+        """
+        # ponytail: uniform-comma prose ("Hello, world\nFoo, bar") is structurally
+        # identical to a 2-column CSV and will still be read as CSV — an irreducible
+        # content-only ambiguity, and a cheap misparse. The catastrophe this guards
+        # against is varying-comma *code*, which this reliably rejects.
+        lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+        if len(lines) < 2:
+            return False
+        sample = lines[:50]
+        for delim in (",", "\t", ";"):
+            counts = [ln.count(delim) for ln in sample]
+            modal = max(set(counts), key=counts.count)
+            if modal >= 1 and counts.count(modal) >= 0.9 * len(sample):
+                return True
         return False
 
     def parse(self, data: Any) -> ParseResult:
