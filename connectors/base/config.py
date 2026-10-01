@@ -63,8 +63,13 @@ def resolve_secret_scanner(config: dict):
 
     Protection is on by default. ``allow_secrets: true`` (secrets are wanted as
     context) returns None — no scanning. Otherwise an optional ``secrets:`` block
-    tunes it: ``scan_content`` (default true) and ``file_patterns`` /
-    ``content_patterns`` lists that *extend* the built-in defaults.
+    tunes it:
+
+    - ``scan_content`` (default true) — also scan file *contents*, not just names.
+    - ``extra_file_patterns`` — filename globs *added* to the built-in secret-file
+      list (e.g. ``"*.secret"``); never replaces it.
+    - ``extra_content_patterns`` — regexes *added* to the built-in content markers;
+      an item whose text matches any is skipped.
     """
     from .secrets import (
         DEFAULT_SECRET_CONTENT_PATTERNS,
@@ -76,8 +81,8 @@ def resolve_secret_scanner(config: dict):
         return None
     sec = config.get("secrets") or {}
     return SecretScanner(
-        file_patterns=(*DEFAULT_SECRET_FILE_PATTERNS, *(sec.get("file_patterns") or ())),
-        content_patterns=(*DEFAULT_SECRET_CONTENT_PATTERNS, *(sec.get("content_patterns") or ())),
+        file_patterns=(*DEFAULT_SECRET_FILE_PATTERNS, *(sec.get("extra_file_patterns") or ())),
+        content_patterns=(*DEFAULT_SECRET_CONTENT_PATTERNS, *(sec.get("extra_content_patterns") or ())),
         scan_content=bool(sec.get("scan_content", True)),
     )
 
