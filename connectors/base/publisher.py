@@ -55,7 +55,7 @@ class ContexPublisher:
             {"project_id": self._config.project_id, "items": items},
         )
         text = result.content[0].text if result.content else ""
-        if result.isError:
+        if result.is_error:  # mcp>=2 attribute; "isError" is only the JSON alias
             raise RuntimeError(f"contex_publish_batch failed: {text or 'unknown error'}")
         payload = json.loads(text)
         return int(payload.get("published", 0))
