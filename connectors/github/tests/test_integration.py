@@ -129,6 +129,42 @@ async def test_read_files_skips_binary_by_default(httpx_mock: "HTTPXMock") -> No
 
 
 @pytest.mark.anyio
+async def test_read_files_skips_oversized_without_fetching(httpx_mock: "HTTPXMock") -> None:
+    """A file over max_file_bytes is skipped from the tree size — never fetched.
+
+    Only the small blob is mocked; if read_files tried to fetch the oversized one,
+    pytest-httpx would fail on the unmocked request.
+    """
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}",
+        json={"default_branch": "main"},
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/git/trees/main"),
+        json={
+            "tree": [
+                {"type": "blob", "path": "small.py", "sha": "small1", "size": 100},
+                {"type": "blob", "path": "tests/fixtures/huge.txt", "sha": "huge1", "size": 5_000_000},
+            ]
+        },
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/git/blobs/small1",
+        json={"encoding": "base64", "content": _b64("x = 1")},
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [
+            ev async for ev in read_files(client, _OWNER, _REPO, max_file_bytes=1_048_576)
+        ]
+
+    assert [ev.key for ev in events] == [f"{_SLUG}:small.py"]
+
+
+@pytest.mark.anyio
 async def test_read_files_rerun_produces_same_key(httpx_mock: "HTTPXMock") -> None:
     """A second run yields the same stable key — suitable for upsert."""
     for _ in range(2):
