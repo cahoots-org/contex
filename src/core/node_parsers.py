@@ -553,19 +553,8 @@ class CSVNodeParser(BaseNodeParser):
 
     @staticmethod
     def _looks_like_csv(text: str) -> bool:
-        """Content sniff: real CSV has rows with a consistent delimiter count.
-
-        "Contains a comma" is not enough — source code and prose are full of
-        commas but vary wildly in count per line (imports, call signatures, bare
-        statements). Require a single delimiter whose per-line count is >= 1 and
-        identical across nearly every line, which code never is. Biased toward
-        "not CSV": a real CSV misread as text is cheap; code shredded into bogus
-        CSV rows (DictReader keys off line 1) poisons or drops the whole file.
-        """
-        # ponytail: uniform-comma prose ("Hello, world\nFoo, bar") is structurally
-        # identical to a 2-column CSV and will still be read as CSV — an irreducible
-        # content-only ambiguity, and a cheap misparse. The catastrophe this guards
-        # against is varying-comma *code*, which this reliably rejects.
+        """True when one delimiter has a consistent per-line count: real rows,
+        not just commas (which code is full of, in varying counts)."""
         lines = [ln for ln in text.strip().splitlines() if ln.strip()]
         if len(lines) < 2:
             return False
