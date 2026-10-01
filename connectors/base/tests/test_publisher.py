@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 from connectors.base.publisher import ContexPublisher
 
@@ -16,19 +17,21 @@ def _publisher(result) -> ContexPublisher:
     return pub
 
 
+# Use the real CallToolResult so the test tracks the SDK's actual shape. A
+# hand-rolled fake let the mcp 1.x->2.x rename (isError -> is_error attribute,
+# isError now only the JSON alias) slip through green.
 def test_publish_batch_raises_on_tool_error():
-    # A tool error carries isError=True and a plain (non-JSON) text payload.
-    result = SimpleNamespace(
-        isError=True,
-        content=[SimpleNamespace(text="Error executing tool contex_publish_batch")],
+    result = CallToolResult(
+        isError=True,  # wire alias; the object exposes .is_error
+        content=[TextContent(type="text", text="Error executing tool contex_publish_batch")],
     )
     with pytest.raises(RuntimeError, match="contex_publish_batch failed"):
         asyncio.run(_publisher(result).publish_batch([{"data_key": "k", "data": {}}]))
 
 
 def test_publish_batch_returns_published_count():
-    result = SimpleNamespace(
+    result = CallToolResult(
         isError=False,
-        content=[SimpleNamespace(text='{"published": 3}')],
+        content=[TextContent(type="text", text='{"published": 3}')],
     )
     assert asyncio.run(_publisher(result).publish_batch([{}, {}, {}])) == 3
