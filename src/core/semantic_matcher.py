@@ -56,7 +56,7 @@ class SemanticDataMatcher:
     def __init__(
         self,
         db: DatabaseManager,
-        model_name: str = "all-MiniLM-L6-v2",
+        model_name: str = "thenlper/gte-base",
         similarity_threshold: float = 0.35,
         max_matches: int = 10,
     ):

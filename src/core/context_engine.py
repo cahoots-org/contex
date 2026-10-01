@@ -53,7 +53,7 @@ class ContextEngine:
         similarity_threshold: float = 0.5,
         max_matches: int = 10,
         max_context_size: int = 51200,  # ~40% of 128k token context window
-        embed_model: str = "all-MiniLM-L6-v2",
+        embed_model: str = "thenlper/gte-base",
     ):
         self.db = db
         self.redis = redis

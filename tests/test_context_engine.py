@@ -37,11 +37,11 @@ class TestContextEngine:
         # Mock SentenceTransformer to avoid loading heavy model
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.get_sentence_embedding_dimension.return_value = 768
             mock_model.encode.side_effect = lambda x, *a, **k: (
-                np.array([0.1] * 384, dtype=np.float32)
+                np.array([0.1] * 768, dtype=np.float32)
                 if isinstance(x, str)
-                else np.array([[0.1] * 384] * len(x), dtype=np.float32)
+                else np.array([[0.1] * 768] * len(x), dtype=np.float32)
             )
             mock_model_cls.return_value = mock_model
 
@@ -232,11 +232,11 @@ class TestContextSizeLimits:
         """Test that token estimation works even if tokenizer fails"""
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.get_sentence_embedding_dimension.return_value = 768
             mock_model.encode.side_effect = lambda x, *a, **k: (
-                np.array([0.1] * 384, dtype=np.float32)
+                np.array([0.1] * 768, dtype=np.float32)
                 if isinstance(x, str)
-                else np.array([[0.1] * 384] * len(x), dtype=np.float32)
+                else np.array([[0.1] * 768] * len(x), dtype=np.float32)
             )
             mock_model_cls.return_value = mock_model
 

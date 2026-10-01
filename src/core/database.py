@@ -198,7 +198,7 @@ class DatabaseManager:
         This is the single, canonical schema path for Contex: both the app boot
         (main.py lifespan) and the test fixtures call this instead of
         ``Base.metadata.create_all``. Running the alembic chain guarantees the
-        schema matches the migrations exactly (real ``vector(384)`` column, HNSW
+        schema matches the migrations exactly (real ``vector(768)`` column, HNSW
         index, and an ``alembic_version`` row) and that future incremental
         migrations apply.
 

@@ -3,13 +3,13 @@
 Reproduces the bug that broke a clean Contex install (#102): ``alembic upgrade
 head`` failed on a fresh DB because migration 001 created
 ``embeddings.embedding`` as bytea then tried an invalid
-``USING embedding::vector(384)`` cast (fails under asyncpg). Also guards #103 by
+``USING embedding::vector(768)`` cast (fails under asyncpg). Also guards #103 by
 asserting the HNSW vector index is present after migrating.
 
 The schema now comes exclusively from alembic (both app boot and the test
 fixtures run ``alembic upgrade head``), so this test provisions a genuinely empty
 throwaway database and asserts the full migration chain reaches head with a real
-``vector(384)`` column and the HNSW index.
+``vector(768)`` column and the HNSW index.
 """
 
 import asyncio
@@ -93,13 +93,13 @@ async def test_alembic_upgrade_head_on_fresh_db(fresh_db_url):
         )
         assert version is not None
 
-        # embedding column is a real vector(384), not bytea (#102)
+        # embedding column is a real vector(768), not bytea (#102)
         coltype = await _fetch_scalar(
             engine,
             "SELECT format_type(atttypid, atttypmod) FROM pg_attribute "
             "WHERE attrelid = 'embeddings'::regclass AND attname = 'embedding'",
         )
-        assert coltype == "vector(384)"
+        assert coltype == "vector(768)"
 
         # HNSW vector index exists (#103)
         indexdef = await _fetch_scalar(

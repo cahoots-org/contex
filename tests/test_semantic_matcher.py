@@ -21,12 +21,12 @@ class TestSemanticDataMatcher:
         # Mock SentenceTransformer to avoid loading heavy model
         with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
             mock_model = Mock()
-            mock_model.get_sentence_embedding_dimension.return_value = 384
-            # Simulate batched encode: (n, 384) for a list of texts, (384,) for a single string.
+            mock_model.get_sentence_embedding_dimension.return_value = 768
+            # Simulate batched encode: (n, 768) for a list of texts, (768,) for a single string.
             mock_model.encode.side_effect = lambda x, *a, **k: (
-                np.random.rand(384).astype(np.float32)
+                np.random.rand(768).astype(np.float32)
                 if isinstance(x, str)
-                else np.random.rand(len(x), 384).astype(np.float32)
+                else np.random.rand(len(x), 768).astype(np.float32)
             )
             mock_model_cls.return_value = mock_model
 
@@ -250,11 +250,11 @@ class TestSemanticMatcherConcurrency:
         # the process-wide _MODEL_CACHE under the real model name and leak into
         # the real-embedding tests.
         mock_model = Mock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_sentence_embedding_dimension.return_value = 768
         mock_model.encode.side_effect = lambda x, *a, **k: (
-            np.ones(384, dtype=np.float32)
+            np.ones(768, dtype=np.float32)
             if isinstance(x, str)
-            else np.ones((len(x), 384), dtype=np.float32)
+            else np.ones((len(x), 768), dtype=np.float32)
         )
         with patch(
             "src.core.semantic_matcher._load_model", return_value=mock_model
@@ -310,11 +310,11 @@ class TestSemanticMatcherTimeWindow:
         # in the process-wide _MODEL_CACHE under the real model name, which would
         # otherwise leak into the real-embedding tests.
         mock_model = Mock()
-        mock_model.get_sentence_embedding_dimension.return_value = 384
+        mock_model.get_sentence_embedding_dimension.return_value = 768
         mock_model.encode.side_effect = lambda x, *a, **k: (
-            np.ones(384, dtype=np.float32)
+            np.ones(768, dtype=np.float32)
             if isinstance(x, str)
-            else np.ones((len(x), 384), dtype=np.float32)
+            else np.ones((len(x), 768), dtype=np.float32)
         )
         with patch(
             "src.core.semantic_matcher._load_model", return_value=mock_model
