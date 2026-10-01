@@ -37,8 +37,8 @@ toon-format==0.1.0
 pyyaml==6.0.3
 toml==0.10.2
 
-# Authentication (JWT for service accounts)
-PyJWT==2.14.0
+# JWT — transitive dep of mcp[crypto] (auth) and redis[jwt]; pinned for CVE-2026-101918
+PyJWT==2.15.0
 
 # Error tracking
 sentry-sdk[fastapi]==2.69.1
