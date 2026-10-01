@@ -549,11 +549,21 @@ class CSVNodeParser(BaseNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         if format_hint == "csv":
             return True
-        if isinstance(data, str):
-            # Check for CSV pattern (commas, multiple lines)
-            lines = data.strip().split('\n')
-            if len(lines) > 1:
-                return ',' in data
+        return isinstance(data, str) and self._looks_like_csv(data)
+
+    @staticmethod
+    def _looks_like_csv(text: str) -> bool:
+        """True when one delimiter has a consistent per-line count: real rows,
+        not just commas (which code is full of, in varying counts)."""
+        lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+        if len(lines) < 2:
+            return False
+        sample = lines[:50]
+        for delim in (",", "\t", ";"):
+            counts = [ln.count(delim) for ln in sample]
+            modal = max(set(counts), key=counts.count)
+            if modal >= 1 and counts.count(modal) >= 0.9 * len(sample):
+                return True
         return False
 
     def parse(self, data: Any) -> ParseResult:
