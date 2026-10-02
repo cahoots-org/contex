@@ -65,6 +65,10 @@ def resolve_format(data_format: Optional[str], data_key: Optional[str]) -> Optio
 class BaseNodeParser(ABC):
     """Base class for all node parsers"""
 
+    # Parsers that need the source key (e.g. to pick a language from the file
+    # extension) set this; the converter then passes data_key into parse().
+    needs_data_key: bool = False
+
     @property
     @abstractmethod
     def format_name(self) -> str:
@@ -951,3 +955,235 @@ class DOCXNodeParser(BaseNodeParser):
                 parts.append(str(node.content))
 
         return "\n\n".join(parts)
+
+
+# ============================================================================
+# Code Parser (tree-sitter)
+# ============================================================================
+
+_KIND_TO_NODETYPE = {
+    "function": NodeType.FUNCTION,
+    "class": NodeType.CLASS,
+    "method": NodeType.METHOD,
+}
+
+# Per-language AST shape. We walk the tree-sitter tree directly rather than using
+# tags.scm queries — the language pack ships grammars but no query files, and the
+# node-type names below are stable across grammar versions. "class" covers any
+# type-defining construct (Python/TS class, Go type) so it maps to NodeType.CLASS.
+_JS_CONFIG = {
+    "defs": {
+        "function_declaration": "function",
+        "class_declaration": "class",
+        "method_definition": "method",
+    },
+    "call_type": "call_expression",
+    "call_field": "function",
+    "member_type": "member_expression",
+    "member_field": "property",
+    "import_types": {"import_statement"},
+    "import_lang": "js",
+    "var_fn": True,  # const x = () => {} / function expression assigned to a name
+}
+
+_LANGUAGE_CONFIG = {
+    "python": {
+        "defs": {"function_definition": "function", "class_definition": "class"},
+        "call_type": "call",
+        "call_field": "function",
+        "member_type": "attribute",
+        "member_field": "attribute",
+        "import_types": {"import_from_statement"},
+        "import_lang": "python",
+        "var_fn": False,
+    },
+    "javascript": _JS_CONFIG,
+    "typescript": _JS_CONFIG,
+    "tsx": _JS_CONFIG,
+    "go": {
+        "defs": {
+            "function_declaration": "function",
+            "method_declaration": "method",
+            "type_spec": "class",
+        },
+        "call_type": "call_expression",
+        "call_field": "function",
+        "member_type": "selector_expression",
+        "member_field": "field",
+        "import_types": set(),  # Go imports are package names, not symbol defs.
+        "import_lang": None,
+        "var_fn": False,
+    },
+}
+
+
+class CodeNodeParser(BaseNodeParser):
+    """Parse source code into function/class/method nodes via tree-sitter.
+
+    Emits one node per definition (with dotted node_path for nesting) plus a
+    file-level node (path "") carrying module imports. Each node records, in its
+    metadata, the identifiers it defines (``defs``) and references (``refs``:
+    imports + call targets) — the input to the symbols table and cross-file link
+    join. The language is chosen from the data_key's file extension.
+    """
+
+    needs_data_key = True
+
+    @property
+    def format_name(self) -> str:
+        return "code"
+
+    @property
+    def priority(self) -> int:
+        return 5
+
+    def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
+        return format_hint == "code"
+
+    def parse(self, data: Any, data_key: Optional[str] = None) -> ParseResult:
+        lang = language_for_key(data_key)
+        cfg = _LANGUAGE_CONFIG.get(lang) if lang else None
+        if cfg is None:
+            return ParseResult(
+                nodes=[], format_name="code", success=False,
+                error=f"no supported grammar for key {data_key!r}",
+            )
+        try:
+            from tree_sitter_language_pack import get_parser
+
+            src = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
+            tree = get_parser(lang).parse(src)
+            nodes = self._walk(tree.root_node, src, lang, cfg)
+            return ParseResult(
+                nodes=nodes, format_name="code", success=True,
+                metadata={"language": lang, "node_count": len(nodes)},
+            )
+        except Exception as e:  # parse failure must not kill ingest; fall back to text
+            return ParseResult(nodes=[], format_name="code", success=False, error=str(e))
+
+    @staticmethod
+    def _txt(node, src: bytes) -> str:
+        return src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+
+    def _name_of(self, node, src: bytes) -> Optional[str]:
+        n = node.child_by_field_name("name")
+        return self._txt(n, src) if n is not None else None
+
+    def _callee_name(self, call_node, cfg, src: bytes) -> Optional[str]:
+        fn = call_node.child_by_field_name(cfg["call_field"])
+        if fn is None:
+            return None
+        if fn.type == cfg["member_type"]:
+            prop = fn.child_by_field_name(cfg["member_field"])
+            return self._txt(prop, src) if prop is not None else None
+        if fn.type == "identifier":
+            return self._txt(fn, src)
+        return None
+
+    def _import_names(self, node, cfg, src: bytes) -> List[str]:
+        names: List[str] = []
+        if cfg["import_lang"] == "python":
+            # from pkg.mod import a, b as c  -> [a, b]; skip the module itself.
+            module = node.child_by_field_name("module_name")
+            for child in node.named_children:
+                if child is module:
+                    continue
+                if child.type == "dotted_name":
+                    names.append(self._txt(child, src).split(".")[-1])
+                elif child.type == "aliased_import":
+                    nm = child.child_by_field_name("name")
+                    if nm is not None:
+                        names.append(self._txt(nm, src).split(".")[-1])
+                elif child.type == "identifier":
+                    names.append(self._txt(child, src))
+        elif cfg["import_lang"] == "js":
+            # import { a, b } from "m"; import def from "m"  -> [a, b, def]
+            stack = [node]
+            while stack:
+                n = stack.pop()
+                if n.type == "import_specifier":
+                    nm = n.child_by_field_name("name")
+                    if nm is not None:
+                        names.append(self._txt(nm, src))
+                elif n.type == "identifier" and n.parent is not None and n.parent.type == "import_clause":
+                    names.append(self._txt(n, src))
+                stack.extend(n.children)
+        return names
+
+    def _walk(self, root, src: bytes, lang: str, cfg) -> List[Node]:
+        records: List[dict] = []
+        module_refs: List[str] = []
+
+        def add(seq: List[str], name: Optional[str]) -> None:
+            if name and name not in seq:
+                seq.append(name)
+
+        def visit(node, enclosing_refs: List[str], stack) -> None:
+            t = node.type
+            # Definition -> its own node; descend with it as the enclosing scope.
+            if t in cfg["defs"]:
+                kind = cfg["defs"][t]
+                if kind == "function" and any(k == "class" for k, _ in stack):
+                    kind = "method"
+                name = self._name_of(node, src)
+                if name:
+                    rec = self._record(node, kind, name, stack, src)
+                    records.append(rec)
+                    for c in node.children:
+                        visit(c, rec["refs"], stack + [(kind, name)])
+                    return
+            # const x = () => {} / function expression assigned to a name.
+            if cfg["var_fn"] and t == "variable_declarator":
+                value = node.child_by_field_name("value")
+                if value is not None and value.type in (
+                    "arrow_function", "function", "function_expression",
+                ):
+                    name = self._name_of(node, src)
+                    if name:
+                        kind = "method" if any(k == "class" for k, _ in stack) else "function"
+                        rec = self._record(node, kind, name, stack, src)
+                        records.append(rec)
+                        for c in node.children:
+                            visit(c, rec["refs"], stack + [(kind, name)])
+                        return
+            if t == cfg["call_type"]:
+                add(enclosing_refs, self._callee_name(node, cfg, src))
+            if t in cfg["import_types"]:
+                for nm in self._import_names(node, cfg, src):
+                    add(module_refs, nm)
+            for c in node.children:
+                visit(c, enclosing_refs, stack)
+
+        visit(root, module_refs, [])
+
+        summary = "defines: " + ", ".join(r["path"] for r in records)
+        if module_refs:
+            summary += "\nimports: " + ", ".join(module_refs)
+        nodes = [Node(
+            path="", content=summary, node_type=NodeType.DOCUMENT,
+            metadata={"language": lang, "defs": [], "refs": module_refs},
+        )]
+        for r in records:
+            nodes.append(Node(
+                path=r["path"], content=r["content"],
+                node_type=_KIND_TO_NODETYPE[r["kind"]],
+                metadata={
+                    "language": lang, "defs": r["defs"], "refs": r["refs"],
+                    "start_line": r["start"], "end_line": r["end"],
+                },
+            ))
+        return nodes
+
+    def _record(self, node, kind: str, name: str, stack, src: bytes) -> dict:
+        return {
+            "kind": kind, "name": name,
+            "path": ".".join([n for _, n in stack] + [name]),
+            "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
+            "content": self._txt(node, src), "defs": [name], "refs": [],
+        }
+
+    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
+        # Code isn't a reconstruct target in practice; concatenate node sources.
+        return "\n\n".join(
+            str(n.content) for n in nodes if n.node_type != NodeType.DOCUMENT
+        )

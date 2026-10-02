@@ -15,6 +15,7 @@ from .node_parsers import (
     CSVNodeParser,
     PDFNodeParser,
     DOCXNodeParser,
+    CodeNodeParser,
 )
 
 
@@ -38,6 +39,7 @@ class NodeConverter:
     def __init__(self):
         """Initialize with all available parsers"""
         self.parsers: List[BaseNodeParser] = [
+            CodeNodeParser(),
             PDFNodeParser(),
             DOCXNodeParser(),
             JSONNodeParser(),
@@ -50,13 +52,17 @@ class NodeConverter:
         # Sort by priority
         self.parsers.sort(key=lambda p: p.priority)
 
-    def parse(self, data: Any, format_hint: Optional[str] = None) -> ParseResult:
+    def parse(
+        self, data: Any, format_hint: Optional[str] = None, data_key: Optional[str] = None
+    ) -> ParseResult:
         """
         Parse data into nodes using appropriate parser.
 
         Args:
             data: Raw data to parse
             format_hint: Optional hint about format ("json", "yaml", etc.)
+            data_key: Optional source key; parsers that need the file extension to
+                pick a language (CodeNodeParser) read it.
 
         Returns:
             ParseResult with nodes and metadata
@@ -64,7 +70,11 @@ class NodeConverter:
         # Try parsers in priority order
         for parser in self.parsers:
             if parser.can_parse(data, format_hint):
-                result = parser.parse(data)
+                result = (
+                    parser.parse(data, data_key=data_key)
+                    if parser.needs_data_key
+                    else parser.parse(data)
+                )
                 if result.success:
                     return result
 
