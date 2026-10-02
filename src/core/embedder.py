@@ -35,9 +35,14 @@ class OnnxEmbedder:
             return self.encode([texts], batch_size)[0]
         if not texts:
             return np.empty((0, self._dim), dtype=np.float32)
-        return np.vstack(
-            [self._encode_batch(texts[i : i + batch_size]) for i in range(0, len(texts), batch_size)]
-        )
+        # Each batch pads to its longest text, so batch similar lengths together
+        # and scatter the results back into input order.
+        order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+        out = np.empty((len(texts), self._dim), dtype=np.float32)
+        for start in range(0, len(order), batch_size):
+            idx = order[start : start + batch_size]
+            out[idx] = self._encode_batch([texts[i] for i in idx])
+        return out
 
     def _encode_batch(self, texts: List[str]) -> np.ndarray:
         encodings = self.tokenizer.encode_batch(texts)
