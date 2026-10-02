@@ -238,7 +238,7 @@ class SemanticDataMatcher:
         # repeated single-text calls. Output is identical to encoding each node
         # separately.
         changed_embeddings = self.model.encode(
-            [embedding_texts[i] for i in changed], batch_size=64
+            [embedding_texts[i] for i in changed], batch_size=16
         )
 
         async with self.db.session() as session:
