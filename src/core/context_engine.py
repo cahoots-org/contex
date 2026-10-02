@@ -12,6 +12,7 @@ from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
 from .event_store import EventStore
 from .matcher import HybridMatcher
+from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
 from .models import DataPublishEvent
@@ -241,7 +242,10 @@ class ContextEngine:
         project_id = event.project_id
         data_key = event.data_key
         data = _strip_nul_bytes(event.data)
-        format_hint = event.data_format
+        # Connectors (GitHub/S3) emit the generic "text"; infer "code" from the
+        # key extension here so code reaches CodeNodeParser instead of the
+        # plain-text splitter. Explicit non-generic formats pass through.
+        format_hint = resolve_format(event.data_format, data_key)
 
         logger.debug("Publishing data: %s:%s", project_id, data_key)
 

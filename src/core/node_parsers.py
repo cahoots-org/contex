@@ -16,6 +16,52 @@ import io
 from .node import Node, NodeType, ParseResult
 
 
+# Extensions we can parse as code, mapped to their tree-sitter grammar name.
+# Single source of truth: resolve_format only returns "code" for languages the
+# CodeNodeParser actually handles, so detection and parsing never disagree.
+CODE_EXTENSIONS = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".go": "go",
+}
+
+# data_format values that carry no real signal, so key-extension inference wins.
+_GENERIC_FORMATS = {None, "", "text"}
+
+
+def language_for_key(data_key: Optional[str]) -> Optional[str]:
+    """Grammar name for a data_key's file extension, or None.
+
+    Keys are file-ish: "owner/repo:src/app.py", "bucket/dir/foo.ts". Take the
+    basename after the last path or ":" separator, then the lowercased suffix.
+    """
+    if not data_key:
+        return None
+    base = data_key.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    dot = base.rfind(".")
+    if dot == -1:
+        return None
+    return CODE_EXTENSIONS.get(base[dot:].lower())
+
+
+def resolve_format(data_format: Optional[str], data_key: Optional[str]) -> Optional[str]:
+    """Resolve the effective format for a publish, inferring code from the key.
+
+    An explicit, non-generic ``data_format`` always wins. A generic/absent one
+    ("text" or None, as emitted by the GitHub/S3 connectors) falls back to the
+    key's extension: a known code extension yields "code", otherwise the format
+    is returned unchanged.
+    """
+    if data_format not in _GENERIC_FORMATS:
+        return data_format
+    return "code" if language_for_key(data_key) else data_format
+
+
 class BaseNodeParser(ABC):
     """Base class for all node parsers"""
 
