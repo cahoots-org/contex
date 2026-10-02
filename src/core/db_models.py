@@ -240,6 +240,38 @@ class Embedding(Base):
     )
 
 
+class Symbol(Base):
+    """A name a node defines or references — the index for cross-file linking.
+
+    ``role='def'`` means the node defines the name (a function/class/method);
+    ``role='ref'`` means it mentions it (an import or call target). A cross-file
+    "edge" is a read-time equality join — ``ref.name == def.name`` within a
+    project — so there is no edge table and no ingest-ordering problem: a ref
+    whose def hasn't arrived yet simply doesn't resolve until it does. General by
+    design: any named cross-reference (markdown anchors, JSON ``$ref``) can reuse
+    this table; code is just the first producer. Rows are rewritten per source on
+    every re-ingest (delete by ``(project_id, data_key)`` then insert).
+    """
+
+    __tablename__ = "symbols"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    data_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    node_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)  # "def" | "ref"
+
+    __table_args__ = (
+        # def lookup in the link join: resolve a ref name to defining nodes.
+        Index("idx_symbols_project_name_role", "project_id", "name", "role"),
+        # gather the refs of the already-matched nodes.
+        Index("idx_symbols_project_node_key", "project_id", "node_key"),
+        # delete-by-source on re-ingest.
+        Index("idx_symbols_project_data_key", "project_id", "data_key"),
+    )
+
+
 class AuditEvent(Base):
     """Audit Event model."""
 
