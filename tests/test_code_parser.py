@@ -139,3 +139,24 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
     print("ok")
+
+
+def test_duplicate_names_get_unique_paths():
+    # Property getter/setter (and overloads) share a name; node_path must stay
+    # unique or the (project_id, node_key) unique index rejects the insert.
+    src = '''\
+class ArticleModel:
+    @property
+    def version(self):
+        return self._v
+
+    @version.setter
+    def version(self, v):
+        self._v = v
+'''
+    res = nc.parse(src, "code", data_key="repo:m.py")
+    paths = [n.path for n in res.nodes]
+    assert len(paths) == len(set(paths))
+    by = _by_path(res.nodes)
+    assert by["ArticleModel.version"].metadata["defs"] == ["version"]
+    assert by["ArticleModel.version#2"].metadata["defs"] == ["version"]
