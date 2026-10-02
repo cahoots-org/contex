@@ -96,7 +96,7 @@ USER appuser
 # the runtime EMBED_MODEL default; pass --build-arg EMBED_MODEL=... to match if
 # you override it at runtime.
 ARG EMBED_MODEL=thenlper/gte-base
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$EMBED_MODEL')"
+RUN python -c "from src.core.embedder import OnnxEmbedder; OnnxEmbedder('$EMBED_MODEL')"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

@@ -34,8 +34,8 @@ class TestContextEngine:
     @pytest_asyncio.fixture
     async def context_engine(self, db, redis):
         """Create a ContextEngine instance with mocks"""
-        # Mock SentenceTransformer to avoid loading heavy model
-        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
+        # Mock the embedder to avoid loading heavy model
+        with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
             mock_model = Mock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
             mock_model.encode.side_effect = lambda x, *a, **k: (
@@ -230,7 +230,7 @@ class TestContextSizeLimits:
     @pytest.mark.asyncio
     async def test_tokenizer_fallback(self, db, redis):
         """Test that token estimation works even if tokenizer fails"""
-        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
+        with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
             mock_model = Mock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
             mock_model.encode.side_effect = lambda x, *a, **k: (

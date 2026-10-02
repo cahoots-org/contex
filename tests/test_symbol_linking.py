@@ -33,7 +33,7 @@ class _StubMatcher:
 
 @pytest_asyncio.fixture
 async def ingest(db):
-    with patch("src.core.semantic_matcher.SentenceTransformer") as mock_cls:
+    with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_cls:
         model = Mock()
         model.get_sentence_embedding_dimension.return_value = 768
         model.encode.side_effect = lambda x, *a, **k: (

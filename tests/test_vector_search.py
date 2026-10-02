@@ -1,13 +1,13 @@
 # tests/test_vector_search.py
 import pytest
-from sentence_transformers import SentenceTransformer
 from src.core.db_models import Embedding
+from src.core.embedder import OnnxEmbedder
 from src.core.vector_search import PgVectorSearch
 
 
 @pytest.mark.asyncio
 async def test_semantically_closest_ranks_first(db):
-    model = SentenceTransformer("thenlper/gte-base")  # matches the default/column dim (768)
+    model = OnnxEmbedder("thenlper/gte-base")  # matches the default/column dim (768)
     async with db.session() as session:
         for key, descr in [("auth", "user authentication and login"),
                            ("billing", "invoice and payment processing")]:
