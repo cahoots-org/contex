@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 import numpy as np
-from sqlalchemy import text
+from sqlalchemy import select, text
 from unittest.mock import Mock, AsyncMock, patch
+from src.core.db_models import Embedding
 from src.core.semantic_matcher import SemanticDataMatcher
 from src.core.models import DataPublishEvent
 
@@ -258,6 +259,23 @@ class TestSemanticMatcherContentHashDedup:
         await matcher.register_data("projd", "config", {"version": "1.0"})
 
         assert matcher.model.encode.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_embeds_all_items_in_one_encode(self, matcher):
+        await matcher.register_data("projd", "kept", {"v": 1})
+        matcher.model.encode.reset_mock()
+
+        await matcher.register_data_batch("projd", [
+            ("kept", {"v": 1}, None), ("a", {"v": 2}, None), ("b", {"v": 3}, None),
+        ])
+
+        assert matcher.model.encode.call_count == 1
+        assert len(matcher.model.encode.call_args.args[0]) == 2
+        async with matcher.db.session() as session:
+            keys = set((await session.execute(
+                select(Embedding.data_key).where(Embedding.project_id == "projd")
+            )).scalars())
+        assert keys == {"kept", "a", "b"}
 
     @pytest.mark.asyncio
     async def test_changed_reingest_re_embeds(self, matcher):

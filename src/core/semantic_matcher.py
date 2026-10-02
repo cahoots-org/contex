@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from sqlalchemy import delete, func, select, text
@@ -167,8 +167,39 @@ class SemanticDataMatcher:
             data: The actual data in any format (dict, YAML string, text, etc.)
             format_hint: Optional format hint ("json", "yaml", "markdown", "text")
         """
-        # Parse data into nodes. data_key carries the file extension the code
-        # parser needs to pick a grammar.
+        await self.register_data_batch(project_id, [(data_key, data, format_hint)])
+
+    async def register_data_batch(
+        self,
+        project_id: str,
+        items: List[Tuple[str, Any, Optional[str]]],
+    ):
+        """Register many ``(data_key, data, format_hint)`` items with one encode call.
+
+        Encoding is the expensive step and pads each batch to its longest text,
+        so pooling every item's changed nodes into one call lets length-sorted
+        batching work across the whole set rather than one file at a time.
+        """
+        plans = [
+            plan for data_key, data, format_hint in items
+            if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
+        ]
+        texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
+        if not texts:
+            return
+        embeddings = self.model.encode(texts, batch_size=16)
+
+        offset = 0
+        for plan in plans:
+            n = len(plan["changed"])
+            await self._write_registration(project_id, plan, embeddings[offset:offset + n])
+            offset += n
+
+    async def _plan_registration(
+        self, project_id: str, data_key: str, data: Any, format_hint: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Parse one item and work out which of its nodes need (re-)embedding."""
+        # data_key carries the file extension the code parser needs to pick a grammar.
         parse_result = self.node_converter.parse(data, format_hint, data_key=data_key)
 
         if not parse_result.success:
@@ -178,12 +209,12 @@ class SemanticDataMatcher:
                 data_key=data_key,
                 error=parse_result.error,
             )
-            return
+            return None
 
         nodes = parse_result.nodes
         if not nodes:
             logger.warning("No nodes extracted from data", project_id=project_id, data_key=data_key)
-            return
+            return None
 
         logger.debug(
             "Parsed data into nodes",
@@ -193,20 +224,13 @@ class SemanticDataMatcher:
             format=parse_result.format_name,
         )
 
-        # Store original data for context
-        data_original = data if isinstance(data, str) else json.dumps(data)
-
-        # pgvector mode - store in PostgreSQL; pg_search BM25 index is maintained
-        # automatically on insert/update via the embeddings_bm25 index.
         node_keys = [
             f"{data_key}.{node.path}" if node.path else data_key for node in nodes
         ]
         embedding_texts = [_embedding_text(data_key, node) for node in nodes]
         # Content-hash dedup (#223): skip encode + upsert for nodes whose embedded
         # text is unchanged. The hash covers the exact string we encode and index,
-        # so it captures both content and the data_key provenance prefix. Encoding
-        # is the expensive step, so the existing hashes are fetched *before* it and
-        # only changed nodes are embedded.
+        # so it captures both content and the data_key provenance prefix.
         content_hashes = [
             hashlib.sha256(t.encode("utf-8")).hexdigest() for t in embedding_texts
         ]
@@ -231,16 +255,26 @@ class SemanticDataMatcher:
                 data_key=data_key,
                 node_count=len(nodes),
             )
-            return
+            return None
 
-        # Batch-encode only the changed nodes' text in a single call.
-        # The model vectorizes a list far more efficiently than
-        # repeated single-text calls. Output is identical to encoding each node
-        # separately.
-        changed_embeddings = self.model.encode(
-            [embedding_texts[i] for i in changed], batch_size=16
-        )
+        return {
+            "data_key": data_key,
+            "data_original": data if isinstance(data, str) else json.dumps(data),
+            "parse_result": parse_result,
+            "nodes": nodes,
+            "node_keys": node_keys,
+            "texts": embedding_texts,
+            "hashes": content_hashes,
+            "changed": changed,
+        }
 
+    async def _write_registration(self, project_id: str, plan: Dict[str, Any], embeddings) -> None:
+        """Upsert one item's changed nodes and rewrite its symbols."""
+        data_key, parse_result = plan["data_key"], plan["parse_result"]
+        nodes, node_keys, changed = plan["nodes"], plan["node_keys"], plan["changed"]
+
+        # pg_search BM25 index is maintained automatically on insert/update via
+        # the embeddings_bm25 index.
         async with self.db.session() as session:
             existing_rows = await session.execute(
                 select(Embedding)
@@ -249,9 +283,9 @@ class SemanticDataMatcher:
             )
             existing_by_key = {row.node_key: row for row in existing_rows.scalars()}
 
-            for i, embedding in zip(changed, changed_embeddings):
+            for i, embedding in zip(changed, embeddings):
                 node, node_key = nodes[i], node_keys[i]
-                embedding_text, content_hash = embedding_texts[i], content_hashes[i]
+                embedding_text, content_hash = plan["texts"][i], plan["hashes"][i]
                 node_data = node.content if isinstance(node.content, dict) else {"value": node.content}
 
                 existing = existing_by_key.get(node_key)
@@ -261,7 +295,7 @@ class SemanticDataMatcher:
                     existing.node_type = node.node_type.value
                     existing.description = embedding_text
                     existing.data = node_data
-                    existing.data_original = data_original
+                    existing.data_original = plan["data_original"]
                     existing.data_format = parse_result.format_name
                     existing.content_hash = content_hash
                     existing.embedding = embedding.tolist()
@@ -275,7 +309,7 @@ class SemanticDataMatcher:
                         node_type=node.node_type.value,
                         description=embedding_text,
                         data=node_data,
-                        data_original=data_original,
+                        data_original=plan["data_original"],
                         data_format=parse_result.format_name,
                         content_hash=content_hash,
                         embedding=embedding.tolist(),

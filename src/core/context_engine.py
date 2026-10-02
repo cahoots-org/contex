@@ -239,20 +239,59 @@ class ContextEngine:
         Returns:
             Event sequence number
         """
-        project_id = event.project_id
-        data_key = event.data_key
-        data = _strip_nul_bytes(event.data)
+        return (await self.publish_data_batch(
+            [event], source=source, actor=actor, tenant_id=tenant_id,
+        ))[0]
+
+    async def publish_data_batch(
+        self,
+        events: List[DataPublishEvent],
+        *,
+        source: str = "api",
+        actor: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> List[str]:
+        """Publish many events for one project, embedding them in a single pass.
+
+        Returns the event sequence numbers in input order.
+        """
+        if not events:
+            return []
+        project_id = events[0].project_id
+        if any(e.project_id != project_id for e in events):
+            raise ValueError("publish_data_batch events must share one project_id")
+
         # Connectors (GitHub/S3) emit the generic "text"; infer "code" from the
         # key extension here so code reaches CodeNodeParser instead of the
         # plain-text splitter. Explicit non-generic formats pass through.
-        format_hint = resolve_format(event.data_format, data_key)
-
-        logger.debug("Publishing data: %s:%s", project_id, data_key)
+        prepared = [
+            (e, _strip_nul_bytes(e.data), resolve_format(e.data_format, e.data_key))
+            for e in events
+        ]
 
         # 1. Register data with semantic matcher (normalizes and stores)
-        await self.semantic_matcher.register_data(
-            project_id, data_key, data, format_hint
+        await self.semantic_matcher.register_data_batch(
+            project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared]
         )
+
+        return [
+            await self._record_publish(e, data, fmt, source=source, actor=actor, tenant_id=tenant_id)
+            for e, data, fmt in prepared
+        ]
+
+    async def _record_publish(
+        self,
+        event: DataPublishEvent,
+        data: Any,
+        format_hint: str,
+        *,
+        source: str,
+        actor: Optional[Dict[str, Any]],
+        tenant_id: Optional[str],
+    ) -> str:
+        """Append one published item to the event store and reconcile subscriptions."""
+        project_id, data_key = event.project_id, event.data_key
+        logger.debug("Publishing data: %s:%s", project_id, data_key)
 
         # 2. Append to event store
         # For binary formats (PDF, DOCX), store metadata instead of raw bytes

@@ -195,15 +195,15 @@ def build_mcp_server(engine, db_accessor=None):
             raise ValueError(str(exc))
         e = _get_engine()
         await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
-        published = 0
-        for item in items:
-            await e.publish_data(DataPublishEvent(
+        sequences = await e.publish_data_batch([
+            DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
                 data=item["data"],
                 data_format=item.get("data_format", "json"),
-            ), source='mcp')
-            published += 1
-        return json.dumps({"published": published})
+            )
+            for item in items
+        ], source='mcp')
+        return json.dumps({"published": len(sequences)})
 
     return server, bus

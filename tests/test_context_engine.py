@@ -12,7 +12,7 @@ from src.core.models import DataPublishEvent
 async def test_publish_data_forwards_provenance_to_event_store():
     """Test that publish_data forwards source/actor/tenant_id to append_event"""
     engine = ContextEngine.__new__(ContextEngine)  # bypass __init__
-    engine.semantic_matcher = MagicMock(register_data=AsyncMock())
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
     engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
 
