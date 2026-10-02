@@ -1,7 +1,7 @@
 # Multi-stage build for Context Engine Service.
 # Build for the host architecture (no forced --platform), so it runs natively on
 # arm64 (Apple Silicon) instead of under x86 emulation — a large speedup for the
-# torch/sentence-transformers embedding path.
+# ONNX embedding path.
 FROM python:3.12-slim AS builder
 
 # Harden APT against "Hash Sum mismatch" from proxies/pipelining
@@ -22,11 +22,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
-# CPU-only torch. PyTorch's CPU wheel index serves CPU-only wheels for both amd64
-# and aarch64, so pin it unconditionally — the default PyPI wheel now resolves to
-# the CUDA build on arm64 too (Jetson/GH200), dragging in ~2.5GB of unused nvidia-*.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt && \
     # Remove unnecessary files to reduce image size
     find /opt/venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
@@ -79,13 +75,11 @@ COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
 # Create model cache directory
-RUN mkdir -p /home/appuser/.cache/torch /home/appuser/.cache/huggingface && \
+RUN mkdir -p /home/appuser/.cache/huggingface && \
     chown -R appuser:appuser /app /home/appuser
 
 # Set environment variables for model cache
-ENV TORCH_HOME=/home/appuser/.cache/torch \
-    HF_HOME=/home/appuser/.cache/huggingface \
-    SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/torch/sentence_transformers
+ENV HF_HOME=/home/appuser/.cache/huggingface
 
 # Switch to non-root user
 USER appuser
