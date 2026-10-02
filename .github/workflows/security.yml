@@ -161,7 +161,9 @@ jobs:
         run: pip install pip-audit
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       - name: Run pip-audit
         run: |
