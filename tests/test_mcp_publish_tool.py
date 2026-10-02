@@ -1,7 +1,44 @@
 import json
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
+
+
+async def _publish_once(server, key):
+    return await server.call_tool("contex_publish", {
+        "project_id": "p", "data_key": key, "data": {"purpose": "x"},
+    })
+
+
+@pytest.mark.asyncio
+async def test_direct_publish_throttled_at_configured_limit(db, redis, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_PUBLISH", "2")
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    await _publish_once(server, "a")
+    await _publish_once(server, "b")
+    # Over the wire this surfaces as is_error with the message; the in-process
+    # call_tool re-raises the ToolError carrying the retry hint the publisher reads.
+    with pytest.raises(ToolError, match="rate_limit_exceeded retry_after="):
+        await _publish_once(server, "c")
+
+
+@pytest.mark.asyncio
+async def test_bulk_ingest_exempt_by_default(db, redis, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_PUBLISH", "1")  # direct is tight...
+    monkeypatch.delenv("RATE_LIMIT_INGEST", raising=False)  # ...but ingest is exempt
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    for _ in range(5):
+        res = await server.call_tool("contex_publish_batch", {
+            "project_id": "p", "items": [{"data_key": "k", "data": {"purpose": "x"}}],
+        })
+        assert not res.is_error
 
 
 @pytest.mark.asyncio
