@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 from sqlalchemy import delete, func, select, text
 
 from src.core.database import DatabaseManager
-from src.core.db_models import Embedding
+from src.core.db_models import Embedding, Symbol
 from src.core.hybrid_search_service import HybridSearchService
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
@@ -166,8 +166,9 @@ class SemanticDataMatcher:
             data: The actual data in any format (dict, YAML string, text, etc.)
             format_hint: Optional format hint ("json", "yaml", "markdown", "text")
         """
-        # Parse data into nodes
-        parse_result = self.node_converter.parse(data, format_hint)
+        # Parse data into nodes. data_key carries the file extension the code
+        # parser needs to pick a grammar.
+        parse_result = self.node_converter.parse(data, format_hint, data_key=data_key)
 
         if not parse_result.success:
             logger.warning(
@@ -244,6 +245,26 @@ class SemanticDataMatcher:
                         embedding=embedding.tolist(),
                     )
                     session.add(new_embedding)
+
+            # Rewrite this source's symbols (defs/refs the parser recorded per
+            # node) in the same transaction as the embeddings. Delete-by-source
+            # first so renamed/removed symbols don't linger across re-ingests.
+            # Only code nodes carry defs/refs, so this is a no-op for other
+            # formats (no rows to delete, none to insert).
+            if parse_result.format_name == "code":
+                await session.execute(
+                    delete(Symbol)
+                    .where(Symbol.project_id == project_id)
+                    .where(Symbol.data_key == data_key)
+                )
+                session.add_all([
+                    Symbol(project_id=project_id, data_key=data_key, node_key=node_key,
+                           name=name, role=role)
+                    for node, node_key in zip(nodes, node_keys)
+                    for role, names in (("def", node.metadata.get("defs", [])),
+                                        ("ref", node.metadata.get("refs", [])))
+                    for name in names
+                ])
 
         logger.info(
             "Registered data",

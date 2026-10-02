@@ -30,6 +30,12 @@ numpy==2.5.3
 pymupdf==1.28.2
 python-docx==1.2.0
 
+# Code parsing (tree-sitter). language-pack ships prebuilt grammars; we walk the
+# AST directly (it ships no query files). tree-sitter is pinned explicitly because
+# the pack's C bindings are ABI-coupled to this major version.
+tree-sitter==0.25.2
+tree-sitter-language-pack==0.13.0
+
 # Utilities
 python-dotenv==1.2.3
 tiktoken==0.14.0
