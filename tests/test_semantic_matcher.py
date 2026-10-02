@@ -32,7 +32,7 @@ class TestSemanticDataMatcher:
 
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10
             )
@@ -227,6 +227,48 @@ class TestSemanticDataMatcher:
         assert config_count == 1
 
 
+class TestSemanticMatcherContentHashDedup:
+    """Unchanged content must not be re-embedded on re-ingest (#223)."""
+
+    @pytest_asyncio.fixture
+    async def matcher(self, db):
+        # Deterministic encode so content is the only thing that varies; the mock
+        # lets us count how many nodes were actually embedded.
+        mock_model = Mock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.encode.side_effect = lambda x, *a, **k: (
+            np.ones(768, dtype=np.float32)
+            if isinstance(x, str)
+            else np.ones((len(x), 768), dtype=np.float32)
+        )
+        with patch(
+            "src.core.semantic_matcher._load_model", return_value=mock_model
+        ):
+            matcher = SemanticDataMatcher(
+                db=db, model_name="thenlper/gte-base", max_matches=10
+            )
+            await matcher.initialize_index()
+            return matcher
+
+    @pytest.mark.asyncio
+    async def test_unchanged_reingest_skips_encode(self, matcher):
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        matcher.model.encode.reset_mock()
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        assert matcher.model.encode.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_changed_reingest_re_embeds(self, matcher):
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        matcher.model.encode.reset_mock()
+        await matcher.register_data("projd", "config", {"version": "2.0"})
+
+        assert matcher.model.encode.call_count >= 1
+
+
 class TestSemanticMatcherConcurrency:
     """Concurrent requests must not clobber each other's per-request parameters.
 
@@ -261,7 +303,7 @@ class TestSemanticMatcherConcurrency:
         ):
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10,
             )
@@ -321,7 +363,7 @@ class TestSemanticMatcherTimeWindow:
         ):
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10,
             )
@@ -460,7 +502,7 @@ class TestSemanticMatcherWithRealEmbeddings:
         try:
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.0,  # return all so relative ranking is testable
                 max_matches=10
             )
@@ -512,7 +554,7 @@ class TestSemanticMatcherHybridSearch:
         try:
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.3,
                 max_matches=10,
             )

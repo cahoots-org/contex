@@ -1,3 +1,7 @@
 # Runtime deps shared by every connector (the connectors/base framework).
 mcp>=2,<3
 pyyaml>=6,<7
+
+# setuptools — unpinned build dep from the base image; floored to force an upgrade
+# over the vulnerable base version (PYSEC-2025-49, PYSEC-2026-3447).
+setuptools>=83.0.0
