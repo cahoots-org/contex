@@ -1,5 +1,6 @@
 """Semantic data matching using embeddings for agent context discovery"""
 
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -197,60 +198,95 @@ class SemanticDataMatcher:
 
         # pgvector mode - store in PostgreSQL; pg_search BM25 index is maintained
         # automatically on insert/update via the embeddings_bm25 index.
-        # Batch-encode every node's text in a single call. sentence-transformers
-        # vectorizes a list far more efficiently than repeated single-text calls,
-        # a large win for multi-node items (e.g. an issue or page with many
-        # comments). Output is identical to encoding each node separately.
         node_keys = [
             f"{data_key}.{node.path}" if node.path else data_key for node in nodes
         ]
         embedding_texts = [_embedding_text(data_key, node) for node in nodes]
-        embeddings = self.model.encode(embedding_texts, batch_size=64)
+        # Content-hash dedup (#223): skip encode + upsert for nodes whose embedded
+        # text is unchanged. The hash covers the exact string we encode and index,
+        # so it captures both content and the data_key provenance prefix. Encoding
+        # is the expensive step, so the existing hashes are fetched *before* it and
+        # only changed nodes are embedded.
+        content_hashes = [
+            hashlib.sha256(t.encode("utf-8")).hexdigest() for t in embedding_texts
+        ]
+        async with self.db.session() as session:
+            prior = await session.execute(
+                select(Embedding.node_key, Embedding.content_hash)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key.in_(node_keys))
+            )
+            prior_hashes = dict(prior.all())
+
+        changed = [
+            i
+            for i, (node_key, content_hash) in enumerate(zip(node_keys, content_hashes))
+            if prior_hashes.get(node_key) != content_hash
+        ]
+
+        if not changed:
+            logger.info(
+                "Registered data (unchanged, skipped re-embed)",
+                project_id=project_id,
+                data_key=data_key,
+                node_count=len(nodes),
+            )
+            return
+
+        # Batch-encode only the changed nodes' text in a single call.
+        # sentence-transformers vectorizes a list far more efficiently than
+        # repeated single-text calls. Output is identical to encoding each node
+        # separately.
+        changed_embeddings = self.model.encode(
+            [embedding_texts[i] for i in changed], batch_size=64
+        )
 
         async with self.db.session() as session:
-            for node, node_key, embedding_text, embedding in zip(
-                nodes, node_keys, embedding_texts, embeddings
-            ):
-                # Check if embedding exists
-                result = await session.execute(
-                    select(Embedding)
-                    .where(Embedding.project_id == project_id)
-                    .where(Embedding.node_key == node_key)
-                )
-                existing = result.scalar_one_or_none()
+            existing_rows = await session.execute(
+                select(Embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key.in_([node_keys[i] for i in changed]))
+            )
+            existing_by_key = {row.node_key: row for row in existing_rows.scalars()}
 
+            for i, embedding in zip(changed, changed_embeddings):
+                node, node_key = nodes[i], node_keys[i]
+                embedding_text, content_hash = embedding_texts[i], content_hashes[i]
+                node_data = node.content if isinstance(node.content, dict) else {"value": node.content}
+
+                existing = existing_by_key.get(node_key)
                 if existing:
-                    # Update existing embedding
                     existing.data_key = data_key
                     existing.node_path = node.path
                     existing.node_type = node.node_type.value
                     existing.description = embedding_text
-                    existing.data = node.content if isinstance(node.content, dict) else {"value": node.content}
+                    existing.data = node_data
                     existing.data_original = data_original
                     existing.data_format = parse_result.format_name
+                    existing.content_hash = content_hash
                     existing.embedding = embedding.tolist()
                     existing.updated_at = datetime.utcnow()
                 else:
-                    # Create new embedding
-                    new_embedding = Embedding(
+                    session.add(Embedding(
                         project_id=project_id,
                         data_key=data_key,
                         node_key=node_key,
                         node_path=node.path,
                         node_type=node.node_type.value,
                         description=embedding_text,
-                        data=node.content if isinstance(node.content, dict) else {"value": node.content},
+                        data=node_data,
                         data_original=data_original,
                         data_format=parse_result.format_name,
+                        content_hash=content_hash,
                         embedding=embedding.tolist(),
-                    )
-                    session.add(new_embedding)
+                    ))
 
             # Rewrite this source's symbols (defs/refs the parser recorded per
             # node) in the same transaction as the embeddings. Delete-by-source
             # first so renamed/removed symbols don't linger across re-ingests.
             # Only code nodes carry defs/refs, so this is a no-op for other
-            # formats (no rows to delete, none to insert).
+            # formats (no rows to delete, none to insert). Reached only when a
+            # node changed, so unchanged files don't churn identical symbol rows.
             if parse_result.format_name == "code":
                 await session.execute(
                     delete(Symbol)
@@ -271,6 +307,7 @@ class SemanticDataMatcher:
             project_id=project_id,
             data_key=data_key,
             node_count=len(nodes),
+            embedded_count=len(changed),
         )
 
     async def match_agent_needs(
