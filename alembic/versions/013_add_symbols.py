@@ -1,7 +1,7 @@
 """Add symbols table for cross-file code linking
 
-Revision ID: 012
-Revises: 011
+Revision ID: 013
+Revises: 012
 Create Date: 2026-10-02 00:00:00.000000
 
 """
@@ -11,8 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = '012'
-down_revision: Union[str, None] = '011'
+revision: str = '013'
+down_revision: Union[str, None] = '012'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

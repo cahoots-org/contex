@@ -32,7 +32,7 @@ class TestSemanticDataMatcher:
 
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10
             )
@@ -261,7 +261,7 @@ class TestSemanticMatcherConcurrency:
         ):
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10,
             )
@@ -321,7 +321,7 @@ class TestSemanticMatcherTimeWindow:
         ):
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.5,
                 max_matches=10,
             )
@@ -460,7 +460,7 @@ class TestSemanticMatcherWithRealEmbeddings:
         try:
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.0,  # return all so relative ranking is testable
                 max_matches=10
             )
@@ -512,7 +512,7 @@ class TestSemanticMatcherHybridSearch:
         try:
             matcher = SemanticDataMatcher(
                 db=db,
-                model_name="all-MiniLM-L6-v2",
+                model_name="thenlper/gte-base",
                 similarity_threshold=0.3,
                 max_matches=10,
             )

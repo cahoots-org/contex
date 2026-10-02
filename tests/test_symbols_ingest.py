@@ -39,11 +39,11 @@ def only_this():
 async def matcher(db):
     with patch("src.core.semantic_matcher.SentenceTransformer") as mock_cls:
         model = Mock()
-        model.get_sentence_embedding_dimension.return_value = 384
+        model.get_sentence_embedding_dimension.return_value = 768
         model.encode.side_effect = lambda x, *a, **k: (
-            np.array([0.1] * 384, dtype=np.float32)
+            np.array([0.1] * 768, dtype=np.float32)
             if isinstance(x, str)
-            else np.array([[0.1] * 384] * len(x), dtype=np.float32)
+            else np.array([[0.1] * 768] * len(x), dtype=np.float32)
         )
         mock_cls.return_value = model
         yield SemanticDataMatcher(db=db)
