@@ -10,6 +10,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus
 
 from src.core.authz import auth_enabled
@@ -17,6 +18,7 @@ from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
 from src.core.limits import check_batch_size
 from src.core.models import DataPublishEvent
+from src.core.rate_limiter import RateLimitConfig, RateLimiter, _env_int
 from src.core.rbac import Permission
 from src.core.version import VERSION
 
@@ -31,6 +33,28 @@ def _parse_since(since: Optional[str]) -> Optional[datetime]:
         raise ValueError(
             f"Invalid 'since' value {since!r}; expected ISO-8601 (e.g. 2025-01-01T00:00:00Z)"
         )
+
+
+async def _throttle(engine, bucket: str, limit_env: str, default_limit: int) -> None:
+    """Per-principal rate limit for a write tool.
+
+    MCP multiplexes every tool over one HTTP path, so the transport middleware
+    can't throttle one tool and not another — the per-tool decision lives here.
+    ``limit_env`` <= 0 disables throttling (the bulk-ingest tier is exempt by
+    default); set it to impose a ceiling. Raises ``ToolError`` so the backoff
+    hint survives to the client (a plain exception would be redacted).
+    """
+    limit = _env_int(limit_env, default_limit)
+    if limit <= 0:
+        return
+    tok = get_access_token()
+    principal = tok.client_id if tok else "anonymous"
+    window = RateLimitConfig.from_env().window
+    allowed, info = await RateLimiter(engine.db).check_rate_limit(
+        f"{principal}:{bucket}", limit, window
+    )
+    if not allowed:
+        raise ToolError(f"rate_limit_exceeded retry_after={info['retry_after']}")
 
 
 def _enforce(permission, project_id=None):
@@ -154,6 +178,7 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json") -> str:
         _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         e = _get_engine()
+        await _throttle(e, "publish", "RATE_LIMIT_PUBLISH", 60)
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
         ), source='mcp')
@@ -169,6 +194,7 @@ def build_mcp_server(engine, db_accessor=None):
         except ValueError as exc:
             raise ValueError(str(exc))
         e = _get_engine()
+        await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
         published = 0
         for item in items:
             await e.publish_data(DataPublishEvent(

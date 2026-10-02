@@ -174,14 +174,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.config = RateLimitConfig.from_env()
 
     async def dispatch(self, request: Request, call_next):
-        # Liveness probes are never throttled.
-        if request.url.path in self.EXEMPT_PATHS:
+        path = request.url.path
+        # Liveness probes are never throttled. MCP multiplexes every tool over
+        # /mcp, so a blanket path limit can't tell a bulk ingest from a direct
+        # publish or a query — the per-tool throttle lives in the MCP handlers.
+        if path in self.EXEMPT_PATHS or path == "/mcp" or path.startswith("/mcp/"):
             return await call_next(request)
 
         db: DatabaseManager = request.app.state.db
         limiter = RateLimiter(db)
 
-        path = request.url.path
         limit = self.config.default
 
         # Prefer per-API-key limiting; fall back to per-client-IP when auth is off.
