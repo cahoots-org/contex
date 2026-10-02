@@ -1156,6 +1156,14 @@ class CodeNodeParser(BaseNodeParser):
 
         visit(root, module_refs, [])
 
+        # Same-named defs in one scope (property getter/setter, overloads) would
+        # share a path, and node_key must be unique; suffix repeats with #n.
+        seen: dict = {}
+        for r in records:
+            seen[r["path"]] = seen.get(r["path"], 0) + 1
+            if seen[r["path"]] > 1:
+                r["path"] = f'{r["path"]}#{seen[r["path"]]}'
+
         summary = "defines: " + ", ".join(r["path"] for r in records)
         if module_refs:
             summary += "\nimports: " + ", ".join(module_refs)
