@@ -46,6 +46,10 @@ toml==0.10.2
 # JWT — transitive dep of mcp[crypto] (auth) and redis[jwt]; pinned for CVE-2026-101918
 PyJWT==2.15.0
 
+# setuptools — unpinned build dep from the base image; floored to force an upgrade
+# over the vulnerable base version (PYSEC-2025-49, PYSEC-2026-3447).
+setuptools>=83.0.0
+
 # Error tracking
 sentry-sdk[fastapi]==2.69.1
 
