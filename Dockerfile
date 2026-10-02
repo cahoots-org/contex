@@ -22,16 +22,11 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
-# CPU-only torch. On amd64, use PyTorch's CPU wheel index to avoid pulling CUDA;
-# on arm64 there is no CUDA build, so the default PyPI aarch64 wheel is CPU-only.
-# TARGETARCH is provided by BuildKit (host arch for a native build).
-ARG TARGETARCH
+# CPU-only torch. PyTorch's CPU wheel index serves CPU-only wheels for both amd64
+# and aarch64, so pin it unconditionally — the default PyPI wheel now resolves to
+# the CUDA build on arm64 too (Jetson/GH200), dragging in ~2.5GB of unused nvidia-*.
 RUN pip install --no-cache-dir --upgrade pip && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
-    else \
-        pip install --no-cache-dir torch; \
-    fi && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt && \
     # Remove unnecessary files to reduce image size
     find /opt/venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
