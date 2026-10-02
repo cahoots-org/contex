@@ -156,9 +156,9 @@ class Event(TenantScopedMixin, Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    data_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    data_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source: Mapped[str] = mapped_column(
         String(50), nullable=False, server_default="api"
@@ -209,9 +209,9 @@ class Embedding(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    data_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    node_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    node_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    data_key: Mapped[str] = mapped_column(Text, nullable=False)
+    node_key: Mapped[str] = mapped_column(Text, nullable=False)
+    node_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     node_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -259,8 +259,8 @@ class Symbol(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    data_key: Mapped[str] = mapped_column(String(255), nullable=False)
-    node_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    data_key: Mapped[str] = mapped_column(Text, nullable=False)
+    node_key: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(10), nullable=False)  # "def" | "ref"
 

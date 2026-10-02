@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from src.core.db_models import Symbol
+from src.core.db_models import Embedding, Symbol
 from src.core.semantic_matcher import SemanticDataMatcher
 
 PY = '''\
@@ -86,3 +86,21 @@ async def test_reingest_replaces_symbols(matcher, db):
 async def test_non_code_writes_no_symbols(matcher, db):
     await matcher.register_data("p", "config", {"backend": "FastAPI"}, "json")
     assert await _symbols(db, "p") == set()
+
+
+@pytest.mark.asyncio
+async def test_long_keys_store(matcher, db):
+    # Deep paths under long file paths overflowed varchar(255) node/data keys.
+    long_dir = "/".join(["snapshots"] * 30)
+    await matcher.register_data("p_long", f"repo:{long_dir}/app.py", PY_V2, "code")
+    await matcher.register_data(
+        "p_long", f"repo:{long_dir}/stack.json",
+        {"Resources": {"Sg" * 40: {"Properties": {"Egress": [{"Cidr": "0.0.0.0/0"}]}}}},
+        "json",
+    )
+    async with db.session() as session:
+        keys = (await session.execute(
+            select(Embedding.node_key).where(Embedding.project_id == "p_long")
+        )).scalars().all()
+    assert max(len(k) for k in keys) > 255
+    assert ("only_this", "def") in await _symbols(db, "p_long")
