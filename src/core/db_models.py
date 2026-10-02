@@ -217,7 +217,7 @@ class Embedding(Base):
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     data_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    embedding = mapped_column(Vector(384), nullable=False)  # 384-dim for all-MiniLM-L6-v2
+    embedding = mapped_column(Vector(768), nullable=False)  # 768-dim for thenlper/gte-base
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

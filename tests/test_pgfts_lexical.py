@@ -9,11 +9,11 @@ async def _seed(db):
             Embedding(project_id="p1", data_key="cfg", node_key="timeout",
                       description="request timeout setting",
                       data={}, data_original="SERVICE_TIMEOUT_MS=30000",
-                      data_format="text", embedding=[0.0] * 384),
+                      data_format="text", embedding=[0.0] * 768),
             Embedding(project_id="p1", data_key="cfg", node_key="retry",
                       description="retry policy",
                       data={}, data_original="SERVICE_RETRY_MS=1000",
-                      data_format="text", embedding=[0.0] * 384),
+                      data_format="text", embedding=[0.0] * 768),
         ])
         await session.commit()
 
@@ -58,11 +58,11 @@ async def test_more_query_terms_ranks_higher(db):
             Embedding(project_id="p1", data_key="cfg", node_key="both",
                       description="database timeout and retry configuration",
                       data={}, data_original="", data_format="text",
-                      embedding=[0.0] * 384),
+                      embedding=[0.0] * 768),
             Embedding(project_id="p1", data_key="cfg", node_key="one",
                       description="database timeout configuration only",
                       data={}, data_original="", data_format="text",
-                      embedding=[0.0] * 384),
+                      embedding=[0.0] * 768),
         ])
         await session.commit()
     results = await PgFtsLexical(db).search("p1", "timeout retry", top_k=10)

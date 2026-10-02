@@ -95,6 +95,14 @@ ENV TORCH_HOME=/home/appuser/.cache/torch \
 # Switch to non-root user
 USER appuser
 
+# Bake the embedding model into the image. The model cache is ephemeral (no
+# volume), so without this every boot re-downloads it from the HuggingFace Hub,
+# slowing starts and making startup depend on Hub availability. Build-arg tracks
+# the runtime EMBED_MODEL default; pass --build-arg EMBED_MODEL=... to match if
+# you override it at runtime.
+ARG EMBED_MODEL=thenlper/gte-base
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('$EMBED_MODEL')"
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8001/health || curl -f -g http://[::1]:8001/health || exit 1

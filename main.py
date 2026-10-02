@@ -36,7 +36,7 @@ REDIS_MODE = os.getenv("REDIS_MODE", "standalone")
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
 MAX_MATCHES = int(os.getenv("MAX_MATCHES", "10"))
 MAX_CONTEXT_SIZE = int(os.getenv("MAX_CONTEXT_SIZE", "51200"))  # ~40% of 128k tokens
-EMBED_MODEL = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "thenlper/gte-base")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_JSON = os.getenv("LOG_JSON", "true").lower() == "true"
 
