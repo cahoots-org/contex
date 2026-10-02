@@ -91,6 +91,23 @@ async def test_create_persists_linked_bundle(ingest, db, redis):
 
 
 @pytest.mark.asyncio
+async def test_links_resolve_when_def_is_also_matched(ingest, db, redis):
+    # Regression: a referrer must still link to a def even when that def node is
+    # itself in the matched bundle (both get_user caller and helper are matched).
+    await ingest.register_data("p", "repo:a.py", A_PY, "code")   # def helper
+    await ingest.register_data("p", "repo:b.py", B_PY, "code")   # caller -> helper
+
+    svc = SubscriptionService(db, _StubMatcher({}), redis)
+    bundle = {"need": [
+        {"data_key": "repo:b.py.caller", "similarity": 1.0, "data": {}, "description": "d"},
+        {"data_key": "repo:a.py.helper", "similarity": 0.9, "data": {}, "description": "d"},
+    ]}
+    linked = await svc._link_bundle("p", bundle)
+    caller = next(m for m in linked["need"] if m["data_key"] == "repo:b.py.caller")
+    assert caller["links"][0]["data_key"] == "repo:a.py.helper"
+
+
+@pytest.mark.asyncio
 async def test_no_refs_leaves_bundle_untouched(ingest, db, redis):
     await ingest.register_data("p", "repo:a.py", A_PY, "code")
     svc = SubscriptionService(db, _StubMatcher({}), redis)

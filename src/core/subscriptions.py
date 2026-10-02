@@ -161,9 +161,10 @@ class SubscriptionService:
             for name, node_key in def_rows:
                 defs_by_name.setdefault(name, set()).add(node_key)
 
-            neighbor_keys = {
-                nk for nks in defs_by_name.values() for nk in nks
-            } - matched_keys
+            # All defining nodes are candidate neighbors — including ones that are
+            # themselves matched (a matched handler should still link to a matched
+            # function it calls). Self-links are excluded per-entry below.
+            neighbor_keys = {nk for nks in defs_by_name.values() for nk in nks}
             if not neighbor_keys:
                 return bundle
             emb_by_key = {
