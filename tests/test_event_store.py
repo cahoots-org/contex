@@ -347,3 +347,13 @@ async def test_get_events_for_key_not_truncated_beyond_10k(db):
 
     assert [e["sequence"] for e in newest] == ["10005", "10004", "10003"]
     assert [e["data"]["k"] for e in newest] == [10005, 10004, 10003]
+
+
+@pytest.mark.asyncio
+async def test_append_event_with_long_data_key(db):
+    data_key = "repo:" + "/".join(["snapshots"] * 30) + "/stack.json"
+    sequence = await EventStore(db).append_event(
+        project_id="p_long", event_type=f"{data_key}_updated", data={data_key: {}},
+        data_key=data_key,
+    )
+    assert sequence is not None
