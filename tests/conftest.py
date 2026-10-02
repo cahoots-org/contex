@@ -23,6 +23,8 @@ os.environ.setdefault(
 )
 
 from src.core.database import DatabaseManager
+from src.core.embedder import OnnxEmbedder
+from src.core.semantic_matcher import _MODEL_CACHE
 from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
 
 
@@ -58,6 +60,20 @@ class TestDatabaseManager(DatabaseManager):
         )
 
         self._is_connected = True
+
+
+@pytest.fixture(autouse=True)
+def _evict_mock_models():
+    """Drop mocked embedders from the process-wide model cache after each test.
+
+    Fixtures that patch OnnxEmbedder still go through _load_model, which caches
+    the mock under the real model name; real-embedding tests then rank random
+    vectors.
+    """
+    yield
+    for name, model in list(_MODEL_CACHE.items()):
+        if not isinstance(model, OnnxEmbedder):
+            del _MODEL_CACHE[name]
 
 
 @pytest.fixture(scope="session", autouse=True)
