@@ -217,6 +217,8 @@ class Embedding(Base):
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     data_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     data_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # sha256 hex of the embedded text; lets ingest skip re-embedding unchanged nodes (#223).
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     embedding = mapped_column(Vector(768), nullable=False)  # 768-dim for thenlper/gte-base
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
