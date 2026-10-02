@@ -7,11 +7,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from sqlalchemy import delete, func, select, text
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
+from src.core.embedder import OnnxEmbedder
 from src.core.hybrid_search_service import HybridSearchService
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
@@ -21,20 +21,20 @@ from src.core.vector_search import PgVectorSearch
 
 logger = get_logger(__name__)
 
-_MODEL_CACHE: dict[str, SentenceTransformer] = {}
+_MODEL_CACHE: dict[str, OnnxEmbedder] = {}
 
 
-def _load_model(model_name: str) -> SentenceTransformer:
-    """Load a SentenceTransformer, cached per process by name.
+def _load_model(model_name: str) -> OnnxEmbedder:
+    """Load an embedding model, cached per process by name.
 
     The model is stateless for inference, so one instance is shared across all
-    matchers instead of re-loading ~80MB (and re-checking the HuggingFace Hub) on
+    matchers instead of re-loading the model (and re-checking the HuggingFace Hub) on
     every ContextEngine construction.
     """
     model = _MODEL_CACHE.get(model_name)
     if model is None:
         logger.info("Loading embedding model", model_name=model_name)
-        model = SentenceTransformer(model_name)
+        model = OnnxEmbedder(model_name)
         _MODEL_CACHE[model_name] = model
     return model
 
@@ -77,7 +77,7 @@ class SemanticDataMatcher:
 
         Args:
             db: Database manager instance
-            model_name: SentenceTransformer model (~80MB)
+            model_name: HuggingFace model with an ONNX export
             similarity_threshold: Minimum similarity to match (0-1)
             max_matches: Maximum matches to return per need
         """
@@ -234,7 +234,7 @@ class SemanticDataMatcher:
             return
 
         # Batch-encode only the changed nodes' text in a single call.
-        # sentence-transformers vectorizes a list far more efficiently than
+        # The model vectorizes a list far more efficiently than
         # repeated single-text calls. Output is identical to encoding each node
         # separately.
         changed_embeddings = self.model.encode(

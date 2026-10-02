@@ -18,8 +18,8 @@ class TestSemanticDataMatcher:
     @pytest_asyncio.fixture
     async def matcher(self, db):
         """Create a SemanticDataMatcher instance with mocked model"""
-        # Mock SentenceTransformer to avoid loading heavy model
-        with patch("src.core.semantic_matcher.SentenceTransformer") as mock_model_cls:
+        # Mock the embedder to avoid loading heavy model
+        with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
             mock_model = Mock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
             # Simulate batched encode: (n, 768) for a list of texts, (768,) for a single string.
@@ -288,7 +288,7 @@ class TestSemanticMatcherConcurrency:
         match, so a call with ``top_k=k`` must return exactly ``min(k, N)``
         results regardless of what any concurrent call requests.
         """
-        # Patch _load_model (not SentenceTransformer) so the mock never lands in
+        # Patch _load_model (not OnnxEmbedder) so the mock never lands in
         # the process-wide _MODEL_CACHE under the real model name and leak into
         # the real-embedding tests.
         mock_model = Mock()
@@ -348,7 +348,7 @@ class TestSemanticMatcherTimeWindow:
 
     @pytest_asyncio.fixture
     async def matcher(self, db):
-        # Patch _load_model (not SentenceTransformer) so the mock is never stored
+        # Patch _load_model (not OnnxEmbedder) so the mock is never stored
         # in the process-wide _MODEL_CACHE under the real model name, which would
         # otherwise leak into the real-embedding tests.
         mock_model = Mock()
