@@ -68,7 +68,7 @@ class GitHubClient:
     ) -> AsyncIterator[dict]:
         """Yield every item across all pages for a list endpoint."""
         url: str | None = path
-        query = {"per_page": per_page, **params}
+        query: dict[str, Any] | None = {"per_page": per_page, **params}
         while url:
             data, headers = await self._request_with_headers("GET", url, params=query)
             if not isinstance(data, list):
@@ -76,7 +76,9 @@ class GitHubClient:
             for item in data:
                 yield item
             url = _next_link(headers.get("link", ""))
-            query = {}  # link header carries full query string
+            # None, not {}: httpx treats an empty dict as "clear the query string",
+            # which drops page= and re-fetches page 1 forever.
+            query = None
 
     async def _request(self, method: str, url: str, **kwargs) -> Any:
         data, _ = await self._request_with_headers(method, url, **kwargs)

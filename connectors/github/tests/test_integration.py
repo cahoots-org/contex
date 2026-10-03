@@ -200,6 +200,27 @@ async def test_read_files_rerun_produces_same_key(httpx_mock: "HTTPXMock") -> No
 
 
 # ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_paginate_follows_next_link_query(httpx_mock: "HTTPXMock") -> None:
+    page2 = f"{_API}/repos/{_SLUG}/issues?per_page=100&page=2"
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/issues?per_page=100",
+        json=[{"number": 1}],
+        headers={**_json_headers(), "link": f'<{page2}>; rel="next"'},
+    )
+    httpx_mock.add_response(url=page2, json=[{"number": 2}], headers=_no_next_headers())
+
+    async with GitHubClient("tok") as client:
+        items = [item async for item in client.paginate(f"/repos/{_SLUG}/issues")]
+
+    assert [item["number"] for item in items] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
 # Issues
 # ---------------------------------------------------------------------------
 
