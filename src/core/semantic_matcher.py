@@ -41,15 +41,28 @@ def _load_model(model_name: str) -> OnnxEmbedder:
     return model
 
 
-def _embedding_text(data_key: str, node) -> str:
-    """Node text to embed and index, prefixed with its source key.
+_TITLE_FIELDS = ("title", "summary", "name")
 
-    Prepending data_key (e.g. "owner/repo:content/types/page_data.py") gives
-    every chunk its provenance: a query naming the file or path now matches, and
-    lexical search indexes that path per chunk instead of only the bare content.
+
+def _document_title(nodes) -> str:
+    """The root object's title-like field (a ticket summary, a PR or page title)."""
+    root = next((n for n in nodes if n.path == "root"), None)
+    if root is None or not isinstance(root.content, dict):
+        return ""
+    return next(
+        (root.content[f] for f in _TITLE_FIELDS if isinstance(root.content.get(f), str)), ""
+    )
+
+
+def _embedding_text(data_key: str, node, title: str = "") -> str:
+    """Node text to embed and index, prefixed with its source key and document title.
+
+    The prefix gives every chunk its provenance: a query naming the file or path
+    matches it, and a child node (a ticket comment) matches its parent's topic.
     """
+    header = " ".join(part for part in (data_key, title) if part)
     text = node.get_text_content()
-    return f"{data_key}\n{text}" if data_key else text
+    return f"{header}\n{text}" if header else text
 
 
 def collapse_by_document(
@@ -255,10 +268,11 @@ class SemanticDataMatcher:
         node_keys = [
             f"{data_key}.{node.path}" if node.path else data_key for node in nodes
         ]
-        embedding_texts = [_embedding_text(data_key, node) for node in nodes]
+        title = _document_title(nodes)
+        embedding_texts = [_embedding_text(data_key, node, title) for node in nodes]
         # Content-hash dedup (#223): skip encode + upsert for nodes whose embedded
         # text is unchanged. The hash covers the exact string we encode and index,
-        # so it captures both content and the data_key provenance prefix.
+        # so it captures both content and the provenance prefix.
         content_hashes = [
             hashlib.sha256(t.encode("utf-8")).hexdigest() for t in embedding_texts
         ]
