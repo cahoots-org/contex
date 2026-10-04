@@ -101,6 +101,11 @@ class BaseNodeParser(ABC):
 # JSON Parser
 # ============================================================================
 
+def _is_complex(value: Any) -> bool:
+    """True for a nested object or an array of objects."""
+    return isinstance(value, dict) or (isinstance(value, list) and bool(value) and isinstance(value[0], dict))
+
+
 class JSONNodeParser(BaseNodeParser):
     """Parse JSON/dict data into nodes"""
 
@@ -152,33 +157,25 @@ class JSONNodeParser(BaseNodeParser):
         nodes = []
 
         if isinstance(data, dict):
-            # Check if this is a leaf object (no nested dicts/arrays with dicts)
-            has_complex_children = any(
-                isinstance(v, dict) or (isinstance(v, list) and v and isinstance(v[0], dict))
-                for v in data.values()
-            )
-
-            if not has_complex_children:
-                # Leaf object - create single node
+            # Primitive fields (and lists of primitives) stay with this object;
+            # nested objects and arrays of objects become their own nodes.
+            own = {k: v for k, v in data.items() if not _is_complex(v)}
+            # Emitted before children so reconstruct merges them in order. An
+            # empty dict still gets a node so it isn't silently dropped.
+            if own or not data:
                 nodes.append(Node(
                     path=path or "root",
-                    content=data,
+                    content=own,
                     node_type=NodeType.OBJECT,
                     metadata={"format": "json"}
                 ))
-            else:
-                # Has complex children - recurse
-                for key, value in data.items():
-                    child_path = f"{path}.{key}" if path else key
-
-                    if isinstance(value, list) and value and isinstance(value[0], dict):
-                        # Array of objects - extract each
-                        for idx, item in enumerate(value):
-                            nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
-                    elif isinstance(value, dict):
-                        # Nested object - recurse
-                        nodes.extend(self._extract_nodes(value, child_path))
-                    # else: primitive values stay with parent object
+            for key, value in data.items():
+                child_path = f"{path}.{key}" if path else key
+                if isinstance(value, list) and _is_complex(value):
+                    for idx, item in enumerate(value):
+                        nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
+                elif isinstance(value, dict):
+                    nodes.extend(self._extract_nodes(value, child_path))
 
         elif isinstance(data, list):
             # Top-level array
