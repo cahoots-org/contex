@@ -137,6 +137,39 @@ class TestSemanticDataMatcher:
         assert len(results[0]["related"]) == 2
 
     @pytest.mark.asyncio
+    async def test_matched_child_carries_its_document_root(self, matcher):
+        """A comment match comes back with its ticket's own fields."""
+        await matcher.register_data(
+            "proj1", "jira:DEV-1",
+            {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
+        )
+        await matcher.register_data("proj1", "notes", {"body": "unrelated"})
+        matcher._rank_nodes = AsyncMock(return_value=[
+            ("jira:DEV-1.comments[0]", 0.9), ("notes.root", 0.8),
+        ])
+
+        results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
+
+        assert results[0]["data"] == {"body": "bumped pool size"}
+        assert results[0]["document_data"] == {"summary": "Login times out"}
+        assert "document_data" not in results[1]
+
+    @pytest.mark.asyncio
+    async def test_root_already_in_result_is_not_repeated(self, matcher):
+        await matcher.register_data(
+            "proj1", "jira:DEV-1",
+            {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
+        )
+        matcher._rank_nodes = AsyncMock(return_value=[
+            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1.root", 0.8),
+        ])
+
+        results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
+
+        assert [r["data_key"] for r in results[0]["related"]] == ["jira:DEV-1.root"]
+        assert "document_data" not in results[0]
+
+    @pytest.mark.asyncio
     async def test_reranker_applies_only_when_requested(self, matcher):
         """The opt-in reranker runs for rerank=True (ad-hoc query), not reconcile."""
         for key in ("alpha", "beta", "gamma"):
