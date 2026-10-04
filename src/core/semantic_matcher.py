@@ -13,6 +13,7 @@ from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
 from src.core.embedder import OnnxEmbedder
 from src.core.hybrid_search_service import HybridSearchService
+from src.core.limits import positive_int_env
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
@@ -48,6 +49,26 @@ def _embedding_text(data_key: str, node) -> str:
     """
     text = node.get_text_content()
     return f"{data_key}\n{text}" if data_key else text
+
+
+def collapse_by_document(
+    candidates: List[Dict[str, Any]], top_k: int, per_document: int
+) -> List[Dict[str, Any]]:
+    """Collapse ranked node matches into at most ``top_k`` documents.
+
+    Each document appears once, at the rank of its best node, with up to
+    ``per_document - 1`` further matched nodes under ``related``, so one
+    heavily-matching document can't fill every slot.
+    """
+    docs: Dict[str, Dict[str, Any]] = {}
+    for candidate in candidates:
+        doc = docs.get(candidate["document"])
+        if doc is None:
+            if len(docs) < top_k:
+                docs[candidate["document"]] = {**candidate, "related": []}
+        elif len(doc["related"]) < per_document - 1:
+            doc["related"].append({k: v for k, v in candidate.items() if k != "document"})
+    return list(docs.values())
 
 
 class SemanticDataMatcher:
@@ -88,6 +109,11 @@ class SemanticDataMatcher:
         self.max_matches = max_matches
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
         self.node_converter = NodeConverter()
+        self.vector_search = PgVectorSearch(db, self.model)
+        # Matched nodes returned per document (its best plus related).
+        self.nodes_per_document = positive_int_env("NODES_PER_DOCUMENT", 3)
+        # Nodes searched per requested document, so collapsing still fills top_k.
+        self.candidate_pool_factor = positive_int_env("CANDIDATE_POOL_FACTOR", 10)
 
         # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
         # (lexical) fused with backend-agnostic RRF. Single database, no extra
@@ -97,7 +123,7 @@ class SemanticDataMatcher:
             try:
                 rrf_k = int(os.getenv("RRF_K", "60"))
                 self.hybrid_search = HybridSearchService(
-                    vector_search=PgVectorSearch(db, self.model),
+                    vector_search=self.vector_search,
                     lexical_search=PgFtsLexical(db),
                     k=rrf_k,
                 )
@@ -367,10 +393,14 @@ class SemanticDataMatcher:
                 time (compared against ``COALESCE(updated_at, created_at)``).
 
         Returns:
-            Dict mapping needs to matched data sources:
+            Dict mapping each need to at most ``top_k`` documents, best first.
+            Each is its best-matching node plus other matched nodes from the
+            same document (see ``collapse_by_document``):
             {
                 "need description": [
-                    {"data_key": "...", "similarity": 0.85, "data": {...}},
+                    {"data_key": "<node key>", "document": "<document key>",
+                     "similarity": 0.85, "data": {...}, "description": "...",
+                     "related": [{"data_key": ..., "similarity": ..., ...}]},
                     ...
                 ]
             }
@@ -380,109 +410,58 @@ class SemanticDataMatcher:
             threshold if threshold is not None else self.threshold
         )
 
+        pool = effective_max * self.candidate_pool_factor
         matches = {}
 
         for need in needs:
             logger.debug("Matching need", need=need, project_id=project_id)
-
-            # Use hybrid search if enabled
-            if self.hybrid_search:
-                try:
-                    fused = await self.hybrid_search.search(
-                        project_id=project_id,
-                        query=need,
-                        top_k=effective_max * 2,
-                        since=since,
-                    )
-
-                    candidates = []
-                    for node_key, similarity in fused:
-                        # Hybrid reports cosine similarity (RRF only orders), so
-                        # the threshold applies the same as the vector path.
-                        if similarity < effective_threshold:
-                            continue
-                        # Fetch full data from PostgreSQL database
-                        async with self.db.session() as session:
-                            db_result = await session.execute(
-                                select(Embedding)
-                                .where(Embedding.project_id == project_id)
-                                .where(Embedding.node_key == node_key)
-                            )
-                            embedding_row = db_result.scalar_one_or_none()
-
-                            if embedding_row:
-                                candidates.append({
-                                    "data_key": node_key,
-                                    "similarity": float(similarity),
-                                    "data": embedding_row.data,
-                                    "description": embedding_row.description,
-                                })
-
-                    matches[need] = candidates[:effective_max]
-
-                    logger.debug(
-                        "Hybrid search matches",
-                        need=need,
-                        count=len(matches[need]),
-                    )
-                    continue
-
-                except Exception as e:
-                    logger.warning("Hybrid search error, falling back to vector search", error=str(e))
-
-            # Vector-only search using pgvector
-            need_embedding = self.model.encode(need)
-
-            async with self.db.session() as session:
-                # pgvector cosine distance query
-                # cosine_distance returns distance (0 = identical, 2 = opposite)
-                # similarity = 1 - distance (for normalized vectors)
-                stmt = (
-                    select(
-                        Embedding,
-                        (1 - Embedding.embedding.cosine_distance(need_embedding.tolist())).label("similarity"),
-                    )
-                    .where(Embedding.project_id == project_id)
-                    .order_by(Embedding.embedding.cosine_distance(need_embedding.tolist()))
-                    .limit(effective_max * 2)
-                )
-                recency = recency_filter(since)
-                if recency is not None:
-                    stmt = stmt.where(recency)
-                result = await session.execute(stmt)
-
-                candidates = []
-                for row in result:
-                    embedding_obj = row[0]
-                    similarity = float(row[1])
-
-                    if similarity >= effective_threshold:
-                        candidates.append({
-                            "data_key": embedding_obj.node_key,
-                            "similarity": similarity,
-                            "data": embedding_obj.data,
-                            "description": embedding_obj.description,
-                        })
-
-                # Sort and limit
-                candidates.sort(key=lambda x: x["similarity"], reverse=True)
-                matches[need] = candidates[:effective_max]
-
-                if matches[need]:
-                    logger.debug(
-                        "Vector search matches",
-                        need=need,
-                        count=len(matches[need]),
-                        top_similarity=matches[need][0]["similarity"] if matches[need] else 0,
-                    )
-                else:
-                    logger.debug(
-                        "No matches found",
-                        need=need,
-                        threshold=effective_threshold,
-                    )
+            ranked = await self._rank_nodes(project_id, need, pool, since)
+            ranked = [(key, sim) for key, sim in ranked if sim >= effective_threshold]
+            candidates = await self._load_candidates(project_id, ranked)
+            matches[need] = collapse_by_document(
+                candidates, effective_max, self.nodes_per_document
+            )
+            logger.debug("Matched need", need=need, count=len(matches[need]))
 
         return matches
+
+    async def _rank_nodes(
+        self, project_id: str, need: str, limit: int, since: Optional[datetime]
+    ) -> List[Tuple[str, float]]:
+        """(node_key, cosine similarity), best first: hybrid if enabled, else vector."""
+        if self.hybrid_search:
+            try:
+                return await self.hybrid_search.search(
+                    project_id=project_id, query=need, top_k=limit, since=since
+                )
+            except Exception as e:
+                logger.warning("Hybrid search error, falling back to vector search", error=str(e))
+        return await self.vector_search.search(project_id, need, limit, since=since)
+
+    async def _load_candidates(
+        self, project_id: str, ranked: List[Tuple[str, float]]
+    ) -> List[Dict[str, Any]]:
+        """Attach each ranked node's stored row, keeping rank order."""
+        if not ranked:
+            return []
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key.in_([key for key, _ in ranked]))
+            )
+            rows = {row.node_key: row for row in result.scalars()}
+        return [
+            {
+                "data_key": key,
+                "document": rows[key].data_key,
+                "similarity": float(similarity),
+                "data": rows[key].data,
+                "description": rows[key].description,
+            }
+            for key, similarity in ranked
+            if key in rows
+        ]
 
     async def get_registered_data(self, project_id: str) -> List[str]:
         """Get all registered data keys for a project (unique data_key values)."""

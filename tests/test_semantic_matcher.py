@@ -125,6 +125,18 @@ class TestSemanticDataMatcher:
         assert "authentication methods" in matches
 
     @pytest.mark.asyncio
+    async def test_matches_collapse_to_one_result_per_document(self, matcher):
+        """A document with many matching nodes takes one slot, not all of them."""
+        await matcher.register_data(
+            "proj1", "ticket", [{"comment": f"note {i}"} for i in range(6)], format_hint="json"
+        )
+
+        results = (await matcher.match_agent_needs("proj1", ["notes"], threshold=0.0))["notes"]
+
+        assert [r["document"] for r in results] == ["ticket"]
+        assert len(results[0]["related"]) == 2
+
+    @pytest.mark.asyncio
     async def test_match_multiple_data_sources(self, matcher):
         """Test matching returns relevant sources based on embedding similarity"""
         # Register multiple data sources

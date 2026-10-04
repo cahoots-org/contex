@@ -128,6 +128,12 @@ class ContextEngine:
             # Fallback on error
             return len(json.dumps(data)) // 4
 
+    def _match_tokens(self, match: Dict[str, Any]) -> int:
+        """Estimated tokens for a match's data, including its related nodes."""
+        return self._estimate_tokens(match["data"]) + sum(
+            self._estimate_tokens(r["data"]) for r in match.get("related", ())
+        )
+
     def _truncate_matches(
         self, matches: Dict[str, List[Dict[str, Any]]], max_tokens: int
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -151,7 +157,7 @@ class ContextEngine:
         match_costs = []  # List of (need, match_idx, match, tokens)
         for need, need_matches in matches.items():
             for idx, match in enumerate(need_matches):
-                tokens = self._estimate_tokens(match["data"])
+                tokens = self._match_tokens(match)
                 match_costs.append((need, idx, match, tokens))
 
         # Calculate total tokens
@@ -176,7 +182,7 @@ class ContextEngine:
 
             # Keep the highest similarity match (first one, since they're sorted)
             best_match = need_matches[0]
-            tokens = self._estimate_tokens(best_match["data"])
+            tokens = self._match_tokens(best_match)
 
             if budget_used + tokens <= max_tokens:
                 result[need].append(best_match)
@@ -206,7 +212,7 @@ class ContextEngine:
 
         # Calculate final stats
         final_tokens = sum(
-            self._estimate_tokens(match["data"])
+            self._match_tokens(match)
             for need_matches in result.values()
             for match in need_matches
         )
