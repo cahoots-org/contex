@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 
-def _positive_int_env(name: str, default: int) -> int:
+def positive_int_env(name: str, default: int) -> int:
     """Read a positive-int env override, falling back to the default when the
     variable is unset, non-numeric, or non-positive."""
     try:
@@ -22,13 +22,13 @@ def _positive_int_env(name: str, default: int) -> int:
 
 # Max results one query or subscription may request (caps the SQL LIMIT and the
 # amount of match work per call).
-MAX_TOP_K = _positive_int_env("MAX_TOP_K", 100)
+MAX_TOP_K = positive_int_env("MAX_TOP_K", 100)
 # Max plain-English needs per subscription (each need is a separate embed + search).
-MAX_NEEDS = _positive_int_env("MAX_NEEDS", 50)
+MAX_NEEDS = positive_int_env("MAX_NEEDS", 50)
 # Max events one event-stream read may return.
-MAX_EVENT_COUNT = _positive_int_env("MAX_EVENT_COUNT", 1000)
+MAX_EVENT_COUNT = positive_int_env("MAX_EVENT_COUNT", 1000)
 # Max items in one batch publish / register request.
-MAX_BATCH_SIZE = _positive_int_env("MAX_BATCH_SIZE", 1000)
+MAX_BATCH_SIZE = positive_int_env("MAX_BATCH_SIZE", 1000)
 
 
 def clamp_top_k(top_k: int | None) -> int | None:

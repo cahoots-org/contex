@@ -13,6 +13,7 @@ from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
 from src.core.embedder import OnnxEmbedder
 from src.core.hybrid_search_service import HybridSearchService
+from src.core.limits import positive_int_env
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
@@ -50,19 +51,13 @@ def _embedding_text(data_key: str, node) -> str:
     return f"{data_key}\n{text}" if data_key else text
 
 
-# Nodes returned per document: its best match plus this many minus one related.
-NODES_PER_DOCUMENT = 3
-# Nodes fetched per requested document, so collapsing can still fill top_k.
-CANDIDATE_POOL_FACTOR = 10
-
-
 def collapse_by_document(
-    candidates: List[Dict[str, Any]], top_k: int
+    candidates: List[Dict[str, Any]], top_k: int, per_document: int
 ) -> List[Dict[str, Any]]:
     """Collapse ranked node matches into at most ``top_k`` documents.
 
     Each document appears once, at the rank of its best node, with up to
-    ``NODES_PER_DOCUMENT - 1`` further matched nodes under ``related``, so one
+    ``per_document - 1`` further matched nodes under ``related``, so one
     heavily-matching document can't fill every slot.
     """
     docs: Dict[str, Dict[str, Any]] = {}
@@ -71,7 +66,7 @@ def collapse_by_document(
         if doc is None:
             if len(docs) < top_k:
                 docs[candidate["document"]] = {**candidate, "related": []}
-        elif len(doc["related"]) < NODES_PER_DOCUMENT - 1:
+        elif len(doc["related"]) < per_document - 1:
             doc["related"].append({k: v for k, v in candidate.items() if k != "document"})
     return list(docs.values())
 
@@ -115,6 +110,10 @@ class SemanticDataMatcher:
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
         self.node_converter = NodeConverter()
         self.vector_search = PgVectorSearch(db, self.model)
+        # Matched nodes returned per document (its best plus related).
+        self.nodes_per_document = positive_int_env("NODES_PER_DOCUMENT", 3)
+        # Nodes searched per requested document, so collapsing still fills top_k.
+        self.candidate_pool_factor = positive_int_env("CANDIDATE_POOL_FACTOR", 10)
 
         # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
         # (lexical) fused with backend-agnostic RRF. Single database, no extra
@@ -411,7 +410,7 @@ class SemanticDataMatcher:
             threshold if threshold is not None else self.threshold
         )
 
-        pool = effective_max * CANDIDATE_POOL_FACTOR
+        pool = effective_max * self.candidate_pool_factor
         matches = {}
 
         for need in needs:
@@ -419,7 +418,9 @@ class SemanticDataMatcher:
             ranked = await self._rank_nodes(project_id, need, pool, since)
             ranked = [(key, sim) for key, sim in ranked if sim >= effective_threshold]
             candidates = await self._load_candidates(project_id, ranked)
-            matches[need] = collapse_by_document(candidates, effective_max)
+            matches[need] = collapse_by_document(
+                candidates, effective_max, self.nodes_per_document
+            )
             logger.debug("Matched need", need=need, count=len(matches[need]))
 
         return matches
