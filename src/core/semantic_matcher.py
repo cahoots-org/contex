@@ -18,6 +18,7 @@ from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
 from src.core.recency import recency_filter
+from src.core.relevance import JevReranker
 from src.core.vector_search import PgVectorSearch
 
 logger = get_logger(__name__)
@@ -114,6 +115,7 @@ class SemanticDataMatcher:
         self.nodes_per_document = positive_int_env("NODES_PER_DOCUMENT", 3)
         # Nodes searched per requested document, so collapsing still fills top_k.
         self.candidate_pool_factor = positive_int_env("CANDIDATE_POOL_FACTOR", 10)
+        self.reranker = JevReranker.from_env()
 
         # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
         # (lexical) fused with backend-agnostic RRF. Single database, no extra
@@ -377,6 +379,7 @@ class SemanticDataMatcher:
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
         since: Optional[datetime] = None,
+        rerank: bool = False,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Match agent semantic needs to available data.
@@ -391,6 +394,8 @@ class SemanticDataMatcher:
             threshold: Per-request min similarity (0-1); defaults to the instance value.
             since: When set, only match data created or updated on or after this
                 time (compared against ``COALESCE(updated_at, created_at)``).
+            rerank: Reorder candidates with the opt-in relevance reranker when
+                one is configured (adds ``relevance`` to judged matches).
 
         Returns:
             Dict mapping each need to at most ``top_k`` documents, best first.
@@ -418,6 +423,8 @@ class SemanticDataMatcher:
             ranked = await self._rank_nodes(project_id, need, pool, since)
             ranked = [(key, sim) for key, sim in ranked if sim >= effective_threshold]
             candidates = await self._load_candidates(project_id, ranked)
+            if rerank and self.reranker:
+                candidates = await self.reranker.rerank(need, candidates)
             matches[need] = collapse_by_document(
                 candidates, effective_max, self.nodes_per_document
             )

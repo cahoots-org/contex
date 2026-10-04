@@ -137,6 +137,26 @@ class TestSemanticDataMatcher:
         assert len(results[0]["related"]) == 2
 
     @pytest.mark.asyncio
+    async def test_reranker_applies_only_when_requested(self, matcher):
+        """The opt-in reranker runs for rerank=True (ad-hoc query), not reconcile."""
+        for key in ("alpha", "beta", "gamma"):
+            await matcher.register_data("proj1", key, {"name": key})
+
+        calls = []
+
+        class Reverse:
+            async def rerank(self, task, candidates):
+                calls.append([c["document"] for c in candidates])
+                return list(reversed(candidates))
+
+        matcher.reranker = Reverse()
+        await matcher.match_agent_needs("proj1", ["names"], threshold=0.0)
+        assert calls == []
+
+        reranked = await matcher.match_agent_needs("proj1", ["names"], threshold=0.0, rerank=True)
+        assert [r["document"] for r in reranked["names"]] == list(reversed(calls[0]))
+
+    @pytest.mark.asyncio
     async def test_match_multiple_data_sources(self, matcher):
         """Test matching returns relevant sources based on embedding similarity"""
         # Register multiple data sources

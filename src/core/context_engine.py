@@ -359,7 +359,8 @@ class ContextEngine:
         # Pass per-request top_k/threshold through instead of mutating the shared
         # matcher, so concurrent ad-hoc queries can't corrupt each other (#105).
         matches = await self.semantic_matcher.match_agent_needs(
-            project_id, [query], top_k=top_k, threshold=threshold, since=since
+            project_id, [query], top_k=top_k, threshold=threshold, since=since,
+            rerank=True,
         )
 
         # Extract matches for the query
