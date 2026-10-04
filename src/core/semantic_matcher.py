@@ -400,12 +400,14 @@ class SemanticDataMatcher:
         Returns:
             Dict mapping each need to at most ``top_k`` documents, best first.
             Each is its best-matching node plus other matched nodes from the
-            same document (see ``collapse_by_document``):
+            same document (see ``collapse_by_document``), and the document's
+            root node data when that root isn't already among them:
             {
                 "need description": [
                     {"data_key": "<node key>", "document": "<document key>",
                      "similarity": 0.85, "data": {...}, "description": "...",
-                     "related": [{"data_key": ..., "similarity": ..., ...}]},
+                     "related": [{"data_key": ..., "similarity": ..., ...}],
+                     "document_data": {...}},
                     ...
                 ]
             }
@@ -428,6 +430,7 @@ class SemanticDataMatcher:
             matches[need] = collapse_by_document(
                 candidates, effective_max, self.nodes_per_document
             )
+            await self._attach_document_roots(project_id, matches[need])
             logger.debug("Matched need", need=need, count=len(matches[need]))
 
         return matches
@@ -469,6 +472,31 @@ class SemanticDataMatcher:
             for key, similarity in ranked
             if key in rows
         ]
+
+    async def _attach_document_roots(
+        self, project_id: str, results: List[Dict[str, Any]]
+    ) -> None:
+        """Add each document's root node data (a ticket's own fields, a code
+        file's summary) to its result unless that root already matched."""
+        root_keys = {
+            r["document"]: (f'{r["document"]}.root', r["document"]) for r in results
+        }
+        if not root_keys:
+            return
+        async with self.db.session() as session:
+            rows = await session.execute(
+                select(Embedding.node_key, Embedding.data)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key.in_([k for keys in root_keys.values() for k in keys]))
+            )
+            roots = dict(rows.all())
+        for result in results:
+            matched = {result["data_key"], *(r["data_key"] for r in result["related"])}
+            for key in root_keys[result["document"]]:
+                if key in roots:
+                    if key not in matched:
+                        result["document_data"] = roots[key]
+                    break
 
     async def get_registered_data(self, project_id: str) -> List[str]:
         """Get all registered data keys for a project (unique data_key values)."""

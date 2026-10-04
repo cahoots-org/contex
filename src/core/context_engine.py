@@ -129,10 +129,11 @@ class ContextEngine:
             return len(json.dumps(data)) // 4
 
     def _match_tokens(self, match: Dict[str, Any]) -> int:
-        """Estimated tokens for a match's data, including its related nodes."""
-        return self._estimate_tokens(match["data"]) + sum(
-            self._estimate_tokens(r["data"]) for r in match.get("related", ())
-        )
+        """Estimated tokens for a match's data, its related nodes and its document root."""
+        parts = [match["data"], *(r["data"] for r in match.get("related", ()))]
+        if "document_data" in match:
+            parts.append(match["document_data"])
+        return sum(self._estimate_tokens(part) for part in parts)
 
     def _truncate_matches(
         self, matches: Dict[str, List[Dict[str, Any]]], max_tokens: int
