@@ -170,6 +170,16 @@ class TestSemanticDataMatcher:
         assert "document_data" not in results[0]
 
     @pytest.mark.asyncio
+    async def test_hybrid_fuses_at_top_k_and_over_fetches_the_pool(self, matcher):
+        matcher.hybrid_search = Mock(search=AsyncMock(return_value=[]))
+        matcher.candidate_pool_factor = 10
+
+        await matcher.match_agent_needs("proj1", ["anything"], top_k=4)
+
+        kwargs = matcher.hybrid_search.search.call_args.kwargs
+        assert (kwargs["top_k"], kwargs["pool"]) == (4, 40)
+
+    @pytest.mark.asyncio
     async def test_reranker_applies_only_when_requested(self, matcher):
         """The opt-in reranker runs for rerank=True (ad-hoc query), not reconcile."""
         for key in ("alpha", "beta", "gamma"):
