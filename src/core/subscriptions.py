@@ -67,6 +67,17 @@ class SubscriptionService:
             _assert_sub_tenant(row, tenant_id)
             return row.bundle
 
+    async def project_of(self, subscription_id, *, tenant_id=None) -> str | None:
+        """The subscription's project, or None if it does not exist."""
+        async with self.db.session() as session:
+            row = (await session.execute(
+                select(Subscription).where(Subscription.subscription_id == subscription_id)
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            _assert_sub_tenant(row, tenant_id)
+            return row.project_id
+
     async def delete(self, subscription_id, *, tenant_id=None) -> None:
         async with self.db.session() as session:
             row = (await session.execute(
