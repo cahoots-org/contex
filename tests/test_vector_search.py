@@ -1,5 +1,6 @@
 # tests/test_vector_search.py
 import pytest
+from sqlalchemy import text
 from src.core.db_models import Embedding
 from src.core.embedder import OnnxEmbedder
 from src.core.vector_search import PgVectorSearch
@@ -20,3 +21,13 @@ async def test_semantically_closest_ranks_first(db):
     results = await PgVectorSearch(db, model).search("p1", "how do users sign in", top_k=10)
     assert results[0][0] == "auth"
     assert 0.0 <= results[0][1] <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_hnsw_scan_widened_to_the_request(db):
+    """The HNSW scan must not stop at ef_search=40 before the project filter."""
+    search = PgVectorSearch(db, model=None)
+    async with db.session() as session:
+        await search._widen_hnsw_scan(session, top_k=100)
+        assert await session.scalar(text("SHOW hnsw.ef_search")) == "100"
+        assert await session.scalar(text("SHOW hnsw.iterative_scan")) == "strict_order"
