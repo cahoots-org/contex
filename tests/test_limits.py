@@ -1,6 +1,8 @@
 """Defense-in-depth input ceilings (src/core/limits.py)."""
 import pytest
 
+from src.core import limits
+from src.core.context_engine import ContextEngine
 from src.core.limits import (
     MAX_BATCH_SIZE,
     MAX_EVENT_COUNT,
@@ -49,3 +51,16 @@ async def test_subscription_rejects_too_many_needs():
     svc = SubscriptionService(db=None, matcher=None, redis=None)
     with pytest.raises(ValueError, match="Too many needs"):
         await svc.create("proj", ["need"] * (MAX_NEEDS + 1))
+
+
+@pytest.mark.asyncio
+async def test_subscription_rejects_project_over_capacity(db, redis, monkeypatch):
+    # Every publish re-matches all of a project's subscriptions, so their count is capped.
+    monkeypatch.setattr(limits, "MAX_SUBSCRIPTIONS_PER_PROJECT", 2)
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    await engine.subscriptions.create("proj", ["need"])
+    await engine.subscriptions.create("proj", ["need"])
+    with pytest.raises(ValueError, match="Too many subscriptions"):
+        await engine.subscriptions.create("proj", ["need"])
+    await engine.subscriptions.create("other", ["need"])  # cap is per project

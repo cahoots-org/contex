@@ -6,9 +6,10 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.core.db_models import Embedding, Subscription, Symbol
+from src.core import limits
 from src.core.limits import check_needs, clamp_top_k
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
@@ -44,6 +45,7 @@ class SubscriptionService:
     ) -> str:
         check_needs(needs)
         top_k = clamp_top_k(top_k)
+        await self._check_project_capacity(project_id)
         sub_id = subscription_id or f"sub_{uuid4().hex}"
         since = _since_from_scope(scope)
         bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
@@ -56,6 +58,18 @@ class SubscriptionService:
             ))
             await session.commit()
         return sub_id
+
+    async def _check_project_capacity(self, project_id) -> None:
+        # ponytail: count-then-insert, so concurrent creates can overshoot by a
+        # few; use an advisory lock if the cap ever needs to be exact.
+        async with self.db.session() as session:
+            count = await session.scalar(
+                select(func.count()).select_from(Subscription).where(Subscription.project_id == project_id)
+            )
+        if count >= limits.MAX_SUBSCRIPTIONS_PER_PROJECT:
+            raise ValueError(
+                f"Too many subscriptions in project {project_id} (max {limits.MAX_SUBSCRIPTIONS_PER_PROJECT})"
+            )
 
     async def get_bundle(self, subscription_id, *, tenant_id=None) -> dict:
         async with self.db.session() as session:
