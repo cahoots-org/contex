@@ -6,7 +6,6 @@ from .event_store import EventStore
 from .models import (
     DataPublishEvent,
     MatchedDataSource,
-    AgentContext,
     QueryRequest,
     QueryResponse,
 )
@@ -17,7 +16,6 @@ __all__ = [
     "EventStore",
     "DataPublishEvent",
     "MatchedDataSource",
-    "AgentContext",
     "QueryRequest",
     "QueryResponse",
 ]
