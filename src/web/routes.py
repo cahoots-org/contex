@@ -106,11 +106,7 @@ async def execute_query(
     for match in matches:
         # Generate both JSON and TOON formats
         data_json = json.dumps(match["data"], indent=2)
-        try:
-            data_toon = toon.encode(match["data"])
-        except NotImplementedError:
-            # TOON encoder not yet available, use JSON as fallback
-            data_toon = data_json
+        data_toon = toon.encode(match["data"])
 
         # Calculate token counts for both formats
         json_tokens = 0

@@ -98,14 +98,8 @@ class ContextEngine:
             Formatted string
         """
         if format == "toon":
-            try:
-                return toon.encode(data)
-            except NotImplementedError:
-                # TOON encoder not yet available, fall back to JSON
-                logger.warning("TOON format requested but not yet implemented, using JSON")
-                return json.dumps(data, indent=2)
-        else:
-            return json.dumps(data, indent=2)
+            return toon.encode(data)
+        return json.dumps(data, indent=2)
 
     def _estimate_tokens(self, data: Any) -> int:
         """
