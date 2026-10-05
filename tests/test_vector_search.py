@@ -1,4 +1,7 @@
 # tests/test_vector_search.py
+import threading
+
+import numpy as np
 import pytest
 from sqlalchemy import text
 from src.core.db_models import Embedding
@@ -31,3 +34,20 @@ async def test_hnsw_scan_widened_to_the_request(db):
         await search._widen_hnsw_scan(session, top_k=100)
         assert await session.scalar(text("SHOW hnsw.ef_search")) == "100"
         assert await session.scalar(text("SHOW hnsw.iterative_scan")) == "strict_order"
+
+
+@pytest.mark.asyncio
+async def test_query_embedding_runs_off_the_event_loop(db):
+    """Embedding is CPU-bound; running it on the loop stalls every request (#48)."""
+    loop_thread = threading.current_thread()
+    seen = []
+
+    class _Model:
+        def encode(self, text):
+            seen.append(threading.current_thread())
+            return np.zeros(768)
+
+    search = PgVectorSearch(db, _Model())
+    await search.search("p1", "q", top_k=1)
+    await search.score("p1", "q", ["k"])
+    assert seen and all(t is not loop_thread for t in seen)

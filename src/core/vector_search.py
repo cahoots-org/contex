@@ -1,6 +1,7 @@
 """Vector (semantic) ranker over pgvector, returning ranked node_keys for fusion."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Optional
 
@@ -42,7 +43,7 @@ class PgVectorSearch:
         self, project_id: str, query: str, top_k: int,
         since: Optional[datetime] = None,
     ) -> list[tuple[str, float]]:
-        query_vec = self.model.encode(query).tolist()
+        query_vec = (await asyncio.to_thread(self.model.encode, query)).tolist()
         stmt = (
             select(
                 Embedding.node_key,
@@ -67,7 +68,7 @@ class PgVectorSearch:
         """Cosine similarity for specific node_keys (keys without an embedding are omitted)."""
         if not node_keys:
             return {}
-        query_vec = self.model.encode(query).tolist()
+        query_vec = (await asyncio.to_thread(self.model.encode, query)).tolist()
         stmt = (
             select(
                 Embedding.node_key,

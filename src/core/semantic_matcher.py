@@ -1,5 +1,6 @@
 """Semantic data matching using embeddings for agent context discovery"""
 
+import asyncio
 import hashlib
 import json
 import os
@@ -228,7 +229,7 @@ class SemanticDataMatcher:
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
         if not texts:
             return
-        embeddings = self.model.encode(texts, batch_size=16)
+        embeddings = await asyncio.to_thread(self.model.encode, texts, batch_size=16)
 
         offset = 0
         for plan in plans:
