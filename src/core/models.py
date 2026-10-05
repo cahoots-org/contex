@@ -41,28 +41,6 @@ class MatchedDataSource(BaseModel):
     )
 
 
-class AgentContext(BaseModel):
-    """Context sent to agent (organized by semantic needs)"""
-
-    agent_id: str
-    project_id: str
-    context: Dict[str, List[MatchedDataSource]] = Field(
-        ..., description="Matched data organized by semantic need"
-    )
-    current_sequence: str = Field(..., description="Latest event sequence number")
-
-
-class SemanticSearchRequest(BaseModel):
-    """Request for semantic search over project data"""
-
-    project_id: str
-    index: str = Field(
-        ..., description="Index to search (e.g., 'events', 'files', 'tasks')"
-    )
-    query: str = Field(..., description="Search query (natural language)")
-    top_k: int = Field(default=5, description="Number of results to return")
-
-
 class QueryRequest(BaseModel):
     """Request for ad-hoc semantic query"""
 

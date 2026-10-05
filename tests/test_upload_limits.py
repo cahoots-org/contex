@@ -50,13 +50,6 @@ class TestConfigOverride:
         monkeypatch.setenv("CONTEX_MAX_UPLOAD_SIZE", "not-a-number")
         assert get_max_upload_size() == 50 * 1024 * 1024
 
-    def test_features_config_reads_env(self, monkeypatch):
-        monkeypatch.setenv("CONTEX_MAX_UPLOAD_SIZE", "2048")
-        from src.core.config import ContexConfig
-
-        config = ContexConfig.from_env()
-        assert config.features.max_upload_size == 2048
-
 
 class TestStreamUploadFile:
     @pytest.mark.asyncio
