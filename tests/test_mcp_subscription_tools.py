@@ -7,6 +7,7 @@ from src.core import mcp_adapter
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
 from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 
 
 @pytest.mark.asyncio
@@ -111,3 +112,27 @@ async def test_multitenant_create_read_delete_lifecycle(db, redis, monkeypatch):
 
     with pytest.raises(KeyError):
         await engine.subscriptions.get_bundle(sub_id, tenant_id=tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_project_scoped_key_cannot_touch_other_projects_subscription(db, redis, monkeypatch):
+    """A key scoped to one project must not read or delete another project's
+    subscription in the same tenant (#73)."""
+    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+    sub_id = await engine.subscriptions.create("proj-b", ["auth config"])
+
+    scoped = MagicMock()
+    scoped.scopes = ["query_data"]
+    scoped.claims = {"tenant_id": None, "projects": ["proj-a"]}
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: scoped)
+
+    with pytest.raises(ToolError) as denied:
+        await server.call_tool("contex_delete_subscription", {"subscription_id": sub_id})
+    assert isinstance(denied.value.__cause__, PermissionError)
+    with pytest.raises(ResourceError) as denied:
+        await server.read_resource(f"contex://subscriptions/{sub_id}")
+    assert isinstance(denied.value.__cause__, PermissionError)
+    assert await engine.subscriptions.get_bundle(sub_id) is not None

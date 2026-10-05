@@ -70,6 +70,12 @@ def _enforce(permission, project_id=None):
             raise PermissionError("Permission denied")
 
 
+async def _enforce_subscription_project(engine, subscription_id, tenant_id):
+    """Apply the caller's project scope to the subscription's own project."""
+    project_id = await engine.subscriptions.project_of(subscription_id, tenant_id=tenant_id)
+    _enforce(Permission.QUERY_DATA, project_id=project_id)
+
+
 class ApiKeyVerifier(TokenVerifier):
     """Resolve a Contex API key into an MCP AccessToken. DB is resolved lazily."""
 
@@ -161,6 +167,7 @@ def build_mcp_server(engine, db_accessor=None):
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
+        await _enforce_subscription_project(e, subscription_id, tid)
         await e.subscriptions.delete(subscription_id, tenant_id=tid)
         return json.dumps({"deleted": subscription_id})
 
@@ -172,6 +179,7 @@ def build_mcp_server(engine, db_accessor=None):
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
+        await _enforce_subscription_project(e, id, tid)
         return json.dumps(await e.subscriptions.get_bundle(id, tenant_id=tid))
 
     @server.tool(name="contex_publish", description="Publish/update context data for a project.")
