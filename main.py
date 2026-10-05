@@ -9,6 +9,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
 from src.core.metrics import get_metrics
@@ -305,10 +306,31 @@ _mcp_server, _mcp_bus = build_mcp_server(
 # default of 1800s to 600s to limit accumulation of orphaned sessions.
 # max_request_body_size: raise the SDK's 4 MiB cap (it 413s before parsing) to our
 # upload limit, so CONTEX_MAX_UPLOAD_SIZE is the single real ceiling.
+_LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+
+def mcp_transport_security() -> TransportSecuritySettings:
+    """DNS-rebinding protection for /mcp, driven by CONTEX_ALLOWED_HOSTS.
+
+    Unset: localhost only (the SDK default). Comma-separated hosts: those plus
+    localhost. "*": protection off, for proxies that rewrite or vary the Host.
+    """
+    raw = os.getenv("CONTEX_ALLOWED_HOSTS", "").strip()
+    if raw == "*":
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    hosts = _LOCAL_HOSTS + [h.strip() for h in raw.split(",") if h.strip()]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=[f"{scheme}://{h}" for h in hosts for scheme in ("http", "https")],
+    )
+
+
 _mcp_starlette_app = _mcp_server.streamable_http_app(
     streamable_http_path="/",
     session_idle_timeout=600,
     max_request_body_size=get_max_upload_size(),
+    transport_security=mcp_transport_security(),
 )
 app.mount("/mcp", _mcp_starlette_app)
 

@@ -25,3 +25,25 @@ def test_mcp_session_idle_timeout_is_tightened():
     # The MCP streamable-HTTP transport is unauthenticated; a shorter idle timeout
     # limits how long orphaned sessions from an initialize loop can accumulate.
     assert main._mcp_server.session_manager.session_idle_timeout == 600
+
+
+def test_mcp_allows_only_localhost_by_default(monkeypatch):
+    monkeypatch.delenv("CONTEX_ALLOWED_HOSTS", raising=False)
+    settings = main.mcp_transport_security()
+    assert settings.enable_dns_rebinding_protection
+    assert settings.allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+
+def test_mcp_allowed_hosts_extend_localhost(monkeypatch):
+    monkeypatch.setenv("CONTEX_ALLOWED_HOSTS", "contex.example.com, contex.internal:*")
+    settings = main.mcp_transport_security()
+    assert settings.enable_dns_rebinding_protection
+    assert "localhost:*" in settings.allowed_hosts
+    assert "contex.example.com" in settings.allowed_hosts
+    assert "contex.internal:*" in settings.allowed_hosts
+    assert "https://contex.example.com" in settings.allowed_origins
+
+
+def test_mcp_allowed_hosts_wildcard_disables_protection(monkeypatch):
+    monkeypatch.setenv("CONTEX_ALLOWED_HOSTS", "*")
+    assert not main.mcp_transport_security().enable_dns_rebinding_protection
