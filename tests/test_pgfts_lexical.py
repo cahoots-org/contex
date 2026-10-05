@@ -71,3 +71,10 @@ async def test_more_query_terms_ranks_higher(db):
     assert set(keys) == {"both", "one"}
     scores = [s for _, s in results]
     assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_excluded_documents_are_skipped(db):
+    await _seed(db)
+    results = await PgFtsLexical(db).search("p1", "SERVICE", top_k=10, exclude_documents={"cfg"})
+    assert results == []

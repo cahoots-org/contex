@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
 from sqlalchemy import delete, func, select, text
@@ -63,6 +63,10 @@ def _embedding_text(data_key: str, node, title: str = "") -> str:
     header = " ".join(part for part in (data_key, title) if part)
     text = node.get_text_content()
     return f"{header}\n{text}" if header else text
+
+
+# Re-rank rounds per need when large documents crowd the pool (see _collect_candidates).
+_MAX_FILL_ROUNDS = 5
 
 
 def collapse_by_document(
@@ -436,9 +440,9 @@ class SemanticDataMatcher:
 
         for need in needs:
             logger.debug("Matching need", need=need, project_id=project_id)
-            ranked = await self._rank_nodes(project_id, need, effective_max, pool, since)
-            ranked = [(key, sim) for key, sim in ranked if sim >= effective_threshold]
-            candidates = await self._load_candidates(project_id, ranked)
+            candidates = await self._collect_candidates(
+                project_id, need, effective_max, pool, since, effective_threshold
+            )
             if rerank and self.reranker:
                 candidates = await self.reranker.rerank(need, candidates)
             matches[need] = collapse_by_document(
@@ -449,19 +453,49 @@ class SemanticDataMatcher:
 
         return matches
 
+    async def _collect_candidates(
+        self, project_id: str, need: str, top_k: int, pool: int,
+        since: Optional[datetime], threshold: float,
+    ) -> List[Dict[str, Any]]:
+        """Ranked candidate nodes spanning up to ``top_k`` documents.
+
+        The pool is counted in nodes but results in documents, so a few large
+        documents can fill it on their own. Re-rank with every document seen so
+        far excluded until ``top_k`` documents are found or the rankers run dry.
+        """
+        candidates: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        # ponytail: bounded rounds, so a run of documents that each own a whole
+        # pool can still return short; grow the pool per round if that shows up.
+        for _ in range(_MAX_FILL_ROUNDS):
+            ranked = await self._rank_nodes(project_id, need, top_k, pool, since, seen)
+            exhausted = len(ranked) < pool
+            batch = await self._load_candidates(
+                project_id, [(key, sim) for key, sim in ranked if sim >= threshold]
+            )
+            candidates += batch
+            seen |= {c["document"] for c in batch}
+            if exhausted or not batch or len(seen) >= top_k:
+                break
+        return candidates
+
     async def _rank_nodes(
-        self, project_id: str, need: str, top_k: int, pool: int, since: Optional[datetime]
+        self, project_id: str, need: str, top_k: int, pool: int,
+        since: Optional[datetime], exclude_documents: Collection[str] = (),
     ) -> List[Tuple[str, float]]:
         """Up to ``pool`` (node_key, cosine similarity), best first: hybrid if
         enabled (fused at ``top_k`` depth), else vector."""
         if self.hybrid_search:
             try:
                 return await self.hybrid_search.search(
-                    project_id=project_id, query=need, top_k=top_k, since=since, pool=pool
+                    project_id=project_id, query=need, top_k=top_k, since=since, pool=pool,
+                    exclude_documents=exclude_documents,
                 )
             except Exception as e:
                 logger.warning("Hybrid search error, falling back to vector search", error=str(e))
-        return await self.vector_search.search(project_id, need, pool, since=since)
+        return await self.vector_search.search(
+            project_id, need, pool, since=since, exclude_documents=exclude_documents
+        )
 
     async def _load_candidates(
         self, project_id: str, ranked: List[Tuple[str, float]]

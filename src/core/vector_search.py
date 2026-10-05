@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Collection, Optional
 
 from sqlalchemy import select, text
 from src.core.db_models import Embedding
@@ -40,7 +40,7 @@ class PgVectorSearch:
 
     async def search(
         self, project_id: str, query: str, top_k: int,
-        since: Optional[datetime] = None,
+        since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
         query_vec = self.model.encode(query).tolist()
         stmt = (
@@ -55,6 +55,8 @@ class PgVectorSearch:
         recency = recency_filter(since)
         if recency is not None:
             stmt = stmt.where(recency)
+        if exclude_documents:
+            stmt = stmt.where(Embedding.data_key.notin_(list(exclude_documents)))
         async with self.db.session() as session:
             await self._widen_hnsw_scan(session, top_k)
             result = await session.execute(stmt)
