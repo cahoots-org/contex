@@ -3,6 +3,7 @@
 import asyncio
 import os
 import secrets
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -158,18 +159,18 @@ async def lifespan(app: FastAPI):
                 raw_key, api_key = await create_api_key(db, bootstrap_name)
                 # Assign admin role
                 await assign_role(db, api_key.key_id, Role.ADMIN, projects=[])
-                logger.warning("=" * 60)
-                logger.warning("BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
-                logger.warning(f"   API Key: {raw_key}")
-                logger.warning(f"   Key ID: {api_key.key_id}")
-                logger.warning(f"   Name: {api_key.name}")
-                logger.warning("=" * 60)
-                print("\n" + "=" * 60)
-                print("BOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):")
-                print(f"   API Key: {raw_key}")
-                print(f"   Key ID: {api_key.key_id}")
-                print(f"   Name: {api_key.name}")
-                print("=" * 60 + "\n")
+                # The raw key goes to stderr only, never the logger: logger
+                # records also ship as Sentry breadcrumbs and to log forwarders.
+                logger.warning("Bootstrap admin key generated; printed once to stderr", key_id=api_key.key_id, name=api_key.name)
+                print(
+                    "\n" + "=" * 60
+                    + "\nBOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):"
+                    + f"\n   API Key: {raw_key}"
+                    + f"\n   Key ID: {api_key.key_id}"
+                    + f"\n   Name: {api_key.name}"
+                    + "\n" + "=" * 60 + "\n",
+                    file=sys.stderr,
+                )
         else:
             logger.info("API keys already exist, skipping bootstrap", count=len(existing_keys))
     except Exception as e:
