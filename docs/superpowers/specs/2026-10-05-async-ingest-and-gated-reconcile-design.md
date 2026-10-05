@@ -248,7 +248,7 @@ bundles that changed.
   `id = ANY(…)` filter. The lexical gate compares that score to a floor recorded
   from an unfiltered search, so they must be comparable.
 - Whether the per-need lexical gate can be batched in one statement (for
-  example `LATERAL` over `subscription_needs` with a non-constant `@@@`
+  example `LATERAL` over `subscription_needs` with a non-constant
   right-hand side of `|||`). The fallback is one small query per remaining need.
 
 ## Out of scope
