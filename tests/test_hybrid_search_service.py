@@ -69,3 +69,15 @@ async def test_handles_one_empty_backend():
     service = HybridSearchService(vector, lexical, k=60)
     results = await service.search("p1", "q", top_k=10)
     assert [doc_id for doc_id, _ in results] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_over_fetch_does_not_change_fused_head():
+    # Fused at depth 3, "c" (rank 3 in both) would outrank every rank-1 hit.
+    # Fusing at top_k keeps the top_k-deep head; "c" only fills the tail.
+    vector = _StubRanker([("v1", 0.9), ("v2", 0.8), ("c", 0.7)], scores={"l1": 0.6, "l2": 0.5})
+    lexical = _StubRanker([("l1", 5.0), ("l2", 4.0), ("c", 3.0)])
+    service = HybridSearchService(vector, lexical, k=60)
+    ids = [doc_id for doc_id, _ in await service.search("p1", "q", top_k=2, pool=5)]
+    assert set(ids[:2]) == {"v1", "l1"}
+    assert ids == ids[:4] + ["c"]

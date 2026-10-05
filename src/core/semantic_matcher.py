@@ -436,7 +436,7 @@ class SemanticDataMatcher:
 
         for need in needs:
             logger.debug("Matching need", need=need, project_id=project_id)
-            ranked = await self._rank_nodes(project_id, need, pool, since)
+            ranked = await self._rank_nodes(project_id, need, effective_max, pool, since)
             ranked = [(key, sim) for key, sim in ranked if sim >= effective_threshold]
             candidates = await self._load_candidates(project_id, ranked)
             if rerank and self.reranker:
@@ -450,17 +450,18 @@ class SemanticDataMatcher:
         return matches
 
     async def _rank_nodes(
-        self, project_id: str, need: str, limit: int, since: Optional[datetime]
+        self, project_id: str, need: str, top_k: int, pool: int, since: Optional[datetime]
     ) -> List[Tuple[str, float]]:
-        """(node_key, cosine similarity), best first: hybrid if enabled, else vector."""
+        """Up to ``pool`` (node_key, cosine similarity), best first: hybrid if
+        enabled (fused at ``top_k`` depth), else vector."""
         if self.hybrid_search:
             try:
                 return await self.hybrid_search.search(
-                    project_id=project_id, query=need, top_k=limit, since=since
+                    project_id=project_id, query=need, top_k=top_k, since=since, pool=pool
                 )
             except Exception as e:
                 logger.warning("Hybrid search error, falling back to vector search", error=str(e))
-        return await self.vector_search.search(project_id, need, limit, since=since)
+        return await self.vector_search.search(project_id, need, pool, since=since)
 
     async def _load_candidates(
         self, project_id: str, ranked: List[Tuple[str, float]]
