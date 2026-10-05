@@ -65,10 +65,6 @@ def _embedding_text(data_key: str, node, title: str = "") -> str:
     return f"{header}\n{text}" if header else text
 
 
-# Re-rank rounds per need when large documents crowd the pool (see _collect_candidates).
-_MAX_FILL_ROUNDS = 5
-
-
 def collapse_by_document(
     candidates: List[Dict[str, Any]], top_k: int, per_document: int
 ) -> List[Dict[str, Any]]:
@@ -465,9 +461,8 @@ class SemanticDataMatcher:
         """
         candidates: List[Dict[str, Any]] = []
         seen: set[str] = set()
-        # ponytail: bounded rounds, so a run of documents that each own a whole
-        # pool can still return short; grow the pool per round if that shows up.
-        for _ in range(_MAX_FILL_ROUNDS):
+        # Terminates: each non-empty round adds only unseen documents.
+        while True:
             ranked = await self._rank_nodes(project_id, need, top_k, pool, since, seen)
             exhausted = len(ranked) < pool
             batch = await self._load_candidates(
