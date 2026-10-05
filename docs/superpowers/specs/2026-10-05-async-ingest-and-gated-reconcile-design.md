@@ -199,7 +199,7 @@ only on needs not yet flagged:
 2. **Vector:** one query joining the changed embeddings to the project's need
    embeddings, keeping pairs with cosine ≥ `vector_floor`.
 3. **Lexical:** per remaining need, BM25 restricted to the changed rows
-   (`id = ANY(:changed) AND (description @@@ :q OR data_original @@@ :q)`),
+   (`id = ANY(:changed) AND (description ||| :q OR data_original ||| :q)`),
    flagging scores ≥ `lexical_floor`.
 
 **Large-change fallback:** when the change set exceeds 20% of the project's
@@ -249,7 +249,7 @@ bundles that changed.
   from an unfiltered search, so they must be comparable.
 - Whether the per-need lexical gate can be batched in one statement (for
   example `LATERAL` over `subscription_needs` with a non-constant `@@@`
-  right-hand side). The fallback is one small query per remaining need.
+  right-hand side of `|||`). The fallback is one small query per remaining need.
 
 ## Out of scope
 
