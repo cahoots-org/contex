@@ -78,3 +78,16 @@ async def test_excluded_documents_are_skipped(db):
     await _seed(db)
     results = await PgFtsLexical(db).search("p1", "SERVICE", top_k=10, exclude_documents={"cfg"})
     assert results == []
+    
+@pytest.mark.parametrize("query", [
+    "what is the request's timeout",  # apostrophe
+    "timeout: how long",              # colon (field syntax)
+    "timeout AND",                    # dangling boolean operator
+    "timeout (ms",                    # unbalanced paren
+])
+async def test_query_syntax_characters_are_plain_text(db, query):
+    # Natural-language queries must not be parsed as pg_search query syntax:
+    # a parse error makes hybrid search fall back to vector-only.
+    await _seed(db)
+    results = await PgFtsLexical(db).search("p1", query, top_k=10)
+    assert [k for k, _ in results] == ["timeout"]
