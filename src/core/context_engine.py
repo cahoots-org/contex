@@ -16,6 +16,7 @@ from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
 from .models import DataPublishEvent
+from .notifier import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +56,11 @@ class ContextEngine:
         max_matches: int = 10,
         max_context_size: int = 51200,  # ~40% of 128k token context window
         embed_model: str = "thenlper/gte-base",
+        notifier: Optional[Notifier] = None,
     ):
         self.db = db
         self.redis = redis
+        self.notifier = notifier
         self.semantic_matcher = SemanticDataMatcher(
             db=db,
             model_name=embed_model,

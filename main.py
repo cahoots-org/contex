@@ -198,6 +198,7 @@ async def lifespan(app: FastAPI):
             max_matches=MAX_MATCHES,
             max_context_size=MAX_CONTEXT_SIZE,
             embed_model=EMBED_MODEL,
+            notifier=notifier,
         )
         logger.info("Context engine initialized")
     except Exception as e:
