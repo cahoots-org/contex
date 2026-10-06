@@ -10,7 +10,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 from .logging import get_logger
 from .version import VERSION
@@ -23,7 +22,7 @@ class TracingManager:
     Manages distributed tracing with OpenTelemetry.
 
     Features:
-    - Automatic instrumentation of FastAPI and Redis
+    - Automatic instrumentation of FastAPI
     - Trace ID injection into logs
     - OTLP export to Jaeger/Tempo
     - Console export for development
@@ -113,14 +112,6 @@ class TracingManager:
             logger.info("Tracing: FastAPI instrumented")
         except Exception as e:
             logger.error("Tracing: Failed to instrument FastAPI", error=str(e))
-
-    def instrument_redis(self):
-        """Instrument Redis operations"""
-        try:
-            RedisInstrumentor().instrument(tracer_provider=self.tracer_provider)
-            logger.info("Tracing: Redis instrumented")
-        except Exception as e:
-            logger.error("Tracing: Failed to instrument Redis", error=str(e))
 
     def get_current_trace_id(self) -> Optional[str]:
         """

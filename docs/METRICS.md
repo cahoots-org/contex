@@ -107,19 +107,11 @@ scrape_configs:
 - Labels: `method`, `endpoint`
 - Buckets: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
 
-**`contex_redis_operation_duration_seconds{operation}`**
-- Redis operation duration
-- Labels: `operation`
-- Buckets: 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1
-
 ### Resource Metrics (Gauges)
 
 **`contex_registered_agents{project_id}`**
 - Number of currently registered agents
 - Labels: `project_id`
-
-**`contex_redis_connections`**
-- Number of active Redis connections
 
 **`contex_memory_usage_bytes`**
 - Memory usage in bytes

@@ -1,16 +1,16 @@
-"""Bridges Plan A's Redis `subscription:{id}:updated` events into MCP resources/updated
-notifications. The second of two modules allowed to import the mcp SDK."""
+"""Bridges subscription-updated notifications into MCP resources/updated pushes.
+The second of two modules allowed to import the mcp SDK."""
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
+from typing import Awaitable, Callable
 
 from mcp.server.subscriptions import ResourceUpdated
 
+from src.core.notifier import RESYNC, Notifier
+
 logger = logging.getLogger(__name__)
 
-_CHANNEL_PATTERN = "subscription:*:updated"
 _RESOURCE_URI_PREFIX = "contex://subscriptions/"
 
 
@@ -18,29 +18,20 @@ def resource_uri_for(subscription_id: str) -> str:
     return f"{_RESOURCE_URI_PREFIX}{subscription_id}"
 
 
-async def handle_message(bus, raw) -> str | None:
+async def run_bridge(
+    notifier: Notifier, bus, subscription_ids: Callable[[], Awaitable[list[str]]]
+) -> None:
+    """Push resources/updated for each update; after RESYNC, for every subscription.
+    Runs until cancelled."""
+    queue = notifier.listen()
     try:
-        data = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
-        sub_id = data["subscription_id"]
-    except (ValueError, KeyError, AttributeError, TypeError) as exc:
-        logger.warning("MCP bridge dropped a malformed subscription-updated message: %s", exc)
-        return None
-    uri = resource_uri_for(sub_id)
-    await bus.publish(ResourceUpdated(uri=uri))
-    return uri
-
-
-async def run_bridge(redis, bus, stop_event: asyncio.Event) -> None:
-    pubsub = redis.pubsub()
-    await pubsub.psubscribe(_CHANNEL_PATTERN)
-    logger.info("MCP bridge listening on %s", _CHANNEL_PATTERN)
-    try:
-        while not stop_event.is_set():
-            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+        while True:
+            item = await queue.get()
             try:
-                if msg and msg.get("type") in ("pmessage", "message"):
-                    await handle_message(bus, msg["data"])
+                ids = await subscription_ids() if item == RESYNC else [item]
+                for subscription_id in ids:
+                    await bus.publish(ResourceUpdated(uri=resource_uri_for(subscription_id)))
             except Exception:
-                logger.exception("MCP bridge loop error; continuing")
+                logger.exception("MCP bridge failed to push an update; continuing")
     finally:
-        await pubsub.aclose()
+        notifier.unlisten(queue)

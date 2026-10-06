@@ -24,7 +24,6 @@ Deep dive into system reliability:
 - **Circuit Breakers**: States, failures, transitions
 - **Webhooks**: Success rates, status distribution
 - **Authentication**: Auth attempts, rate limits, RBAC denials
-- **Redis Operations**: Latency, connections, memory
 - **Error Tracking**: HTTP errors, failed queries
 
 **Recommended for:** Incident response, debugging, SRE
@@ -34,7 +33,6 @@ Deep dive into system reliability:
 **Alerts Included:**
 - Circuit breaker open
 - High error rate
-- Redis connection pool exhausted
 - High rate limit violations
 
 ### 3. Contex - Business Metrics
@@ -134,7 +132,6 @@ All dashboards use Prometheus metrics from Contex's `/api/v1/metrics` endpoint.
 - `contex_rate_limit_exceeded_total` - Rate limit violations
 
 #### System Metrics
-- `contex_redis_connections` - Active Redis connections
 - `contex_memory_usage_bytes` - Memory usage
 - `contex_active_requests` - In-flight requests
 
@@ -143,7 +140,6 @@ All dashboards use Prometheus metrics from Contex's `/api/v1/metrics` endpoint.
 ### Critical (P1)
 - Circuit breaker open for >5 minutes
 - Error rate >5% for >5 minutes
-- Redis connection pool >90% for >2 minutes
 - p95 latency >1s for >5 minutes
 
 ### Warning (P2)

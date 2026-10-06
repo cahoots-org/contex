@@ -2,7 +2,10 @@
   "dashboard": {
     "title": "Contex - Overview",
     "description": "Main operational dashboard for Contex semantic context routing",
-    "tags": ["contex", "overview"],
+    "tags": [
+      "contex",
+      "overview"
+    ],
     "timezone": "browser",
     "editable": true,
     "graphTooltip": 1,
@@ -52,7 +55,9 @@
                 {
                   "evaluator": {
                     "type": "gt",
-                    "params": [10]
+                    "params": [
+                      10
+                    ]
                   },
                   "query": {
                     "model": "A",
@@ -74,28 +79,6 @@
             "options": {
               "colorMode": "value",
               "graphMode": "area"
-            }
-          },
-          {
-            "id": 4,
-            "title": "Redis Connections",
-            "type": "stat",
-            "targets": [
-              {
-                "expr": "contex_redis_connections"
-              }
-            ],
-            "options": {
-              "colorMode": "value",
-              "graphMode": "area"
-            },
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {"value": 0, "color": "green"},
-                {"value": 40, "color": "yellow"},
-                {"value": 45, "color": "red"}
-              ]
             }
           }
         ]

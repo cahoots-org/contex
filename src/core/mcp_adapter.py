@@ -113,7 +113,7 @@ def build_mcp_server(engine, db_accessor=None):
     # materialized bundle) lives in the Subscription DB table and survives restarts.
     # The bus only routes live notifications and is re-established when clients
     # reconnect. It is multi-replica-safe because the bridge is driven by shared
-    # Redis events.
+    # Postgres notifications.
     bus = InMemorySubscriptionBus()
     auth_kwargs = {}
     if auth_enabled() and db_accessor is not None:

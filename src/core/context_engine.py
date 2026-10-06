@@ -6,7 +6,6 @@ import tiktoken
 import toon_format as toon
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from redis.asyncio import Redis
 
 from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
@@ -16,6 +15,7 @@ from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
 from .models import DataPublishEvent
+from .notifier import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +44,20 @@ class ContextEngine:
     6. Real-time updates via pub/sub
 
     Data storage: PostgreSQL with pgvector
-    Real-time notifications: Redis pub/sub
+    Real-time notifications: Postgres LISTEN/NOTIFY
     """
 
     def __init__(
         self,
         db: DatabaseManager,
-        redis: Redis,
         similarity_threshold: float = 0.5,
         max_matches: int = 10,
         max_context_size: int = 51200,  # ~40% of 128k token context window
         embed_model: str = "thenlper/gte-base",
+        notifier: Optional[Notifier] = None,
     ):
         self.db = db
-        self.redis = redis
+        self.notifier = notifier
         self.semantic_matcher = SemanticDataMatcher(
             db=db,
             model_name=embed_model,
@@ -65,7 +65,7 @@ class ContextEngine:
             max_matches=max_matches
         )
         self.subscriptions = SubscriptionService(
-            db, HybridMatcher(self.semantic_matcher), redis
+            db, HybridMatcher(self.semantic_matcher)
         )
         self.event_store = EventStore(db)
         self.max_context_size = max_context_size

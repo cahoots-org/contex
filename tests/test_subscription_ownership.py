@@ -27,12 +27,12 @@ async def _ensure_tenant(db, tenant_id):
 
 
 @pytest.mark.asyncio
-async def test_get_bundle_cross_tenant_raises(db, redis, monkeypatch):
+async def test_get_bundle_cross_tenant_raises(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     await _ensure_tenant(db, "t1")
     await _ensure_tenant(db, "t2")
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t2")
 
     with pytest.raises(PermissionError):
@@ -40,11 +40,11 @@ async def test_get_bundle_cross_tenant_raises(db, redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_bundle_same_tenant_returns_bundle(db, redis, monkeypatch):
+async def test_get_bundle_same_tenant_returns_bundle(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     await _ensure_tenant(db, "t1")
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t1")
 
     bundle = await svc.get_bundle(sub_id, tenant_id="t1")
@@ -52,12 +52,12 @@ async def test_get_bundle_same_tenant_returns_bundle(db, redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_cross_tenant_raises_and_sub_remains(db, redis, monkeypatch):
+async def test_delete_cross_tenant_raises_and_sub_remains(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     await _ensure_tenant(db, "t1")
     await _ensure_tenant(db, "t2")
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t2")
 
     with pytest.raises(PermissionError):
@@ -71,11 +71,11 @@ async def test_delete_cross_tenant_raises_and_sub_remains(db, redis, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_delete_same_tenant_succeeds(db, redis, monkeypatch):
+async def test_delete_same_tenant_succeeds(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     await _ensure_tenant(db, "t1")
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t1")
 
     await svc.delete(sub_id, tenant_id="t1")
@@ -88,12 +88,12 @@ async def test_delete_same_tenant_succeeds(db, redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_multi_tenant_disabled_cross_tenant_is_noop(db, redis, monkeypatch):
+async def test_multi_tenant_disabled_cross_tenant_is_noop(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
     await _ensure_tenant(db, "t1")
     await _ensure_tenant(db, "t2")
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t2")
 
     bundle = await svc.get_bundle(sub_id, tenant_id="t1")

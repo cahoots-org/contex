@@ -153,7 +153,7 @@ See the [RBAC Guide](docs/RBAC.md).
 ```bash
 git clone https://github.com/cahoots-org/contex.git
 cd contex
-docker compose up -d      # Contex, ParadeDB, Redis
+docker compose up -d      # Contex, ParadeDB
 pytest tests/ -v
 ```
 

@@ -10,7 +10,7 @@ Golden integration tests are comprehensive end-to-end tests designed to:
 
 ## Running Tests
 
-### Quick Run (Unit-style, FakeRedis)
+### Quick Run (Unit-style)
 ```bash
 # Run simplified golden tests with mocked dependencies
 pytest tests/test_golden_unit.py -v
@@ -19,7 +19,7 @@ pytest tests/test_golden_unit.py -v
 ### Full Integration Run (Requires Docker)
 ```bash
 # Start infrastructure
-docker compose up -d postgres redis
+docker compose up -d postgres
 
 # Run comprehensive golden tests
 pytest tests/test_golden_integration.py -v
@@ -57,7 +57,7 @@ Add to your GitHub Actions workflow:
 ```yaml
 - name: Run Golden Integration Tests
   run: |
-    docker compose up -d postgres redis
+    docker compose up -d postgres
     pytest tests/test_golden_integration.py -v --maxfail=1
     docker compose down
 ```
@@ -90,7 +90,7 @@ Example:
 
 ```python
 @pytest.mark.asyncio
-async def test_new_critical_workflow(test_client, test_redis):
+async def test_new_critical_workflow(test_client, db):
     """Golden test: Brief description of workflow"""
 
     # 1. Setup - create necessary data
