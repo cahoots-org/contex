@@ -31,6 +31,7 @@ from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
+from src.core.notifier import Notifier, listen_dsn
 from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
@@ -114,6 +115,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to migrate database schema", error=str(e))
         raise
+
+    # LISTEN connection for subscription-update notifications.
+    notifier = Notifier(listen_dsn(db))
+    try:
+        await notifier.start()
+        logger.info("Notification listener connected")
+    except Exception as e:
+        logger.error("Failed to open the notification LISTEN connection", error=str(e))
+        raise
+    app.state.notifier = notifier
 
     # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)
     try:
@@ -249,12 +260,12 @@ async def lifespan(app: FastAPI):
     app.state.mcp_bus = _mcp_bus
     try:
         async with _mcp_server.session_manager.run():
-            mcp_stop = asyncio.Event()
-            bridge_task = asyncio.create_task(run_bridge(redis, _mcp_bus, mcp_stop))
+            bridge_task = asyncio.create_task(
+                run_bridge(notifier, _mcp_bus, context_engine.subscriptions.all_ids)
+            )
             try:
                 yield
             finally:
-                mcp_stop.set()
                 bridge_task.cancel()
                 try:
                     await bridge_task
@@ -262,6 +273,7 @@ async def lifespan(app: FastAPI):
                     pass
     finally:
         # Shutdown — unconditional even if session_manager teardown raises
+        await notifier.stop()
         await shutdown_cleanup(app.state)
 
 

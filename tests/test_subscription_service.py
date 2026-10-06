@@ -39,3 +39,11 @@ async def test_create_without_tenant_id_defaults_to_default(db, redis):
             select(Subscription).where(Subscription.subscription_id == sub_id)
         )).scalar_one()
         assert row.tenant_id == DEFAULT_TENANT_ID
+
+
+@pytest.mark.asyncio
+async def test_all_ids_lists_every_subscription(db, redis):
+    svc = SubscriptionService(db, _StubMatcher(), redis)
+    a = await svc.create("p1", ["x"])
+    b = await svc.create("p2", ["y"])
+    assert sorted(await svc.all_ids()) == sorted([a, b])
