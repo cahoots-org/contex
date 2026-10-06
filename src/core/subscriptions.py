@@ -6,12 +6,13 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.limits import check_needs, clamp_top_k
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
+from src.core.notifier import SUBSCRIPTION_UPDATED
 
 logger = logging.getLogger(__name__)
 
@@ -113,19 +114,25 @@ class SubscriptionService:
                 if new_bundle == sub.bundle:
                     continue
                 now = datetime.now(timezone.utc)  # single timestamp for both DB + event
+                event = json.dumps({
+                    "subscription_id": sub.subscription_id,
+                    "updated_at": now.isoformat(),
+                })
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
                     )).scalar_one()
                     row.bundle = new_bundle
                     row.bundle_updated_at = now
+                    # Delivered only on commit, so listeners never see an unreadable bundle.
+                    await session.execute(
+                        text("SELECT pg_notify(:channel, :payload)"),
+                        {"channel": SUBSCRIPTION_UPDATED, "payload": event},
+                    )
                     await session.commit()  # commit BEFORE publish: reader must see committed value
                 await self.redis.publish(
                     f"subscription:{sub.subscription_id}:updated",
-                    json.dumps({
-                        "subscription_id": sub.subscription_id,
-                        "updated_at": now.isoformat(),
-                    }),
+                    event,
                 )
                 changed_ids.append(sub.subscription_id)
             except Exception:

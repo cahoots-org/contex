@@ -1,4 +1,5 @@
 # tests/test_subscription_reconcile.py
+import asyncio
 import json
 import pytest
 from src.core.subscriptions import SubscriptionService
@@ -130,3 +131,29 @@ async def test_reconcile_scoped_to_project(db, redis):
     # the "other" subscription's stored bundle must be unchanged
     bundle_after = await svc_other.get_bundle(sub_other)
     assert bundle_after == bundle_before
+
+
+@pytest.mark.asyncio
+async def test_reconcile_notifies_changed_subscription_over_postgres(db, redis, notifier):
+    m = _MutableMatcher([{"data_key": "cfg", "similarity": 0.9, "data": {"v": 1}, "description": "d"}])
+    svc = SubscriptionService(db, m, redis)
+    sub_id = await svc.create("p1", ["auth"])
+    queue = notifier.listen(sub_id)
+
+    m._bundle = [{"data_key": "cfg", "similarity": 0.95, "data": {"v": 2}, "description": "d"}]
+    await svc.reconcile_project("p1")
+
+    assert await asyncio.wait_for(queue.get(), 2) == sub_id
+
+
+@pytest.mark.asyncio
+async def test_unchanged_reconcile_sends_no_postgres_notification(db, redis, notifier):
+    m = _MutableMatcher([{"data_key": "cfg", "similarity": 0.9, "data": {"v": 1}, "description": "d"}])
+    svc = SubscriptionService(db, m, redis)
+    sub_id = await svc.create("p1", ["auth"])
+    queue = notifier.listen(sub_id)
+
+    await svc.reconcile_project("p1")
+
+    await asyncio.sleep(0.3)
+    assert queue.empty()
