@@ -124,6 +124,83 @@ async def lifespan(app: FastAPI):
         raise
     app.state.notifier = notifier
 
+    # Bootstrap admin account if needed
+    from src.core.auth import list_api_keys, create_api_key
+    from src.core.rbac import assign_role, Role
+    try:
+        existing_keys = await list_api_keys(db)
+        if not existing_keys:
+            # No API keys exist - bootstrap admin
+            bootstrap_key = os.getenv("BOOTSTRAP_ADMIN_KEY")
+            bootstrap_name = os.getenv("BOOTSTRAP_ADMIN_NAME", "root")
+
+            if bootstrap_key:
+                # Use provided bootstrap key
+                logger.info("Bootstrapping admin account with provided key", name=bootstrap_name)
+
+                key_id = secrets.token_hex(8)
+                key_hash = hash_api_key(bootstrap_key)
+
+                # Store the key in PostgreSQL
+                async with db.session() as session:
+                    api_key_record = APIKeyModel(
+                        key_id=key_id,
+                        key_hash=key_hash,
+                        name=bootstrap_name,
+                        prefix=bootstrap_key[:7] if len(bootstrap_key) >= 7 else bootstrap_key,
+                        scopes=[],
+                        created_at=datetime.now(timezone.utc),
+                    )
+                    session.add(api_key_record)
+
+                # Assign admin role
+                await assign_role(db, key_id, Role.ADMIN, projects=[])
+                logger.warning("Bootstrap admin created with provided key", key_id=key_id, name=bootstrap_name)
+            else:
+                # Auto-generate admin key
+                raw_key, api_key = await create_api_key(db, bootstrap_name)
+                # Assign admin role
+                await assign_role(db, api_key.key_id, Role.ADMIN, projects=[])
+                # The raw key goes to stderr only, never the logger: logger
+                # records also ship as Sentry breadcrumbs and to log forwarders.
+                logger.warning("Bootstrap admin key generated; printed once to stderr", key_id=api_key.key_id, name=api_key.name)
+                print(
+                    "\n" + "=" * 60
+                    + "\nBOOTSTRAP ADMIN KEY (SAVE THIS - ONE TIME DISPLAY):"
+                    + f"\n   API Key: {raw_key}"
+                    + f"\n   Key ID: {api_key.key_id}"
+                    + f"\n   Name: {api_key.name}"
+                    + "\n" + "=" * 60 + "\n",
+                    file=sys.stderr,
+                )
+        else:
+            logger.info("API keys already exist, skipping bootstrap", count=len(existing_keys))
+    except Exception as e:
+        logger.error("Failed to bootstrap admin account", error=str(e))
+        # Don't fail startup, but log the error
+
+    # Initialize Context Engine
+    try:
+        context_engine = ContextEngine(
+            db=db,
+            similarity_threshold=SIMILARITY_THRESHOLD,
+            max_matches=MAX_MATCHES,
+            max_context_size=MAX_CONTEXT_SIZE,
+            embed_model=EMBED_MODEL,
+            notifier=notifier,
+        )
+        logger.info("Context engine initialized")
+    except Exception as e:
+        logger.error("Failed to initialize context engine", error=str(e))
+        raise
+
+    # Initialize vector storage index
+    try:
+        await context_engine.semantic_matcher.initialize_index()
+    except Exception as e:
+        logger.warning("Vector index initialization failed", error=str(e))
+
+    # Initialize audit logging
     from src.core.audit import init_audit_logger
     audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
     audit_logger = init_audit_logger(db, retention_days=audit_retention_days)
