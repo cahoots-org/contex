@@ -128,8 +128,8 @@ async def test_event_explicit_null_via_raw_sql_raises_integrity_error(db):
 
 
 @pytest.mark.asyncio
-async def test_subscription_service_create_defaults_to_default_tenant(db, redis):
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+async def test_subscription_service_create_defaults_to_default_tenant(db):
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["auth config"])
 
     async with db.session() as session:

@@ -5,8 +5,8 @@ from src.core.models import DataPublishEvent
 
 
 @pytest.mark.asyncio
-async def test_query_matches_subscription_bundle(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_query_matches_subscription_bundle(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     await engine.publish_data(DataPublishEvent(
         project_id="proj", data_key="db_cfg",
@@ -24,8 +24,8 @@ async def test_query_matches_subscription_bundle(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_subscription(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_delete_removes_subscription(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     sub_id = await engine.subscriptions.create("proj", ["anything"])
     await engine.subscriptions.delete(sub_id)

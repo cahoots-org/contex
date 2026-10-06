@@ -3,7 +3,6 @@
 import os
 import pytest
 import pytest_asyncio
-from fakeredis import FakeAsyncRedis
 from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
@@ -156,21 +155,6 @@ async def _reset_database(manager: DatabaseManager) -> None:
     await ensure_default_tenant(manager)
 
 
-@pytest_asyncio.fixture
-async def redis():
-    """
-    Create a clean Redis client for each test.
-
-    Uses FakeRedis for fast, isolated testing.
-    Used for pub/sub testing only.
-    """
-    client = FakeAsyncRedis(decode_responses=False)
-    yield client
-    # Cleanup
-    await client.flushall()
-    await client.aclose()
-
-
 @pytest.fixture
 def mock_db():
     """
@@ -188,17 +172,6 @@ def mock_db():
 
     mock.health_check = AsyncMock(return_value={"status": "healthy"})
 
-    return mock
-
-
-@pytest.fixture
-def mock_redis():
-    """
-    Create a mock Redis client for unit tests.
-    """
-    mock = AsyncMock()
-    mock.publish = AsyncMock(return_value=1)
-    mock.subscribe = AsyncMock()
     return mock
 
 

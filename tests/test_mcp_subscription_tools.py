@@ -11,8 +11,8 @@ from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 
 
 @pytest.mark.asyncio
-async def test_create_and_delete_subscription_tools(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_create_and_delete_subscription_tools(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -33,10 +33,10 @@ async def test_create_and_delete_subscription_tools(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_delete_nonexistent_is_idempotent(db, redis):
+async def test_delete_nonexistent_is_idempotent(db):
     """Deleting a subscription that doesn't exist must succeed with no error
     and return {"deleted": <id>} (idempotent delete)."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -46,9 +46,9 @@ async def test_delete_nonexistent_is_idempotent(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_create_with_empty_needs(db, redis):
+async def test_create_with_empty_needs(db):
     """Creating a subscription with no needs should succeed and produce an empty bundle."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -66,7 +66,7 @@ async def test_create_with_empty_needs(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_multitenant_create_read_delete_lifecycle(db, redis, monkeypatch):
+async def test_multitenant_create_read_delete_lifecycle(db, monkeypatch):
     """Full create→get_bundle→delete lifecycle succeeds for a real-tenant caller.
 
     Regression test for the bug where contex_create_subscription stored
@@ -93,7 +93,7 @@ async def test_multitenant_create_read_delete_lifecycle(db, redis, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: fake_token)
 
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -115,10 +115,10 @@ async def test_multitenant_create_read_delete_lifecycle(db, redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_project_scoped_key_cannot_touch_other_projects_subscription(db, redis, monkeypatch):
+async def test_project_scoped_key_cannot_touch_other_projects_subscription(db, monkeypatch):
     """A key scoped to one project must not read or delete another project's
     subscription in the same tenant (#73)."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("proj-b", ["auth config"])

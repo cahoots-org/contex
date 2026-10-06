@@ -46,6 +46,6 @@ def test_check_batch_size_rejects_oversized():
 async def test_subscription_rejects_too_many_needs():
     # The needs cap must trip before any DB or matcher work, so a service wired
     # with no dependencies still raises on an oversized request.
-    svc = SubscriptionService(db=None, matcher=None, redis=None)
+    svc = SubscriptionService(db=None, matcher=None)
     with pytest.raises(ValueError, match="Too many needs"):
         await svc.create("proj", ["need"] * (MAX_NEEDS + 1))

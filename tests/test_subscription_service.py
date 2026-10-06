@@ -12,8 +12,8 @@ class _StubMatcher:
 
 
 @pytest.mark.asyncio
-async def test_create_materializes_bundle_and_get_bundle_reads_it(db, redis):
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+async def test_create_materializes_bundle_and_get_bundle_reads_it(db):
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["auth config"])
     assert sub_id.startswith("sub_")
 
@@ -22,15 +22,15 @@ async def test_create_materializes_bundle_and_get_bundle_reads_it(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_get_bundle_unknown_raises(db, redis):
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+async def test_get_bundle_unknown_raises(db):
+    svc = SubscriptionService(db, _StubMatcher())
     with pytest.raises(KeyError):
         await svc.get_bundle("nope")
 
 
 @pytest.mark.asyncio
-async def test_create_without_tenant_id_defaults_to_default(db, redis):
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+async def test_create_without_tenant_id_defaults_to_default(db):
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["auth config"])
     assert sub_id.startswith("sub_")
 
@@ -42,8 +42,8 @@ async def test_create_without_tenant_id_defaults_to_default(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_all_ids_lists_every_subscription(db, redis):
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+async def test_all_ids_lists_every_subscription(db):
+    svc = SubscriptionService(db, _StubMatcher())
     a = await svc.create("p1", ["x"])
     b = await svc.create("p2", ["y"])
     assert sorted(await svc.all_ids()) == sorted([a, b])

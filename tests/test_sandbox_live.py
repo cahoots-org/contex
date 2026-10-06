@@ -18,8 +18,8 @@ def _payload(frame: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_stream_yields_initial_then_updates_then_cleans_up(db, redis, notifier):
-    engine = ContextEngine(db=db, redis=redis, notifier=notifier, similarity_threshold=0.1, max_matches=10)
+async def test_stream_yields_initial_then_updates_then_cleans_up(db, notifier):
+    engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
 
     agen = stream_subscription_updates(
@@ -57,10 +57,10 @@ async def test_stream_yields_initial_then_updates_then_cleans_up(db, redis, noti
 
 
 @pytest.mark.asyncio
-async def test_stream_cleans_up_subscription_when_setup_fails(db, redis, notifier, monkeypatch):
+async def test_stream_cleans_up_subscription_when_setup_fails(db, notifier, monkeypatch):
     """If reading the first bundle raises after the subscription is created, the
     subscription is still deleted and the listener released."""
-    engine = ContextEngine(db=db, redis=redis, notifier=notifier, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     monkeypatch.setattr(engine.subscriptions, "get_bundle", AsyncMock(side_effect=RuntimeError("boom")))
 

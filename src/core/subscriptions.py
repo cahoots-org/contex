@@ -35,10 +35,9 @@ def _assert_sub_tenant(row, tenant_id):
 
 
 class SubscriptionService:
-    def __init__(self, db, matcher, redis) -> None:
+    def __init__(self, db, matcher) -> None:
         self.db = db
         self.matcher = matcher
-        self.redis = redis
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -133,11 +132,7 @@ class SubscriptionService:
                         text("SELECT pg_notify(:channel, :payload)"),
                         {"channel": SUBSCRIPTION_UPDATED, "payload": event},
                     )
-                    await session.commit()  # commit BEFORE publish: reader must see committed value
-                await self.redis.publish(
-                    f"subscription:{sub.subscription_id}:updated",
-                    event,
-                )
+                    await session.commit()
                 changed_ids.append(sub.subscription_id)
             except Exception:
                 logger.exception("reconcile failed for subscription %s", sub.subscription_id)

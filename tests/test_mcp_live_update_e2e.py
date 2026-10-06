@@ -10,8 +10,8 @@ from src.core.mcp_bridge import resource_uri_for, run_bridge
 
 
 @pytest.mark.asyncio
-async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, redis, notifier):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, notifier):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, bus = build_mcp_server(engine)
 

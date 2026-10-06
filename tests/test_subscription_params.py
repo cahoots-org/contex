@@ -4,9 +4,9 @@ from src.core.models import DataPublishEvent
 
 
 @pytest.mark.asyncio
-async def test_reconcile_honors_persisted_params(db, redis):
+async def test_reconcile_honors_persisted_params(db):
     # engine default max_matches=1 (restrictive); subscription created with top_k=10 (permissive)
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=1)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=1)
     await engine.initialize()
     sub_id = await engine.subscriptions.create("p", ["database connection settings"], top_k=10, threshold=0.1)
     # publish three documents so matches can't collapse into one result
@@ -25,8 +25,8 @@ async def test_reconcile_honors_persisted_params(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_create_with_params_matches_query_with_same_params(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.9, max_matches=1)
+async def test_create_with_params_matches_query_with_same_params(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.9, max_matches=1)
     await engine.initialize()
     await engine.publish_data(DataPublishEvent(
         project_id="p", data_key="db", data={"purpose": "database connection settings"}, data_format="json",
