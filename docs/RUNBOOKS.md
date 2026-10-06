@@ -42,7 +42,7 @@ This document contains operational runbooks for common scenarios when running Co
    psql -U contex -d contex -c "SELECT 1"
 
    # Live updates: confirm the listener
-   psql -U contex -d contex -c "SELECT pid, query FROM pg_stat_activity WHERE query LIKE 'LISTEN%';"
+   psql -U contex -d contex -c "SELECT pid, state FROM pg_stat_activity WHERE application_name = 'contex-notifier';"
    ```
 
 4. **Check Sentry for error details:**

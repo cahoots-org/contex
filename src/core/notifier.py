@@ -28,9 +28,13 @@ RESYNC = "__resync__"
 
 
 def listen_connect_kwargs(url: URL) -> dict:
-    """``asyncpg.connect`` kwargs for a SQLAlchemy URL, using SQLAlchemy's own query-param translation."""
+    """``asyncpg.connect`` kwargs for a SQLAlchemy URL, using SQLAlchemy's own query-param translation.
+
+    The connection is tagged ``application_name=contex-notifier`` so it is findable in ``pg_stat_activity``.
+    """
     kwargs = asyncpg_dialect().create_connect_args(url)[1]
     kwargs.pop("prepared_statement_cache_size", None)
+    kwargs["server_settings"] = {**kwargs.get("server_settings", {}), "application_name": "contex-notifier"}
     return kwargs
 
 

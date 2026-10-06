@@ -142,3 +142,13 @@ async def test_url_query_params_are_translated_not_sent_as_server_settings(db):
     notifier = Notifier(listen_connect_kwargs(url))
     await notifier.start()
     await notifier.stop()
+
+
+@pytest.mark.asyncio
+async def test_listen_connection_is_tagged_in_pg_stat_activity(db, notifier):
+    async with db.session() as session:
+        count = await session.scalar(
+            text("SELECT count(*) FROM pg_stat_activity WHERE application_name = 'contex-notifier' AND pid = :pid"),
+            {"pid": notifier._conn.get_server_pid()},
+        )
+    assert count == 1
