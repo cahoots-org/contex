@@ -185,7 +185,7 @@ logger.info("Processing request")  # Includes request_id automatically
 | **INFO** | General informational events | `logger.info("Agent registered", agent_id="...")` |
 | **WARNING** | Warning messages | `logger.warning("Rate limit approaching", remaining=10)` |
 | **ERROR** | Error events | `logger.error("Failed to publish", error=str(e))` |
-| **CRITICAL** | Critical failures | `logger.critical("Redis connection lost")` |
+| **CRITICAL** | Critical failures | `logger.critical("Database connection lost")` |
 
 ### Log Level Guidelines
 

@@ -78,7 +78,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -98,7 +101,9 @@
       "icon": "external link",
       "includeVars": false,
       "keepTime": true,
-      "tags": ["contex"],
+      "tags": [
+        "contex"
+      ],
       "targetBlank": true,
       "title": "Contex Service Dashboard",
       "tooltip": "",
@@ -110,40 +115,67 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "Trace Overview",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "reqps"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "Request Rate",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(rate(contex_http_requests_total[5m]))",
           "legendFormat": "req/s",
           "refId": "A"
@@ -151,16 +183,30 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.01 },
-              { "color": "red", "value": 0.05 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
             ]
           },
           "unit": "percentunit",
@@ -169,20 +215,34 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "Error Rate",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(rate(contex_http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(contex_http_requests_total[5m]))",
           "legendFormat": "",
           "refId": "A"
@@ -190,36 +250,64 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.25 },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.25
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "p50 Latency",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "histogram_quantile(0.50, sum by (le) (rate(contex_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "",
           "refId": "A"
@@ -227,36 +315,64 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.5 },
-              { "color": "red", "value": 2 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "p95 Latency",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(contex_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "",
           "refId": "A"
@@ -264,36 +380,64 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 5 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
             ]
           },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
       "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "p99 Latency",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(contex_http_request_duration_seconds_bucket[5m])))",
           "legendFormat": "",
           "refId": "A"
@@ -301,34 +445,56 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              {
+                "color": "green",
+                "value": null
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
       "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "textMode": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       },
       "title": "Active Requests",
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "contex_active_requests",
           "legendFormat": "",
           "refId": "A"
@@ -337,25 +503,41 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "id": 101,
       "title": "Trace Search",
       "type": "row"
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
       "id": 10,
       "options": {},
       "title": "Recent Traces - All Requests",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 50,
           "filters": [
@@ -363,14 +545,18 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "min-duration",
               "tag": "duration",
               "operator": ">",
-              "value": ["${min_duration}"]
+              "value": [
+                "${min_duration}"
+              ]
             }
           ],
           "refId": "A"
@@ -378,19 +564,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
       "id": 11,
       "options": {},
       "title": "Error Traces",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 50,
           "filters": [
@@ -398,14 +595,18 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "status-error",
               "tag": "status",
               "operator": "=",
-              "value": ["error"],
+              "value": [
+                "error"
+              ],
               "scope": "intrinsic"
             }
           ],
@@ -415,16 +616,26 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "id": 102,
       "title": "Service Performance (TraceQL Metrics)",
       "type": "row"
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -436,23 +647,44 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
       "id": 20,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "Trace Count by HTTP Method",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceql",
           "query": "{resource.service.name = \"contex\" && span.http.method =~ \".*\"} | rate() by (span.http.method)",
           "refId": "A"
@@ -460,10 +692,15 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -475,23 +712,44 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
       "id": 21,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "Trace Count by HTTP Status",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceql",
           "query": "{resource.service.name = \"contex\" && span.http.status_code >= 100} | rate() by (span.http.status_code)",
           "refId": "A"
@@ -499,10 +757,15 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -514,23 +777,44 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "ns"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
       "id": 22,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "Request Duration by Route (p95)",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceql",
           "query": "{resource.service.name = \"contex\" && span.http.route =~ \".*\"} | quantile_over_time(duration, 0.95) by (span.http.route)",
           "refId": "A"
@@ -538,10 +822,15 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -553,23 +842,44 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
       "id": 23,
       "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "Error Rate by Route",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceql",
           "query": "{resource.service.name = \"contex\" && status = error} | rate() by (span.http.route)",
           "refId": "A"
@@ -578,25 +888,41 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
       "id": 103,
       "title": "Slow & Error Traces",
       "type": "row"
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 44 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
       "id": 30,
       "options": {},
       "title": "Slowest Traces (> 1s)",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 30,
           "filters": [
@@ -604,14 +930,18 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "min-duration",
               "tag": "duration",
               "operator": ">",
-              "value": ["1s"]
+              "value": [
+                "1s"
+              ]
             }
           ],
           "refId": "A"
@@ -619,19 +949,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 54 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
       "id": 31,
       "options": {},
       "title": "Slowest Publish Operations (> 500ms)",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -639,21 +980,27 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-route",
               "tag": "http.route",
               "operator": "=",
-              "value": ["/api/v1/{project_id}/publish"],
+              "value": [
+                "/api/v1/{project_id}/publish"
+              ],
               "scope": "span"
             },
             {
               "id": "min-duration",
               "tag": "duration",
               "operator": ">",
-              "value": ["500ms"]
+              "value": [
+                "500ms"
+              ]
             }
           ],
           "refId": "A"
@@ -661,19 +1008,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 64 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 64
+      },
       "id": 32,
       "options": {},
       "title": "Slowest Query Operations (> 500ms)",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -681,21 +1039,27 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-route",
               "tag": "http.route",
               "operator": "=",
-              "value": ["/api/v1/{project_id}/query"],
+              "value": [
+                "/api/v1/{project_id}/query"
+              ],
               "scope": "span"
             },
             {
               "id": "min-duration",
               "tag": "duration",
               "operator": ">",
-              "value": ["500ms"]
+              "value": [
+                "500ms"
+              ]
             }
           ],
           "refId": "A"
@@ -704,143 +1068,26 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 74 },
-      "id": 104,
-      "title": "Redis Traces",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisLabel": "",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "none",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
-          },
-          "unit": "ns"
-        },
-        "overrides": []
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 91
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 75 },
-      "id": 40,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "title": "Redis Operation Duration (p95 by command)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-          "queryType": "traceql",
-          "query": "{resource.service.name = \"contex\" && span.db.system = \"redis\"} | quantile_over_time(duration, 0.95) by (span.db.statement)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisLabel": "",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "none",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 75 },
-      "id": 41,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "title": "Redis Operation Rate",
-      "type": "timeseries",
-      "targets": [
-        {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-          "queryType": "traceql",
-          "query": "{resource.service.name = \"contex\" && span.db.system = \"redis\"} | rate() by (span.db.statement)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 83 },
-      "id": 42,
-      "options": {},
-      "title": "Slow Redis Operations (> 50ms)",
-      "type": "table",
-      "targets": [
-        {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
-          "queryType": "traceqlSearch",
-          "limit": 20,
-          "filters": [
-            {
-              "id": "service-name",
-              "tag": "service.name",
-              "operator": "=",
-              "value": ["contex"],
-              "scope": "resource"
-            },
-            {
-              "id": "db-system",
-              "tag": "db.system",
-              "operator": "=",
-              "value": ["redis"],
-              "scope": "span"
-            },
-            {
-              "id": "min-duration",
-              "tag": "duration",
-              "operator": ">",
-              "value": ["50ms"]
-            }
-          ],
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 91 },
       "id": 105,
       "title": "Latency Distribution",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -851,23 +1098,41 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 92 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 92
+      },
       "id": 50,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "HTTP Request Duration Distribution",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(contex_http_request_duration_seconds_bucket[5m])) by (le)",
           "legendFormat": "<= {{ le }}s",
           "refId": "A",
@@ -876,10 +1141,15 @@
       ]
     },
     {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "",
@@ -890,23 +1160,41 @@
             "pointSize": 5,
             "showPoints": "never",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" }
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 92 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 92
+      },
       "id": 51,
       "options": {
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "title": "Embedding Duration Distribution",
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "sum(increase(contex_embedding_duration_seconds_bucket[5m])) by (le)",
           "legendFormat": "<= {{ le }}s",
           "refId": "A",
@@ -916,25 +1204,41 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 100 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 100
+      },
       "id": 106,
       "title": "Endpoint Drilldown",
       "type": "row"
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 101 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 101
+      },
       "id": 60,
       "options": {},
       "title": "Publish Endpoint Traces",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -942,21 +1246,27 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-method",
               "tag": "http.method",
               "operator": "=",
-              "value": ["POST"],
+              "value": [
+                "POST"
+              ],
               "scope": "span"
             },
             {
               "id": "http-target",
               "tag": "http.target",
               "operator": "=~",
-              "value": [".*/publish.*"],
+              "value": [
+                ".*/publish.*"
+              ],
               "scope": "span"
             }
           ],
@@ -965,19 +1275,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 101 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 101
+      },
       "id": 61,
       "options": {},
       "title": "Query Endpoint Traces",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -985,21 +1306,27 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-method",
               "tag": "http.method",
               "operator": "=",
-              "value": ["POST"],
+              "value": [
+                "POST"
+              ],
               "scope": "span"
             },
             {
               "id": "http-target",
               "tag": "http.target",
               "operator": "=~",
-              "value": [".*/query.*"],
+              "value": [
+                ".*/query.*"
+              ],
               "scope": "span"
             }
           ],
@@ -1008,19 +1335,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 111 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 111
+      },
       "id": 62,
       "options": {},
       "title": "Register Endpoint Traces",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -1028,21 +1366,27 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-method",
               "tag": "http.method",
               "operator": "=",
-              "value": ["POST"],
+              "value": [
+                "POST"
+              ],
               "scope": "span"
             },
             {
               "id": "http-target",
               "tag": "http.target",
               "operator": "=~",
-              "value": [".*/register.*"],
+              "value": [
+                ".*/register.*"
+              ],
               "scope": "span"
             }
           ],
@@ -1051,19 +1395,30 @@
       ]
     },
     {
-      "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 111 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 111
+      },
       "id": 63,
       "options": {},
       "title": "Webhook Delivery Traces",
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "tempo", "uid": "${DS_TEMPO}" },
+          "datasource": {
+            "type": "tempo",
+            "uid": "${DS_TEMPO}"
+          },
           "queryType": "traceqlSearch",
           "limit": 20,
           "filters": [
@@ -1071,14 +1426,18 @@
               "id": "service-name",
               "tag": "service.name",
               "operator": "=",
-              "value": ["contex"],
+              "value": [
+                "contex"
+              ],
               "scope": "resource"
             },
             {
               "id": "http-target",
               "tag": "http.target",
               "operator": "=~",
-              "value": [".*/webhook.*"],
+              "value": [
+                ".*/webhook.*"
+              ],
               "scope": "span"
             }
           ],
@@ -1090,7 +1449,12 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["contex", "tracing", "tempo", "cahoots"],
+  "tags": [
+    "contex",
+    "tracing",
+    "tempo",
+    "cahoots"
+  ],
   "templating": {
     "list": [
       {
@@ -1106,15 +1470,51 @@
         "multi": false,
         "name": "min_duration",
         "options": [
-          { "selected": true, "text": "0ms", "value": "0ms" },
-          { "selected": false, "text": "10ms", "value": "10ms" },
-          { "selected": false, "text": "50ms", "value": "50ms" },
-          { "selected": false, "text": "100ms", "value": "100ms" },
-          { "selected": false, "text": "250ms", "value": "250ms" },
-          { "selected": false, "text": "500ms", "value": "500ms" },
-          { "selected": false, "text": "1s", "value": "1s" },
-          { "selected": false, "text": "2s", "value": "2s" },
-          { "selected": false, "text": "5s", "value": "5s" }
+          {
+            "selected": true,
+            "text": "0ms",
+            "value": "0ms"
+          },
+          {
+            "selected": false,
+            "text": "10ms",
+            "value": "10ms"
+          },
+          {
+            "selected": false,
+            "text": "50ms",
+            "value": "50ms"
+          },
+          {
+            "selected": false,
+            "text": "100ms",
+            "value": "100ms"
+          },
+          {
+            "selected": false,
+            "text": "250ms",
+            "value": "250ms"
+          },
+          {
+            "selected": false,
+            "text": "500ms",
+            "value": "500ms"
+          },
+          {
+            "selected": false,
+            "text": "1s",
+            "value": "1s"
+          },
+          {
+            "selected": false,
+            "text": "2s",
+            "value": "2s"
+          },
+          {
+            "selected": false,
+            "text": "5s",
+            "value": "5s"
+          }
         ],
         "query": "",
         "skipUrlSync": false,

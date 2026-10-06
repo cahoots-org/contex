@@ -6,12 +6,11 @@ This document contains operational runbooks for common scenarios when running Co
 
 1. [Incident Response](#incident-response)
 2. [PostgreSQL Operations](#postgresql-operations)
-3. [Redis Operations](#redis-operations)
-4. [Scaling Operations](#scaling-operations)
-5. [Deployment Procedures](#deployment-procedures)
-6. [Backup and Recovery](#backup-and-recovery)
-7. [Performance Troubleshooting](#performance-troubleshooting)
-8. [Security Incidents](#security-incidents)
+3. [Scaling Operations](#scaling-operations)
+4. [Deployment Procedures](#deployment-procedures)
+5. [Backup and Recovery](#backup-and-recovery)
+6. [Performance Troubleshooting](#performance-troubleshooting)
+7. [Security Incidents](#security-incidents)
 
 ---
 
@@ -42,8 +41,8 @@ This document contains operational runbooks for common scenarios when running Co
    # PostgreSQL health
    psql -U contex -d contex -c "SELECT 1"
 
-   # Redis health (pub/sub only)
-   redis-cli ping
+   # Live updates: confirm the listener
+   psql -U contex -d contex -c "SELECT pid, query FROM pg_stat_activity WHERE query LIKE 'LISTEN%';"
    ```
 
 4. **Check Sentry for error details:**
@@ -54,7 +53,6 @@ This document contains operational runbooks for common scenarios when running Co
 **Resolution:**
 
 - If PostgreSQL is down: See [PostgreSQL Recovery](#postgresql-recovery)
-- If Redis is down: See [Redis Issues](#redis-pubsub-issues)
 - If high latency: See [High Latency Investigation](#high-latency-investigation)
 - If OOM: See [Memory Issues](#memory-issues)
 
@@ -266,53 +264,6 @@ WHERE idx_scan = 0;
 
 ---
 
-## Redis Operations
-
-Redis is used only for pub/sub notifications in Contex. Data is stored in PostgreSQL.
-
-### Redis Pub/Sub Issues
-
-**Symptoms:**
-- Agent notifications not being delivered
-- Pub/sub messages not arriving
-
-**Investigation:**
-
-```bash
-# Check Redis status
-redis-cli ping
-
-# Check pub/sub channels
-redis-cli PUBSUB CHANNELS "*"
-
-# Monitor pub/sub activity
-redis-cli MONITOR
-```
-
-**Resolution:**
-
-```bash
-# Restart Redis if needed
-docker compose restart redis
-
-# Check Contex is connected
-docker compose logs contex | grep -i redis
-```
-
-### Redis Memory (Pub/Sub Buffer)
-
-Even for pub/sub only, Redis uses memory for message buffers:
-
-```bash
-# Check memory usage
-redis-cli info memory
-
-# Check client output buffers
-redis-cli info clients
-```
-
----
-
 ## Scaling Operations
 
 ### Horizontal Scaling
@@ -517,7 +468,6 @@ psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec
      --dry-run=client -o yaml | kubectl apply -f -
 
    # Rotate PostgreSQL password
-   # Rotate Redis password
    # Rotate AWS credentials
    ```
 
@@ -559,7 +509,6 @@ psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec
 1. **Rotate immediately:**
    - All API keys
    - Database passwords
-   - Redis password
    - AWS credentials
 
 2. **Audit access:**
@@ -605,9 +554,6 @@ curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics 
 
 # PostgreSQL quick check
 psql -c "SELECT 1" && psql -c "SELECT count(*) FROM events;"
-
-# Redis quick check (pub/sub)
-redis-cli ping
 
 # Pod resource usage
 kubectl top pods -l app=contex

@@ -43,7 +43,6 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 - Python 3.11+
 - ParadeDB (`paradedb/paradedb:0.25.9-pg18`) — bundles `pg_search` (BM25) + `pgvector`
-- Redis 7.0+ (for pub/sub only)
 - Git
 
 ### Local Setup
@@ -59,10 +58,10 @@ By participating in this project, you agree to maintain a respectful and inclusi
    pip install -r requirements.txt
    ```
 
-3. **Start PostgreSQL and Redis** (using Docker):
+3. **Start PostgreSQL** (using Docker):
    ```bash
    # Start all services with Docker Compose
-   docker compose up -d postgres redis
+   docker compose up -d postgres
 
    # Or manually:
    # ParadeDB (bundles pg_search BM25 + pgvector)
@@ -71,15 +70,11 @@ By participating in this project, you agree to maintain a respectful and inclusi
      -e POSTGRES_USER=contex \
      -e POSTGRES_PASSWORD=contex_password \
      paradedb/paradedb:0.25.9-pg18
-
-   # Redis (for pub/sub only)
-   docker run -d -p 6379:6379 redis:7-alpine
    ```
 
 4. **Set environment variables**:
    ```bash
    export DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
-   export REDIS_URL="redis://localhost:6379"
    ```
 
 5. **Run Contex**:
@@ -233,7 +228,6 @@ Example:
 ```python
 import pytest
 import pytest_asyncio
-from fakeredis import FakeAsyncRedis
 from src.context_engine import ContextEngine
 
 @pytest_asyncio.fixture
@@ -246,14 +240,9 @@ async def db():
     await db.close()
 
 @pytest_asyncio.fixture
-async def redis():
-    """Create a fake Redis instance for pub/sub testing"""
-    return FakeAsyncRedis(decode_responses=False)
-
-@pytest_asyncio.fixture
-async def context_engine(db, redis):
+async def context_engine(db):
     """Create a ContextEngine instance for testing"""
-    return ContextEngine(db=db, redis=redis)
+    return ContextEngine(db=db)
 
 @pytest.mark.asyncio
 async def test_publish_data_creates_event(context_engine):
@@ -372,7 +361,6 @@ What actually happened.
 **Environment**
 - Contex version: X.Y.Z
 - Python version: 3.11.x
-- Redis version: 7.x
 - OS: Ubuntu 22.04 / macOS 13.x / Windows 11
 - Docker version (if applicable): XX.XX.X
 
@@ -462,19 +450,6 @@ SELECT project_id, data_key, created_at FROM embeddings LIMIT 10;
 
 # Check events
 SELECT project_id, event_type, sequence FROM events ORDER BY created_at DESC LIMIT 10;
-```
-
-### Working with Redis (Pub/Sub)
-
-```bash
-# Connect to Redis CLI
-redis-cli
-
-# Or with Docker
-docker exec -it contex-redis-1 redis-cli
-
-# Subscribe to agent updates
-SUBSCRIBE agent:my-agent:updates
 ```
 
 ## Questions?
