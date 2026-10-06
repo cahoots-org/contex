@@ -71,3 +71,18 @@ async def test_more_query_terms_ranks_higher(db):
     assert set(keys) == {"both", "one"}
     scores = [s for _, s in results]
     assert scores == sorted(scores, reverse=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    "what is the request's timeout",  # apostrophe
+    "timeout: how long",              # colon (field syntax)
+    "timeout AND",                    # dangling boolean operator
+    "timeout (ms",                    # unbalanced paren
+])
+async def test_query_syntax_characters_are_plain_text(db, query):
+    # Natural-language queries must not be parsed as pg_search query syntax:
+    # a parse error makes hybrid search fall back to vector-only.
+    await _seed(db)
+    results = await PgFtsLexical(db).search("p1", query, top_k=10)
+    assert [k for k, _ in results] == ["timeout"]

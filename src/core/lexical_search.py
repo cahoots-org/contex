@@ -1,6 +1,6 @@
 """Lexical (keyword) search behind a backend-agnostic interface.
 
-PgFtsLexical uses pg_search BM25 (paradedb.score / @@@ operator).
+PgFtsLexical uses pg_search BM25 (paradedb.score / ||| match operator).
 A future OpenSearchLexical can implement the same Protocol without touching
 callers (design spec §3.3).
 """
@@ -38,7 +38,9 @@ class PgFtsLexical:
             SELECT node_key, paradedb.score(id) AS score
             FROM embeddings
             WHERE project_id = :project_id
-              AND (description @@@ :q OR data_original @@@ :q)
+              -- ||| tokenizes :q as plain text (OR of terms); @@@ would parse
+              -- it as query syntax and fail on ', :, AND, unbalanced parens.
+              AND (description ||| :q OR data_original ||| :q)
               {recency_sql_clause(since)}
             ORDER BY score DESC
             LIMIT :top_k
