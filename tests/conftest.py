@@ -24,6 +24,7 @@ os.environ.setdefault(
 
 from src.core.database import DatabaseManager
 from src.core.embedder import OnnxEmbedder
+from src.core.notifier import Notifier, listen_dsn
 from src.core.semantic_matcher import _MODEL_CACHE
 from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
 
@@ -122,6 +123,15 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     finally:
         if manager.is_connected:
             await manager.disconnect()
+
+
+@pytest_asyncio.fixture
+async def notifier(db):
+    """A started Notifier on the test database; fast keepalive so drops are seen quickly."""
+    n = Notifier(listen_dsn(db), keepalive=0.1)
+    await n.start()
+    yield n
+    await n.stop()
 
 
 async def _reset_database(manager: DatabaseManager) -> None:
