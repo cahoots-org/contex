@@ -5,7 +5,7 @@ swaps a bundle, so a notification arrives only once the bundle is readable. One
 Notifier per process holds the LISTEN connection and fans each notification out
 to in-process listeners (the MCP bridge and SSE streams).
 
-LISTEN needs a session-level connection, so the DSN must reach Postgres directly
+LISTEN needs a session-level connection, so the database must reach Postgres directly
 or through a session-mode pooler, never a transaction-mode one.
 """
 from __future__ import annotations
@@ -16,6 +16,8 @@ import logging
 from typing import Optional
 
 import asyncpg
+from sqlalchemy.dialects.postgresql.asyncpg import dialect as asyncpg_dialect
+from sqlalchemy.engine import URL
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +27,11 @@ SUBSCRIPTION_UPDATED = "contex_subscription_updated"
 RESYNC = "__resync__"
 
 
-def listen_dsn(db) -> str:
-    """asyncpg DSN for the database behind ``db``."""
-    return db.engine.url.set(drivername="postgresql").render_as_string(hide_password=False)
+def listen_connect_kwargs(url: URL) -> dict:
+    """``asyncpg.connect`` kwargs for a SQLAlchemy URL, using SQLAlchemy's own query-param translation."""
+    kwargs = asyncpg_dialect().create_connect_args(url)[1]
+    kwargs.pop("prepared_statement_cache_size", None)
+    return kwargs
 
 
 def _offer(queue: asyncio.Queue, item: str) -> None:
@@ -38,8 +42,8 @@ def _offer(queue: asyncio.Queue, item: str) -> None:
 
 
 class Notifier:
-    def __init__(self, dsn: str, *, keepalive: float = 30.0, max_backoff: float = 30.0) -> None:
-        self._dsn = dsn
+    def __init__(self, connect_kwargs: dict, *, keepalive: float = 30.0, max_backoff: float = 30.0) -> None:
+        self._connect_kwargs = connect_kwargs
         self._keepalive = keepalive
         self._max_backoff = max_backoff
         self._all: set[asyncio.Queue] = set()
@@ -83,7 +87,7 @@ class Notifier:
                 del self._by_sub[subscription_id]
 
     async def _connect(self) -> asyncpg.Connection:
-        conn = await asyncpg.connect(self._dsn)
+        conn = await asyncpg.connect(**self._connect_kwargs)
         await conn.add_listener(SUBSCRIPTION_UPDATED, self._on_notify)
         return conn
 

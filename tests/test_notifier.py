@@ -6,7 +6,7 @@ import logging
 import pytest
 from sqlalchemy import text
 
-from src.core.notifier import RESYNC, SUBSCRIPTION_UPDATED, Notifier
+from src.core.notifier import RESYNC, SUBSCRIPTION_UPDATED, Notifier, listen_connect_kwargs
 
 
 async def _notify(db, subscription_id, *, commit=True):
@@ -118,6 +118,27 @@ async def test_reconnect_sends_resync_and_keeps_routing(db, notifier):
 
 @pytest.mark.asyncio
 async def test_start_raises_when_listen_connection_fails():
-    bad = Notifier("postgresql://contex:wrong@localhost:1/nope")
+    bad = Notifier({"host": "localhost", "port": 1, "user": "contex", "password": "wrong", "database": "nope"})
     with pytest.raises(Exception):
         await bad.start()
+
+
+@pytest.mark.asyncio
+async def test_two_notifiers_both_receive_one_notification(db, notifier):
+    other = Notifier(listen_connect_kwargs(db.engine.url))
+    await other.start()
+    try:
+        mine, theirs = notifier.listen(), other.listen()
+        await _notify(db, "sub_a")
+        assert await _next(mine) == "sub_a"
+        assert await _next(theirs) == "sub_a"
+    finally:
+        await other.stop()
+
+
+@pytest.mark.asyncio
+async def test_url_query_params_are_translated_not_sent_as_server_settings(db):
+    url = db.engine.url.update_query_dict({"ssl": "disable", "prepared_statement_cache_size": "0"})
+    notifier = Notifier(listen_connect_kwargs(url))
+    await notifier.start()
+    await notifier.stop()

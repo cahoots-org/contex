@@ -25,13 +25,12 @@ from src.core.keyhash import hash_api_key
 from src.core.logging import setup_logging, get_logger
 from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
-from src.core.tracing import initialize_tracing
+from src.core.tracing import get_tracing_manager, initialize_tracing
 from src.core.database import init_database
-from src.core.tracing import get_tracing_manager
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
-from src.core.notifier import Notifier, listen_dsn
+from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
@@ -115,7 +114,7 @@ async def lifespan(app: FastAPI):
         raise
 
     # LISTEN connection for subscription-update notifications.
-    notifier = Notifier(listen_dsn(db))
+    notifier = Notifier(listen_connect_kwargs(db.engine.url))
     try:
         await notifier.start()
         logger.info("Notification listener connected")
