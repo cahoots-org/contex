@@ -78,7 +78,9 @@ async def test_excluded_documents_are_skipped(db):
     await _seed(db)
     results = await PgFtsLexical(db).search("p1", "SERVICE", top_k=10, exclude_documents={"cfg"})
     assert results == []
-    
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("query", [
     "what is the request's timeout",  # apostrophe
     "timeout: how long",              # colon (field syntax)
