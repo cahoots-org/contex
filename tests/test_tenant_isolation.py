@@ -9,7 +9,7 @@ the REST API teardown (#189); the durable guarantees live at the service layer
 Transport: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), ...) —
 no lifespan runs; app.state.db is wired in each test that needs real DB access.
 The ownership check runs before any handler body that needs the engine, so a 403
-is delivered without requiring Redis / context engine init.
+is delivered without requiring context engine init.
 """
 from unittest.mock import AsyncMock, MagicMock
 
@@ -80,7 +80,7 @@ async def _seed_tenant_project(db, tenant_id: str, project_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatch):
+async def test_subscription_cross_tenant_denied_at_service(db, monkeypatch):
     """SubscriptionService.get_bundle raises PermissionError for cross-tenant access."""
     monkeypatch.setenv("AUTH_ENABLED", "true")
 
@@ -91,7 +91,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, redis, monkeypatc
         async def match(self, project_id, needs, top_k=None, threshold=None, since=None):
             return {n: [] for n in needs}
 
-    svc = SubscriptionService(db, _StubMatcher(), redis)
+    svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("proj-b", ["some need"], tenant_id="tenant-B")
 
     with pytest.raises(PermissionError):

@@ -1,75 +1,80 @@
 import asyncio
 import json
-import logging
+
 import pytest
 from mcp.server.subscriptions import InMemorySubscriptionBus, ResourceUpdated
-from src.core.mcp_bridge import handle_message, resource_uri_for, run_bridge
+from sqlalchemy import text
+
+from src.core.mcp_bridge import resource_uri_for, run_bridge
+from src.core.notifier import SUBSCRIPTION_UPDATED
 
 
-@pytest.mark.asyncio
-async def test_handle_message_publishes_resource_updated():
-    bus = InMemorySubscriptionBus()
-    seen = []
-    bus.subscribe(lambda ev: seen.append(ev))
-    payload = json.dumps({"subscription_id": "sub_abc", "updated_at": "2026-08-18T00:00:00Z"})
-
-    uri = await handle_message(bus, payload)
-
-    assert uri == "contex://subscriptions/sub_abc"
-    assert resource_uri_for("sub_abc") == uri
-    assert any(isinstance(ev, ResourceUpdated) and ev.uri == uri for ev in seen)
+def test_resource_uri_for():
+    assert resource_uri_for("sub_abc") == "contex://subscriptions/sub_abc"
 
 
-@pytest.mark.asyncio
-async def test_handle_message_ignores_garbage():
-    bus = InMemorySubscriptionBus()
-    seen = []
-    bus.subscribe(lambda ev: seen.append(ev))
-    assert await handle_message(bus, b"not json") is None
-    assert seen == []
-
-
-@pytest.mark.asyncio
-async def test_run_bridge_pushes_on_real_redis_event(redis):
-    """End-to-end: run_bridge psubscribes, receives a Redis publish, and fans
-    out a ResourceUpdated to the bus — exercising the full loop."""
-    bus = InMemorySubscriptionBus()
-    seen = []
-    bus.subscribe(lambda ev: seen.append(ev))
-
-    stop_event = asyncio.Event()
-    task = asyncio.create_task(run_bridge(redis, bus, stop_event))
-
-    # Give the bridge a moment to psubscribe before publishing.
-    await asyncio.sleep(0.1)
-
-    payload = json.dumps({"subscription_id": "sub_x", "updated_at": "2026-08-18T00:00:00Z"})
-    await redis.publish("subscription:sub_x:updated", payload.encode())
-
-    # Poll (up to ~2s) until a ResourceUpdated with the expected URI appears.
-    expected_uri = "contex://subscriptions/sub_x"
-    deadline = asyncio.get_event_loop().time() + 2.0
-    while asyncio.get_event_loop().time() < deadline:
-        if any(isinstance(ev, ResourceUpdated) and ev.uri == expected_uri for ev in seen):
-            break
+async def _wait_for_uris(seen, expected, timeout=2.0):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if expected <= {ev.uri for ev in seen if isinstance(ev, ResourceUpdated)}:
+            return
         await asyncio.sleep(0.05)
+    raise AssertionError(f"expected {expected}, saw {seen}")
 
-    stop_event.set()
+
+@pytest.mark.asyncio
+async def test_bridge_pushes_resource_updated_on_notification(db, notifier):
+    bus = InMemorySubscriptionBus()
+    seen = []
+    bus.subscribe(lambda ev: seen.append(ev))
+
+    async def no_ids():
+        return []
+
+    task = asyncio.create_task(run_bridge(notifier, bus, no_ids))
     try:
-        await asyncio.wait_for(task, timeout=2.0)
-    except asyncio.TimeoutError:
+        await asyncio.sleep(0.05)
+        async with db.session() as session:
+            await session.execute(
+                text("SELECT pg_notify(:c, :p)"),
+                {"c": SUBSCRIPTION_UPDATED,
+                 "p": json.dumps({"subscription_id": "sub_x", "updated_at": "2026-10-05T00:00:00+00:00"})},
+            )
+            await session.commit()
+        await _wait_for_uris(seen, {"contex://subscriptions/sub_x"})
+    finally:
         task.cancel()
 
-    assert any(isinstance(ev, ResourceUpdated) and ev.uri == expected_uri for ev in seen), (
-        f"Expected ResourceUpdated(uri={expected_uri!r}) but saw: {seen}"
-    )
+
+@pytest.mark.asyncio
+async def test_bridge_pushes_every_subscription_on_resync(notifier):
+    bus = InMemorySubscriptionBus()
+    seen = []
+    bus.subscribe(lambda ev: seen.append(ev))
+
+    async def ids():
+        return ["sub_a", "sub_b"]
+
+    task = asyncio.create_task(run_bridge(notifier, bus, ids))
+    try:
+        await asyncio.sleep(0.05)
+        notifier._broadcast_resync()
+        await _wait_for_uris(seen, {"contex://subscriptions/sub_a", "contex://subscriptions/sub_b"})
+    finally:
+        task.cancel()
 
 
 @pytest.mark.asyncio
-async def test_handle_message_logs_on_garbage(caplog):
-    """Malformed messages must return None AND emit a WARNING (Fix A)."""
+async def test_bridge_stops_listening_when_cancelled(notifier):
     bus = InMemorySubscriptionBus()
-    with caplog.at_level(logging.WARNING):
-        result = await handle_message(bus, b"not json")
-    assert result is None
-    assert "malformed" in caplog.text.lower()
+
+    async def no_ids():
+        return []
+
+    task = asyncio.create_task(run_bridge(notifier, bus, no_ids))
+    await asyncio.sleep(0.05)
+    assert len(notifier._all) == 1
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert notifier._all == set()

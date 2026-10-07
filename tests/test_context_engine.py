@@ -32,7 +32,7 @@ class TestContextEngine:
     """Test ContextEngine functionality"""
 
     @pytest_asyncio.fixture
-    async def context_engine(self, db, redis):
+    async def context_engine(self, db):
         """Create a ContextEngine instance with mocks"""
         # Mock the embedder to avoid loading heavy model
         with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
@@ -47,7 +47,6 @@ class TestContextEngine:
 
             engine = ContextEngine(
                 db=db,
-                redis=redis,
                 similarity_threshold=0.5,
                 max_matches=10
             )
@@ -228,7 +227,7 @@ class TestContextSizeLimits:
     """Test context size estimation used for response truncation."""
 
     @pytest.mark.asyncio
-    async def test_tokenizer_fallback(self, db, redis):
+    async def test_tokenizer_fallback(self, db):
         """Test that token estimation works even if tokenizer fails"""
         with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
             mock_model = Mock()
@@ -242,7 +241,6 @@ class TestContextSizeLimits:
 
             engine = ContextEngine(
                 db=db,
-                redis=redis,
                 similarity_threshold=0.5,
                 max_matches=10,
                 max_context_size=1000

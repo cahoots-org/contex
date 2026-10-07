@@ -6,8 +6,8 @@ from src.core.mcp_adapter import build_mcp_server
 
 
 @pytest.mark.asyncio
-async def test_read_subscription_resource_returns_bundle(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_read_subscription_resource_returns_bundle(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("p", ["auth config"], top_k=10, threshold=0.1)
@@ -20,10 +20,10 @@ async def test_read_subscription_resource_returns_bundle(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_read_unknown_subscription_raises(db, redis):
+async def test_read_unknown_subscription_raises(db):
     """Reading a non-existent subscription resource must raise ResourceError
     (mcp wraps the KeyError from get_bundle into ResourceError)."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 

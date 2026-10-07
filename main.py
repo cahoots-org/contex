@@ -25,16 +25,15 @@ from src.core.keyhash import hash_api_key
 from src.core.logging import setup_logging, get_logger
 from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
-from src.core.tracing import initialize_tracing
+from src.core.tracing import get_tracing_manager, initialize_tracing
 from src.core.database import init_database
-from src.core.pubsub import create_redis_connection
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
+from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
-REDIS_MODE = os.getenv("REDIS_MODE", "standalone")
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
 MAX_MATCHES = int(os.getenv("MAX_MATCHES", "10"))
 MAX_CONTEXT_SIZE = int(os.getenv("MAX_CONTEXT_SIZE", "51200"))  # ~40% of 128k tokens
@@ -51,7 +50,7 @@ def run_startup_checks(app: FastAPI) -> None:
     """Boot-time fail-closed gates, run once during startup.
 
     Kept out of the lifespan body so it is unit-testable without a live
-    database/Redis: it only inspects routes and reads env/config.
+    database: it only inspects routes and reads env/config.
     """
     # Fail-closed authz gate: refuse to boot if any route lacks a require()/public decision.
     assert_authz_coverage(app)
@@ -75,7 +74,6 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
     logger.info("Contex starting", version="0.2.0")
     logger.info("Configuration loaded",
-                redis_mode=REDIS_MODE,
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
                 max_context_size=MAX_CONTEXT_SIZE,
@@ -115,13 +113,15 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to migrate database schema", error=str(e))
         raise
 
-    # Connect to Redis for pub/sub (supports both standalone and Sentinel modes)
+    # LISTEN connection for subscription-update notifications.
+    notifier = Notifier(listen_connect_kwargs(db.engine.url))
     try:
-        redis = await create_redis_connection()
-        logger.info("Redis connection established successfully (pub/sub)", mode=REDIS_MODE)
+        await notifier.start()
+        logger.info("Notification listener connected")
     except Exception as e:
-        logger.error("Failed to connect to Redis", error=str(e), mode=REDIS_MODE)
+        logger.error("Failed to open the notification LISTEN connection", error=str(e))
         raise
+    app.state.notifier = notifier
 
     # Bootstrap admin account if needed
     from src.core.auth import list_api_keys, create_api_key
@@ -182,11 +182,11 @@ async def lifespan(app: FastAPI):
     try:
         context_engine = ContextEngine(
             db=db,
-            redis=redis,
             similarity_threshold=SIMILARITY_THRESHOLD,
             max_matches=MAX_MATCHES,
             max_context_size=MAX_CONTEXT_SIZE,
             embed_model=EMBED_MODEL,
+            notifier=notifier,
         )
         logger.info("Context engine initialized")
     except Exception as e:
@@ -206,19 +206,7 @@ async def lifespan(app: FastAPI):
     app.state.audit_logger = audit_logger
     logger.info("Audit logging initialized", retention_days=audit_retention_days)
 
-    # Instrument Redis with tracing (TracerProvider initialized at module level)
-    try:
-        from src.core.tracing import get_tracing_manager
-        tracing_manager = get_tracing_manager()
-        if tracing_manager:
-            tracing_manager.instrument_redis()
-            app.state.tracing_manager = tracing_manager
-            logger.info("Redis tracing instrumented")
-        else:
-            app.state.tracing_manager = None
-    except Exception as e:
-        logger.warning("Failed to instrument Redis tracing", error=str(e))
-        app.state.tracing_manager = None
+    app.state.tracing_manager = get_tracing_manager()
 
     logger.info("Contex is ready!")
     print("=" * 60)
@@ -238,7 +226,6 @@ async def lifespan(app: FastAPI):
     # Store in app state
     app.state.db = db
     app.state.context_engine = context_engine
-    app.state.redis = redis
 
     run_startup_checks(app)
 
@@ -249,12 +236,12 @@ async def lifespan(app: FastAPI):
     app.state.mcp_bus = _mcp_bus
     try:
         async with _mcp_server.session_manager.run():
-            mcp_stop = asyncio.Event()
-            bridge_task = asyncio.create_task(run_bridge(redis, _mcp_bus, mcp_stop))
+            bridge_task = asyncio.create_task(
+                run_bridge(notifier, _mcp_bus, context_engine.subscriptions.all_ids)
+            )
             try:
                 yield
             finally:
-                mcp_stop.set()
                 bridge_task.cancel()
                 try:
                     await bridge_task
@@ -262,6 +249,7 @@ async def lifespan(app: FastAPI):
                     pass
     finally:
         # Shutdown — unconditional even if session_manager teardown raises
+        await notifier.stop()
         await shutdown_cleanup(app.state)
 
 

@@ -17,16 +17,16 @@ def _request_with(engine, db=None):
 
 
 @pytest.mark.asyncio
-async def test_sandbox_home_renders(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_sandbox_home_renders(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     resp = await sandbox_home(_request_with(engine, db))
     assert resp.template.name == "sandbox.html"
 
 
 @pytest.mark.asyncio
-async def test_subscribe_returns_event_stream(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_subscribe_returns_event_stream(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     resp = await subscribe_to_updates(
         _request_with(engine, db),
@@ -39,10 +39,10 @@ async def test_subscribe_returns_event_stream(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_project_stats_renders_from_embeddings(db, redis):
+async def test_project_stats_renders_from_embeddings(db):
     """Regression for #107: the stats handler must read from the embeddings
     table (Postgres), not dead RediSearch attrs, and return 200-worthy stats."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
 
     await engine.publish_data(DataPublishEvent(
@@ -76,9 +76,9 @@ async def test_project_stats_renders_from_embeddings(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_project_stats_empty_project(db, redis):
+async def test_project_stats_empty_project(db):
     """An unknown project should render cleanly with zeroed stats, not 500."""
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
 
     resp = await project_stats(_request_with(engine), project_id="no-such-project")

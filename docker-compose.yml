@@ -17,17 +17,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:${CONTEX_REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
   contex:
     build:
       context: .
@@ -43,7 +32,6 @@ services:
         required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://contex:contex_password@postgres:5432/contex
-      - REDIS_URL=redis://redis:6379
       # Local dev runs open (no auth). The container must bind 0.0.0.0 for
       # Docker to publish the port, so opt out of protected mode here. Enable
       # AUTH_ENABLED=true for any network-reachable deployment (see README).
@@ -56,8 +44,6 @@ services:
       - RRF_K=60
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8001/health || curl -f -g http://[::1]:8001/health"]

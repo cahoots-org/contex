@@ -114,47 +114,6 @@ class GracefulShutdown:
         return self.is_shutting_down
 
 
-async def drain_connections(
-    redis,
-    timeout: float = 10.0
-):
-    """
-    Drain active connections gracefully.
-
-    Args:
-        redis: Redis client
-        timeout: Maximum time to wait
-    """
-    logger.info("Draining connections...", timeout=timeout)
-
-    try:
-        # Wait a bit for in-flight requests to complete
-        await asyncio.sleep(1.0)
-
-        # Close Redis connection and connection pool
-        if redis:
-            logger.info("Closing Redis connection...")
-
-            # Close the client connection
-            await redis.aclose()
-
-            # Close the connection pool if it exists
-            if hasattr(redis, 'connection_pool') and redis.connection_pool:
-                logger.info("Closing Redis connection pool...")
-                await redis.connection_pool.disconnect()
-                logger.info("Redis connection pool closed")
-
-            logger.info("Redis connection closed")
-
-        logger.info("Connection draining complete")
-
-    except Exception as e:
-        logger.error("Error draining connections",
-                    error=str(e),
-                    exc_info=True)
-        raise
-
-
 async def shutdown_cleanup(app_state):
     """
     Cleanup function for application shutdown.
@@ -177,10 +136,6 @@ async def shutdown_cleanup(app_state):
             logger.info("PostgreSQL connection closed")
         except Exception as e:
             logger.error("Error closing PostgreSQL connection", error=str(e))
-
-    # Close Redis connection
-    if hasattr(app_state, 'redis') and app_state.redis:
-        await drain_connections(app_state.redis)
 
     # Flush Sentry events
     try:

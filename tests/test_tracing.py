@@ -121,14 +121,6 @@ class TestTracingIntegration:
         # Should not raise
         manager.instrument_fastapi(app)
 
-    def test_instrument_redis(self):
-        """Test Redis instrumentation"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise (Redis instrumentation is global)
-        manager.instrument_redis()
-
     def test_initialize_tracing_from_env(self, monkeypatch):
         """Test initializing tracing from environment variables"""
         monkeypatch.setenv("TRACING_CONSOLE_EXPORT", "true")

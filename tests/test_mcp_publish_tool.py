@@ -12,9 +12,9 @@ async def _publish_once(server, key):
 
 
 @pytest.mark.asyncio
-async def test_direct_publish_throttled_at_configured_limit(db, redis, monkeypatch):
+async def test_direct_publish_throttled_at_configured_limit(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "2")
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -27,10 +27,10 @@ async def test_direct_publish_throttled_at_configured_limit(db, redis, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_bulk_ingest_exempt_by_default(db, redis, monkeypatch):
+async def test_bulk_ingest_exempt_by_default(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "1")  # direct is tight...
     monkeypatch.delenv("RATE_LIMIT_INGEST", raising=False)  # ...but ingest is exempt
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -42,8 +42,8 @@ async def test_bulk_ingest_exempt_by_default(db, redis, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_publish_tool_updates_subscription_bundle(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_publish_tool_updates_subscription_bundle(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("p", ["database connection settings"], top_k=10, threshold=0.1)
@@ -59,8 +59,8 @@ async def test_publish_tool_updates_subscription_bundle(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_publish_tool_stamps_mcp_source(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_publish_tool_stamps_mcp_source(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -75,8 +75,8 @@ async def test_publish_tool_stamps_mcp_source(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_publish_batch_tool_stamps_mcp_source(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_publish_batch_tool_stamps_mcp_source(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 
@@ -94,8 +94,8 @@ async def test_publish_batch_tool_stamps_mcp_source(db, redis):
 
 
 @pytest.mark.asyncio
-async def test_query_methods_surface_source(db, redis):
-    engine = ContextEngine(db=db, redis=redis, similarity_threshold=0.1, max_matches=10)
+async def test_query_methods_surface_source(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
 

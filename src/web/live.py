@@ -22,23 +22,20 @@ async def stream_subscription_updates(
     engine, project_id: str, need: str, *, top_k: int = DEMO_TOP_K, threshold: float = DEMO_THRESHOLD,
 ) -> AsyncIterator[str]:
     """Create an ephemeral subscription for `need`, stream its bundle, and re-stream
-    the bundle each time reconcile fires `subscription:{id}:updated`. The subscription
-    is always deleted when the stream closes."""
+    it on every update notification. The subscription is always deleted when the
+    stream closes."""
     sub_id = None
-    pubsub = None
+    queue = None
     try:
         sub_id = await engine.subscriptions.create(project_id, [need], top_k=top_k, threshold=threshold)
-        channel = f"subscription:{sub_id}:updated"
-        pubsub = engine.redis.pubsub()
-        await pubsub.subscribe(channel)
+        queue = engine.notifier.listen(sub_id)
 
-        # Re-read AFTER subscribing so a change racing the create() is not missed.
+        # Read AFTER listening so a change racing the create() is not missed.
         bundle = await engine.subscriptions.get_bundle(sub_id)
         yield _sse({"type": "bundle", "bundle": bundle, "updated_at": None})
 
-        async for message in pubsub.listen():
-            if message.get("type") != "message":
-                continue  # skip subscribe-confirmation / pattern frames
+        while True:
+            await queue.get()  # an update or RESYNC: either way, re-read
             bundle = await engine.subscriptions.get_bundle(sub_id)
             yield _sse({
                 "type": "bundle",
@@ -47,9 +44,8 @@ async def stream_subscription_updates(
             })
     finally:
         try:
-            if pubsub is not None:
-                await pubsub.unsubscribe(channel)
-                await pubsub.aclose()
+            if queue is not None:
+                engine.notifier.unlisten(queue)
         finally:
             if sub_id is not None:
                 await engine.subscriptions.delete(sub_id)

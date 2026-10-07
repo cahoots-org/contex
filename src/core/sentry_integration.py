@@ -63,7 +63,6 @@ def init_sentry(
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
-        from sentry_sdk.integrations.redis import RedisIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.asyncio import AsyncioIntegration
 
@@ -88,12 +87,6 @@ def init_sentry(
                 event_level=40  # Only capture ERROR and above
             ),
         ]
-
-        # Add Redis integration if available
-        try:
-            integrations.append(RedisIntegration())
-        except Exception:
-            logger.debug("Redis integration not available for Sentry")
 
         # Initialize Sentry SDK
         sentry_sdk.init(

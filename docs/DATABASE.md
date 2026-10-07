@@ -10,7 +10,7 @@ Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persi
 - **pgvector** - Vector similarity search extension (bundled with ParadeDB)
 - **SQLAlchemy (async)** - ORM with asyncpg driver
 - **Alembic** - Database migrations
-- **Redis** - Pub/sub notifications only (lightweight)
+- **Postgres `LISTEN/NOTIFY`** - Live subscription updates use channel `contex_subscription_updated`; the listener needs a session-level connection.
 
 ## Quick Start
 
@@ -32,16 +32,6 @@ services:
       - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5

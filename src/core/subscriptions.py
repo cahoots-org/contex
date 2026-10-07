@@ -6,12 +6,13 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.limits import check_needs, clamp_top_k
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
+from src.core.notifier import SUBSCRIPTION_UPDATED
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +35,9 @@ def _assert_sub_tenant(row, tenant_id):
 
 
 class SubscriptionService:
-    def __init__(self, db, matcher, redis) -> None:
+    def __init__(self, db, matcher) -> None:
         self.db = db
         self.matcher = matcher
-        self.redis = redis
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -66,6 +66,10 @@ class SubscriptionService:
                 raise KeyError(subscription_id)
             _assert_sub_tenant(row, tenant_id)
             return row.bundle
+
+    async def all_ids(self) -> list[str]:
+        async with self.db.session() as session:
+            return list((await session.execute(select(Subscription.subscription_id))).scalars())
 
     async def project_of(self, subscription_id, *, tenant_id=None) -> str | None:
         """The subscription's project, or None if it does not exist."""
@@ -113,20 +117,22 @@ class SubscriptionService:
                 if new_bundle == sub.bundle:
                     continue
                 now = datetime.now(timezone.utc)  # single timestamp for both DB + event
+                event = json.dumps({
+                    "subscription_id": sub.subscription_id,
+                    "updated_at": now.isoformat(),
+                })
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
                     )).scalar_one()
                     row.bundle = new_bundle
                     row.bundle_updated_at = now
-                    await session.commit()  # commit BEFORE publish: reader must see committed value
-                await self.redis.publish(
-                    f"subscription:{sub.subscription_id}:updated",
-                    json.dumps({
-                        "subscription_id": sub.subscription_id,
-                        "updated_at": now.isoformat(),
-                    }),
-                )
+                    # Delivered only on commit, so listeners never see an unreadable bundle.
+                    await session.execute(
+                        text("SELECT pg_notify(:channel, :payload)"),
+                        {"channel": SUBSCRIPTION_UPDATED, "payload": event},
+                    )
+                    await session.commit()
                 changed_ids.append(sub.subscription_id)
             except Exception:
                 logger.exception("reconcile failed for subscription %s", sub.subscription_id)

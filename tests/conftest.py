@@ -3,7 +3,6 @@
 import os
 import pytest
 import pytest_asyncio
-from fakeredis import FakeAsyncRedis
 from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
@@ -24,6 +23,7 @@ os.environ.setdefault(
 
 from src.core.database import DatabaseManager
 from src.core.embedder import OnnxEmbedder
+from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
 from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
 
@@ -124,6 +124,15 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
             await manager.disconnect()
 
 
+@pytest_asyncio.fixture
+async def notifier(db):
+    """A started Notifier on the test database; fast keepalive so drops are seen quickly."""
+    n = Notifier(listen_connect_kwargs(db.engine.url), keepalive=0.1)
+    await n.start()
+    yield n
+    await n.stop()
+
+
 async def _reset_database(manager: DatabaseManager) -> None:
     """Truncate every app table and re-seed the default tenant.
 
@@ -146,21 +155,6 @@ async def _reset_database(manager: DatabaseManager) -> None:
     await ensure_default_tenant(manager)
 
 
-@pytest_asyncio.fixture
-async def redis():
-    """
-    Create a clean Redis client for each test.
-
-    Uses FakeRedis for fast, isolated testing.
-    Used for pub/sub testing only.
-    """
-    client = FakeAsyncRedis(decode_responses=False)
-    yield client
-    # Cleanup
-    await client.flushall()
-    await client.aclose()
-
-
 @pytest.fixture
 def mock_db():
     """
@@ -178,17 +172,6 @@ def mock_db():
 
     mock.health_check = AsyncMock(return_value={"status": "healthy"})
 
-    return mock
-
-
-@pytest.fixture
-def mock_redis():
-    """
-    Create a mock Redis client for unit tests.
-    """
-    mock = AsyncMock()
-    mock.publish = AsyncMock(return_value=1)
-    mock.subscribe = AsyncMock()
     return mock
 
 

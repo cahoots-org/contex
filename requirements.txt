@@ -16,8 +16,6 @@ pgvector==0.5.0
 alembic==1.20.0
 greenlet==3.5.5
 
-# Redis (for pub/sub only)
-redis==8.1.0
 
 # Embedding model for semantic matching
 onnxruntime==1.30.0
@@ -45,7 +43,7 @@ toon-format==0.1.0
 pyyaml==6.0.3
 toml==0.10.2
 
-# JWT — transitive dep of mcp[crypto] (auth) and redis[jwt]; pinned for CVE-2026-101918
+# JWT — transitive dep of mcp[crypto] (auth); pinned for CVE-2026-101918
 PyJWT==2.15.0
 
 # setuptools — unpinned build dep from the base image; floored to force an upgrade
@@ -60,12 +58,10 @@ sentry-sdk[fastapi]==2.69.1
 opentelemetry-api==1.45.0
 opentelemetry-sdk==1.45.0
 opentelemetry-instrumentation-fastapi==0.66b0
-opentelemetry-instrumentation-redis==0.66b0
 opentelemetry-exporter-otlp==1.45.0
 
 # Testing
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-mock==3.16.0
-fakeredis==2.38.0
 aiosqlite==0.22.1
