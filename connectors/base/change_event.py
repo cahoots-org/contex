@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 class ChangeEvent:
     """A single change a connector's reader produces.
 
-    v1 connectors only ever emit ``op="upsert"``; the shape leaves room for
-    ``"delete"`` once CDC-style connectors exist. The runner maps each event to
-    a ``contex_publish_batch`` item — ``key`` -> ``data_key``, ``payload`` ->
-    ``data``, ``data_format`` -> ``data_format``.
+    ``op`` is ``"upsert"`` or ``"delete"``. The runner maps an upsert to a
+    ``contex_publish_batch`` item (``key`` -> ``data_key``, ``payload`` ->
+    ``data``, ``data_format`` -> ``data_format``) and sends a delete's ``key``
+    to ``contex_delete``; its payload is ignored.
     """
 
     op: str

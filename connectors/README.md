@@ -18,11 +18,12 @@ refresh story. See each connector's design spec under
 ## The shared framework (`connectors/base/`)
 
 - **`ChangeEvent`** — the seam every reader emits: `{op, key, payload,
-  source_meta, data_format}`. v1 only emits `op="upsert"`.
+  source_meta, data_format}`. `op` is `"upsert"` or `"delete"`; the bundled
+  readers only emit upserts today.
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. Batches are bounded by the server's `MAX_BATCH_SIZE`.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
-  `contex_publish_batch` tool, authenticating with a service-account token when
+  `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with a service-account token when
   one is configured.
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
