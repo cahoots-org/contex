@@ -552,6 +552,23 @@ class SemanticDataMatcher:
             )
             return sorted([row[0] for row in result])
 
+    async def delete_data_keys(self, project_id: str, data_keys: List[str]) -> List[str]:
+        """Remove these documents' nodes and symbols; return the keys that existed."""
+        async with self.db.session() as session:
+            existing = list((await session.execute(
+                select(Embedding.data_key).distinct()
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.data_key.in_(data_keys))
+            )).scalars())
+            if existing:
+                for model in (Embedding, Symbol):
+                    await session.execute(
+                        delete(model)
+                        .where(model.project_id == project_id)
+                        .where(model.data_key.in_(existing))
+                    )
+        return existing
+
     async def clear_project(self, project_id: str) -> int:
         """
         Remove all data for a project.
