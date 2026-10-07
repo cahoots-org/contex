@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Collection, Optional
 
 from src.core.rank_fusion import rrf_fuse
 
@@ -16,6 +16,7 @@ class HybridSearchService:
     async def search(
         self, project_id: str, query: str, top_k: int,
         since: Optional[datetime] = None, pool: Optional[int] = None,
+        exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
         """Return up to ``pool`` (node_key, cosine_similarity), ordered by RRF fusion.
 
@@ -30,8 +31,12 @@ class HybridSearchService:
         (~1/(k+rank)) are ordinal and not comparable to cosine.
         """
         pool = max(pool or top_k, top_k)
-        vector_hits = await self.vector_search.search(project_id, query, pool, since=since)
-        lexical_hits = await self.lexical_search.search(project_id, query, pool, since=since)
+        vector_hits = await self.vector_search.search(
+            project_id, query, pool, since=since, exclude_documents=exclude_documents
+        )
+        lexical_hits = await self.lexical_search.search(
+            project_id, query, pool, since=since, exclude_documents=exclude_documents
+        )
         cosine = dict(vector_hits)
         # Lexical-only hits fell outside the vector ranker's top_k window but are
         # still real embeddings; score them directly so they aren't dropped just

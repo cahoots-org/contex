@@ -7,7 +7,7 @@ callers (design spec §3.3).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, Protocol
+from typing import Collection, Optional, Protocol
 
 from sqlalchemy import text
 
@@ -17,7 +17,7 @@ from src.core.recency import recency_sql_clause
 class LexicalSearch(Protocol):
     async def search(
         self, project_id: str, query: str, top_k: int,
-        since: Optional[datetime] = None,
+        since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
         """Return (node_key, score) tuples, best match first."""
         ...
@@ -31,7 +31,7 @@ class PgFtsLexical:
 
     async def search(
         self, project_id: str, query: str, top_k: int,
-        since: Optional[datetime] = None,
+        since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
         sql = text(
             f"""
@@ -42,6 +42,7 @@ class PgFtsLexical:
               -- it as query syntax and fail on ', :, AND, unbalanced parens.
               AND (description ||| :q OR data_original ||| :q)
               {recency_sql_clause(since)}
+              {"AND NOT (data_key = ANY(:excluded))" if exclude_documents else ""}
             ORDER BY score DESC
             LIMIT :top_k
             """
@@ -49,6 +50,8 @@ class PgFtsLexical:
         params = {"q": query, "project_id": project_id, "top_k": top_k}
         if since is not None:
             params["since"] = since
+        if exclude_documents:
+            params["excluded"] = list(exclude_documents)
         async with self.db.session() as session:
             result = await session.execute(sql, params)
             return [(row.node_key, float(row.score)) for row in result]
