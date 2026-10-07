@@ -13,6 +13,10 @@ class FakePublisher:
         self.batches.append(items)
         return len(items)
 
+    async def delete_batch(self, data_keys):
+        self.batches.append(("delete", data_keys))
+        return len(data_keys)
+
 
 def _events(n):
     return [ChangeEvent(op="upsert", key=f"k{i}", payload={"i": i}) for i in range(n)]
@@ -68,3 +72,35 @@ async def test_rejects_non_change_event():
     publisher = FakePublisher()
     with pytest.raises(TypeError):
         await run([{"not": "an event"}], publisher)
+
+
+@pytest.mark.asyncio
+async def test_deletes_flush_in_stream_order():
+    publisher = FakePublisher()
+    events = [
+        ChangeEvent(op="upsert", key="a", payload={}),
+        ChangeEvent(op="upsert", key="b", payload={}),
+        ChangeEvent(op="delete", key="a", payload=None),
+        ChangeEvent(op="upsert", key="c", payload={}),
+    ]
+    stats = await run(events, publisher, batch_size=10)
+    assert [b if isinstance(b, tuple) else [i["data_key"] for i in b] for b in publisher.batches] == [
+        ["a", "b"], ("delete", ["a"]), ["c"],
+    ]
+    assert stats.published == 3
+    assert stats.deleted == 1
+
+
+@pytest.mark.asyncio
+async def test_deletes_batch_by_size():
+    publisher = FakePublisher()
+    events = [ChangeEvent(op="delete", key=f"k{i}", payload=None) for i in range(5)]
+    stats = await run(events, publisher, batch_size=2)
+    assert publisher.batches == [("delete", ["k0", "k1"]), ("delete", ["k2", "k3"]), ("delete", ["k4"])]
+    assert stats.deleted == 5
+
+
+@pytest.mark.asyncio
+async def test_rejects_unknown_op():
+    with pytest.raises(ValueError, match="unknown op"):
+        await run([ChangeEvent(op="merge", key="k", payload={})], FakePublisher())

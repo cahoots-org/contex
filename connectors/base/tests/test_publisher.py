@@ -70,3 +70,15 @@ def test_publish_batch_does_not_retry_non_rate_limit_errors():
     with pytest.raises(RuntimeError, match="contex_publish_batch failed"):
         asyncio.run(pub.publish_batch([{}]))
     assert call.call_count == 1
+
+
+def test_delete_batch_calls_contex_delete_and_counts_deleted():
+    result = CallToolResult(
+        isError=False,
+        content=[TextContent(type="text", text='{"deleted": ["a", "b"], "missing": ["c"]}')],
+    )
+    pub = _publisher(result)
+    assert asyncio.run(pub.delete_batch(["a", "b", "c"])) == 2
+    pub._session.call_tool.assert_awaited_once_with(
+        "contex_delete", {"project_id": "proj", "data_keys": ["a", "b", "c"]}
+    )

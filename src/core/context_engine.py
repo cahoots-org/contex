@@ -280,6 +280,37 @@ class ContextEngine:
             for e, data, fmt in prepared
         ]
 
+    async def delete_data(
+        self,
+        project_id: str,
+        data_keys: List[str],
+        *,
+        source: str = "api",
+        actor: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, List[str]]:
+        """Delete documents by key, record a delete event for each, and reconcile once.
+
+        Returns the requested keys split into ``deleted`` and ``missing``.
+        """
+        keys = list(dict.fromkeys(data_keys))
+        deleted = set(await self.semantic_matcher.delete_data_keys(project_id, keys))
+        for data_key in keys:
+            if data_key in deleted:
+                await self.event_store.append_event(
+                    project_id, f"{data_key}_deleted", {data_key: None},
+                    tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
+                )
+        if deleted:
+            try:
+                await self.subscriptions.reconcile_project(project_id)
+            except Exception:
+                logger.exception("subscription reconcile failed after deleting from %s", project_id)
+        return {
+            "deleted": [k for k in keys if k in deleted],
+            "missing": [k for k in keys if k not in deleted],
+        }
+
     async def _record_publish(
         self,
         event: DataPublishEvent,

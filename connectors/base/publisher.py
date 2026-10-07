@@ -1,7 +1,7 @@
 """The MCP transport: publish batches to Contex as a service account.
 
 ContexPublisher opens one MCP session for the life of a run and pushes each
-batch through the ``contex_publish_batch`` tool. It is the only connector module
+batch through the ``contex_publish_batch`` or ``contex_delete`` tool. It is the only connector module
 that touches the MCP SDK; the runner and readers stay transport-free.
 """
 from __future__ import annotations
@@ -62,23 +62,32 @@ class ContexPublisher:
         self._session = None
 
     async def publish_batch(self, items: list[dict]) -> int:
-        """Publish one batch; return how many items the server accepted.
+        """Publish one batch; return how many items the server accepted."""
+        result = await self._call("contex_publish_batch", {"items": items})
+        return int(result.get("published", 0))
+
+    async def delete_batch(self, data_keys: list[str]) -> int:
+        """Delete one batch of keys; return how many existed."""
+        result = await self._call("contex_delete", {"data_keys": data_keys})
+        return len(result.get("deleted", []))
+
+    async def _call(self, tool: str, arguments: dict) -> dict:
+        """Call a project tool and return its JSON result.
 
         Retries with exponential backoff when the server's limiter rejects the
-        batch (``rate_limit_exceeded``), honoring its ``retry_after`` hint. Any
+        call (``rate_limit_exceeded``), honoring its ``retry_after`` hint. Any
         other tool error is fatal and raised immediately.
         """
         if self._session is None:
             raise RuntimeError("ContexPublisher must be used as an async context manager")
         for attempt in range(_MAX_RETRIES):
             result = await self._session.call_tool(
-                "contex_publish_batch",
-                {"project_id": self._config.project_id, "items": items},
+                tool, {"project_id": self._config.project_id, **arguments}
             )
             text = result.content[0].text if result.content else ""
             if not result.is_error:  # mcp>=2 attribute; "isError" is only the JSON alias
-                return int(json.loads(text).get("published", 0))
+                return json.loads(text)
             if "rate_limit_exceeded" not in text or attempt == _MAX_RETRIES - 1:
-                raise RuntimeError(f"contex_publish_batch failed: {text or 'unknown error'}")
+                raise RuntimeError(f"{tool} failed: {text or 'unknown error'}")
             await asyncio.sleep(_backoff(text, attempt))
-        raise RuntimeError("contex_publish_batch failed: exhausted retries")  # unreachable
+        raise RuntimeError(f"{tool} failed: exhausted retries")  # unreachable
