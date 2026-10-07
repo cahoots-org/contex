@@ -214,4 +214,15 @@ def build_mcp_server(engine, db_accessor=None):
         ], source='mcp')
         return json.dumps({"published": len(sequences)})
 
+    @server.tool(name="contex_delete",
+                 description="Delete context documents from a project by data_key (the `document` "
+                             "field of a query match). Returns which keys were deleted and which "
+                             "were not found.")
+    async def contex_delete(project_id: str, data_keys: list[str]) -> str:
+        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
+        check_batch_size(data_keys, "data_keys")
+        e = _get_engine()
+        await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
+        return json.dumps(await e.delete_data(project_id, data_keys, source="mcp"))
+
     return server, bus
