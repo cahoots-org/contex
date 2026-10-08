@@ -112,10 +112,18 @@ class SubscriptionService:
         the list of subscription ids that changed. `changed_keys` names the documents
         just published; `None` reconciles every subscription.
         """
+        affected = None
+        if changed_keys is not None:
+            try:
+                affected = await self._affected(project_id, changed_keys)
+            except Exception:
+                logger.exception("affected-subscription filter failed for %s; reconciling all", project_id)
+
+        stmt = select(Subscription).where(Subscription.project_id == project_id)
+        if affected is not None:
+            stmt = stmt.where(Subscription.subscription_id.in_(affected))
         async with self.db.session() as session:
-            subs = (await session.execute(
-                select(Subscription).where(Subscription.project_id == project_id)
-            )).scalars().all()
+            subs = (await session.execute(stmt)).scalars().all()
 
         changed_ids: list[str] = []
         for sub in subs:
@@ -133,7 +141,9 @@ class SubscriptionService:
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
-                    )).scalar_one()
+                    )).scalar_one_or_none()
+                    if row is None:  # deleted since the filter ran
+                        continue
                     row.bundle = new_bundle
                     row.documents = _bundle_documents(new_bundle)
                     row.bundle_updated_at = now
@@ -148,6 +158,49 @@ class SubscriptionService:
                 logger.exception("reconcile failed for subscription %s", sub.subscription_id)
                 continue
         return changed_ids
+
+    async def _ids_including(self, project_id, keys) -> set[str]:
+        """Subscriptions whose bundle already touches a changed document."""
+        async with self.db.session() as session:
+            return set((await session.execute(
+                select(Subscription.subscription_id)
+                .where(Subscription.project_id == project_id)
+                .where(Subscription.documents.overlap(list(keys)))
+            )).scalars())
+
+    async def _ids_linking(self, project_id, keys) -> set[str]:
+        """Subscriptions bundling a document that references a name a changed document defines."""
+        defined = (
+            select(Symbol.name)
+            .where(Symbol.project_id == project_id)
+            .where(Symbol.data_key.in_(keys))
+            .where(Symbol.role == "def")
+        )
+        async with self.db.session() as session:
+            referencing = list((await session.execute(
+                select(Symbol.data_key).distinct()
+                .where(Symbol.project_id == project_id)
+                .where(Symbol.role == "ref")
+                .where(Symbol.name.in_(defined))
+            )).scalars())
+        if not referencing:
+            return set()
+        return await self._ids_including(project_id, set(referencing))
+
+    async def _ids_admitting(self, project_id, keys) -> set[str] | None:
+        """Subscriptions a changed node could newly match; None when unknown."""
+        return None
+
+    async def _affected(self, project_id, keys) -> set[str] | None:
+        """Subscriptions a publish of ``keys`` can change; None means all of them."""
+        admitting = await self._ids_admitting(project_id, keys)
+        if admitting is None:
+            return None
+        return (
+            admitting
+            | await self._ids_including(project_id, keys)
+            | await self._ids_linking(project_id, keys)
+        )
 
     async def _link_bundle(self, project_id, bundle):
         """Attach cross-file neighbors to each matched node via the symbols join.
