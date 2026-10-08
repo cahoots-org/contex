@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import numpy as np
 from sqlalchemy import select, text
 
 from src.core.db_models import Embedding, Subscription, Symbol
@@ -19,6 +20,18 @@ logger = logging.getLogger(__name__)
 # Cap cross-file neighbors attached per matched node, to bound bundle size.
 # ponytail: fixed cap; make it configurable only if real bundles feel starved.
 MAX_LINKS_PER_NODE = 5
+
+# Per (subscription, need): documents held and the weakest one's similarity.
+_FLOORS_SQL = text("""
+SELECT s.subscription_id, n.need,
+       COALESCE(s.top_k, :default_top_k) AS top_k,
+       COALESCE(s.threshold, :default_threshold) AS threshold,
+       jsonb_array_length(COALESCE(s.bundle -> n.need, '[]'::jsonb)) AS docs,
+       (SELECT min((m->>'similarity')::float)
+          FROM jsonb_array_elements(COALESCE(s.bundle -> n.need, '[]'::jsonb)) m) AS min_sim
+  FROM subscriptions s, unnest(s.needs) AS n(need)
+ WHERE s.project_id = :project_id
+""")
 
 
 def _since_from_scope(scope):
@@ -45,9 +58,14 @@ def _bundle_documents(bundle) -> list[str]:
 
 
 class SubscriptionService:
-    def __init__(self, db, matcher) -> None:
+    def __init__(self, db, matcher, encoder=None, default_threshold=0.35, default_top_k=10) -> None:
         self.db = db
         self.matcher = matcher
+        self.encoder = encoder
+        self.default_threshold = default_threshold
+        self.default_top_k = default_top_k
+        # ponytail: unbounded, ~3KB per distinct need; persist vectors behind an ANN index if this binds.
+        self._need_vecs: dict[str, np.ndarray] = {}
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -187,9 +205,41 @@ class SubscriptionService:
             return set()
         return await self._ids_including(project_id, set(referencing))
 
+    async def _floors(self, project_id) -> list[tuple[str, str, float]]:
+        """(subscription_id, need, floor): the cosine a new node must reach to enter."""
+        async with self.db.session() as session:
+            rows = (await session.execute(_FLOORS_SQL, {
+                "project_id": project_id,
+                "default_top_k": self.default_top_k,
+                "default_threshold": self.default_threshold,
+            })).all()
+        return [
+            (r.subscription_id, r.need,
+             r.threshold if r.docs < r.top_k or r.min_sim is None else max(r.threshold, r.min_sim))
+            for r in rows
+        ]
+
+    def _need_vectors(self, needs) -> np.ndarray:
+        missing = sorted({n for n in needs if n not in self._need_vecs})
+        if missing:
+            self._need_vecs.update(zip(missing, self.encoder.encode(missing)))
+        return np.stack([self._need_vecs[n] for n in needs])
+
     async def _ids_admitting(self, project_id, keys) -> set[str] | None:
-        """Subscriptions a changed node could newly match; None when unknown."""
-        return None
+        """Subscriptions with a need some changed node reaches the floor of; None when unknown."""
+        if self.encoder is None:
+            return None
+        async with self.db.session() as session:
+            nodes = (await session.execute(
+                select(Embedding.embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.data_key.in_(keys))
+            )).scalars().all()
+        floors = await self._floors(project_id)
+        if not nodes or not floors:
+            return set()
+        best = (np.stack(nodes) @ self._need_vectors([need for _, need, _ in floors]).T).max(axis=0)
+        return {sub for (sub, _, floor), score in zip(floors, best) if score >= floor}
 
     async def _affected(self, project_id, keys) -> set[str] | None:
         """Subscriptions a publish of ``keys`` can change; None means all of them."""

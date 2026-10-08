@@ -65,7 +65,10 @@ class ContextEngine:
             max_matches=max_matches
         )
         self.subscriptions = SubscriptionService(
-            db, HybridMatcher(self.semantic_matcher)
+            db, HybridMatcher(self.semantic_matcher),
+            encoder=self.semantic_matcher.model,
+            default_threshold=self.semantic_matcher.threshold,
+            default_top_k=self.semantic_matcher.max_matches,
         )
         self.event_store = EventStore(db)
         self.max_context_size = max_context_size
