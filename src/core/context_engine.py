@@ -315,7 +315,7 @@ class ContextEngine:
                 )
         if deleted:
             try:
-                await self.subscriptions.reconcile_project(project_id)
+                await self.subscriptions.reconcile_project(project_id, deleted)
             except Exception:
                 logger.exception("subscription reconcile failed after deleting from %s", project_id)
         return {
