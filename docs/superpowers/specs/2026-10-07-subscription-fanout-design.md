@@ -19,7 +19,7 @@ Cost of a publish scales with the subscriptions it can affect, not with all subs
 
 ## Decisions (locked with Rob)
 
-- **Eventual consistency is acceptable.** The filter is exact for vector-only matching. Under hybrid search, a document admitted by BM25 with cosine below the floor is missed until the backstop sweep.
+- **Eventual consistency is acceptable.** The filter is exact for top-level document membership in vector mode. A new node can still displace a `related` entry (the candidate pool is a fixed window); the sweep picks that churn up. Under hybrid search, a document admitted by BM25 with cosine below the floor is missed until the backstop sweep.
 - **No `subscription_needs` table.** Need vectors live in process memory and are rebuilt from `subscriptions.needs`. The admission floor is derived from the stored bundle.
 - **Subscription lifetime is out of scope.** Subscriptions persist until explicit delete and bundles copy matched data. That is tracked as a separate issue (lease / `expires_at`, keys-only bundles).
 
@@ -57,13 +57,13 @@ The filter loads each subscription's `needs`, `top_k`, `threshold` and per-need 
 
 ### 4. Admission floor
 
-Per need: if the bundle for that need holds fewer than `top_k` documents, `floor = effective threshold`. Otherwise `floor = min(similarity of each document's best node)`. Reported `similarity` is cosine in both vector and hybrid modes (`hybrid_search_service.py`), so the comparison is on one scale.
+Per need: if the bundle for that need holds fewer than `top_k` documents, `floor = effective threshold`. Otherwise `floor = min(similarity of each document's best node)`. Reported `similarity` is cosine in both vector and hybrid modes (`hybrid_search_service.py`), so the comparison is on one scale. The filter is exact for top-level document membership in vector mode; `related` displacement is left to the sweep.
 
 The floor is computed in SQL from the stored bundle, so nothing is cached and nothing goes stale across replicas: `jsonb_each(bundle)` per need, `jsonb_array_elements` per document, `count(*)` and `min((m->>'similarity')::float)` grouped by `(subscription_id, need)`. Postgres reads the bundles; only `(subscription_id, need, count, min)` rows cross the wire.
 
 ### 5. Backstop sweep
 
-A background task started in `main.py`'s lifespan, next to the `Notifier`, runs `reconcile_project(project_id)` for every project with subscriptions every `RECONCILE_SWEEP_SECONDS` (default 300, `0` disables). Only one replica runs a given pass: it takes `pg_try_advisory_lock` and skips the pass if the lock is held. Exceptions are logged per project and the loop continues.
+A background task started in `main.py`'s lifespan, next to the `Notifier`, runs `reconcile_project(project_id)` for every project with subscriptions every `RECONCILE_SWEEP_SECONDS` (default 300, `0` disables). Passes never overlap across replicas: a pass takes `pg_try_advisory_lock` and is skipped if the lock is held. Each replica still runs its own pass per interval, so N replicas sweep N times per interval. Exceptions are logged per project and the loop continues.
 
 ## Error handling
 
