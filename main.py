@@ -30,6 +30,7 @@ from src.core.database import init_database
 from src.core.sentry_integration import init_sentry, flush as sentry_flush
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
+from src.core.reconcile_sweep import run_sweep
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.rate_limiter import RateLimitMiddleware
 
@@ -239,9 +240,20 @@ async def lifespan(app: FastAPI):
             bridge_task = asyncio.create_task(
                 run_bridge(notifier, _mcp_bus, context_engine.subscriptions.all_ids)
             )
+            sweep_seconds = float(os.getenv("RECONCILE_SWEEP_SECONDS", "300"))
+            sweep_task = (
+                asyncio.create_task(run_sweep(db, context_engine.subscriptions, sweep_seconds))
+                if sweep_seconds > 0 else None
+            )
             try:
                 yield
             finally:
+                if sweep_task is not None:
+                    sweep_task.cancel()
+                    try:
+                        await sweep_task
+                    except asyncio.CancelledError:
+                        pass
                 bridge_task.cancel()
                 try:
                     await bridge_task
