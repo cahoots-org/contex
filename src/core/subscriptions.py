@@ -53,7 +53,7 @@ def _bundle_documents(bundle) -> list[str]:
     for matches in bundle.values():
         for m in matches:
             docs.add(m.get("document") or m["data_key"])
-            docs.update(l.get("document") or l["data_key"] for l in m.get("links", ()))
+            docs.update(link.get("document") or link["data_key"] for link in m.get("links", ()))
     return sorted(docs)
 
 
@@ -79,7 +79,8 @@ class SubscriptionService:
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold, bundle=bundle, documents=_bundle_documents(bundle),
+                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold,
+                bundle=bundle, documents=_bundle_documents(bundle),
                 bundle_updated_at=datetime.now(timezone.utc),
             ))
             await session.commit()

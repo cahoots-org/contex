@@ -284,7 +284,7 @@ class ContextEngine:
         ]
 
         # Reconcile once for the whole batch. The events are already appended,
-        # so a reconcile failure must not fail the publish (spec §6).
+        # so a reconcile failure must not fail the publish.
         try:
             await self.subscriptions.reconcile_project(project_id, {e.data_key for e in events})
         except Exception:
