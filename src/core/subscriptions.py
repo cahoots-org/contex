@@ -93,15 +93,14 @@ class SubscriptionService:
                 await session.delete(row)
                 await session.commit()
 
-    async def reconcile_project(self, project_id, changed_data_key=None) -> list[str]:
+    async def reconcile_project(self, project_id, changed_keys: set[str] | None = None) -> list[str]:
         """Bring every subscription in a project back in sync with current data.
 
         Re-matches each subscription's needs against the project's current data and,
         for any whose materialized bundle changed, atomically swaps the stored bundle
         (buffer-until-complete) and emits a `subscription:{id}:updated` event. Returns
-        the list of subscription ids that changed. `changed_data_key` is accepted for a
-        future optimization (reconcile only subscriptions affected by that key); for now
-        every subscription in the project is re-checked.
+        the list of subscription ids that changed. `changed_keys` names the documents
+        just published; `None` reconciles every subscription.
         """
         async with self.db.session() as session:
             subs = (await session.execute(

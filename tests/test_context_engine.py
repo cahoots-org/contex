@@ -28,6 +28,32 @@ async def test_publish_data_forwards_provenance_to_event_store():
     assert kwargs["tenant_id"] == "tenant-1"
 
 
+@pytest.mark.asyncio
+async def test_publish_batch_reconciles_once_with_all_keys():
+    engine = ContextEngine.__new__(ContextEngine)
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
+    engine.event_store = MagicMock(append_event=AsyncMock(side_effect=["1", "2", "3"]))
+    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
+
+    events = [DataPublishEvent(project_id="p1", data_key=k, data={"a": 1}) for k in ("k1", "k2", "k3")]
+    seqs = await engine.publish_data_batch(events)
+
+    assert seqs == ["1", "2", "3"]
+    engine.subscriptions.reconcile_project.assert_awaited_once_with("p1", {"k1", "k2", "k3"})
+
+
+@pytest.mark.asyncio
+async def test_publish_survives_reconcile_failure():
+    engine = ContextEngine.__new__(ContextEngine)
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
+    engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
+    engine.subscriptions = MagicMock(reconcile_project=AsyncMock(side_effect=RuntimeError("boom")))
+
+    seq = await engine.publish_data(DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1}))
+
+    assert seq == "1"
+
+
 class TestContextEngine:
     """Test ContextEngine functionality"""
 
