@@ -34,6 +34,16 @@ def _assert_sub_tenant(row, tenant_id):
         raise PermissionError("Permission denied")
 
 
+def _bundle_documents(bundle) -> list[str]:
+    """Sorted document keys of every match and link in a bundle."""
+    docs = set()
+    for matches in bundle.values():
+        for m in matches:
+            docs.add(m.get("document") or m["data_key"])
+            docs.update(l.get("document") or l["data_key"] for l in m.get("links", ()))
+    return sorted(docs)
+
+
 class SubscriptionService:
     def __init__(self, db, matcher) -> None:
         self.db = db
@@ -51,7 +61,7 @@ class SubscriptionService:
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold, bundle=bundle,
+                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold, bundle=bundle, documents=_bundle_documents(bundle),
                 bundle_updated_at=datetime.now(timezone.utc),
             ))
             await session.commit()
@@ -125,6 +135,7 @@ class SubscriptionService:
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
                     )).scalar_one()
                     row.bundle = new_bundle
+                    row.documents = _bundle_documents(new_bundle)
                     row.bundle_updated_at = now
                     # Delivered only on commit, so listeners never see an unreadable bundle.
                     await session.execute(
@@ -205,7 +216,7 @@ class SubscriptionService:
                         seen.add(dk)
                         e = emb_by_key[dk]
                         links.append({
-                            "data_key": dk, "name": name,
+                            "data_key": dk, "document": e.data_key, "name": name,
                             "data": e.data, "description": e.description,
                         })
                 if links:

@@ -341,6 +341,8 @@ class Subscription(TenantScopedMixin, Base):
     threshold: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Materialized matches, shape = SemanticDataMatcher.match_agent_needs output.
     bundle: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'"))
+    # Every document key the bundle touches; lets a publish find affected subscriptions.
+    documents: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list, server_default=text("'{}'"))
     bundle_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -349,4 +351,5 @@ class Subscription(TenantScopedMixin, Base):
 
     __table_args__ = (
         Index("idx_subscriptions_project", "project_id"),
+        Index("idx_subscriptions_documents", "documents", postgresql_using="gin"),
     )
