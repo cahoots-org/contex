@@ -2,9 +2,9 @@ import importlib.util
 import pathlib
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
-from src.core.db_models import Subscription
+from src.core.db_models import Embedding, Subscription
 from src.core.subscriptions import SubscriptionService, _bundle_documents
 
 _spec = importlib.util.spec_from_file_location(
@@ -77,5 +77,20 @@ async def test_migration_backfill_sql_derives_documents(db):
     sub_id = await svc.create("p1", ["auth"])
     async with db.session() as s:
         await s.execute(text("UPDATE subscriptions SET documents = '{}'"))
+        await s.execute(text(m016.BACKFILL_SQL))
+    assert await _documents(db, sub_id) == ["a.py", "b.py"]
+
+
+@pytest.mark.asyncio
+async def test_migration_backfill_resolves_pre_016_links_through_embeddings(db):
+    svc = SubscriptionService(db, _KeyedMatcher({"auth": [_m("a.py.f", "a.py")]}))
+    sub_id = await svc.create("p1", ["auth"])
+    old_bundle = {"auth": [_m("a.py.f", "a.py", links=[{"data_key": "b.py.g", "name": "g"}])]}
+    async with db.session() as s:
+        s.add(Embedding(project_id="p1", data_key="b.py", node_key="b.py.g", data={}, embedding=[0.0] * 768))
+        await s.flush()
+        await s.execute(
+            update(Subscription).where(Subscription.subscription_id == sub_id).values(bundle=old_bundle, documents=[])
+        )
         await s.execute(text(m016.BACKFILL_SQL))
     assert await _documents(db, sub_id) == ["a.py", "b.py"]

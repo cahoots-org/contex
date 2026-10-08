@@ -25,7 +25,11 @@ UPDATE subscriptions s SET documents = COALESCE((
         SELECT COALESCE(m->>'document', m->>'data_key') AS d
           FROM jsonb_each(s.bundle) kv, jsonb_array_elements(kv.value) m
         UNION
-        SELECT COALESCE(l->>'document', l->>'data_key')
+        SELECT COALESCE(
+                 l->>'document',
+                 (SELECT e.data_key FROM embeddings e
+                   WHERE e.project_id = s.project_id AND e.node_key = l->>'data_key' LIMIT 1),
+                 l->>'data_key')
           FROM jsonb_each(s.bundle) kv, jsonb_array_elements(kv.value) m,
                jsonb_array_elements(COALESCE(m->'links', '[]'::jsonb)) l
     ) x WHERE d IS NOT NULL
