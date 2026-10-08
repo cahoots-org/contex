@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import numpy as np
 from sqlalchemy import select, text
 
 from src.core.db_models import Embedding, Subscription, Symbol
@@ -19,6 +20,18 @@ logger = logging.getLogger(__name__)
 # Cap cross-file neighbors attached per matched node, to bound bundle size.
 # ponytail: fixed cap; make it configurable only if real bundles feel starved.
 MAX_LINKS_PER_NODE = 5
+
+# Per (subscription, need): documents held and the weakest one's similarity.
+_FLOORS_SQL = text("""
+SELECT s.subscription_id, n.need,
+       COALESCE(s.top_k, :default_top_k) AS top_k,
+       COALESCE(s.threshold, :default_threshold) AS threshold,
+       jsonb_array_length(COALESCE(s.bundle -> n.need, '[]'::jsonb)) AS docs,
+       (SELECT min((m->>'similarity')::float)
+          FROM jsonb_array_elements(COALESCE(s.bundle -> n.need, '[]'::jsonb)) m) AS min_sim
+  FROM subscriptions s, unnest(s.needs) AS n(need)
+ WHERE s.project_id = :project_id
+""")
 
 
 def _since_from_scope(scope):
@@ -34,10 +47,25 @@ def _assert_sub_tenant(row, tenant_id):
         raise PermissionError("Permission denied")
 
 
+def _bundle_documents(bundle) -> list[str]:
+    """Sorted document keys of every match and link in a bundle."""
+    docs = set()
+    for matches in bundle.values():
+        for m in matches:
+            docs.add(m.get("document") or m["data_key"])
+            docs.update(link.get("document") or link["data_key"] for link in m.get("links", ()))
+    return sorted(docs)
+
+
 class SubscriptionService:
-    def __init__(self, db, matcher) -> None:
+    def __init__(self, db, matcher, encoder=None, default_threshold=0.35, default_top_k=10) -> None:
         self.db = db
         self.matcher = matcher
+        self.encoder = encoder
+        self.default_threshold = default_threshold
+        self.default_top_k = default_top_k
+        # ponytail: unbounded, ~3KB per distinct need; persist vectors behind an ANN index if this binds.
+        self._need_vecs: dict[str, np.ndarray] = {}
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -51,7 +79,8 @@ class SubscriptionService:
         async with self.db.session() as session:
             session.add(Subscription(
                 subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold, bundle=bundle,
+                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold,
+                bundle=bundle, documents=_bundle_documents(bundle),
                 bundle_updated_at=datetime.now(timezone.utc),
             ))
             await session.commit()
@@ -93,20 +122,27 @@ class SubscriptionService:
                 await session.delete(row)
                 await session.commit()
 
-    async def reconcile_project(self, project_id, changed_data_key=None) -> list[str]:
+    async def reconcile_project(self, project_id, changed_keys: set[str] | None = None) -> list[str]:
         """Bring every subscription in a project back in sync with current data.
 
         Re-matches each subscription's needs against the project's current data and,
         for any whose materialized bundle changed, atomically swaps the stored bundle
         (buffer-until-complete) and emits a `subscription:{id}:updated` event. Returns
-        the list of subscription ids that changed. `changed_data_key` is accepted for a
-        future optimization (reconcile only subscriptions affected by that key); for now
-        every subscription in the project is re-checked.
+        the list of subscription ids that changed. `changed_keys` names the documents
+        just published; `None` reconciles every subscription.
         """
+        affected = None
+        if changed_keys is not None:
+            try:
+                affected = await self._affected(project_id, changed_keys)
+            except Exception:
+                logger.exception("affected-subscription filter failed for %s; reconciling all", project_id)
+
+        stmt = select(Subscription).where(Subscription.project_id == project_id)
+        if affected is not None:
+            stmt = stmt.where(Subscription.subscription_id.in_(affected))
         async with self.db.session() as session:
-            subs = (await session.execute(
-                select(Subscription).where(Subscription.project_id == project_id)
-            )).scalars().all()
+            subs = (await session.execute(stmt)).scalars().all()
 
         changed_ids: list[str] = []
         for sub in subs:
@@ -124,8 +160,11 @@ class SubscriptionService:
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
-                    )).scalar_one()
+                    )).scalar_one_or_none()
+                    if row is None:  # deleted since the filter ran
+                        continue
                     row.bundle = new_bundle
+                    row.documents = _bundle_documents(new_bundle)
                     row.bundle_updated_at = now
                     # Delivered only on commit, so listeners never see an unreadable bundle.
                     await session.execute(
@@ -138,6 +177,81 @@ class SubscriptionService:
                 logger.exception("reconcile failed for subscription %s", sub.subscription_id)
                 continue
         return changed_ids
+
+    async def _ids_including(self, project_id, keys) -> set[str]:
+        """Subscriptions whose bundle already touches a changed document."""
+        async with self.db.session() as session:
+            return set((await session.execute(
+                select(Subscription.subscription_id)
+                .where(Subscription.project_id == project_id)
+                .where(Subscription.documents.overlap(list(keys)))
+            )).scalars())
+
+    async def _ids_linking(self, project_id, keys) -> set[str]:
+        """Subscriptions bundling a document that references a name a changed document defines."""
+        defined = (
+            select(Symbol.name)
+            .where(Symbol.project_id == project_id)
+            .where(Symbol.data_key.in_(keys))
+            .where(Symbol.role == "def")
+        )
+        async with self.db.session() as session:
+            referencing = list((await session.execute(
+                select(Symbol.data_key).distinct()
+                .where(Symbol.project_id == project_id)
+                .where(Symbol.role == "ref")
+                .where(Symbol.name.in_(defined))
+            )).scalars())
+        if not referencing:
+            return set()
+        return await self._ids_including(project_id, set(referencing))
+
+    async def _floors(self, project_id) -> list[tuple[str, str, float]]:
+        """(subscription_id, need, floor): the cosine a new node must reach to enter."""
+        async with self.db.session() as session:
+            rows = (await session.execute(_FLOORS_SQL, {
+                "project_id": project_id,
+                "default_top_k": self.default_top_k,
+                "default_threshold": self.default_threshold,
+            })).all()
+        return [
+            (r.subscription_id, r.need,
+             r.threshold if r.docs < r.top_k or r.min_sim is None else max(r.threshold, r.min_sim))
+            for r in rows
+        ]
+
+    def _need_vectors(self, needs) -> np.ndarray:
+        missing = sorted({n for n in needs if n not in self._need_vecs})
+        if missing:
+            self._need_vecs.update(zip(missing, self.encoder.encode(missing)))
+        return np.stack([self._need_vecs[n] for n in needs])
+
+    async def _ids_admitting(self, project_id, keys) -> set[str] | None:
+        """Subscriptions with a need some changed node reaches the floor of; None when unknown."""
+        if self.encoder is None:
+            return None
+        async with self.db.session() as session:
+            nodes = (await session.execute(
+                select(Embedding.embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.data_key.in_(keys))
+            )).scalars().all()
+        floors = await self._floors(project_id)
+        if not nodes or not floors:
+            return set()
+        best = (np.stack(nodes) @ self._need_vectors([need for _, need, _ in floors]).T).max(axis=0)
+        return {sub for (sub, _, floor), score in zip(floors, best) if score >= floor}
+
+    async def _affected(self, project_id, keys) -> set[str] | None:
+        """Subscriptions a publish of ``keys`` can change; None means all of them."""
+        admitting = await self._ids_admitting(project_id, keys)
+        if admitting is None:
+            return None
+        return (
+            admitting
+            | await self._ids_including(project_id, keys)
+            | await self._ids_linking(project_id, keys)
+        )
 
     async def _link_bundle(self, project_id, bundle):
         """Attach cross-file neighbors to each matched node via the symbols join.
@@ -206,7 +320,7 @@ class SubscriptionService:
                         seen.add(dk)
                         e = emb_by_key[dk]
                         links.append({
-                            "data_key": dk, "name": name,
+                            "data_key": dk, "document": e.data_key, "name": name,
                             "data": e.data, "description": e.description,
                         })
                 if links:

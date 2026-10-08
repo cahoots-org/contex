@@ -65,7 +65,10 @@ class ContextEngine:
             max_matches=max_matches
         )
         self.subscriptions = SubscriptionService(
-            db, HybridMatcher(self.semantic_matcher)
+            db, HybridMatcher(self.semantic_matcher),
+            encoder=self.semantic_matcher.model,
+            default_threshold=self.semantic_matcher.threshold,
+            default_top_k=self.semantic_matcher.max_matches,
         )
         self.event_store = EventStore(db)
         self.max_context_size = max_context_size
@@ -275,10 +278,19 @@ class ContextEngine:
             project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared]
         )
 
-        return [
+        sequences = [
             await self._record_publish(e, data, fmt, source=source, actor=actor, tenant_id=tenant_id)
             for e, data, fmt in prepared
         ]
+
+        # Reconcile once for the whole batch. The events are already appended,
+        # so a reconcile failure must not fail the publish.
+        try:
+            await self.subscriptions.reconcile_project(project_id, {e.data_key for e in events})
+        except Exception:
+            logger.exception("subscription reconcile failed for %s", project_id)
+
+        return sequences
 
     async def delete_data(
         self,
@@ -303,7 +315,7 @@ class ContextEngine:
                 )
         if deleted:
             try:
-                await self.subscriptions.reconcile_project(project_id)
+                await self.subscriptions.reconcile_project(project_id, deleted)
             except Exception:
                 logger.exception("subscription reconcile failed after deleting from %s", project_id)
         return {
@@ -321,7 +333,7 @@ class ContextEngine:
         actor: Optional[Dict[str, Any]],
         tenant_id: Optional[str],
     ) -> str:
-        """Append one published item to the event store and reconcile subscriptions."""
+        """Append one published item to the event store."""
         project_id, data_key = event.project_id, event.data_key
         logger.debug("Publishing data: %s:%s", project_id, data_key)
 
@@ -343,18 +355,6 @@ class ContextEngine:
             project_id, event_type, event_data,
             tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
         )
-
-        # Reconcile persistent subscriptions against the new data (inline). This
-        # is the notification path: MCP subscribers are pushed to over the
-        # internal bridge as reconcile re-matches affected subscriptions.
-        # A reconcile/matcher failure must not fail the publish (spec §6):
-        # the event is already appended.
-        try:
-            await self.subscriptions.reconcile_project(project_id, data_key)
-        except Exception:
-            logger.exception(
-                "subscription reconcile failed for %s/%s", project_id, data_key
-            )
 
         return sequence
 
