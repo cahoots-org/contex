@@ -14,6 +14,7 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
 from src.core.metrics import get_metrics
 from src.core.authz_coverage import assert_authz_coverage
+from src.core.bm25_index import Bm25Settings, ensure_bm25_index
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
 from src.core.upload_limits import get_max_upload_size
@@ -110,6 +111,8 @@ async def lifespan(app: FastAPI):
     try:
         await db.migrate_to_head()
         logger.info("Database schema migrated to head")
+        if await ensure_bm25_index(db, Bm25Settings.from_env()):
+            logger.info("Rebuilt the BM25 index with new settings")
     except Exception as e:
         logger.error("Failed to migrate database schema", error=str(e))
         raise

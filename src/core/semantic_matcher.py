@@ -139,7 +139,7 @@ class SemanticDataMatcher:
                 rrf_k = int(os.getenv("RRF_K", "60"))
                 self.hybrid_search = HybridSearchService(
                     vector_search=self.vector_search,
-                    lexical_search=PgFtsLexical(db),
+                    lexical_search=PgFtsLexical.from_env(db),
                     k=rrf_k,
                 )
                 logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
