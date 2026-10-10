@@ -18,6 +18,7 @@ from .config import (
     resolve_batch_size,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
+    resolve_prune,
     resolve_secret_scanner,
 )
 from .globs import allowed, matches_any
@@ -35,6 +36,7 @@ __all__ = [
     "resolve_batch_size",
     "resolve_max_batch_bytes",
     "resolve_max_file_bytes",
+    "resolve_prune",
     "resolve_secret_scanner",
     "run",
     "run_connector",
