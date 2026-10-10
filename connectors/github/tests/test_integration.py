@@ -103,6 +103,22 @@ async def test_read_files_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
 
 
 @pytest.mark.anyio
+async def test_read_files_retains_a_file_it_could_not_fetch(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}", json={"default_branch": "main"}, headers=_json_headers())
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/git/trees/main"),
+        json={"tree": [{"type": "blob", "path": "src/main.py", "sha": "abc123"}]},
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}/git/blobs/abc123", status_code=500)
+
+    async with GitHubClient("tok") as client:
+        events = [ev async for ev in read_files(client, _OWNER, _REPO)]
+
+    assert [(ev.op, ev.key) for ev in events] == [("retain", f"{_SLUG}:src/main.py")]
+
+
+@pytest.mark.anyio
 async def test_read_files_skips_binary_by_default(httpx_mock: "HTTPXMock") -> None:
     httpx_mock.add_response(
         url=f"{_API}/repos/{_SLUG}",

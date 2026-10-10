@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from connectors.postgres.reader import origin_for
 from connectors.postgres.mapping import (
     build_data_key,
     is_binary,
@@ -165,3 +166,11 @@ class TestRowToEvent:
         row = {"id": 1, "active": True}
         event = row_to_event("public", "users", row, ["id"], ["id", "active"])
         assert event.payload["active"] is True
+
+
+class TestOriginFor:
+    def test_url_dsn_drops_credentials(self):
+        assert origin_for("postgresql://reader:s3cret@db.internal:5432/app") == "postgres:db.internal:5432/app"
+
+    def test_keyword_dsn(self):
+        assert origin_for("host=db.internal dbname=app user=reader") == "postgres:db.internal:5432/app"

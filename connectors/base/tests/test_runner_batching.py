@@ -5,6 +5,7 @@ import asyncio
 import json
 
 from connectors.base import ChangeEvent
+from connectors.base.config import resolve_prune
 from connectors.base.runner import run
 
 
@@ -46,3 +47,8 @@ def test_to_item_carries_published_at_only_when_set():
     assert "published_at" not in ChangeEvent(op="upsert", key="k", payload="x").to_item()
     item = ChangeEvent(op="upsert", key="k", payload="x", published_at="2026-01-01T00:00:00Z").to_item()
     assert item["published_at"] == "2026-01-01T00:00:00Z"
+
+
+def test_prune_is_on_unless_disabled():
+    assert resolve_prune({}) is True
+    assert resolve_prune({"prune": False}) is False
