@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .change_event import ChangeEvent
+from .documents import document_event, document_format, resolve_document_types
 from .config import (
     ContexConfig,
     load_config,
@@ -31,9 +32,12 @@ __all__ = [
     "ContexPublisher",
     "RunStats",
     "allowed",
+    "document_event",
+    "document_format",
     "load_config",
     "matches_any",
     "resolve_batch_size",
+    "resolve_document_types",
     "resolve_max_batch_bytes",
     "resolve_max_file_bytes",
     "resolve_prune",
