@@ -25,6 +25,8 @@ def positive_int_env(name: str, default: int) -> int:
 MAX_TOP_K = positive_int_env("MAX_TOP_K", 100)
 # Max plain-English needs per subscription (each need is a separate embed + search).
 MAX_NEEDS = positive_int_env("MAX_NEEDS", 50)
+# Max live subscriptions per project (every publish may re-check each one).
+MAX_SUBSCRIPTIONS_PER_PROJECT = positive_int_env("MAX_SUBSCRIPTIONS_PER_PROJECT", 1000)
 # Max events one event-stream read may return.
 MAX_EVENT_COUNT = positive_int_env("MAX_EVENT_COUNT", 1000)
 # Max items in one batch publish / register request.
