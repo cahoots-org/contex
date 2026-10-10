@@ -48,6 +48,7 @@ def _alembic_config(database_url: str) -> Config:
     cfg = Config(str(_ALEMBIC_INI))
     cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
     cfg.set_main_option("sqlalchemy.url", database_url)
+    cfg.attributes["configure_logger"] = False
     return cfg
 
 
