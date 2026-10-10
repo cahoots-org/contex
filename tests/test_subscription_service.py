@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select, update
 
 from src.core.db_models import Subscription
-from src.core.subscriptions import SubscriptionService
+from src.core.subscriptions import SubscriptionService, _content_id
 from src.core.tenant import DEFAULT_TENANT_ID
 
 
@@ -89,3 +89,66 @@ async def _expires_in(db, sub_id) -> timedelta:
             select(Subscription).where(Subscription.subscription_id == sub_id)
         )).scalar_one()
     return row.expires_at - datetime.now(timezone.utc)
+
+
+class _CountingMatcher(_StubMatcher):
+    def __init__(self):
+        self.calls = 0
+
+    async def match(self, *args, **kwargs):
+        self.calls += 1
+        return await super().match(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_identical_creates_share_one_subscription_without_rematching(db):
+    m = _CountingMatcher()
+    svc = SubscriptionService(db, m)
+    first = await svc.create("p1", ["b", "a"], top_k=5)
+    again = await svc.create("p1", ["a", "b", "a"], top_k=5)
+
+    assert again == first
+    assert m.calls == 1
+    assert await svc.all_ids() == [first]
+
+
+@pytest.mark.asyncio
+async def test_create_renews_shared_lease(db):
+    svc = SubscriptionService(db, _StubMatcher(), ttl_seconds=3600)
+    sub_id = await svc.create("p1", ["a"])
+    await _age(db, sub_id, seconds=60)
+
+    await svc.create("p1", ["a"])
+
+    assert await _expires_in(db, sub_id) > timedelta(minutes=59)
+
+
+@pytest.mark.asyncio
+async def test_different_requests_get_different_subscriptions(db):
+    svc = SubscriptionService(db, _StubMatcher())
+    base = await svc.create("p1", ["a"])
+    others = [
+        await svc.create("p2", ["a"]),
+        await svc.create("p1", ["b"]),
+        await svc.create("p1", ["a"], top_k=3),
+        await svc.create("p1", ["a"], threshold=0.5),
+        await svc.create("p1", ["a"], scope={"since": "2026-01-01T00:00:00+00:00"}),
+    ]
+    assert base not in others
+    assert len(set(others)) == len(others)
+
+
+def test_tenants_never_share_a_subscription():
+    assert _content_id("t1", "p1", ["a"], 5, None, None) != _content_id("t2", "p1", ["a"], 5, None, None)
+
+
+@pytest.mark.asyncio
+async def test_create_rematches_an_expired_subscription(db):
+    m = _CountingMatcher()
+    svc = SubscriptionService(db, m)
+    sub_id = await svc.create("p1", ["a"])
+    await _age(db, sub_id)
+
+    assert await svc.create("p1", ["a"]) == sub_id
+    assert m.calls == 2
+    assert await _expires_in(db, sub_id) > timedelta(minutes=59)
