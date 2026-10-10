@@ -240,20 +240,20 @@ async def lifespan(app: FastAPI):
             bridge_task = asyncio.create_task(
                 run_bridge(notifier, _mcp_bus, context_engine.subscriptions.all_ids)
             )
+            # With reconcile disabled (0), the sweep still runs to purge expired subscriptions.
             sweep_seconds = float(os.getenv("RECONCILE_SWEEP_SECONDS", "300"))
-            sweep_task = (
-                asyncio.create_task(run_sweep(db, context_engine.subscriptions, sweep_seconds))
-                if sweep_seconds > 0 else None
-            )
+            sweep_task = asyncio.create_task(run_sweep(
+                db, context_engine.subscriptions, sweep_seconds if sweep_seconds > 0 else 300,
+                reconcile=sweep_seconds > 0,
+            ))
             try:
                 yield
             finally:
-                if sweep_task is not None:
-                    sweep_task.cancel()
-                    try:
-                        await sweep_task
-                    except asyncio.CancelledError:
-                        pass
+                sweep_task.cancel()
+                try:
+                    await sweep_task
+                except asyncio.CancelledError:
+                    pass
                 bridge_task.cancel()
                 try:
                     await bridge_task
