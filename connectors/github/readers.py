@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from connectors.base import ChangeEvent, allowed
+from connectors.base import ChangeEvent, allowed, document_event, document_format
 
 from .client import GitHubClient
 
@@ -61,8 +61,9 @@ async def read_files(
     exclude: list[str] | None = None,
     include_binary: bool = False,
     max_file_bytes: int | None = None,
+    document_types: frozenset[str] = frozenset(),
 ) -> AsyncIterator[ChangeEvent]:
-    """Yield one ChangeEvent per text file on the default branch."""
+    """Yield one ChangeEvent per text file, and per document in ``document_types``, on the default branch."""
     repo_data = await client.get(f"/repos/{owner}/{repo}")
     default_branch = repo_data.get("default_branch", "main")
 
@@ -81,7 +82,8 @@ async def read_files(
         if max_file_bytes is not None and size is not None and size > max_file_bytes:
             log.info("skip oversized %s/%s:%s (%s bytes > %d)", owner, repo, path, size, max_file_bytes)
             continue
-        if not include_binary and is_binary_path(path):
+        doc_format = document_format(path, document_types)
+        if doc_format is None and not include_binary and is_binary_path(path):
             log.debug("skip binary %s/%s:%s", owner, repo, path)
             continue
         if not allowed(path, include=include, exclude=exclude):
@@ -100,6 +102,11 @@ async def read_files(
 
         encoding = content_data.get("encoding", "")
         raw = content_data.get("content", "")
+        source_meta = {"source": "github", "owner": owner, "repo": repo, "path": path}
+        if doc_format is not None and encoding == "base64":
+            log.debug("document %s", key)
+            yield document_event(key, base64.b64decode(raw), doc_format, source_meta=source_meta)
+            continue
         if encoding == "base64":
             try:
                 text = base64.b64decode(raw).decode("utf-8", errors="replace")
@@ -114,7 +121,7 @@ async def read_files(
             op="upsert",
             key=key,
             payload=text,
-            source_meta={"source": "github", "owner": owner, "repo": repo, "path": path},
+            source_meta=source_meta,
             data_format="text",
         )
 
