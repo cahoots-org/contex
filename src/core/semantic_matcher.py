@@ -85,6 +85,15 @@ def collapse_by_document(
     return list(docs.values())
 
 
+def _original_text(data: Any, nodes) -> str:
+    """The published item as text: as is, JSON, or a document's extracted text."""
+    if isinstance(data, str):
+        return data
+    if isinstance(data, (bytes, bytearray)):
+        return "\n\n".join(str(node.content) for node in nodes)
+    return json.dumps(data)
+
+
 class SemanticDataMatcher:
     """
     Matches agent semantic needs to available project data using embeddings.
@@ -311,7 +320,7 @@ class SemanticDataMatcher:
 
         return {
             "data_key": data_key,
-            "data_original": data if isinstance(data, str) else json.dumps(data),
+            "data_original": _original_text(data, nodes),
             "parse_result": parse_result,
             "nodes": nodes,
             "node_keys": node_keys,
