@@ -40,3 +40,9 @@ def test_byte_cap_flushes_before_exceeding_limit():
     assert sum(pub.batches) == 5          # everything published
     assert len(pub.batches) > 1           # split into multiple requests
     assert all(b <= cap for b in pub.batch_bytes)  # no request exceeds the cap
+
+
+def test_to_item_carries_published_at_only_when_set():
+    assert "published_at" not in ChangeEvent(op="upsert", key="k", payload="x").to_item()
+    item = ChangeEvent(op="upsert", key="k", payload="x", published_at="2026-01-01T00:00:00Z").to_item()
+    assert item["published_at"] == "2026-01-01T00:00:00Z"

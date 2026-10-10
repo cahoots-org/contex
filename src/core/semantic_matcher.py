@@ -214,13 +214,16 @@ class SemanticDataMatcher:
         self,
         project_id: str,
         items: List[Tuple[str, Any, Optional[str]]],
+        published_at: Optional[Dict[str, datetime]] = None,
     ):
         """Register many ``(data_key, data, format_hint)`` items with one encode call.
 
         Encoding is the expensive step and pads each batch to its longest text,
         so pooling every item's changed nodes into one call lets length-sorted
         batching work across the whole set rather than one file at a time.
+        ``published_at`` maps a data_key to when its source changed it.
         """
+        published_at = published_at or {}
         plans = [
             plan for data_key, data, format_hint in items
             if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
@@ -233,7 +236,9 @@ class SemanticDataMatcher:
         offset = 0
         for plan in plans:
             n = len(plan["changed"])
-            await self._write_registration(project_id, plan, embeddings[offset:offset + n])
+            await self._write_registration(
+                project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"])
+            )
             offset += n
 
     async def _plan_registration(
@@ -310,7 +315,9 @@ class SemanticDataMatcher:
             "changed": changed,
         }
 
-    async def _write_registration(self, project_id: str, plan: Dict[str, Any], embeddings) -> None:
+    async def _write_registration(
+        self, project_id: str, plan: Dict[str, Any], embeddings, published_at: Optional[datetime] = None,
+    ) -> None:
         """Upsert one item's changed nodes and rewrite its symbols."""
         data_key, parse_result = plan["data_key"], plan["parse_result"]
         nodes, node_keys, changed = plan["nodes"], plan["node_keys"], plan["changed"]
@@ -342,6 +349,7 @@ class SemanticDataMatcher:
                     existing.content_hash = content_hash
                     existing.embedding = embedding.tolist()
                     existing.updated_at = datetime.utcnow()
+                    existing.published_at = published_at
                 else:
                     session.add(Embedding(
                         project_id=project_id,
@@ -355,6 +363,7 @@ class SemanticDataMatcher:
                         data_format=parse_result.format_name,
                         content_hash=content_hash,
                         embedding=embedding.tolist(),
+                        published_at=published_at,
                     ))
 
             # Rewrite this source's symbols (defs/refs the parser recorded per
@@ -407,7 +416,7 @@ class SemanticDataMatcher:
             top_k: Per-request max matches per need; defaults to the instance value.
             threshold: Per-request min similarity (0-1); defaults to the instance value.
             since: When set, only match data created or updated on or after this
-                time (compared against ``COALESCE(updated_at, created_at)``).
+                time (compared against ``COALESCE(published_at, updated_at, created_at)``).
             rerank: Reorder candidates with the opt-in relevance reranker when
                 one is configured (adds ``relevance`` to judged matches).
 

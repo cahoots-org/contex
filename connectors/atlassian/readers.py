@@ -123,6 +123,7 @@ def issue_to_event(issue: dict, *, site_url: str, comments: list[dict]) -> Chang
             "url": url,
             "updated": payload["updated"],
         },
+        published_at=payload["updated"],
     )
 
 
@@ -208,6 +209,7 @@ def page_to_event(
             "url": url,
             "updated": payload["updated"],
         },
+        published_at=payload["updated"],
     )
 
 

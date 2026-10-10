@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Iterator
 
 import boto3
@@ -41,12 +42,13 @@ def filter_key(
     return is_text_extension(key, allowed_extensions)
 
 
-def object_to_event(key: str, body: bytes) -> ChangeEvent:
+def object_to_event(key: str, body: bytes, last_modified: datetime | None = None) -> ChangeEvent:
     """Map a fetched S3 object to a ChangeEvent.
 
     .json objects are parsed into a dict (data_format="json").
     All other text objects are decoded as UTF-8 (data_format="text").
     """
+    published_at = last_modified.isoformat() if last_modified else None
     _, ext = os.path.splitext(key.lower())
     if ext == ".json":
         payload = json.loads(body.decode("utf-8"))
@@ -56,6 +58,7 @@ def object_to_event(key: str, body: bytes) -> ChangeEvent:
             payload=payload,
             source_meta={"source": "s3"},
             data_format="json",
+            published_at=published_at,
         )
     text = body.decode("utf-8")
     return ChangeEvent(
@@ -64,6 +67,7 @@ def object_to_event(key: str, body: bytes) -> ChangeEvent:
         payload=text,
         source_meta={"source": "s3"},
         data_format="text",
+        published_at=published_at,
     )
 
 
@@ -133,7 +137,7 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
             body: bytes = resp["Body"].read()
 
             try:
-                event = object_to_event(key, body)
+                event = object_to_event(key, body, obj.get("LastModified"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 logger.warning("skipping %s: %s", key, exc)
                 continue

@@ -179,6 +179,7 @@ def test_issue_to_event():
         "url": f"{SITE}/browse/DEV-1",
         "updated": "2026-02-01T00:00:00.000+0000",
     }
+    assert ev.published_at == "2026-02-01T00:00:00.000+0000"
 
 
 def test_page_to_event():
@@ -207,6 +208,7 @@ def test_page_to_event():
     assert ev.payload["url"] == f"{SITE}/wiki/spaces/ENG/pages/33046/Runbook"
     assert ev.source_meta["source"] == "confluence"
     assert ev.source_meta["spaceId"] == "131275"
+    assert ev.published_at == "2026-03-01T00:00:00Z"
 
 
 # ---------------------------------------------------------------------------

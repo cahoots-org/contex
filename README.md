@@ -83,6 +83,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Semantic matching:** matches needs to data by meaning, using sentence-transformer embeddings.
 - **Hybrid search:** combines vector similarity and BM25 keyword matching.
 - **Live subscriptions:** matched context that refreshes when your data changes.
+- **Time windows:** limit a query or subscription to recent data with `since` or `max_age_seconds`. On a sliding window, items drop out as they age. Connectors publish each item at the source's own update time, so backfilled history counts as old.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
 - **Event sourcing:** stores every change as an immutable event, powering audit trails and version history.
 - **Security:** API-key auth and RBAC, off by default for local dev.

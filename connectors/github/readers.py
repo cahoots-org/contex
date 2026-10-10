@@ -174,6 +174,7 @@ async def read_issues(
                 "number": number,
                 "updated_at": issue.get("updated_at", ""),
             },
+            published_at=issue.get("updated_at"),
         )
 
 
@@ -215,6 +216,7 @@ async def read_pulls(
                 "number": number,
                 "updated_at": pull.get("updated_at", ""),
             },
+            published_at=pull.get("updated_at"),
         )
 
 
@@ -266,6 +268,7 @@ def commit_to_event(owner: str, repo: str, commit: dict[str, Any]) -> ChangeEven
             "files": files,
         },
         source_meta={"source": "github", "owner": owner, "repo": repo, "sha": sha},
+        published_at=committer.get("date") or None,
     )
 
 

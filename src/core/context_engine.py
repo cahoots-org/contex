@@ -275,7 +275,8 @@ class ContextEngine:
 
         # 1. Register data with semantic matcher (normalizes and stores)
         await self.semantic_matcher.register_data_batch(
-            project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared]
+            project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared],
+            {e.data_key: e.published_at for e in events if e.published_at is not None},
         )
 
         sequences = [

@@ -139,6 +139,7 @@ def test_commit_to_event_full_metadata():
         {"filename": "payments/charge.py", "status": "modified", "additions": 12, "deletions": 3}
     ]
     assert ev.source_meta == {"source": "github", "owner": "cahoots-org", "repo": "contex", "sha": "abc123"}
+    assert ev.published_at == "2026-02-01T10:05:00Z"
 
 
 def test_commit_to_event_missing_fields_default_safely():
@@ -148,6 +149,7 @@ def test_commit_to_event_missing_fields_default_safely():
     assert ev.payload["files"] == []
     assert ev.payload["parents"] == []
     assert ev.payload["stats"] == {"additions": 0, "deletions": 0, "total": 0}
+    assert ev.published_at is None
 
 
 # ---------------------------------------------------------------------------
