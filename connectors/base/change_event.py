@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 class ChangeEvent:
     """A single change a connector's reader produces.
 
-    ``op`` is ``"upsert"`` or ``"delete"``. The runner maps an upsert to a
-    ``contex_publish_batch`` item (``key`` -> ``data_key``, ``payload`` ->
-    ``data``, ``data_format`` -> ``data_format``) and sends a delete's ``key``
-    to ``contex_delete``; its payload is ignored. ``published_at`` (ISO-8601)
+    ``op`` is ``"upsert"``, ``"delete"`` or ``"retain"``. The runner maps an
+    upsert to a ``contex_publish_batch`` item (``key`` -> ``data_key``,
+    ``payload`` -> ``data``, ``data_format`` -> ``data_format``) and sends a
+    delete's ``key`` to ``contex_delete``; its payload is ignored. A retain
+    publishes nothing but keeps ``key`` from being pruned, for an item the
+    source still has but could not be fetched this run. ``published_at`` (ISO-8601)
     is when the source last changed the item, so time windows don't treat a
     backfill as fresh.
     """

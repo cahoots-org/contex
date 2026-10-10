@@ -48,9 +48,17 @@ async def run_connector(
     progress: Callable[[int], None] | None = None,
     max_batch_bytes: int | None = None,
     secret_scanner=None,
+    origin: str | None = None,
+    prune: bool = False,
 ) -> RunStats:
-    """Open a publisher for ``config`` and publish ``events`` through it."""
-    async with ContexPublisher(config) as publisher:
+    """Open a publisher for ``config`` and publish ``events`` through it.
+
+    ``origin`` tags what this stream publishes. With ``prune``, keys that
+    origin published before but this stream no longer yields are deleted.
+    """
+    if prune and origin is None:
+        raise ValueError("prune needs an origin")
+    async with ContexPublisher(config, origin) as publisher:
         return await run(
             events,
             publisher,
@@ -58,4 +66,5 @@ async def run_connector(
             progress=progress,
             max_batch_bytes=max_batch_bytes,
             secret_scanner=secret_scanner,
+            prune=prune,
         )
