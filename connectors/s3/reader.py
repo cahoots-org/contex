@@ -13,7 +13,7 @@ from typing import Iterator
 
 import boto3
 
-from connectors.base import ChangeEvent, allowed
+from connectors.base import ChangeEvent, allowed, document_event, document_format, resolve_document_types
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +42,20 @@ def filter_key(
     return is_text_extension(key, allowed_extensions)
 
 
-def object_to_event(key: str, body: bytes, last_modified: datetime | None = None) -> ChangeEvent:
+def object_to_event(
+    key: str, body: bytes, last_modified: datetime | None = None,
+    document_types: frozenset[str] = frozenset(),
+) -> ChangeEvent:
     """Map a fetched S3 object to a ChangeEvent.
 
+    Objects in ``document_types`` are sent base64 for the server to extract.
     .json objects are parsed into a dict (data_format="json").
     All other text objects are decoded as UTF-8 (data_format="text").
     """
     published_at = last_modified.isoformat() if last_modified else None
+    doc_format = document_format(key, document_types)
+    if doc_format is not None:
+        return document_event(key, body, doc_format, source_meta={"source": "s3"}, published_at=published_at)
     _, ext = os.path.splitext(key.lower())
     if ext == ".json":
         payload = json.loads(body.decode("utf-8"))
@@ -111,7 +118,8 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
 
     include: list[str] | None = (config.get("keys") or {}).get("include") or None
     exclude: list[str] | None = (config.get("keys") or {}).get("exclude") or None
-    extensions = _build_extensions(config)
+    document_types = resolve_document_types(config)
+    extensions = _build_extensions(config) | document_types
     max_bytes: int = int(config.get("max_object_bytes") or DEFAULT_MAX_BYTES)
 
     paginator = client.get_paginator("list_objects_v2")
@@ -137,7 +145,7 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
             body: bytes = resp["Body"].read()
 
             try:
-                event = object_to_event(key, body, obj.get("LastModified"))
+                event = object_to_event(key, body, obj.get("LastModified"), document_types)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 logger.warning("skipping %s: %s", key, exc)
                 continue
