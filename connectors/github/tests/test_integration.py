@@ -103,6 +103,30 @@ async def test_read_files_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
 
 
 @pytest.mark.anyio
+async def test_read_files_sends_enabled_documents_base64(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}", json={"default_branch": "main"}, headers=_json_headers())
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/git/trees/main"),
+        json={"tree": [
+            {"type": "blob", "path": "docs/spec.pdf", "sha": "pdf1"},
+            {"type": "blob", "path": "docs/old.doc", "sha": "doc1"},
+        ]},
+        headers=_json_headers(),
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/repos/{_SLUG}/git/blobs/pdf1",
+        json={"encoding": "base64", "content": base64.b64encode(b"%PDF-1.7").decode()},
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [ev async for ev in read_files(client, _OWNER, _REPO, document_types=frozenset({".pdf"}))]
+
+    assert [(ev.key, ev.data_format) for ev in events] == [(f"{_SLUG}:docs/spec.pdf", "pdf")]
+    assert base64.b64decode(events[0].payload) == b"%PDF-1.7"
+
+
+@pytest.mark.anyio
 async def test_read_files_retains_a_file_it_could_not_fetch(httpx_mock: "HTTPXMock") -> None:
     httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}", json={"default_branch": "main"}, headers=_json_headers())
     httpx_mock.add_response(
