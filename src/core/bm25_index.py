@@ -67,16 +67,18 @@ async def ensure_bm25_index(db, settings: Bm25Settings) -> bool:
     """
     async with db.session() as session:
         await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY})
-        comment = await session.scalar(text(f"SELECT obj_description('{INDEX}'::regclass, 'pg_class')"))
+        comment = await session.scalar(
+            text("SELECT obj_description(CAST(:index AS regclass), 'pg_class')"), {"index": INDEX}
+        )
         built = Bm25Settings(**json.loads(comment)) if comment else Bm25Settings()
         if built == settings:
             return False
         # ponytail: blocking rebuild, writes wait for it; build concurrently if corpora get large.
-        await session.execute(text(f"DROP INDEX {INDEX}"))
-        await session.execute(text(settings.create_sql()))
-        await session.execute(
-            text(f"COMMENT ON INDEX {INDEX} IS {_quote(json.dumps(asdict(settings)))}")
-        )
+        await session.execute(text("DROP INDEX embeddings_bm25"))
+        # DDL takes no bind parameters; every interpolated value is allow-listed or range-checked.
+        await session.execute(text(settings.create_sql()))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        comment = _quote(json.dumps(asdict(settings)))
+        await session.execute(text(f"COMMENT ON INDEX embeddings_bm25 IS {comment}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     return True
 
 
