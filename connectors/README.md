@@ -25,6 +25,11 @@ refresh story. See each connector's design spec under
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
   `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with a service-account token when
   one is configured.
+- **Documents** — `document_event` sends a PDF, `.docx`, or image as base64,
+  and Contex extracts the text server-side, so connectors need no parsing
+  libraries. `documents:` in `connector.yaml` lists the extensions to send:
+  `[.pdf, .docx]` by default. Add `.png`, `.jpg`, or `.tiff` only when the
+  server runs with `OCR_ENABLED=true`, which also OCRs scanned PDF pages.
 - **Deletes** — each run tags what it publishes with an origin (e.g.
   `s3:bucket/prefix`). After a full run completes, the runner lists that
   origin's keys with `contex_list_keys` and deletes the ones the source no
