@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 import pytest
 
@@ -130,3 +132,18 @@ async def test_encoder_failure_reconciles_everything(db):
     await svc.reconcile_project("p1", {"new"})
 
     assert sorted(svc.matcher.calls) == [("axis0",), ("axis1",)]
+
+
+@pytest.mark.asyncio
+async def test_need_vectors_encode_off_the_event_loop_thread(db):
+    class _Recorder(_AxisEncoder):
+        def encode(self, texts):
+            self.thread = threading.current_thread()
+            return super().encode(texts)
+    enc = _Recorder()
+    svc = _svc(db, {"axis0": [_m("d1", 0.9)]}, encoder=enc)
+    await svc.create("p1", ["axis0"])
+    await _node(db, "p1", "new", _unit(0))
+
+    await svc._ids_admitting("p1", {"new"})
+    assert enc.thread is not threading.main_thread()

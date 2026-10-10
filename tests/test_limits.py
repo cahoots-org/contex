@@ -1,5 +1,11 @@
 """Defense-in-depth input ceilings (src/core/limits.py)."""
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from sqlalchemy import update
+
+from src.core import subscriptions
+from src.core.db_models import Subscription
 
 from src.core.limits import (
     MAX_BATCH_SIZE,
@@ -49,3 +55,36 @@ async def test_subscription_rejects_too_many_needs():
     svc = SubscriptionService(db=None, matcher=None)
     with pytest.raises(ValueError, match="Too many needs"):
         await svc.create("proj", ["need"] * (MAX_NEEDS + 1))
+
+
+class _EmptyMatcher:
+    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+        return {n: [] for n in needs}
+
+
+@pytest.mark.asyncio
+async def test_subscriptions_per_project_are_capped(db, monkeypatch):
+    monkeypatch.setattr(subscriptions, "MAX_SUBSCRIPTIONS_PER_PROJECT", 2)
+    svc = SubscriptionService(db, _EmptyMatcher())
+    first = await svc.create("proj", ["a"])
+    await svc.create("proj", ["b"])
+    await svc.create("other", ["c"])           # other projects don't count
+
+    with pytest.raises(ValueError, match="Too many subscriptions"):
+        await svc.create("proj", ["d"])
+    assert await svc.create("proj", ["a"]) == first   # renewing an existing one is fine
+
+
+@pytest.mark.asyncio
+async def test_expired_subscriptions_do_not_count_toward_the_cap(db, monkeypatch):
+    monkeypatch.setattr(subscriptions, "MAX_SUBSCRIPTIONS_PER_PROJECT", 1)
+    svc = SubscriptionService(db, _EmptyMatcher())
+    sub = await svc.create("proj", ["a"])
+    async with db.session() as session:
+        await session.execute(
+            update(Subscription).where(Subscription.subscription_id == sub)
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+        )
+        await session.commit()
+
+    await svc.create("proj", ["b"])
