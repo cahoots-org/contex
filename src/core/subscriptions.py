@@ -15,6 +15,7 @@ from src.core.limits import check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 from src.core.notifier import SUBSCRIPTION_UPDATED
+from src.core.recency import window_start
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,11 @@ SELECT s.subscription_id, n.need,
 
 
 def _since_from_scope(scope):
-    """Extract the recency cutoff (``scope["since"]``, ISO-8601) as a datetime."""
+    """The recency cutoff from ``scope["since"]`` (ISO-8601) and ``scope["max_age_seconds"]``."""
     if not scope:
         return None
     raw = scope.get("since")
-    return datetime.fromisoformat(raw) if raw else None
+    return window_start(datetime.fromisoformat(raw) if raw else None, scope.get("max_age_seconds"))
 
 
 def _assert_sub_tenant(row, tenant_id):

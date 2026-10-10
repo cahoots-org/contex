@@ -6,12 +6,22 @@ vector, lexical, and vector-only search paths in agreement.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func
 
 from src.core.db_models import Embedding
+
+
+def window_start(since: Optional[datetime], max_age_seconds: Optional[int]) -> Optional[datetime]:
+    """The later of an absolute cutoff and a sliding window's start, or None when unbounded."""
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    if max_age_seconds is None:
+        return since
+    start = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+    return start if since is None else max(since, start)
 
 
 def recency_filter(since: Optional[datetime]):
