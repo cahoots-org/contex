@@ -82,3 +82,25 @@ def test_delete_batch_calls_contex_delete_and_counts_deleted():
     pub._session.call_tool.assert_awaited_once_with(
         "contex_delete", {"project_id": "proj", "data_keys": ["a", "b", "c"]}
     )
+
+
+def _json(text: str) -> CallToolResult:
+    return CallToolResult(isError=False, content=[TextContent(type="text", text=text)])
+
+
+def test_publish_batch_sends_the_origin():
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"), origin="s3:b/docs")
+    pub._session = SimpleNamespace(call_tool=AsyncMock(return_value=_ok(1)))
+    asyncio.run(pub.publish_batch([{"data_key": "k", "data": {}}]))
+    assert pub._session.call_tool.call_args.args[1]["origin"] == "s3:b/docs"
+
+
+def test_list_keys_follows_pages():
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"), origin="o")
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=[
+        _json('{"keys": ["a", "b"], "next": "b"}'),
+        _json('{"keys": ["c"], "next": null}'),
+    ]))
+    assert asyncio.run(pub.list_keys()) == ["a", "b", "c"]
+    second = pub._session.call_tool.call_args_list[1].args
+    assert second == ("contex_list_keys", {"project_id": "proj", "origin": "o", "after": "b"})
