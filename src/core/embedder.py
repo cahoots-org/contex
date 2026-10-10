@@ -5,6 +5,7 @@ normalization, matching the sentence-transformers pipeline for mean-pooled
 models (e.g. thenlper/gte-base) without pulling in torch.
 """
 
+import asyncio
 from typing import List, Union
 
 import numpy as np
@@ -13,6 +14,11 @@ from huggingface_hub import hf_hub_download
 from tokenizers import Tokenizer
 
 ONNX_FILE = "onnx/model.onnx"
+
+
+async def encode_async(model, texts, **kwargs):
+    """Run ``model.encode`` in a worker thread so inference never blocks the event loop."""
+    return await asyncio.to_thread(model.encode, texts, **kwargs)
 
 
 class OnnxEmbedder:

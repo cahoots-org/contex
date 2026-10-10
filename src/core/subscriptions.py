@@ -11,6 +11,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from src.core.db_models import Embedding, Subscription, Symbol
+from src.core.embedder import encode_async
 from src.core.limits import check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
@@ -279,10 +280,10 @@ class SubscriptionService:
             for r in rows
         ]
 
-    def _need_vectors(self, needs) -> np.ndarray:
+    async def _need_vectors(self, needs) -> np.ndarray:
         missing = sorted({n for n in needs if n not in self._need_vecs})
         if missing:
-            self._need_vecs.update(zip(missing, self.encoder.encode(missing)))
+            self._need_vecs.update(zip(missing, await encode_async(self.encoder, missing)))
         return np.stack([self._need_vecs[n] for n in needs])
 
     async def _ids_admitting(self, project_id, keys) -> set[str] | None:
@@ -298,7 +299,8 @@ class SubscriptionService:
         floors = await self._floors(project_id)
         if not nodes or not floors:
             return set()
-        best = (np.stack(nodes) @ self._need_vectors([need for _, need, _ in floors]).T).max(axis=0)
+        need_vecs = await self._need_vectors([need for _, need, _ in floors])
+        best = (np.stack(nodes) @ need_vecs.T).max(axis=0)
         return {sub for (sub, _, floor), score in zip(floors, best) if score >= floor}
 
     async def _affected(self, project_id, keys) -> set[str] | None:
