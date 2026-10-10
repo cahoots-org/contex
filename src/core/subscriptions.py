@@ -57,6 +57,15 @@ def _content_id(tenant_id, project_id, needs, top_k, threshold, scope) -> str:
     return f"sub_{hashlib.sha256(key.encode()).hexdigest()[:32]}"
 
 
+async def _notify_updated(session, subscription_id, at: datetime) -> None:
+    """Queue a `subscription updated` event; Postgres delivers it only on commit."""
+    await session.execute(
+        text("SELECT pg_notify(:channel, :payload)"),
+        {"channel": SUBSCRIPTION_UPDATED,
+         "payload": json.dumps({"subscription_id": subscription_id, "updated_at": at.isoformat()})},
+    )
+
+
 def _expired(row) -> bool:
     return row.expires_at <= datetime.now(timezone.utc)
 
@@ -171,6 +180,8 @@ class SubscriptionService:
             if row is not None:
                 _assert_sub_tenant(row, tenant_id)
                 await session.delete(row)
+                # Agents sharing it re-read, find it gone, and can re-create it.
+                await _notify_updated(session, subscription_id, datetime.now(timezone.utc))
                 await session.commit()
 
     async def reconcile_project(self, project_id, changed_keys: set[str] | None = None) -> list[str]:
@@ -208,10 +219,6 @@ class SubscriptionService:
                 if new_bundle == sub.bundle:
                     continue
                 now = datetime.now(timezone.utc)  # single timestamp for both DB + event
-                event = json.dumps({
-                    "subscription_id": sub.subscription_id,
-                    "updated_at": now.isoformat(),
-                })
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
@@ -222,10 +229,7 @@ class SubscriptionService:
                     row.documents = _bundle_documents(new_bundle)
                     row.bundle_updated_at = now
                     # Delivered only on commit, so listeners never see an unreadable bundle.
-                    await session.execute(
-                        text("SELECT pg_notify(:channel, :payload)"),
-                        {"channel": SUBSCRIPTION_UPDATED, "payload": event},
-                    )
+                    await _notify_updated(session, sub.subscription_id, now)
                     await session.commit()
                 changed_ids.append(sub.subscription_id)
             except Exception:

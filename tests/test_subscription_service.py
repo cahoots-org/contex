@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -152,3 +153,16 @@ async def test_create_rematches_an_expired_subscription(db):
     assert await svc.create("p1", ["a"]) == sub_id
     assert m.calls == 2
     assert await _expires_in(db, sub_id) > timedelta(minutes=59)
+
+
+@pytest.mark.asyncio
+async def test_delete_notifies_everyone_sharing_the_subscription(db, notifier):
+    svc = SubscriptionService(db, _StubMatcher())
+    sub_id = await svc.create("p1", ["a"])
+    queue = notifier.listen(sub_id)
+
+    await svc.delete(sub_id)
+
+    assert await asyncio.wait_for(queue.get(), 2.0) == sub_id
+    with pytest.raises(KeyError):
+        await svc.get_bundle(sub_id)
