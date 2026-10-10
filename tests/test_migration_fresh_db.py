@@ -13,6 +13,7 @@ throwaway database and asserts the full migration chain reaches head with a real
 """
 
 import asyncio
+import logging
 import os
 import uuid
 from urllib.parse import urlsplit, urlunsplit
@@ -112,3 +113,13 @@ async def test_alembic_upgrade_head_on_fresh_db(fresh_db_url):
         assert "vector_cosine_ops" in indexdef
     finally:
         await engine.dispose()
+
+
+async def test_in_process_migration_keeps_app_logging(fresh_db_url):
+    """Migrating in-process must not apply alembic.ini's logging config (#251)."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    await asyncio.to_thread(run_migrations_to_head, fresh_db_url)
+
+    assert root.level == logging.INFO
