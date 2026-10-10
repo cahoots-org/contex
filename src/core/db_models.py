@@ -226,11 +226,14 @@ class Embedding(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # When the source says the content changed; time windows prefer it over ingest time.
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The source stream that last published this document, e.g. "s3:bucket/prefix".
+    origin: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("idx_embeddings_project", "project_id"),
         Index("idx_embeddings_project_node_key", "project_id", "node_key", unique=True),
         Index("idx_embeddings_project_data_key", "project_id", "data_key"),
+        Index("idx_embeddings_project_origin", "project_id", "origin", "data_key"),
         # HNSW ANN index for vector cosine similarity search. Without this, the
         # create_all path (and every test DB) would fall back to a sequential scan
         # for semantic search. Kept in sync with alembic migration 001.

@@ -12,6 +12,7 @@ from connectors.base import (
     resolve_batch_size,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
+    resolve_prune,
     resolve_secret_scanner,
     run_connector,
 )
@@ -45,6 +46,7 @@ async def _run(config_path: str) -> None:
     max_file_bytes = resolve_max_file_bytes(config)
     max_batch_bytes = resolve_max_batch_bytes(config)
     secret_scanner = resolve_secret_scanner(config)
+    prune = resolve_prune(config)
 
     source = config.get("source") or {}
     token: str = source.get("token", "")
@@ -105,15 +107,19 @@ async def _run(config_path: str) -> None:
                     max_batch_bytes=max_batch_bytes,
                     secret_scanner=secret_scanner,
                     progress=_progress,
+                    origin=f"github:{repo_slug}:{resource}",
+                    # Commits are always read from a since-date, never in full.
+                    prune=prune and resource != "commits",
                 )
                 total_published += stats.published
                 logging.info(
-                    "finished %s/%s %s: %d items in %d batches",
+                    "finished %s/%s %s: %d items in %d batches, %d deleted",
                     owner,
                     repo,
                     resource,
                     stats.published,
                     stats.batches,
+                    stats.deleted,
                 )
 
     logging.info("done — total published: %d", total_published)

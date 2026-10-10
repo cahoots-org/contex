@@ -89,10 +89,13 @@ async def read_files(
             continue
 
         sha = blob.get("sha", "")
+        key = f"{owner}/{repo}:{path}"
         try:
             content_data = await client.get(f"/repos/{owner}/{repo}/git/blobs/{sha}")
         except Exception as exc:
             log.warning("failed to fetch %s/%s:%s — %s", owner, repo, path, exc)
+            # Still in the repo, so a prune must not delete what we already have.
+            yield ChangeEvent(op="retain", key=key, payload=None)
             continue
 
         encoding = content_data.get("encoding", "")
@@ -106,7 +109,6 @@ async def read_files(
         else:
             text = raw
 
-        key = f"{owner}/{repo}:{path}"
         log.debug("file %s", key)
         yield ChangeEvent(
             op="upsert",

@@ -9,6 +9,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_prune,
     resolve_secret_scanner,
     run_connector,
 )
@@ -40,15 +41,18 @@ async def _main(config_path: str) -> None:
     def progress(n: int) -> None:
         logger.info("published %d items", n)
 
+    source = config.get("source") or {}
     stats = await run_connector(
         contex_config,
         read_objects(config),
         batch_size=batch_size,
         secret_scanner=secret_scanner,
         progress=progress,
+        origin=f"s3:{source.get('bucket', '')}/{source.get('prefix', '')}",
+        prune=resolve_prune(config),
     )
 
-    logger.info("done: published=%d batches=%d", stats.published, stats.batches)
+    logger.info("done: published=%d deleted=%d batches=%d", stats.published, stats.deleted, stats.batches)
 
 
 def main() -> None:

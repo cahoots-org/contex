@@ -11,6 +11,7 @@ from collections.abc import Generator
 from typing import Any
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from connectors.base import ChangeEvent, allowed
@@ -59,6 +60,12 @@ WHERE n.nspname = %s
   AND i.indisprimary
 ORDER BY array_position(i.indkey, a.attnum);
 """
+
+
+def origin_for(dsn: str) -> str:
+    """The database a DSN points at, without credentials, as a Contex origin."""
+    parts = conninfo_to_dict(dsn)
+    return f"postgres:{parts.get('host', 'localhost')}:{parts.get('port', '5432')}/{parts.get('dbname', '')}"
 
 
 def _discover_tables(conn: psycopg.Connection, tbl_include, tbl_exclude) -> list[tuple[str, str]]:

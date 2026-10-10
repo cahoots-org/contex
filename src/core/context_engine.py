@@ -254,9 +254,11 @@ class ContextEngine:
         source: str = "api",
         actor: Optional[Dict[str, Any]] = None,
         tenant_id: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> List[str]:
         """Publish many events for one project, embedding them in a single pass.
 
+        ``origin`` tags the documents with the source stream that published them.
         Returns the event sequence numbers in input order.
         """
         if not events:
@@ -277,6 +279,7 @@ class ContextEngine:
         await self.semantic_matcher.register_data_batch(
             project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared],
             {e.data_key: e.published_at for e in events if e.published_at is not None},
+            origin=origin,
         )
 
         sequences = [
@@ -292,6 +295,12 @@ class ContextEngine:
             logger.exception("subscription reconcile failed for %s", project_id)
 
         return sequences
+
+    async def list_keys(
+        self, project_id: str, origin: str, after: Optional[str] = None, limit: int = 1000,
+    ) -> List[str]:
+        """Document keys last published by ``origin``, in order, after ``after``."""
+        return await self.semantic_matcher.list_keys(project_id, origin, after, limit)
 
     async def delete_data(
         self,

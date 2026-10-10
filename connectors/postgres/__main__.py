@@ -10,11 +10,12 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_prune,
     resolve_secret_scanner,
     run_connector,
 )
 
-from .reader import read_tables
+from .reader import origin_for, read_tables
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -84,8 +85,11 @@ async def _main(config_path: str) -> None:
     stats = await run_connector(
         contex_config, events, batch_size=batch_size,
         secret_scanner=secret_scanner, progress=_progress,
+        origin=origin_for(config["source"]["dsn"]), prune=resolve_prune(config),
     )
-    logger.info("done — published %d rows in %d batch(es)", stats.published, stats.batches)
+    logger.info(
+        "done — published %d rows in %d batch(es), deleted %d", stats.published, stats.batches, stats.deleted,
+    )
 
 
 def main() -> None:

@@ -58,6 +58,11 @@ def resolve_max_batch_bytes(config: dict) -> int:
     return int(config.get("max_batch_bytes") or DEFAULT_MAX_BATCH_BYTES)
 
 
+def resolve_prune(config: dict) -> bool:
+    """Whether a full run deletes what the source no longer has (default on)."""
+    return bool(config.get("prune", True))
+
+
 def resolve_secret_scanner(config: dict):
     """Build the secret-ingestion guard from config, or None when disabled.
 

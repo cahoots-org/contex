@@ -34,8 +34,9 @@ def _backoff(error_text: str, attempt: int) -> float:
 class ContexPublisher:
     """An async context manager that publishes item batches over MCP."""
 
-    def __init__(self, config: ContexConfig):
+    def __init__(self, config: ContexConfig, origin: str | None = None):
         self._config = config
+        self._origin = origin
         self._stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
 
@@ -63,8 +64,25 @@ class ContexPublisher:
 
     async def publish_batch(self, items: list[dict]) -> int:
         """Publish one batch; return how many items the server accepted."""
-        result = await self._call("contex_publish_batch", {"items": items})
+        arguments = {"items": items}
+        if self._origin is not None:
+            arguments["origin"] = self._origin
+        result = await self._call("contex_publish_batch", arguments)
         return int(result.get("published", 0))
+
+    async def list_keys(self) -> list[str]:
+        """Every key this publisher's origin has in Contex."""
+        keys: list[str] = []
+        after = None
+        while True:
+            arguments = {"origin": self._origin}
+            if after is not None:
+                arguments["after"] = after
+            page = await self._call("contex_list_keys", arguments)
+            keys += page["keys"]
+            after = page.get("next")
+            if after is None:
+                return keys
 
     async def delete_batch(self, data_keys: list[str]) -> int:
         """Delete one batch of keys; return how many existed."""
