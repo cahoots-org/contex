@@ -2,27 +2,35 @@
 that imports the mcp SDK. Handlers delegate to ContextEngine/SubscriptionService."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
+import logging
+import weakref
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
+from mcp import types
 from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.subscriptions import InMemorySubscriptionBus
+from mcp.server.subscriptions import InMemorySubscriptionBus, ResourceUpdated
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
+from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
 from src.core.rate_limiter import RateLimitConfig, RateLimiter, _env_int
 from src.core.rbac import Permission
 from src.core.recency import window_start
 from src.core.version import VERSION
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[datetime]:
@@ -95,6 +103,39 @@ async def _enforce_subscription_project(engine, subscription_id, tenant_id):
     """Apply the caller's project scope to the subscription's own project."""
     project_id = await engine.subscriptions.project_of(subscription_id, tenant_id=tenant_id)
     _enforce(Permission.QUERY_DATA, project_id=project_id)
+
+
+class LegacyResourceSubscriptions:
+    """Push for clients on the 2025 protocol, which subscribe with resources/subscribe.
+
+    The SDK's bus only reaches 2026-07-28 subscriptions/listen streams, so this
+    remembers which client connections watch which URIs and forwards bus updates
+    to them. Connections are held weakly, so a closed one drops out on its own.
+    """
+
+    def __init__(self, bus) -> None:
+        self._watchers: dict[str, weakref.WeakSet] = defaultdict(weakref.WeakSet)
+        self._sends: set[asyncio.Task] = set()
+        bus.subscribe(self._on_event)
+
+    def watch(self, uri: str, connection) -> None:
+        self._watchers[uri].add(connection)
+
+    def unwatch(self, uri: str, connection) -> None:
+        connections = self._watchers.get(uri)
+        if connections is not None:
+            connections.discard(connection)
+            if not connections:
+                del self._watchers[uri]
+
+    def _on_event(self, event) -> None:
+        if not isinstance(event, ResourceUpdated):
+            return
+        for connection in list(self._watchers.get(event.uri, ())):
+            # Best effort: the SDK drops the notification if the stream is closed.
+            task = asyncio.get_running_loop().create_task(connection.send_resource_updated(event.uri))
+            self._sends.add(task)
+            task.add_done_callback(self._sends.discard)
 
 
 class ApiKeyVerifier(TokenVerifier):
@@ -272,5 +313,29 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
         return json.dumps(await e.delete_data(project_id, data_keys, source="mcp"))
+
+    legacy = LegacyResourceSubscriptions(bus)
+
+    async def subscribe_resource(ctx, params: types.SubscribeRequestParams) -> types.EmptyResult:
+        uri = str(params.uri)
+        _enforce(Permission.QUERY_DATA)
+        tok = get_access_token()
+        tid = (tok.claims or {}).get("tenant_id") if tok else None
+        project_id = await _get_engine().subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
+        if project_id is None:
+            raise ToolError(f"Unknown subscription resource {uri}")
+        _enforce(Permission.QUERY_DATA, project_id=project_id)
+        legacy.watch(uri, ctx.session._connection)
+        return types.EmptyResult()
+
+    async def unsubscribe_resource(ctx, params: types.UnsubscribeRequestParams) -> types.EmptyResult:
+        legacy.unwatch(str(params.uri), ctx.session._connection)
+        return types.EmptyResult()
+
+    # The SDK exposes neither a public hook for these legacy methods nor the
+    # connection behind a per-request session, so both reach into its internals.
+    lowlevel = server._lowlevel_server
+    lowlevel.add_request_handler("resources/subscribe", types.SubscribeRequestParams, subscribe_resource)
+    lowlevel.add_request_handler("resources/unsubscribe", types.UnsubscribeRequestParams, unsubscribe_resource)
 
     return server, bus
