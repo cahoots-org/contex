@@ -2,6 +2,7 @@
 that imports the mcp SDK. Handlers delegate to ContextEngine/SubscriptionService."""
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime
 from typing import Optional
@@ -34,6 +35,20 @@ def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[dat
         raise ValueError(
             f"Invalid '{field}' value {value!r}; expected ISO-8601 (e.g. 2025-01-01T00:00:00Z)"
         )
+
+
+# Formats published as base64 strings, since MCP arguments are JSON.
+_BINARY_FORMATS = frozenset({"pdf", "docx", "image"})
+
+
+def _item_data(data, data_format: str):
+    """Decode a base64 document to bytes; other data passes through."""
+    if data_format not in _BINARY_FORMATS:
+        return data
+    try:
+        return base64.b64decode(data, validate=True)
+    except (TypeError, ValueError):
+        raise ToolError(f"data for a {data_format} item must be a base64 string")
 
 
 def _check_max_age(max_age_seconds: Optional[int]) -> None:
@@ -214,7 +229,8 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_publish_batch",
                  description="Publish/update many context items for a project in one call. "
-                             "items is a list of {data_key, data, data_format?, published_at?}. "
+                             "items is a list of {data_key, data, data_format?, published_at?}; for data_format "
+                             "pdf, docx or image, data is the file as a base64 string. "
                              "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
                              "list what it published.")
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
@@ -229,7 +245,7 @@ def build_mcp_server(engine, db_accessor=None):
             DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
-                data=item["data"],
+                data=_item_data(item["data"], item.get("data_format", "json")),
                 data_format=item.get("data_format", "json"),
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
