@@ -37,10 +37,13 @@ FROM python:3.12-slim
 RUN printf 'Acquire::http::Pipeline-Depth "0";\nAcquire::http::No-Cache "true";\nAcquire::BrokenProxy "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99fixbadproxy
 
 # Upgrade base-image packages (patches perl-base and other CVEs Trivy flags on the
-# runtime image) and install curl for the healthcheck.
+# runtime image) and install curl for the healthcheck. --build-arg INSTALL_OCR=true
+# adds Tesseract for OCR_ENABLED.
+ARG INSTALL_OCR=false
 RUN apt-get update -o Acquire::Retries=5 && \
     apt-get upgrade -y -o Acquire::Retries=5 && \
-    apt-get install -y --fix-missing -o Acquire::Retries=5 curl && \
+    apt-get install -y --fix-missing -o Acquire::Retries=5 curl \
+        $([ "$INSTALL_OCR" = "true" ] && echo tesseract-ocr) && \
     rm -rf /var/lib/apt/lists/*
 
 # Build version stamped by the release workflow; "dev" for local builds. Read at
