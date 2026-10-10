@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
@@ -215,6 +215,7 @@ class SemanticDataMatcher:
         project_id: str,
         items: List[Tuple[str, Any, Optional[str]]],
         published_at: Optional[Dict[str, datetime]] = None,
+        origin: Optional[str] = None,
     ):
         """Register many ``(data_key, data, format_hint)`` items with one encode call.
 
@@ -222,8 +223,12 @@ class SemanticDataMatcher:
         so pooling every item's changed nodes into one call lets length-sorted
         batching work across the whole set rather than one file at a time.
         ``published_at`` maps a data_key to when its source changed it.
+        ``origin`` tags every item, including unchanged ones, with its source stream.
         """
         published_at = published_at or {}
+        if origin is not None:
+            # Unchanged items skip the write below, so tag existing rows here.
+            await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
         plans = [
             plan for data_key, data, format_hint in items
             if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
@@ -237,7 +242,7 @@ class SemanticDataMatcher:
         for plan in plans:
             n = len(plan["changed"])
             await self._write_registration(
-                project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"])
+                project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
             )
             offset += n
 
@@ -316,7 +321,8 @@ class SemanticDataMatcher:
         }
 
     async def _write_registration(
-        self, project_id: str, plan: Dict[str, Any], embeddings, published_at: Optional[datetime] = None,
+        self, project_id: str, plan: Dict[str, Any], embeddings,
+        published_at: Optional[datetime] = None, origin: Optional[str] = None,
     ) -> None:
         """Upsert one item's changed nodes and rewrite its symbols."""
         data_key, parse_result = plan["data_key"], plan["parse_result"]
@@ -350,6 +356,8 @@ class SemanticDataMatcher:
                     existing.embedding = embedding.tolist()
                     existing.updated_at = datetime.utcnow()
                     existing.published_at = published_at
+                    if origin is not None:
+                        existing.origin = origin
                 else:
                     session.add(Embedding(
                         project_id=project_id,
@@ -364,6 +372,7 @@ class SemanticDataMatcher:
                         content_hash=content_hash,
                         embedding=embedding.tolist(),
                         published_at=published_at,
+                        origin=origin,
                     ))
 
             # Rewrite this source's symbols (defs/refs the parser recorded per
@@ -560,6 +569,32 @@ class SemanticDataMatcher:
                 .distinct()
             )
             return sorted([row[0] for row in result])
+
+    async def _tag_origin(self, project_id: str, data_keys: List[str], origin: str) -> None:
+        async with self.db.session() as session:
+            await session.execute(
+                update(Embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.data_key.in_(data_keys))
+                .where(Embedding.origin.is_distinct_from(origin))
+                .values(origin=origin)
+            )
+
+    async def list_keys(
+        self, project_id: str, origin: str, after: Optional[str], limit: int,
+    ) -> List[str]:
+        """An origin's document keys in order, starting after ``after``."""
+        stmt = (
+            select(Embedding.data_key).distinct()
+            .where(Embedding.project_id == project_id)
+            .where(Embedding.origin == origin)
+            .order_by(Embedding.data_key)
+            .limit(limit)
+        )
+        if after is not None:
+            stmt = stmt.where(Embedding.data_key > after)
+        async with self.db.session() as session:
+            return list((await session.execute(stmt)).scalars())
 
     async def delete_data_keys(self, project_id: str, data_keys: List[str]) -> List[str]:
         """Remove these documents' nodes and symbols; return the keys that existed."""

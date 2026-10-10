@@ -16,7 +16,7 @@ from mcp.server.subscriptions import InMemorySubscriptionBus
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
-from src.core.limits import check_batch_size
+from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.models import DataPublishEvent
 from src.core.rate_limiter import RateLimitConfig, RateLimiter, _env_int
 from src.core.rbac import Permission
@@ -214,8 +214,10 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_publish_batch",
                  description="Publish/update many context items for a project in one call. "
-                             "items is a list of {data_key, data, data_format?, published_at?}.")
-    async def contex_publish_batch(project_id: str, items: list[dict]) -> str:
+                             "items is a list of {data_key, data, data_format?, published_at?}. "
+                             "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
+                             "list what it published.")
+    async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
         _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         try:
             check_batch_size(items, "items")
@@ -232,8 +234,17 @@ def build_mcp_server(engine, db_accessor=None):
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items
-        ], source='mcp')
+        ], source='mcp', origin=origin)
         return json.dumps({"published": len(sequences)})
+
+    @server.tool(name="contex_list_keys",
+                 description="List the data_keys an origin last published, in order, up to limit per page. "
+                             "Pass the returned next as after to fetch the following page; next is null on the last page.")
+    async def contex_list_keys(project_id: str, origin: str, after: str | None = None, limit: int = 1000) -> str:
+        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
+        limit = max(1, min(limit, MAX_BATCH_SIZE))
+        keys = await _get_engine().list_keys(project_id, origin, after=after, limit=limit)
+        return json.dumps({"keys": keys, "next": keys[-1] if len(keys) == limit else None})
 
     @server.tool(name="contex_delete",
                  description="Delete context documents from a project by data_key (the `document` "
