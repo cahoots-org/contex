@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.embedder import encode_async
-from src.core.limits import check_needs, clamp_top_k, positive_int_env
+from src.core.limits import MAX_SUBSCRIPTIONS_PER_PROJECT, check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 from src.core.notifier import SUBSCRIPTION_UPDATED
@@ -111,6 +111,7 @@ class SubscriptionService:
         sub_id = subscription_id or _content_id(tenant_id, project_id, needs, top_k, threshold, scope)
         if await self._renew(sub_id):
             return sub_id
+        await self._check_capacity(project_id)
 
         since = _since_from_scope(scope)
         bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
@@ -130,6 +131,19 @@ class SubscriptionService:
             )
             await session.commit()
         return sub_id
+
+    async def _check_capacity(self, project_id) -> None:
+        """Reject a new subscription once the project holds the maximum live ones."""
+        # ponytail: count-then-insert, so concurrent creates can overshoot by a few.
+        async with self.db.session() as session:
+            live = await session.scalar(
+                select(func.count())
+                .select_from(Subscription)
+                .where(Subscription.project_id == project_id)
+                .where(Subscription.expires_at > func.now())
+            )
+        if live >= MAX_SUBSCRIPTIONS_PER_PROJECT:
+            raise ValueError(f"Too many subscriptions in this project (max {MAX_SUBSCRIPTIONS_PER_PROJECT})")
 
     async def _renew(self, subscription_id) -> bool:
         """Extend a live subscription's lease; False if it is missing or expired."""
