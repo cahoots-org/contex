@@ -1,7 +1,10 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import update
 
+from src.core.db_models import Subscription
 from src.core.reconcile_sweep import sweep_once
 from src.core.subscriptions import SubscriptionService
 
@@ -50,3 +53,21 @@ async def test_concurrent_sweeps_run_once(db):
 
     assert second is False
     assert await first is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reconcile", [True, False])
+async def test_sweep_purges_expired_subscriptions(db, reconcile):
+    svc = SubscriptionService(db, _Matcher())
+    live = await svc.create("p1", ["a"])
+    stale = await svc.create("p1", ["b"])
+    async with db.session() as session:
+        await session.execute(
+            update(Subscription).where(Subscription.subscription_id == stale)
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+        )
+        await session.commit()
+
+    assert await sweep_once(db, svc, reconcile) is True
+
+    assert await svc.all_ids() == [live]
