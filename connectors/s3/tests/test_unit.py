@@ -5,6 +5,7 @@ object → ChangeEvent mapping — no AWS credentials or boto3 calls needed.
 """
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime, timezone
 
@@ -116,6 +117,11 @@ class TestObjectToEvent:
         event = object_to_event("docs/readme.md", b"hi", last_modified=modified)
         assert event.published_at == "2026-02-01T10:00:00+00:00"
         assert object_to_event("docs/readme.md", b"hi").published_at is None
+
+    def test_enabled_document_is_sent_base64(self):
+        event = object_to_event("docs/spec.pdf", b"%PDF-1.7", document_types=frozenset({".pdf"}))
+        assert event.data_format == "pdf"
+        assert base64.b64decode(event.payload) == b"%PDF-1.7"
 
     def test_csv_yields_text_format(self):
         body = b"a,b,c\n1,2,3"
