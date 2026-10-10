@@ -224,6 +224,8 @@ class Embedding(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the source says the content changed; time windows prefer it over ingest time.
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("idx_embeddings_project", "project_id"),
