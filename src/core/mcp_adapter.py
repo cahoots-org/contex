@@ -145,6 +145,8 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_create_subscription",
                  description="Create a live subscription; returns its resource URI to subscribe to. "
+                             "It expires when neither read nor re-created for a while; calling again with the "
+                             "same arguments resumes it with the same URI. "
                              "Pass since (ISO-8601) to keep the bundle scoped to data created or updated on or after that time.")
     async def contex_create_subscription(project_id: str, needs: list[str],
                                          top_k: int = 5, threshold: float | None = None,

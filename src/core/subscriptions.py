@@ -1,13 +1,14 @@
 """Persistent semantic subscriptions with materialized bundles + reconcile."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.limits import check_needs, clamp_top_k, positive_int_env
@@ -50,6 +51,12 @@ def _assert_sub_tenant(row, tenant_id):
         raise PermissionError("Permission denied")
 
 
+def _content_id(tenant_id, project_id, needs, top_k, threshold, scope) -> str:
+    """Same tenant, project, needs and params -> same subscription."""
+    key = json.dumps([tenant_id, project_id, needs, top_k, threshold, scope], sort_keys=True)
+    return f"sub_{hashlib.sha256(key.encode()).hexdigest()[:32]}"
+
+
 def _expired(row) -> bool:
     return row.expires_at <= datetime.now(timezone.utc)
 
@@ -81,22 +88,51 @@ class SubscriptionService:
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
     ) -> str:
+        """Subscribe to `needs`, returning the subscription id.
+
+        Identical requests share one subscription: a live one is renewed and
+        returned as is, so a reconnecting agent gets its bundle back without a
+        re-match. Pass `subscription_id` for a private subscription instead.
+        """
         check_needs(needs)
+        needs = sorted(set(needs))
+        tenant_id = tenant_id or DEFAULT_TENANT_ID
         top_k = clamp_top_k(top_k)
-        sub_id = subscription_id or f"sub_{uuid4().hex}"
+        sub_id = subscription_id or _content_id(tenant_id, project_id, needs, top_k, threshold, scope)
+        if await self._renew(sub_id):
+            return sub_id
+
         since = _since_from_scope(scope)
         bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
         bundle = await self._link_bundle(project_id, bundle)
+        now = datetime.now(timezone.utc)
+        fresh = dict(
+            bundle=bundle, documents=_bundle_documents(bundle),
+            bundle_updated_at=now, expires_at=now + self.ttl,
+        )
         async with self.db.session() as session:
-            session.add(Subscription(
-                subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                needs=list(needs), scope=scope, top_k=top_k, threshold=threshold,
-                bundle=bundle, documents=_bundle_documents(bundle),
-                bundle_updated_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc) + self.ttl,
-            ))
+            # Conflict: a concurrent create won the race, or an expired row awaits the purge.
+            await session.execute(
+                insert(Subscription).values(
+                    subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
+                    needs=needs, scope=scope, top_k=top_k, threshold=threshold, **fresh,
+                ).on_conflict_do_update(index_elements=[Subscription.subscription_id], set_=fresh)
+            )
             await session.commit()
         return sub_id
+
+    async def _renew(self, subscription_id) -> bool:
+        """Extend a live subscription's lease; False if it is missing or expired."""
+        async with self.db.session() as session:
+            renewed = (await session.execute(
+                update(Subscription)
+                .where(Subscription.subscription_id == subscription_id)
+                .where(Subscription.expires_at > func.now())
+                .values(expires_at=datetime.now(timezone.utc) + self.ttl)
+                .returning(Subscription.subscription_id)
+            )).scalar_one_or_none()
+            await session.commit()
+        return renewed is not None
 
     async def get_bundle(self, subscription_id, *, tenant_id=None) -> dict:
         """The subscription's bundle; reading it renews the lease."""

@@ -7,6 +7,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import AsyncIterator
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,10 @@ async def stream_subscription_updates(
     sub_id = None
     queue = None
     try:
-        sub_id = await engine.subscriptions.create(project_id, [need], top_k=top_k, threshold=threshold)
+        # Private, so deleting it on close can't pull a shared subscription from agents.
+        sub_id = await engine.subscriptions.create(
+            project_id, [need], top_k=top_k, threshold=threshold, subscription_id=f"sub_{uuid4().hex}",
+        )
         queue = engine.notifier.listen(sub_id)
 
         # Read AFTER listening so a change racing the create() is not missed.
