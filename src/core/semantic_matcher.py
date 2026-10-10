@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select, text
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
-from src.core.embedder import OnnxEmbedder
+from src.core.embedder import OnnxEmbedder, encode_async
 from src.core.hybrid_search_service import HybridSearchService
 from src.core.limits import positive_int_env
 from src.core.lexical_search import PgFtsLexical
@@ -228,7 +228,7 @@ class SemanticDataMatcher:
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
         if not texts:
             return
-        embeddings = self.model.encode(texts, batch_size=16)
+        embeddings = await encode_async(self.model, texts, batch_size=16)
 
         offset = 0
         for plan in plans:
