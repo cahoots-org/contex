@@ -10,8 +10,11 @@ Each parser:
 from typing import Any, List, Optional, Union
 from abc import ABC, abstractmethod
 import json
+import os
 import re
 import io
+
+import pymupdf
 
 from .node import Node, NodeType, ParseResult
 
@@ -32,6 +35,9 @@ CODE_EXTENSIONS = {
 
 # data_format values that carry no real signal, so key-extension inference wins.
 _GENERIC_FORMATS = {None, "", "text"}
+
+# OCR scanned PDF pages and images with Tesseract (must be installed).
+OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes")
 
 
 def language_for_key(data_key: Optional[str]) -> Optional[str]:
@@ -676,8 +682,19 @@ class CSVNodeParser(BaseNodeParser):
 # PDF Parser
 # ============================================================================
 
+def _page_text(page: "pymupdf.Page") -> str:
+    """A page's text layer, or its OCR'd text when it has none and OCR is enabled."""
+    text = page.get_text("text").strip()
+    if text or not OCR_ENABLED:
+        return text
+    return page.get_text("text", textpage=page.get_textpage_ocr(full=True)).strip()
+
+
 class PDFNodeParser(BaseNodeParser):
-    """Parse PDF documents into nodes by extracting text per page/section"""
+    """Parse PDF documents into nodes by extracting text per page/section.
+
+    Pages with no text layer (scans) are OCR'd when OCR_ENABLED is set.
+    """
 
     @property
     def format_name(self) -> str:
@@ -695,27 +712,21 @@ class PDFNodeParser(BaseNodeParser):
             return data[:5] == b'%PDF-'
         return False
 
+    def _open(self, data: bytes) -> "pymupdf.Document":
+        return pymupdf.open(stream=data, filetype="pdf")
+
     def parse(self, data: Any) -> ParseResult:
-        """Parse PDF bytes into nodes"""
+        """Parse document bytes into nodes"""
+        fmt = self.format_name
+        if not isinstance(data, (bytes, bytearray)):
+            return ParseResult(nodes=[], format_name=fmt, success=False, error=f"{fmt} parser requires bytes input")
         try:
-            import fitz  # pymupdf
-
-            if isinstance(data, (bytes, bytearray)):
-                doc = fitz.open(stream=data, filetype="pdf")
-            else:
-                return ParseResult(
-                    nodes=[],
-                    format_name="pdf",
-                    success=False,
-                    error="PDF parser requires bytes input"
-                )
-
+            doc = self._open(data)
             nodes = []
             total_pages = len(doc)
 
             for page_num in range(total_pages):
-                page = doc[page_num]
-                text = page.get_text("text").strip()
+                text = _page_text(doc[page_num])
 
                 if not text:
                     continue
@@ -730,7 +741,7 @@ class PDFNodeParser(BaseNodeParser):
                         content=text,
                         node_type=NodeType.SECTION,
                         metadata={
-                            "format": "pdf",
+                            "format": fmt,
                             "page": page_num + 1,
                             "total_pages": total_pages,
                         }
@@ -743,7 +754,7 @@ class PDFNodeParser(BaseNodeParser):
                             content=para,
                             node_type=NodeType.PARAGRAPH,
                             metadata={
-                                "format": "pdf",
+                                "format": fmt,
                                 "page": page_num + 1,
                                 "total_pages": total_pages,
                             }
@@ -753,24 +764,17 @@ class PDFNodeParser(BaseNodeParser):
 
             return ParseResult(
                 nodes=nodes,
-                format_name="pdf",
+                format_name=fmt,
                 success=True,
                 metadata={
                     "node_count": len(nodes),
                     "total_pages": total_pages,
                 }
             )
-        except ImportError:
-            return ParseResult(
-                nodes=[],
-                format_name="pdf",
-                success=False,
-                error="pymupdf is required for PDF parsing: pip install pymupdf"
-            )
         except Exception as e:
             return ParseResult(
                 nodes=[],
-                format_name="pdf",
+                format_name=fmt,
                 success=False,
                 error=str(e)
             )
@@ -793,6 +797,22 @@ class PDFNodeParser(BaseNodeParser):
             parts.append("\n\n".join(pages[page_num]))
 
         return "\n\n".join(parts)
+
+
+class ImageNodeParser(PDFNodeParser):
+    """OCR an image (PNG, JPEG, TIFF, ...) into nodes; requires OCR_ENABLED."""
+
+    @property
+    def format_name(self) -> str:
+        return "image"
+
+    def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
+        return format_hint == "image"
+
+    def _open(self, data: bytes) -> "pymupdf.Document":
+        if not OCR_ENABLED:
+            raise ValueError("images need OCR; set OCR_ENABLED=true")
+        return pymupdf.open(stream=data)
 
 
 # ============================================================================

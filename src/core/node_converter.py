@@ -14,6 +14,7 @@ from .node_parsers import (
     MarkdownNodeParser,
     CSVNodeParser,
     PDFNodeParser,
+    ImageNodeParser,
     DOCXNodeParser,
     CodeNodeParser,
 )
@@ -41,6 +42,7 @@ class NodeConverter:
         self.parsers: List[BaseNodeParser] = [
             CodeNodeParser(),
             PDFNodeParser(),
+            ImageNodeParser(),
             DOCXNodeParser(),
             JSONNodeParser(),
             YAMLNodeParser(),
