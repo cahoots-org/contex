@@ -10,6 +10,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_document_types,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
     resolve_prune,
@@ -47,6 +48,7 @@ async def _run(config_path: str) -> None:
     max_batch_bytes = resolve_max_batch_bytes(config)
     secret_scanner = resolve_secret_scanner(config)
     prune = resolve_prune(config)
+    document_types = resolve_document_types(config)
 
     source = config.get("source") or {}
     token: str = source.get("token", "")
@@ -82,6 +84,7 @@ async def _run(config_path: str) -> None:
                         exclude=exclude_globs,
                         include_binary=include_binary,
                         max_file_bytes=max_file_bytes,
+                        document_types=document_types,
                     )
                 elif resource == "issues":
                     events = read_issues(client, owner, repo, state=state)
