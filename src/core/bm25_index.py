@@ -52,12 +52,20 @@ class Bm25Settings:
             b=_env_float("BM25_B", cls.b),
         )
 
-    def create_sql(self) -> str:
-        # Safe to inline: every value was validated above.
+    def rebuild_sql(self) -> list[str]:
+        """Drop the index, recreate it with these settings, and record them on it.
+
+        Safe to inline: DDL takes no bind parameters, and every value was validated above.
+        """
         fields = ", ".join(
             f"({field}::pdb.{self.tokenizer}('k1={self.k1}', 'b={self.b}'))" for field in _TEXT_FIELDS
         )
-        return f"CREATE INDEX {INDEX} ON embeddings USING bm25 (id, {fields}, project_id) WITH (key_field = 'id')"
+        recorded = json.dumps(asdict(self)).replace("'", "''")
+        return [
+            f"DROP INDEX {INDEX}",
+            f"CREATE INDEX {INDEX} ON embeddings USING bm25 (id, {fields}, project_id) WITH (key_field = 'id')",
+            f"COMMENT ON INDEX {INDEX} IS '{recorded}'",
+        ]
 
 
 async def ensure_bm25_index(db, settings: Bm25Settings) -> bool:
@@ -74,13 +82,6 @@ async def ensure_bm25_index(db, settings: Bm25Settings) -> bool:
         if built == settings:
             return False
         # ponytail: blocking rebuild, writes wait for it; build concurrently if corpora get large.
-        await session.execute(text("DROP INDEX embeddings_bm25"))
-        # DDL takes no bind parameters; every interpolated value is allow-listed or range-checked.
-        await session.execute(text(settings.create_sql()))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        comment = _quote(json.dumps(asdict(settings)))
-        await session.execute(text(f"COMMENT ON INDEX embeddings_bm25 IS {comment}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        for statement in settings.rebuild_sql():
+            await session.execute(text(statement))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
     return True
-
-
-def _quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
