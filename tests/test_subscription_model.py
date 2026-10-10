@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select
 from src.core.db_models import Subscription
@@ -8,7 +10,7 @@ async def test_subscription_persists_needs_and_bundle(db):
     async with db.session() as session:
         session.add(Subscription(
             subscription_id="sub_1", project_id="p1",
-            needs=["auth config"], scope=None,
+            needs=["auth config"], scope=None, expires_at=datetime.now(timezone.utc),
             bundle={"auth config": [{"data_key": "cfg", "similarity": 0.9, "data": {}, "description": "d"}]},
         ))
         await session.commit()

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +21,7 @@ async def test_subscription_without_tenant_id_defaults_to_default(db):
             subscription_id="sub_test_default",
             project_id="p1",
             needs=["auth"],
+            expires_at=datetime.now(timezone.utc),
         ))
         await session.commit()
 
