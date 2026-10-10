@@ -17,7 +17,7 @@ version the server pins); the v1 client API differs.
 pip install "mcp>=2,<3"
 ```
 
-Both scripts connect to `http://localhost:8001/mcp` by default. Point them at
+The scripts connect to `http://localhost:8001/mcp` by default. Point them at
 another server with `CONTEX_MCP_URL`, e.g.
 `CONTEX_MCP_URL=http://localhost:8011/mcp`.
 
@@ -32,6 +32,16 @@ data changes without issuing a second query.
 
 ```bash
 python examples/mcp_quickstart.py
+```
+
+### [`mcp_watch.py`](mcp_watch.py)
+
+The push. An agent creates a subscription and listens on its resource with
+`subscriptions/listen`. A second client publishes a change, and the server pushes
+an update to the agent, which re-reads the resource. No polling, no re-query.
+
+```bash
+python examples/mcp_watch.py
 ```
 
 ### [`query.py`](query.py)
