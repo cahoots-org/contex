@@ -1,4 +1,7 @@
 # tests/test_vector_search.py
+import threading
+
+import numpy as np
 import pytest
 from sqlalchemy import text
 from src.core.db_models import Embedding
@@ -31,3 +34,14 @@ async def test_hnsw_scan_widened_to_the_request(db):
         await search._widen_hnsw_scan(session, top_k=100)
         assert await session.scalar(text("SHOW hnsw.ef_search")) == "100"
         assert await session.scalar(text("SHOW hnsw.iterative_scan")) == "strict_order"
+
+
+@pytest.mark.asyncio
+async def test_query_encoding_runs_off_the_event_loop_thread(db):
+    class _Recorder:
+        def encode(self, text):
+            self.thread = threading.current_thread()
+            return np.ones(768, dtype=np.float32)
+    model = _Recorder()
+    await PgVectorSearch(db, model).search("p1", "anything", top_k=5)
+    assert model.thread is not threading.main_thread()
