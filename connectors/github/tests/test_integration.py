@@ -266,6 +266,7 @@ async def test_read_issues_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.payload["author"] == "alice"
     assert ev.payload["created_at"] == "2026-01-01T00:00:00Z"
     assert ev.payload["updated_at"] == "2026-02-01T00:00:00Z"
+    assert ev.published_at == "2026-02-01T00:00:00Z"
     assert len(ev.payload["comments"]) == 1
     assert ev.payload["comments"][0]["author"] == "bob"
     assert ev.payload["comments"][0]["created_at"] == "2026-01-15T00:00:00Z"
@@ -342,6 +343,7 @@ async def test_read_pulls_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.payload["created_at"] == "2026-03-01T00:00:00Z"
     assert ev.payload["merged_at"] == "2026-03-06T00:00:00Z"
     assert ev.payload["comments"] == []
+    assert ev.published_at == "2026-03-05T00:00:00Z"
 
 
 # ---------------------------------------------------------------------------
