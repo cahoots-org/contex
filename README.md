@@ -87,6 +87,7 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 - **Live subscriptions:** matched context that refreshes when your data changes.
 - **Time windows:** limit a query or subscription to recent data with `since` or `max_age_seconds`. On a sliding window, items drop out as they age. Connectors publish each item at the source's own update time, so backfilled history counts as old.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
+- **Documents:** publish PDFs and Word files as base64, and Contex extracts their text. With `OCR_ENABLED`, scanned pages and images are read too.
 - **Event sourcing:** stores every change as an immutable event, powering audit trails and version history.
 - **Security:** API-key auth and RBAC, off by default for local dev.
 - **Multi-tenancy:** always-on tenant isolation. A default tenant when auth is off, full per-identity isolation when it's on.
@@ -148,7 +149,6 @@ See the [RBAC Guide](docs/RBAC.md).
 ## Roadmap
 
 - **More connectors:** streaming sources like Redis, Kafka, and message queues that push updates as they happen, plus more batch sources like Slack.
-- **Document extraction:** read text from PDF and DOCX files.
 - **Higher throughput:** for high-volume sources.
 
 ## Development

@@ -109,7 +109,8 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
   scope for v1.
 - **Deletes propagate on re-run.** Objects removed from the bucket (or now
   excluded) are removed from Contex.
-- **Text objects only.** PDFs, images, Word documents, and other binary formats
-  are not parsed.
+- **Text and documents only.** PDFs and `.docx` files are sent to Contex for text
+  extraction (`documents:` in config); images are read only if you add their
+  extensions and the server has `OCR_ENABLED`. Other binary formats are skipped.
 - **No chunking.** Each object is one context item. Objects over
   `max_object_bytes` are skipped entirely.

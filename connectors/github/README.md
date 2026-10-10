@@ -110,7 +110,9 @@ repositories will be slow; progress is logged per resource.
 
 - Not live sync: snapshot only; no webhook support in v1.
 - Deletes propagate on re-run: files, issues and PRs gone from the repo (or no longer matched by `state`) are removed from Contex. Commits are never removed.
-- Binary files are skipped by default.
+- Binary files are skipped by default, except documents: PDFs and `.docx` files are
+  sent to Contex for text extraction (`documents:` in config; add `.png`/`.jpg` when the
+  server has `OCR_ENABLED`). Files over `max_file_bytes` (1 MiB by default) are still skipped.
 - Whole-file ingestion; no code-aware chunking.
 
 ## Running tests
