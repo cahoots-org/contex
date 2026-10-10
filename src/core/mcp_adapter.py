@@ -24,15 +24,15 @@ from src.core.recency import window_start
 from src.core.version import VERSION
 
 
-def _parse_since(since: Optional[str]) -> Optional[datetime]:
-    """Parse an ISO-8601 recency cutoff, raising ValueError on bad input."""
-    if since is None:
+def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp argument, raising ValueError on bad input."""
+    if value is None:
         return None
     try:
-        return datetime.fromisoformat(since)
+        return datetime.fromisoformat(value)
     except ValueError:
         raise ValueError(
-            f"Invalid 'since' value {since!r}; expected ISO-8601 (e.g. 2025-01-01T00:00:00Z)"
+            f"Invalid '{field}' value {value!r}; expected ISO-8601 (e.g. 2025-01-01T00:00:00Z)"
         )
 
 
@@ -149,7 +149,7 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         matches = await e.query_project_data(
             project_id, query, top_k=top_k, threshold=threshold,
-            since=window_start(_parse_since(since), max_age_seconds),
+            since=window_start(_parse_timestamp(since), max_age_seconds),
         )
         return json.dumps({"query": query, "matches": matches})
 
@@ -167,7 +167,7 @@ def build_mcp_server(engine, db_accessor=None):
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         # Validate eagerly so a bad value fails the call, not reconcile.
-        _parse_since(since)
+        _parse_timestamp(since)
         _check_max_age(max_age_seconds)
         scope = {k: v for k, v in (("since", since), ("max_age_seconds", max_age_seconds)) if v is not None} or None
         e = _get_engine()
@@ -197,19 +197,24 @@ def build_mcp_server(engine, db_accessor=None):
         await _enforce_subscription_project(e, id, tid)
         return json.dumps(await e.subscriptions.get_bundle(id, tenant_id=tid))
 
-    @server.tool(name="contex_publish", description="Publish/update context data for a project.")
-    async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json") -> str:
+    @server.tool(name="contex_publish",
+                 description="Publish/update context data for a project. "
+                             "Pass published_at (ISO-8601) when the source changed it, e.g. for backfilled history; "
+                             "time windows use it instead of ingest time.")
+    async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json",
+                             published_at: str | None = None) -> str:
         _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         e = _get_engine()
         await _throttle(e, "publish", "RATE_LIMIT_PUBLISH", 60)
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
+            published_at=_parse_timestamp(published_at, "published_at"),
         ), source='mcp')
         return json.dumps({"published": data_key, "sequence": str(seq)})
 
     @server.tool(name="contex_publish_batch",
                  description="Publish/update many context items for a project in one call. "
-                             "items is a list of {data_key, data, data_format?}.")
+                             "items is a list of {data_key, data, data_format?, published_at?}.")
     async def contex_publish_batch(project_id: str, items: list[dict]) -> str:
         _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         try:
@@ -224,6 +229,7 @@ def build_mcp_server(engine, db_accessor=None):
                 data_key=item["data_key"],
                 data=item["data"],
                 data_format=item.get("data_format", "json"),
+                published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items
         ], source='mcp')

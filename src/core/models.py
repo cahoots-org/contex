@@ -1,5 +1,6 @@
 """Data models for Context Engine v2"""
 
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,9 @@ class DataPublishEvent(BaseModel):
     )
     event_type: Optional[str] = Field(
         default=None, description="Optional event type (auto-generated if not provided)"
+    )
+    published_at: Optional[datetime] = Field(
+        default=None, description="When the source changed this content; defaults to ingest time"
     )
 
 

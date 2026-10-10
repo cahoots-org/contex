@@ -1,7 +1,8 @@
 """Shared recency predicate for time-windowed search.
 
 Content is re-published in place (``updated_at`` bumped, ``created_at`` kept),
-so freshness is ``COALESCE(updated_at, created_at)``. A single helper keeps the
+and a publisher may say when the source changed (``published_at``), so freshness
+is ``COALESCE(published_at, updated_at, created_at)``. A single helper keeps the
 vector, lexical, and vector-only search paths in agreement.
 """
 from __future__ import annotations
@@ -28,7 +29,7 @@ def recency_filter(since: Optional[datetime]):
     """Return a SQLAlchemy predicate for ``since``, or None when unbounded."""
     if since is None:
         return None
-    return func.coalesce(Embedding.updated_at, Embedding.created_at) >= since
+    return func.coalesce(Embedding.published_at, Embedding.updated_at, Embedding.created_at) >= since
 
 
 def recency_sql_clause(since: Optional[datetime]) -> str:
@@ -38,4 +39,4 @@ def recency_sql_clause(since: Optional[datetime]) -> str:
     """
     if since is None:
         return ""
-    return "AND COALESCE(updated_at, created_at) >= :since"
+    return "AND COALESCE(published_at, updated_at, created_at) >= :since"
