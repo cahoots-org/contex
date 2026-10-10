@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from src.core.db_models import Embedding, Subscription, Symbol
-from src.core.limits import check_needs, clamp_top_k
+from src.core.limits import check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 from src.core.notifier import SUBSCRIPTION_UPDATED
@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Cap cross-file neighbors attached per matched node, to bound bundle size.
 # ponytail: fixed cap; make it configurable only if real bundles feel starved.
 MAX_LINKS_PER_NODE = 5
+
+# How long a subscription outlives its last create or read.
+SUBSCRIPTION_TTL_SECONDS = positive_int_env("SUBSCRIPTION_TTL_SECONDS", 3600)
 
 # Per (subscription, need): documents held and the weakest one's similarity.
 _FLOORS_SQL = text("""
@@ -47,6 +50,10 @@ def _assert_sub_tenant(row, tenant_id):
         raise PermissionError("Permission denied")
 
 
+def _expired(row) -> bool:
+    return row.expires_at <= datetime.now(timezone.utc)
+
+
 def _bundle_documents(bundle) -> list[str]:
     """Sorted document keys of every match and link in a bundle."""
     docs = set()
@@ -58,8 +65,12 @@ def _bundle_documents(bundle) -> list[str]:
 
 
 class SubscriptionService:
-    def __init__(self, db, matcher, encoder=None, default_threshold=0.35, default_top_k=10) -> None:
+    def __init__(
+        self, db, matcher, encoder=None, default_threshold=0.35, default_top_k=10,
+        ttl_seconds=SUBSCRIPTION_TTL_SECONDS,
+    ) -> None:
         self.db = db
+        self.ttl = timedelta(seconds=ttl_seconds)
         self.matcher = matcher
         self.encoder = encoder
         self.default_threshold = default_threshold
@@ -82,18 +93,22 @@ class SubscriptionService:
                 needs=list(needs), scope=scope, top_k=top_k, threshold=threshold,
                 bundle=bundle, documents=_bundle_documents(bundle),
                 bundle_updated_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc) + self.ttl,
             ))
             await session.commit()
         return sub_id
 
     async def get_bundle(self, subscription_id, *, tenant_id=None) -> dict:
+        """The subscription's bundle; reading it renews the lease."""
         async with self.db.session() as session:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
-            if row is None:
+            if row is None or _expired(row):
                 raise KeyError(subscription_id)
             _assert_sub_tenant(row, tenant_id)
+            row.expires_at = datetime.now(timezone.utc) + self.ttl
+            await session.commit()
             return row.bundle
 
     async def all_ids(self) -> list[str]:
@@ -106,7 +121,7 @@ class SubscriptionService:
             row = (await session.execute(
                 select(Subscription).where(Subscription.subscription_id == subscription_id)
             )).scalar_one_or_none()
-            if row is None:
+            if row is None or _expired(row):
                 return None
             _assert_sub_tenant(row, tenant_id)
             return row.project_id
@@ -138,7 +153,11 @@ class SubscriptionService:
             except Exception:
                 logger.exception("affected-subscription filter failed for %s; reconciling all", project_id)
 
-        stmt = select(Subscription).where(Subscription.project_id == project_id)
+        stmt = (
+            select(Subscription)
+            .where(Subscription.project_id == project_id)
+            .where(Subscription.expires_at > func.now())
+        )
         if affected is not None:
             stmt = stmt.where(Subscription.subscription_id.in_(affected))
         async with self.db.session() as session:

@@ -344,6 +344,8 @@ class Subscription(TenantScopedMixin, Base):
     # Every document key the bundle touches; lets a publish find affected subscriptions.
     documents: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list, server_default=text("'{}'"))
     bundle_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Lease end; creating or reading the subscription renews it.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
