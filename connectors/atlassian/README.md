@@ -111,7 +111,7 @@ the mapping logic.
 ## Limitations
 
 - Not live sync: snapshot only; no webhook support in v1.
-- Deleted/archived issues and pages are not removed from Contex on re-run.
+- Deletes propagate on a full re-run: issues and pages gone from the site are removed from Contex. A run with `since` set does not remove anything.
 - Attachments are not ingested (only their pages/issues).
 - Confluence inline comments are skipped; footer comments are included.
 

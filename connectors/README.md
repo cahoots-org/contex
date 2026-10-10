@@ -18,13 +18,18 @@ refresh story. See each connector's design spec under
 ## The shared framework (`connectors/base/`)
 
 - **`ChangeEvent`** — the seam every reader emits: `{op, key, payload,
-  source_meta, data_format}`. `op` is `"upsert"` or `"delete"`; the bundled
-  readers only emit upserts today.
+  source_meta, data_format}`. `op` is `"upsert"`, `"delete"`, or `"retain"`
+  (keep an item that could not be fetched this run).
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. Batches are bounded by the server's `MAX_BATCH_SIZE`.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
   `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with a service-account token when
   one is configured.
+- **Deletes** — each run tags what it publishes with an origin (e.g.
+  `s3:bucket/prefix`). After a full run completes, the runner lists that
+  origin's keys with `contex_list_keys` and deletes the ones the source no
+  longer has. Runs filtered by a since-date never delete. Set `prune: false` in
+  `connector.yaml` to turn this off.
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.

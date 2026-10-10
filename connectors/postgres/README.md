@@ -100,7 +100,7 @@ warning.
 ## Limitations
 
 - Snapshot only — no live sync. Re-run the connector to refresh.
-- Deletes are not propagated on re-run (v1 has no diff).
+- Deletes propagate on re-run: rows gone from the source, or from tables now excluded, are removed from Contex.
 - Tables missing a PK require a `key_columns` entry or they are skipped.
 - All readable, non-binary columns are ingested unless excluded. Use the column
   deny list to keep PII and plaintext secrets out.

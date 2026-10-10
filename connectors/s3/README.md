@@ -107,8 +107,8 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 - **Not live sync.** Refresh by re-running; S3 event notifications are out of
   scope for v1.
-- **Deletes don't propagate.** Objects removed from S3 are not removed from
-  Contex on re-run.
+- **Deletes propagate on re-run.** Objects removed from the bucket (or now
+  excluded) are removed from Contex.
 - **Text objects only.** PDFs, images, Word documents, and other binary formats
   are not parsed.
 - **No chunking.** Each object is one context item. Objects over

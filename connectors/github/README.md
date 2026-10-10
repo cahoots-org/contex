@@ -109,7 +109,7 @@ repositories will be slow; progress is logged per resource.
 ## Limitations
 
 - Not live sync: snapshot only; no webhook support in v1.
-- Deleted files / closed issues are not removed from Contex on re-run.
+- Deletes propagate on re-run: files, issues and PRs gone from the repo (or no longer matched by `state`) are removed from Contex. Commits are never removed.
 - Binary files are skipped by default.
 - Whole-file ingestion; no code-aware chunking.
 

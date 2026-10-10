@@ -72,6 +72,8 @@ Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, an
 |------|---------|
 | `contex_publish` | Publishes or updates a project's data (any format, no schema). |
 | `contex_publish_batch` | Publishes or updates many items in one call. |
+| `contex_delete` | Deletes documents by key. |
+| `contex_list_keys` | Lists the keys a source (origin) published, so connectors can remove what the source deleted. |
 | `contex_query` | Searches a project's context once, without subscribing. |
 | `contex_create_subscription` | Creates a live subscription from plain-English needs. Returns a `contex://subscriptions/{id}` resource. |
 | `contex_delete_subscription` | Deletes a subscription. |
