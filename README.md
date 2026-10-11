@@ -132,17 +132,23 @@ See [connectors/README.md](connectors/README.md) and each connector's `connector
 
 ## Security
 
-Auth is **off by default**, so local development needs no keys. To turn it on, copy `.env.example` to `.env` and set:
+Auth is **off by default**, so local development needs no keys, and the compose file publishes Contex on `127.0.0.1` only. To turn auth on, add to `.env` (copy `.env.example`; `docker compose up` reads it):
 
 ```bash
 AUTH_ENABLED=true
-SERVICE_ACCOUNT_JWT_SECRET=    # required, or the server won't boot
-API_KEY_PEPPER=                # recommended, at least 16 characters
+# Recommended: at least 16 random characters. Keep comments on their own line.
+API_KEY_PEPPER=
 ```
 
-`docker compose up` reads `.env` automatically.
+On the first boot with auth on, Contex prints an admin key once to its logs. Mint a key per connector or agent with the CLI, scoped to a role, tenant, and projects:
 
-With auth on, Contex authenticates every MCP tool call, scopes each request to the caller's tenant, and applies RBAC to who can publish, query, and subscribe. Connectors and other services authenticate as service accounts.
+```bash
+docker compose exec contex python -m src.cli keys create --name ingest --role publisher --project my-app
+docker compose exec contex python -m src.cli keys list
+docker compose exec contex python -m src.cli keys revoke <key_id>
+```
+
+Clients send the key as `Authorization: Bearer <key>`. With auth on, Contex authenticates every MCP tool call, scopes each request to the key's tenant, and applies RBAC to who can publish, query, and subscribe. To reach Contex from other machines, change the `ports` mapping in `docker-compose.yml` after turning auth on.
 
 See the [RBAC Guide](docs/RBAC.md).
 
