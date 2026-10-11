@@ -363,6 +363,16 @@ class TestSemanticMatcherContentHashDedup:
         assert matcher.model.encode.call_count >= 1
 
     @pytest.mark.asyncio
+    async def test_model_change_re_embeds(self, matcher):
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        matcher.model.encode.reset_mock()
+        matcher.model_name = "other/model-768"
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        assert matcher.model.encode.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):
         parse, threads = matcher.node_converter.parse, []
 

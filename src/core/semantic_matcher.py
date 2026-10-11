@@ -293,11 +293,12 @@ class SemanticDataMatcher:
         ]
         title = _document_title(nodes)
         embedding_texts = [_embedding_text(data_key, node, title) for node in nodes]
-        # Content-hash dedup (#223): skip encode + upsert for nodes whose embedded
-        # text is unchanged. The hash covers the exact string we encode and index,
-        # so it captures both content and the provenance prefix.
+        # Skip encode + upsert for nodes whose embedded text and model are
+        # unchanged. The hash covers the exact string we encode and index, so it
+        # captures both content and the provenance prefix.
         content_hashes = [
-            hashlib.sha256(t.encode("utf-8")).hexdigest() for t in embedding_texts
+            hashlib.sha256(f"{self.model_name}\n{t}".encode("utf-8")).hexdigest()
+            for t in embedding_texts
         ]
         async with self.db.session() as session:
             prior = await session.execute(
