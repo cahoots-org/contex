@@ -31,6 +31,10 @@ def check_hardened_config() -> None:
             "SERVICE_ACCOUNT_JWT_SECRET must be set when AUTH_ENABLED=true"
         )
 
+    bootstrap_key = os.getenv("BOOTSTRAP_ADMIN_KEY")
+    if bootstrap_key and not bootstrap_key.startswith("ck_"):
+        raise RuntimeError("BOOTSTRAP_ADMIN_KEY must start with ck_")
+
     if not os.getenv("API_KEY_PEPPER"):
         logger.warning(
             "API_KEY_PEPPER not set - API keys hashed with plain SHA-256 "

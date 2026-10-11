@@ -1,7 +1,9 @@
 """Authentication module for Contex"""
 
 import asyncio
+import os
 import secrets
+import sys
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -12,6 +14,7 @@ from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel
 from src.core.keyhash import hash_api_key
 from src.core.logging import get_logger
+from src.core.rbac import Role, assign_role
 
 logger = get_logger(__name__)
 
@@ -71,21 +74,13 @@ async def create_api_key(
     name: str,
     scopes: List[str] = None,
     tenant_id: Optional[str] = None,
+    raw_key: Optional[str] = None,
 ) -> tuple[str, APIKey]:
-    """
-    Create a new API key.
+    """Create an API key, generating the raw key unless one is given.
 
-    Args:
-        db: Database manager
-        name: Name for the API key
-        scopes: List of scopes/permissions
-        tenant_id: Optional tenant ID to associate with key
-
-    Returns:
-        Tuple of (raw_key, APIKey model)
+    Returns (raw_key, APIKey model).
     """
-    # Generate key
-    raw_key = f"ck_{secrets.token_urlsafe(32)}"
+    raw_key = raw_key or f"ck_{secrets.token_urlsafe(32)}"
     key_hash = hash_api_key(raw_key)
     key_id = secrets.token_hex(8)
     created_at = datetime.now(timezone.utc)
@@ -116,6 +111,28 @@ async def create_api_key(
     logger.info("API key created", key_id=key_id, name=name)
 
     return raw_key, api_key
+
+
+async def bootstrap_admin(db: DatabaseManager) -> None:
+    """Create an admin key when none exist, from BOOTSTRAP_ADMIN_KEY or generated."""
+    if await list_api_keys(db):
+        return
+    provided = os.getenv("BOOTSTRAP_ADMIN_KEY")
+    raw_key, api_key = await create_api_key(
+        db, os.getenv("BOOTSTRAP_ADMIN_NAME", "root"), raw_key=provided
+    )
+    await assign_role(db, api_key.key_id, Role.ADMIN)
+    logger.warning("Bootstrap admin key created", key_id=api_key.key_id, name=api_key.name)
+    if not provided:
+        # stderr only: logger records also go to Sentry and log forwarders.
+        print(
+            "\n" + "=" * 60
+            + "\nBOOTSTRAP ADMIN KEY (shown once; mint more with python -m src.cli keys create):"
+            + f"\n   API Key: {raw_key}"
+            + f"\n   Key ID: {api_key.key_id}"
+            + "\n" + "=" * 60 + "\n",
+            file=sys.stderr,
+        )
 
 
 async def revoke_api_key(
