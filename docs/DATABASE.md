@@ -341,18 +341,6 @@ curl http://localhost:8001/health
 }
 ```
 
-### Prometheus Metrics
-
-Available at `/metrics` (gated by `METRICS_TOKEN`; see [METRICS.md](METRICS.md)):
-
-```
-contex_db_connections_active
-contex_db_connections_idle
-contex_db_query_duration_seconds
-contex_embeddings_count
-contex_events_count
-```
-
 ### pg_stat Queries
 
 ```sql
