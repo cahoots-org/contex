@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import yaml
 
+from .secrets import DEFAULT_SECRET_CONTENT_PATTERNS, DEFAULT_SECRET_FILE_PATTERNS, SecretScanner
+
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 DEFAULT_BATCH_SIZE = 500
@@ -80,12 +82,6 @@ def resolve_secret_scanner(config: dict):
       secret-file list.
     - ``content`` — regexes added to the built-in content markers.
     """
-    from .secrets import (
-        DEFAULT_SECRET_CONTENT_PATTERNS,
-        DEFAULT_SECRET_FILE_PATTERNS,
-        SecretScanner,
-    )
-
     if resolve_flag(config, "allow_secrets", False):
         return None
     sec = config.get("secrets") or {}
