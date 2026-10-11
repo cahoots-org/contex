@@ -14,6 +14,10 @@ import re
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 
+from .documents import FORMATS, document_text
+
+DOCUMENT_FORMATS = frozenset(FORMATS.values())
+
 # Files that are secrets by nature — never useful KB content.
 DEFAULT_SECRET_FILE_PATTERNS: tuple[str, ...] = (
     ".env", ".env.*", "*.pem", "*.key", "*.p8", "*.p12", "*.pfx", "*.pkcs12",
@@ -48,12 +52,13 @@ class SecretScanner:
         self.scan_content = scan_content
         self._content_res = [re.compile(p) for p in content_patterns]
 
-    def reason(self, key: str, payload: object) -> str | None:
+    def reason(self, key: str, payload: object, data_format: str = "text") -> str | None:
         """A short reason the item is a secret (names the pattern, not the value), else None.
 
         ``key`` is the item key — for file connectors a repo path like
         ``owner/repo:path``; the trailing filename is what filename patterns match.
-        ``payload`` is the item content (str for files, dict for issues/rows).
+        ``payload`` is the item content (str for files, dict for issues/rows,
+        base64 for documents, whose text is scanned instead).
         """
         key = key.lower()
         name = key.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
@@ -61,6 +66,10 @@ class SecretScanner:
             if fnmatchcase(name, pat) or fnmatchcase(key, pat):
                 return f"secret-file pattern {pat!r}"
         if self.scan_content:
+            if data_format in DOCUMENT_FORMATS:
+                payload = document_text(payload, data_format)
+                if not payload:
+                    return "document text can't be read to scan"
             text = payload if isinstance(payload, str) else json.dumps(payload, default=str)
             for rx in self._content_res:
                 if rx.search(text):

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import zipfile
 
-from connectors.base import ChangeEvent, resolve_secret_scanner
+from connectors.base import ChangeEvent, document_event, resolve_secret_scanner
 from connectors.base.runner import run
 from connectors.base.secrets import SecretScanner
 
@@ -35,6 +37,47 @@ def test_flags_secret_content_in_normal_file():
     assert s.reason(key, 'AWS = "AKIAIOSFODNN7EXAMPLE"') is not None
     assert s.reason(key, "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n") is not None
     assert s.reason(key, "def add(a, b):\n    return a + b\n") is None
+
+
+def _pdf(text: str) -> bytes:
+    """A one-page PDF showing ``text`` in Helvetica."""
+    content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+        b" /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(content), content),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = b"%PDF-1.4\n"
+    offsets = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    return out + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+
+
+def _docx(xml: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr("word/document.xml", xml)
+    return buf.getvalue()
+
+
+def test_scans_document_text_not_base64():
+    s = SecretScanner()
+    secret_pdf = document_event("r:a.pdf", _pdf("key AKIAIOSFODNN7EXAMPLE"), "pdf")
+    clean_pdf = document_event("r:b.pdf", _pdf("quarterly report"), "pdf")
+    split_docx = document_event("r:c.docx", _docx("<w:p><w:r><w:t>AKIAIOSF</w:t></w:r><w:r><w:t>ODNN7EXAMPLE</w:t></w:r></w:p>"), "docx")
+    image = document_event("r:d.png", b"\x89PNG", "image")
+    assert s.reason(secret_pdf.key, secret_pdf.payload, "pdf") is not None
+    assert s.reason(clean_pdf.key, clean_pdf.payload, "pdf") is None
+    assert s.reason(split_docx.key, split_docx.payload, "docx") is not None
+    assert s.reason(image.key, image.payload, "image") is not None  # no text to scan
 
 
 def test_reason_names_pattern_not_value():

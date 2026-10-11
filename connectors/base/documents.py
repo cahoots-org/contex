@@ -1,12 +1,17 @@
 """Documents (PDF, DOCX, images) sent base64-encoded for Contex to extract.
 
-Contex extracts the text server-side, so connectors need no parsing libraries.
-Images are only readable when the server has OCR_ENABLED.
+Contex extracts the text server-side; connectors read it only to scan for
+secrets. Images are only readable when the server has OCR_ENABLED.
 """
 from __future__ import annotations
 
 import base64
+import io
 import os
+import re
+import zipfile
+
+from pypdf import PdfReader
 
 from .change_event import ChangeEvent
 
@@ -37,6 +42,27 @@ def document_format(key: str, document_types: frozenset[str]) -> str | None:
     """The data_format to send ``key`` as, or None when it isn't an enabled document."""
     ext = os.path.splitext(key.lower())[1]
     return FORMATS[ext] if ext in document_types else None
+
+
+def document_text(payload: str, data_format: str) -> str:
+    """The text layer of a base64 document; "" for images, scans, and unreadable files."""
+    body = base64.b64decode(payload)
+    try:
+        if data_format == "pdf":
+            pages = PdfReader(io.BytesIO(body)).pages
+            return "\n".join(page.extract_text() for page in pages).strip()
+        if data_format == "docx":
+            with zipfile.ZipFile(io.BytesIO(body)) as docx:
+                xml = " ".join(
+                    docx.read(name).decode("utf-8", errors="replace")
+                    for name in docx.namelist()
+                    if name.startswith("word/") and name.endswith(".xml")
+                )
+            # Word splits text into runs, so join runs and break only at paragraphs.
+            return re.sub(r"<[^>]+>", "", xml.replace("</w:p>", "\n")).strip()
+    except Exception:  # noqa: BLE001 - a malformed file can raise anything; treat it as unreadable
+        return ""
+    return ""
 
 
 def document_event(key: str, body: bytes, data_format: str, **kwargs) -> ChangeEvent:

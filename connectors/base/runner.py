@@ -104,7 +104,7 @@ async def run(
             item = event.key
         else:
             if secret_scanner is not None:
-                why = secret_scanner.reason(event.key, event.payload)
+                why = secret_scanner.reason(event.key, event.payload, event.data_format)
                 if why is not None:
                     stats.skipped_secrets += 1
                     log.warning("skip secret %s (%s)", event.key, why)
