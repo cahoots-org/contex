@@ -54,8 +54,6 @@ async def main():
             for match in matches:
                 print(f"agent: [{need}] {json.dumps(match['data'])}")
 
-        await agent.call_tool("contex_delete_subscription", {"subscription_id": sub["subscription_id"]})
-
 
 if __name__ == "__main__":
     asyncio.run(main())

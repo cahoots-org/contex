@@ -208,7 +208,8 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_create_subscription",
                  description="Create a live subscription; returns its resource URI to subscribe to. "
-                             "It expires when neither read nor re-created for a while; calling again with the "
+                             "Callers passing the same arguments share one subscription, so there is no delete: "
+                             "it expires once nobody reads or re-creates it for a while, and calling again with the "
                              "same arguments resumes it with the same URI. "
                              "Pass since (ISO-8601) to keep the bundle scoped to data created or updated on or after that time. "
                              "Pass max_age_seconds for a sliding window: items drop out of the bundle once older than that, "
@@ -228,16 +229,6 @@ def build_mcp_server(engine, db_accessor=None):
             project_id, needs, tenant_id=tid, top_k=top_k, threshold=threshold, scope=scope
         )
         return json.dumps({"subscription_id": sub_id, "resource_uri": f"contex://subscriptions/{sub_id}"})
-
-    @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
-    async def contex_delete_subscription(subscription_id: str) -> str:
-        _enforce(Permission.QUERY_DATA)
-        tok = get_access_token()
-        tid = (tok.claims or {}).get("tenant_id") if tok else None
-        e = _get_engine()
-        await _enforce_subscription_project(e, subscription_id, tid)
-        await e.subscriptions.delete(subscription_id, tenant_id=tid)
-        return json.dumps({"deleted": subscription_id})
 
     @server.resource("contex://subscriptions/{id}", name="subscription",
                      description="A subscription's current matched context bundle.",
