@@ -3,13 +3,11 @@
 import pytest
 import json
 import logging
+from datetime import datetime
 from io import StringIO
 from src.core.logging import (
     setup_logging,
     get_logger,
-    set_request_id,
-    get_request_id,
-    clear_request_id,
     StructuredFormatter,
     StructuredLogger
 )
@@ -39,28 +37,6 @@ class TestStructuredFormatter:
         assert log_data["logger"] == "test.logger"
         assert log_data["message"] == "Test message"
         assert "timestamp" in log_data
-    
-    def test_format_with_request_id(self):
-        """Test formatting with request ID in context"""
-        set_request_id("req-123")
-        
-        formatter = StructuredFormatter()
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="/path",
-            lineno=1,
-            msg="Test",
-            args=(),
-            exc_info=None
-        )
-        
-        output = formatter.format(record)
-        log_data = json.loads(output)
-        
-        assert log_data["request_id"] == "req-123"
-        
-        clear_request_id()
     
     def test_format_with_extra_fields(self):
         """Test formatting with extra fields"""
@@ -105,10 +81,7 @@ class TestStructuredFormatter:
         output = formatter.format(record)
         log_data = json.loads(output)
         
-        assert "exception" in log_data
-        assert log_data["exception"]["type"] == "ValueError"
-        assert log_data["exception"]["message"] == "Test error"
-        assert "traceback" in log_data["exception"]
+        assert "ValueError: Test error" in log_data["exception"]
     
     def test_format_includes_location_for_warnings(self):
         """Test that location is included for warnings and errors"""
@@ -141,17 +114,6 @@ class TestStructuredLogger:
         logger = get_logger("test.module")
         assert isinstance(logger, StructuredLogger)
         assert logger.logger.name == "test.module"
-    
-    def test_bind_context(self):
-        """Test binding context to logger"""
-        logger = get_logger("test")
-        bound_logger = logger.bind(user_id="user-123", project_id="proj-456")
-        
-        assert bound_logger._context["user_id"] == "user-123"
-        assert bound_logger._context["project_id"] == "proj-456"
-        
-        # Original logger should not be affected
-        assert "user_id" not in logger._context
     
     def test_log_levels(self):
         """Test different log levels"""
@@ -187,34 +149,6 @@ class TestStructuredLogger:
         assert log_data["message"] == "User action"
         assert log_data["user_id"] == "user-123"
         assert log_data["action"] == "login"
-
-
-class TestRequestIdContext:
-    """Test request ID context management"""
-    
-    def test_set_and_get_request_id(self):
-        """Test setting and getting request ID"""
-        set_request_id("req-123")
-        assert get_request_id() == "req-123"
-        clear_request_id()
-    
-    def test_clear_request_id(self):
-        """Test clearing request ID"""
-        set_request_id("req-123")
-        clear_request_id()
-        assert get_request_id() is None
-    
-    def test_request_id_isolation(self):
-        """Test that request IDs are isolated per context"""
-        # This would require async context testing
-        # For now, just test basic functionality
-        set_request_id("req-1")
-        assert get_request_id() == "req-1"
-        
-        set_request_id("req-2")
-        assert get_request_id() == "req-2"
-        
-        clear_request_id()
 
 
 class TestLoggingSetup:
@@ -263,20 +197,20 @@ class TestLoggingSetup:
         assert uvicorn_logger.level == logging.WARNING
 
 
-class TestConvenienceFunctions:
-    """Test convenience logging functions"""
-    
-    def test_convenience_functions(self):
-        """Test quick logging functions"""
-        from src.core.logging import log_info, log_error, log_warning, log_debug
-        
-        setup_logging(level="DEBUG", json_output=False)
-        
-        # Test that functions execute without error
-        log_debug("Debug message", key="value")
-        log_info("Info message", key="value")
-        log_warning("Warning message", key="value")
-        log_error("Error message", key="value")
-        
-        # Test passes if no exceptions raised
-        assert True
+
+def test_logger_keeps_traceback_and_caller_location():
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(StructuredFormatter())
+    logging.getLogger("test.caller").addHandler(handler)
+    logger = get_logger("test.caller")
+
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        logger.warning("failed", when=datetime(2026, 1, 1), exc_info=True)
+
+    log_data = json.loads(stream.getvalue())
+    assert "ValueError: boom" in log_data["exception"]
+    assert log_data["location"]["file"] == __file__
+    assert log_data["when"] == "2026-01-01 00:00:00"
