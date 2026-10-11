@@ -18,15 +18,6 @@ from src.core.tenant import (
 logger = get_logger(__name__)
 
 
-def _record_tenant_metrics(method: str, endpoint: str):
-    """Record tenant request metrics (lazy import to avoid circular deps)"""
-    try:
-        from src.core.metrics import record_tenant_request
-        record_tenant_request(method, endpoint)
-    except Exception:
-        pass  # Don't fail requests if metrics fail
-
-
 class _TenantSpoofingError(Exception):
     """Raised when a caller's X-Tenant-ID disagrees with their identity tenant."""
 
@@ -125,9 +116,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         tenant_id=tenant_id,
                         path=path,
                         method=request.method)
-
-            # Record tenant metrics
-            _record_tenant_metrics(request.method, path)
 
             return await call_next(request)
 

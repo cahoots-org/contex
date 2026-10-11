@@ -1,9 +1,7 @@
 """Prometheus metrics for Contex.
 
-Only metrics that are actually populated by live code paths are defined here:
-HTTP request metrics (via MetricsMiddleware) and tenant-scoped counters (via
-the tenant middlewares). No label carries a tenant or project ID, so a
-/metrics scraper cannot enumerate them (#78).
+HTTP request metrics, recorded by MetricsMiddleware. Endpoints are labeled by
+route template, so no label carries a tenant or project ID.
 """
 
 from prometheus_client import Counter, Gauge, Histogram, generate_latest, REGISTRY
@@ -11,8 +9,7 @@ from prometheus_client import Counter, Gauge, Histogram, generate_latest, REGIST
 registry = REGISTRY
 
 # ---------------------------------------------------------------------------
-# HTTP metrics — populated by MetricsMiddleware. Endpoints are normalized
-# (dynamic IDs collapsed to {id}) before they reach these labels.
+# HTTP metrics, populated by MetricsMiddleware.
 # ---------------------------------------------------------------------------
 http_requests_total = Counter(
     'contex_http_requests_total',
@@ -35,19 +32,6 @@ active_requests = Gauge(
     registry=registry,
 )
 
-# ---------------------------------------------------------------------------
-# Tenant metrics — populated by the tenant middlewares. tenant_id is
-# deliberately NOT a label: exposing raw tenant IDs via /metrics let a scraper
-# enumerate every tenant (#78).
-# ---------------------------------------------------------------------------
-tenant_requests_total = Counter(
-    'contex_tenant_requests_total',
-    'Total tenant-scoped requests',
-    ['method', 'endpoint'],
-    registry=registry,
-)
-
-
 def get_metrics() -> bytes:
     """Return current metrics in Prometheus exposition format."""
     return generate_latest(registry)
@@ -69,7 +53,3 @@ def decrement_active_requests():
     """Decrement the in-flight request gauge."""
     active_requests.dec()
 
-
-def record_tenant_request(method: str, endpoint: str):
-    """Record a tenant-scoped request (tenant_id not labeled; see #78)."""
-    tenant_requests_total.labels(method=method, endpoint=endpoint).inc()
