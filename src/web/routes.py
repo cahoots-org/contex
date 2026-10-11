@@ -1,7 +1,6 @@
 """Web UI routes for Contex Query Sandbox"""
 
 import json
-import asyncio
 import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
 from src.core.authz import require, public, get_identity
@@ -127,7 +126,7 @@ async def execute_query(
     # Calculate token counts
     try:
         enc = tiktoken.get_encoding("cl100k_base")
-    except:
+    except Exception:
         enc = None
 
     # Enhance matches with metadata
@@ -178,7 +177,6 @@ async def project_stats(
     rows = await _documents(request.app.state.context_engine, project_id)
 
     # Calculate stats
-    import tiktoken
     try:
         enc = tiktoken.get_encoding("cl100k_base")
     except Exception:
