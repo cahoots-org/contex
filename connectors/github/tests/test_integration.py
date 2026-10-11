@@ -143,6 +143,20 @@ async def test_read_files_retains_a_file_it_could_not_fetch(httpx_mock: "HTTPXMo
 
 
 @pytest.mark.anyio
+async def test_read_files_fails_on_a_truncated_tree(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}", json={"default_branch": "main"}, headers=_json_headers())
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/git/trees/main"),
+        json={"tree": [{"type": "blob", "path": "a.md", "sha": "abc123"}], "truncated": True},
+        headers=_json_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        with pytest.raises(RuntimeError, match="too many files"):
+            [ev async for ev in read_files(client, _OWNER, _REPO)]
+
+
+@pytest.mark.anyio
 async def test_read_files_skips_binary_by_default(httpx_mock: "HTTPXMock") -> None:
     httpx_mock.add_response(
         url=f"{_API}/repos/{_SLUG}",
