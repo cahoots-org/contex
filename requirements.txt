@@ -36,7 +36,6 @@ tree-sitter-language-pack==0.13.0
 
 # Utilities
 tiktoken==0.14.0
-toon-format==0.1.0
 pyyaml==6.0.3
 
 # JWT — transitive dep of mcp[crypto] (auth); pinned for CVE-2026-101918
