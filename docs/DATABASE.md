@@ -16,35 +16,9 @@ Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persi
 
 ### Docker Compose (Recommended)
 
-The `docker-compose.yml` includes all required services:
-
-```yaml
-services:
-  postgres:
-    image: paradedb/paradedb:0.25.9-pg18
-    environment:
-      - POSTGRES_DB=contex
-      - POSTGRES_USER=contex
-      - POSTGRES_PASSWORD=contex_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  postgres-data:
-```
-
-Start services:
-
-```bash
-docker compose up -d
-```
+`docker compose up -d` starts ParadeDB alongside Contex. Postgres isn't
+published to the host; reach it with
+`docker compose exec postgres psql -U contex -d contex`.
 
 ### Manual Setup
 

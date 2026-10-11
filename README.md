@@ -159,19 +159,7 @@ See the [RBAC Guide](docs/RBAC.md).
 
 ## Development
 
-```bash
-git clone https://github.com/cahoots-org/contex.git
-cd contex
-docker compose up -d      # Contex, ParadeDB
-pytest tests/ -v
-```
-
-Each connector has its own tests and dependencies. Run one with:
-
-```bash
-pip install -r connectors/s3/requirements-dev.txt
-pytest connectors/s3 -v
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) to run the server and tests outside Docker.
 
 Contex runs on **ParadeDB** (`paradedb/paradedb`), which bundles `pg_search` (BM25) and `pgvector` (embeddings) in one image. Stock Postgres images won't work. See [Database Setup](docs/DATABASE.md).
 

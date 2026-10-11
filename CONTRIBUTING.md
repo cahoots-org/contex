@@ -1,467 +1,71 @@
 # Contributing to Contex
 
-Thank you for your interest in contributing to Contex! This document provides guidelines and instructions for contributing.
+Thanks for helping. Open an issue to discuss anything larger than a small fix
+before you start, and be respectful in issues and reviews.
 
-## Table of Contents
+## Local setup
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
-- [Coding Guidelines](#coding-guidelines)
-- [Testing](#testing)
-- [Submitting Changes](#submitting-changes)
-- [Reporting Bugs](#reporting-bugs)
-- [Suggesting Features](#suggesting-features)
-
-## Code of Conduct
-
-By participating in this project, you agree to maintain a respectful and inclusive environment. We expect all contributors to:
-
-- Be respectful and considerate in communication
-- Welcome newcomers and help them get started
-- Accept constructive criticism gracefully
-- Focus on what's best for the community and project
-- Show empathy towards other community members
-
-## Getting Started
-
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/contex.git
-   cd contex
-   ```
-3. **Add the upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/contex/contex.git
-   ```
-
-## Development Setup
-
-### Prerequisites
-
-- Python 3.11+
-- ParadeDB (`paradedb/paradedb:0.25.9-pg18`) — bundles `pg_search` (BM25) + `pgvector`
-- Git
-
-### Local Setup
-
-1. **Create a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Start PostgreSQL** (using Docker):
-   ```bash
-   # Start all services with Docker Compose
-   docker compose up -d postgres
-
-   # Or manually:
-   # ParadeDB (bundles pg_search BM25 + pgvector)
-   docker run -d -p 5432:5432 \
-     -e POSTGRES_DB=contex \
-     -e POSTGRES_USER=contex \
-     -e POSTGRES_PASSWORD=contex_password \
-     paradedb/paradedb:0.25.9-pg18
-   ```
-
-4. **Set environment variables**:
-   ```bash
-   export DATABASE_URL="postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
-   ```
-
-5. **Run Contex**:
-   ```bash
-   python main.py
-   ```
-
-6. **Run tests**:
-
-   The suite runs against a separate `contex_test` database. `docker compose up`
-   creates it automatically on first start. If you started Postgres another way
-   (the manual `docker run` above, or an existing data volume), create it once:
-   ```bash
-   psql "postgresql://contex:contex_password@localhost:5432/contex" -c 'CREATE DATABASE contex_test;'
-   ```
-   ```bash
-   pytest tests/ -v
-   ```
-
-### Docker Setup
-
-Alternatively, use Docker Compose:
+You need Python 3.12 and Docker.
 
 ```bash
-docker compose up -d
-docker compose logs -f contex
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
 ```
 
-## How to Contribute
-
-### Types of Contributions
-
-We welcome all types of contributions:
-
-- **Bug fixes**: Fix issues in the codebase
-- **Features**: Add new functionality
-- **Documentation**: Improve or add documentation
-- **Tests**: Add or improve test coverage
-- **Examples**: Create example use cases
-- **Performance**: Optimize code performance
-- **Refactoring**: Improve code quality
-
-### Contribution Workflow
-
-1. **Check existing issues** to see if your contribution is already being discussed
-2. **Create an issue** if one doesn't exist (for bugs or features)
-3. **Discuss your approach** in the issue before starting major work
-4. **Create a feature branch** from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-5. **Make your changes** following our coding guidelines
-6. **Write tests** for your changes
-7. **Run tests** to ensure everything passes
-8. **Commit your changes** with clear commit messages
-9. **Push to your fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-10. **Open a Pull Request** against the `main` branch
-
-## Coding Guidelines
-
-### Python Style
-
-We follow [PEP 8](https://pep8.org/) style guidelines with some modifications:
-
-- **Line length**: 100 characters (not 79)
-- **Quotes**: Double quotes for strings
-- **Type hints**: Use type hints for function signatures
-- **Docstrings**: Use Google-style docstrings
-
-Example:
-
-```python
-from typing import Dict, List, Any
-
-def process_data(
-    project_id: str,
-    data: Dict[str, Any],
-    max_results: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Process data for a project.
-
-    Args:
-        project_id: Unique project identifier
-        data: Data to process
-        max_results: Maximum number of results to return
-
-    Returns:
-        List of processed data dictionaries
-
-    Raises:
-        ValueError: If project_id is invalid
-    """
-    # Implementation here
-    pass
-```
-
-### Code Organization
-
-- **Imports**: Group stdlib, third-party, and local imports
-- **Constants**: Use UPPER_CASE for constants
-- **Classes**: Use PascalCase
-- **Functions**: Use snake_case
-- **Private methods**: Prefix with underscore (`_method_name`)
-
-### Error Handling
-
-- Use specific exception types
-- Provide helpful error messages
-- Log errors appropriately
-
-```python
-try:
-    result = await risky_operation()
-except SpecificError as e:
-    logger.error(f"Operation failed: {e}")
-    raise HTTPException(status_code=500, detail="Clear error message")
-```
-
-## Testing
-
-### Running Tests
+Contex needs ParadeDB (Postgres with `pg_search` and `pgvector`); stock Postgres
+images won't work. Run one on a spare port, with a second database for the tests:
 
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# Run specific test file
-pytest tests/test_context_engine.py -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-
-# View coverage report
-open htmlcov/index.html
+docker run -d --name contex-db -p 55432:5432 \
+  -e POSTGRES_DB=contex -e POSTGRES_USER=contex -e POSTGRES_PASSWORD=contex_password \
+  paradedb/paradedb:0.25.9-pg18
+docker exec contex-db psql -U contex -d contex -c 'CREATE DATABASE contex_test'
 ```
 
-### Writing Tests
-
-- **Test file naming**: `test_<module_name>.py`
-- **Test function naming**: `test_<what_is_tested>()`
-- **Use fixtures**: For setup and teardown
-- **Test edge cases**: Not just happy paths
-- **Keep tests focused**: One concept per test
-
-Example:
-
-```python
-import pytest
-import pytest_asyncio
-from src.context_engine import ContextEngine
-
-@pytest_asyncio.fixture
-async def db():
-    """Create a test database connection"""
-    from src.core.database import DatabaseManager
-    db = DatabaseManager(database_url="postgresql+asyncpg://...")
-    await db.initialize()
-    yield db
-    await db.close()
-
-@pytest_asyncio.fixture
-async def context_engine(db):
-    """Create a ContextEngine instance for testing"""
-    return ContextEngine(db=db)
-
-@pytest.mark.asyncio
-async def test_publish_data_creates_event(context_engine):
-    """Test that publishing data creates an event in the store"""
-    # Arrange
-    event = DataPublishEvent(
-        project_id="test-project",
-        data_key="test-key",
-        data={"value": 123}
-    )
-
-    # Act
-    sequence = await context_engine.publish_data(event)
-
-    # Assert
-    assert sequence is not None
-    assert int(sequence) > 0
-```
-
-### Test Coverage
-
-- Maintain **at least 90% code coverage**
-- Cover edge cases and error conditions
-- Test async code properly with `@pytest.mark.asyncio`
-
-## Submitting Changes
-
-### Commit Messages
-
-Use clear, descriptive commit messages following this format:
-
-```
-<type>: <short summary>
-
-<detailed description (optional)>
-
-<issue reference (if applicable)>
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `test`: Adding or updating tests
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `chore`: Maintenance tasks
-
-Examples:
-
-```
-feat: add webhook retry mechanism with exponential backoff
-
-Implements retry logic for webhook deliveries with configurable
-max retries and exponential backoff delay.
-
-Fixes #123
-```
-
-```
-fix: correct semantic matching threshold comparison
-
-The similarity threshold was being compared incorrectly,
-causing some valid matches to be excluded.
-```
-
-### Pull Request Guidelines
-
-1. **Fill out the PR template** completely
-2. **Link related issues** using "Fixes #123" or "Relates to #456"
-3. **Keep PRs focused**: One feature or fix per PR
-4. **Update documentation** if adding features
-5. **Add tests** for new functionality
-6. **Ensure tests pass**: CI must be green
-7. **Request reviews** from maintainers
-
-### PR Checklist
-
-Before submitting, ensure:
-
-- [ ] Code follows style guidelines
-- [ ] All tests pass locally
-- [ ] New tests added for new features
-- [ ] Documentation updated (if needed)
-- [ ] Commit messages are clear
-- [ ] No merge conflicts with main branch
-- [ ] Code coverage maintained or improved
-
-## Reporting Bugs
-
-### Before Reporting
-
-1. **Search existing issues** to avoid duplicates
-2. **Try the latest version** to see if it's already fixed
-3. **Gather information** about your environment
-
-### Bug Report Template
-
-When creating a bug report, include:
-
-```markdown
-**Description**
-A clear description of the bug.
-
-**Steps to Reproduce**
-1. Step one
-2. Step two
-3. See error
-
-**Expected Behavior**
-What you expected to happen.
-
-**Actual Behavior**
-What actually happened.
-
-**Environment**
-- Contex version: X.Y.Z
-- Python version: 3.11.x
-- OS: Ubuntu 22.04 / macOS 13.x / Windows 11
-- Docker version (if applicable): XX.XX.X
-
-**Logs**
-```
-Paste relevant logs here
-```
-
-**Additional Context**
-Any other relevant information.
-```
-
-## Suggesting Features
-
-### Feature Request Template
-
-When suggesting a feature:
-
-```markdown
-**Problem Statement**
-Describe the problem this feature would solve.
-
-**Proposed Solution**
-Describe your proposed solution.
-
-**Alternatives Considered**
-What alternatives have you considered?
-
-**Use Cases**
-Describe concrete use cases for this feature.
-
-**Additional Context**
-Any other relevant information, mockups, or examples.
-```
-
-### Feature Discussion
-
-- Discuss in an issue before implementing
-- Consider if it fits the project's goals
-- Think about backwards compatibility
-- Consider the maintenance burden
-
-## Development Tips
-
-### Useful Commands
+## Run the server
 
 ```bash
-# Format code with black
-black src/ tests/
-
-# Check types with mypy
-mypy src/
-
-# Lint code
-flake8 src/ tests/
-
-# Run specific test
-pytest tests/test_context_engine.py::test_specific_function -v
-
-# Debug with pdb
-pytest tests/ --pdb  # Drop into debugger on failure
+export DATABASE_URL=postgresql+asyncpg://contex:contex_password@localhost:55432/contex
+python main.py
 ```
 
-### Debugging
+It serves on `http://127.0.0.1:8001` with auth off. Settings come from the
+environment only; `python main.py` doesn't read `.env`. To use one, load it
+into your shell first with `set -a; . ./.env; set +a`. See
+[.env.example](.env.example) for every setting.
 
-- Use `print()` statements or `logging` for simple debugging
-- Use Python debugger (`pdb`) for complex issues:
-  ```python
-  import pdb; pdb.set_trace()
-  ```
-- Check logs with `docker compose logs -f contex`
+To run the whole stack in Docker instead, use `docker compose up`.
 
-### Working with the Database
+## Tests
 
 ```bash
-# Connect to PostgreSQL CLI
-psql "postgresql://contex:contex_password@localhost:5432/contex"
-
-# Or with Docker
-docker exec -it contex-postgres-1 psql -U contex -d contex
-
-# View tables
-\dt
-
-# Check embeddings
-SELECT project_id, data_key, created_at FROM embeddings LIMIT 10;
-
-# Check events
-SELECT project_id, event_type, sequence FROM events ORDER BY created_at DESC LIMIT 10;
+DATABASE_URL=postgresql+asyncpg://contex:contex_password@localhost:55432/contex_test pytest tests/
 ```
 
-## Questions?
+Each connector has its own dependencies and tests:
 
-- **GitHub Issues**: For bug reports and feature requests
-- **Discussions**: For questions and general discussion
-- **Discord**: Join our community (link in README)
+```bash
+pip install -r connectors/s3/requirements-dev.txt
+pytest connectors/s3
+```
+
+Add a test that fails without your change. CI runs both suites, boots the
+Docker image, and runs the security scans.
+
+## Style
+
+Lint the files you touch with `ruff check`. Keep imports at the top of the
+module, docstrings short, and comments about what the code does rather than how
+it got there.
+
+## Pull requests
+
+Branch from `main`, keep each PR to one change, and write commit messages with
+an imperative subject line and a body that says why. Link the issue the PR
+fixes.
 
 ## License
 
-By contributing to Contex, you agree that your contributions will be licensed under the MIT License.
-
----
-
-**Thank you for contributing to Contex!** 🎉
+By contributing, you agree that your contributions are licensed under the MIT
+License.
