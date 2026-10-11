@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from src.core.db_models import Embedding, Subscription, Symbol
@@ -187,18 +187,11 @@ class SubscriptionService:
             _assert_sub_tenant(row, tenant_id)
             return row.project_id
 
-    async def delete(self, subscription_id, *, tenant_id=None) -> None:
+    async def delete(self, subscription_id) -> None:
+        """Remove a private subscription; a missing id is a no-op."""
         async with self.db.session() as session:
-            row = (await session.execute(
-                select(Subscription).where(Subscription.subscription_id == subscription_id)
-            )).scalar_one_or_none()
-            # Idempotent: only commit when a row actually existed; absent id is a no-op.
-            if row is not None:
-                _assert_sub_tenant(row, tenant_id)
-                await session.delete(row)
-                # Agents sharing it re-read, find it gone, and can re-create it.
-                await notify_updated(session, subscription_id, datetime.now(timezone.utc))
-                await session.commit()
+            await session.execute(delete(Subscription).where(Subscription.subscription_id == subscription_id))
+            await session.commit()
 
     async def reconcile_project(self, project_id, changed_keys: set[str] | None = None) -> list[str]:
         """Bring every subscription in a project back in sync with current data.
