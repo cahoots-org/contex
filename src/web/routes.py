@@ -87,9 +87,12 @@ async def execute_query(
     query: str = Form(...),
     top_k: int = Form(10),
     threshold: float = Form(0.5),
-    max_tokens: int = Form(51200)
+    max_tokens: int = Form(51200),
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Execute a semantic query and return results"""
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     engine = request.app.state.context_engine
 
     # Pass the per-request threshold through instead of mutating the shared
@@ -178,12 +181,18 @@ async def execute_query(
 
 
 @router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
-async def project_stats(request: Request, project_id: str):
+async def project_stats(
+    request: Request,
+    project_id: str,
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
+):
     """Get statistics about a project's data.
 
     Reads from the `embeddings` table (Postgres/pgvector) — the store where
     published data actually lands — mirroring the sibling `/data` handler.
     """
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     rows = await _documents(request.app.state.context_engine, project_id)
 
     # Calculate stats
@@ -227,8 +236,14 @@ async def project_stats(request: Request, project_id: str):
 
 
 @router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
-async def get_project_data(request: Request, project_id: str):
+async def get_project_data(
+    request: Request,
+    project_id: str,
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
+):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     data_items = [
         {
             "data_key": data_key,

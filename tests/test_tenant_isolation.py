@@ -134,6 +134,29 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
         app.dependency_overrides.clear()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path,form", [
+    ("POST", "/sandbox/query", {"project_id": "proj-b-data", "query": "secrets"}),
+    ("GET", "/sandbox/projects/proj-b-data/stats", None),
+    ("GET", "/sandbox/projects/proj-b-data/data", None),
+])
+async def test_sandbox_project_routes_cross_tenant_is_403(db, monkeypatch, method, path, form):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    await _seed_tenant_project(db, "tenant-B", "proj-b-data")
+
+    app.state.db = db
+    app.state.context_engine = MagicMock()
+    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as c:
+            r = await c.request(method, path, data=form)
+        assert r.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
 # ── MCP project-scoped tools: cross-tenant → denied ────────────────────────────
 
 
