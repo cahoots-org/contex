@@ -37,3 +37,8 @@ def test_parent_primitives_kept_alongside_nested_children():
 def test_no_parent_node_when_only_nested_children():
     assert "root" not in _by_path({"a": {"x": 1}, "b": [{"y": 2}]})
 
+
+
+def test_dotted_keys_do_not_collide_with_nesting():
+    paths = list(_by_path({"spring.datasource": {"url": "a"}, "spring": {"datasource": {"url": "b"}}}))
+    assert len(paths) == len(set(paths)) == 2

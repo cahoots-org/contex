@@ -179,7 +179,9 @@ class JSONNodeParser(BaseNodeParser):
                     metadata={"format": "json"}
                 ))
             for key, value in data.items():
-                child_path = f"{path}.{key}" if path else key
+                # Escaped so {"a.b": ...} and {"a": {"b": ...}} get distinct paths.
+                segment = str(key).replace("\\", "\\\\").replace(".", "\\.").replace("[", "\\[")
+                child_path = f"{path}.{segment}" if path else segment
                 if isinstance(value, list) and _is_complex(value):
                     for idx, item in enumerate(value):
                         nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
