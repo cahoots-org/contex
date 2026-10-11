@@ -485,4 +485,6 @@ if __name__ == "__main__":
     import uvicorn
     host = os.getenv("CONTEX_HOST", "0.0.0.0")
     port = int(os.getenv("CONTEX_PORT", "8001"))
-    uvicorn.run(app, host=host, port=port)
+    # Open MCP streams never close on their own; cap the wait so shutdown
+    # cleanup runs inside Docker's 10s stop grace period.
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5)
