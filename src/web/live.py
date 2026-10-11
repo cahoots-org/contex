@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import uuid4
 
+import anyio
+
 logger = logging.getLogger(__name__)
 
 DEMO_TOP_K = 10
@@ -52,4 +54,6 @@ async def stream_subscription_updates(
                 engine.notifier.unlisten(queue)
         finally:
             if sub_id is not None:
-                await engine.subscriptions.delete(sub_id)
+                # Shielded: on disconnect the stream is cancelled, which would abort the delete.
+                with anyio.CancelScope(shield=True):
+                    await engine.subscriptions.delete(sub_id)
