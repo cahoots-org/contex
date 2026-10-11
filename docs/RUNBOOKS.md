@@ -1,572 +1,100 @@
-# Contex Operational Runbooks
+# Operational Runbooks
 
-This document contains operational runbooks for common scenarios when running Contex in production.
+Procedures for the `docker compose` deployment in this repository. Commands run
+from the repository root. Postgres isn't published to the host, so database
+commands go through `docker compose exec`.
 
-## Table of Contents
-
-1. [Incident Response](#incident-response)
-2. [PostgreSQL Operations](#postgresql-operations)
-3. [Scaling Operations](#scaling-operations)
-4. [Deployment Procedures](#deployment-procedures)
-5. [Backup and Recovery](#backup-and-recovery)
-6. [Performance Troubleshooting](#performance-troubleshooting)
-7. [Security Incidents](#security-incidents)
-
----
-
-## Incident Response
-
-### High Error Rate Alert
-
-**Symptoms:**
-- Error rate above threshold (default: 1%)
-- `contex_errors_total` metric increasing
-- Sentry alerts firing
-
-**Investigation Steps:**
-
-1. **Check Grafana dashboards:**
-   ```
-   Navigate to: Grafana > Contex Reliability Dashboard
-   Look at: Error Rate panel, HTTP Errors by Status Code
-   ```
-
-2. **Check application logs:**
-   ```bash
-   docker compose logs contex --tail=100 -f
-   ```
-
-3. **Check dependent services:**
-   ```bash
-   # PostgreSQL health
-   psql -U contex -d contex -c "SELECT 1"
-
-   # Live updates: confirm the listener
-   psql -U contex -d contex -c "SELECT pid, state FROM pg_stat_activity WHERE application_name = 'contex-notifier';"
-   ```
-
-4. **Check Sentry for error details:**
-   - Review recent issues in Sentry dashboard
-   - Look for common error patterns
-   - Check error distribution across endpoints
-
-**Resolution:**
-
-- If PostgreSQL is down: See [PostgreSQL Recovery](#postgresql-recovery)
-- If high latency: See [High Latency Investigation](#high-latency-investigation)
-- If OOM: See [Memory Issues](#memory-issues)
-
----
-
-### High Latency Alert
-
-**Symptoms:**
-- P95/P99 latency above threshold
-- Request timeout errors
-- Slow response times reported by users
-
-**Investigation Steps:**
-
-1. **Check latency breakdown in Grafana:**
-   ```
-   Navigate to: Grafana > Contex Performance Dashboard
-   Look at: Latency Distribution, P95/P99 over time
-   ```
-
-2. **Check PostgreSQL latency:**
-   ```bash
-   # Check active queries
-   psql -c "SELECT pid, now() - pg_stat_activity.query_start AS duration, query
-            FROM pg_stat_activity
-            WHERE state = 'active' ORDER BY duration DESC;"
-
-   # Check connection count
-   psql -c "SELECT count(*) FROM pg_stat_activity WHERE datname = 'contex';"
-   ```
-
-3. **Check embedding cache hit rate:**
-   ```
-   Look at: embedding_cache_hits_total vs embedding_cache_misses_total
-   Low hit rate = more embedding computations = higher latency
-   ```
-
-**Resolution:**
-
-- Scale up replicas if CPU bound
-- Increase embedding cache size if cache miss rate is high
-- Add connection pool capacity if PostgreSQL connections are exhausted
-
----
-
-### Service Unavailable (5xx Errors)
-
-**Symptoms:**
-- HTTP 500/502/503/504 errors
-- Health checks failing
-- Pods crashing or restarting
-
-**Investigation Steps:**
-
-1. **Check pod status:**
-   ```bash
-   kubectl get pods -l app=contex
-   kubectl describe pod <pod-name>
-   ```
-
-2. **Check recent events:**
-   ```bash
-   kubectl get events --sort-by='.lastTimestamp' | grep contex
-   ```
-
-3. **Check resource usage:**
-   ```bash
-   kubectl top pods -l app=contex
-   ```
-
-4. **Check health endpoint:**
-   ```bash
-   curl -s http://localhost:8001/health | jq .
-   ```
-
-**Resolution:**
-
-- If OOMKilled: Increase memory limits
-- If CrashLoopBackOff: Check logs for startup errors
-- If PostgreSQL unavailable: Check database health
-- If ImagePullBackOff: Check image registry credentials
-
----
-
-## PostgreSQL Operations
-
-### PostgreSQL Recovery
-
-**Symptoms:**
-- Connection errors to PostgreSQL
-- "could not connect to server" errors
-- Database queries timing out
-
-**Investigation:**
+## Health and logs
 
 ```bash
-# Check PostgreSQL container status
-docker compose ps postgres
+# Liveness
+curl -s http://localhost:8001/health
 
-# Check PostgreSQL logs
-docker compose logs postgres --tail=100
+# Recent logs
+docker compose logs contex --tail=100 -f
 
-# Test connection
-psql "postgresql://contex:contex_password@localhost:5432/contex" -c "SELECT 1"
+# Database reachable
+docker compose exec postgres psql -U contex -d contex -c "SELECT 1"
 
-# Check active connections
-psql -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"
+# Live subscription updates need the LISTEN connection
+docker compose exec postgres psql -U contex -d contex \
+  -c "SELECT pid, state FROM pg_stat_activity WHERE application_name = 'contex-notifier'"
 ```
 
-**Resolution:**
+If the server won't start, the first error in `docker compose logs contex` names
+the setting it rejected (protected mode, `BOOTSTRAP_ADMIN_KEY`, a secret under
+16 characters, or a database it can't reach or migrate).
 
-1. **If container is down:**
-   ```bash
-   docker compose up -d postgres
-   # Wait for healthy status
-   docker compose ps postgres
-   ```
+## Database connections
 
-2. **If too many connections:**
-   ```bash
-   # Terminate idle connections
-   psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-            WHERE datname = 'contex' AND state = 'idle'
-            AND query_start < now() - interval '5 minutes';"
-   ```
-
-3. **If disk space issue:**
-   ```bash
-   # Check disk usage
-   docker exec contex-postgres-1 df -h /var/lib/postgresql/data
-
-   # Vacuum to reclaim space
-   psql -c "VACUUM FULL;"
-   ```
-
-### PostgreSQL Connection Pool Exhaustion
-
-**Symptoms:**
-- "connection pool exhausted" errors
-- Increasing latency
-- Timeouts on database operations
-
-**Investigation:**
+Each Contex process opens a pool of 5 connections that grows to 15 under load,
+plus one LISTEN connection. The pool size is fixed in code. If Postgres runs
+out of connections, compare its limit with what Contex holds:
 
 ```bash
-# Check active connections
-psql -c "SELECT count(*), usename, application_name
-         FROM pg_stat_activity
-         WHERE datname = 'contex'
-         GROUP BY usename, application_name;"
-
-# Check max connections setting
-psql -c "SHOW max_connections;"
+docker compose exec postgres psql -U contex -d contex -c "SHOW max_connections"
+docker compose exec postgres psql -U contex -d contex \
+  -c "SELECT application_name, state, count(*) FROM pg_stat_activity WHERE datname = 'contex' GROUP BY 1, 2"
 ```
 
-**Resolution:**
-
-1. **Increase pool size:**
-   ```bash
-   export DATABASE_POOL_SIZE=20
-   export DATABASE_MAX_OVERFLOW=40
-   ```
-
-2. **Check for connection leaks:**
-   - Review code for unclosed sessions
-   - Ensure proper `async with db.session()` usage
-
-3. **Scale horizontally:**
-   - Add more Contex replicas to distribute connections
-
-### PostgreSQL Performance Tuning
-
-**Check slow queries:**
-
-```sql
--- Enable pg_stat_statements if not already
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
--- Find slowest queries
-SELECT query, mean_exec_time, calls, total_exec_time
-FROM pg_stat_statements
-ORDER BY mean_exec_time DESC
-LIMIT 10;
-```
-
-**Check table bloat:**
-
-```sql
--- Check table sizes
-SELECT schemaname, tablename,
-       pg_size_pretty(pg_total_relation_size(schemaname || '.' || tablename))
-FROM pg_tables
-WHERE schemaname = 'public'
-ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
-
--- Run vacuum if needed
-VACUUM ANALYZE embeddings;
-VACUUM ANALYZE events;
-```
-
-**Check index usage:**
-
-```sql
--- Find unused indexes
-SELECT schemaname, tablename, indexname, idx_scan
-FROM pg_stat_user_indexes
-WHERE idx_scan = 0;
-```
-
----
-
-## Scaling Operations
-
-### Horizontal Scaling
-
-**When to Scale:**
-- CPU utilization consistently > 70%
-- Request latency increasing
-- Queue depth growing
-
-**Docker Compose:**
+## Slow queries
 
 ```bash
-docker compose up -d --scale contex=5
+docker compose exec postgres psql -U contex -d contex -c "
+  SELECT pid, now() - query_start AS duration, left(query, 120)
+  FROM pg_stat_activity WHERE state = 'active' ORDER BY duration DESC"
+
+docker compose exec postgres psql -U contex -d contex -c "VACUUM ANALYZE embeddings; VACUUM ANALYZE events;"
 ```
 
----
+## Upgrade and rollback
 
-## Deployment Procedures
-
-### Rolling Update
-
-**Pre-deployment Checklist:**
-- [ ] All tests passing
-- [ ] Security scan clean
-- [ ] Staging environment validated
-- [ ] Monitoring dashboards open
-- [ ] Rollback plan ready
-
-**Docker Compose Update:**
+The `contex` service is built from the checkout, and it migrates the database
+to the newest schema at boot.
 
 ```bash
-# Pull the new image and recreate the service
-docker compose pull contex
-docker compose up -d contex
-
-# Watch logs during rollout
+git pull
+docker compose up -d --build contex
 docker compose logs contex --tail=100 -f
 ```
 
-**Rollback:**
+To roll back, check out the previous release and rebuild. Migrations don't run
+backwards on their own, so take a backup before an upgrade that adds one
+(`alembic/versions/`).
 
 ```bash
-# Pin back to the previous image tag and recreate
-docker compose up -d contex
+git checkout <previous-tag>
+docker compose up -d --build contex
 ```
 
----
-
-## Backup and Recovery
-
-### PostgreSQL Backup
-
-**Logical Backup (pg_dump):**
+## Backup and restore
 
 ```bash
-# Full database backup
-pg_dump -h localhost -U contex -Fc contex > backup-$(date +%Y%m%d).dump
+# Backup
+docker compose exec -T postgres pg_dump -U contex -Fc contex > contex-$(date +%Y%m%d).dump
 
-# Backup specific tables
-pg_dump -h localhost -U contex -t events -t embeddings contex > tables-backup.sql
+# Restore into the running database
+docker compose stop contex
+docker compose exec -T postgres pg_restore -U contex -d contex --clean --if-exists < contex-YYYYMMDD.dump
+docker compose start contex
 ```
 
-**Docker Volume Backup:**
+## API keys
+
+Manage keys with the CLI inside the container (or with `python -m src.cli`
+wherever `DATABASE_URL` points at the database).
 
 ```bash
-# Backup volume
-docker run --rm -v contex_postgres-data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/postgres-backup-$(date +%Y%m%d).tar.gz /data
+docker compose exec contex python -m src.cli keys list
+docker compose exec contex python -m src.cli keys create --name ingest --role publisher --project my-app
+docker compose exec contex python -m src.cli keys revoke <key_id>
 ```
 
-**Automated Backup (cron):**
+**A key leaked:** revoke it, then create a replacement with the same role,
+tenant and projects.
 
-```bash
-# /etc/cron.d/contex-backup — daily at 2 AM
-0 2 * * *  contex  pg_dump -h localhost -U contex -Fc contex > /backups/contex-$(date +\%Y\%m\%d).dump
-```
+**The admin key is lost:** create a new one with `keys create --role admin`.
 
-### PostgreSQL Recovery
-
-**From pg_dump:**
-
-```bash
-# Restore to existing database
-pg_restore -h localhost -U contex -d contex -c backup.dump
-
-# Restore to new database
-createdb contex_restored
-pg_restore -h localhost -U contex -d contex_restored backup.dump
-```
-
-**From Volume Backup:**
-
-```bash
-# Stop containers
-docker compose down
-
-# Restore volume
-docker run --rm -v contex_postgres-data:/data -v $(pwd):/backup \
-  alpine sh -c "rm -rf /data/* && tar xzf /backup/postgres-backup.tar.gz -C /"
-
-# Start containers
-docker compose up -d
-```
-
----
-
-## Performance Troubleshooting
-
-### Memory Issues
-
-**Symptoms:**
-- OOMKilled pods
-- High memory usage
-- Slow garbage collection
-
-**Investigation:**
-
-```bash
-# Check container memory
-kubectl top pods -l app=contex
-
-# Check PostgreSQL memory
-psql -c "SELECT pg_size_pretty(sum(pg_total_relation_size(schemaname || '.' || tablename)))
-         FROM pg_tables WHERE schemaname = 'public';"
-```
-
-**Resolution:**
-
-1. **Increase memory limits**
-2. **Enable memory profiling to identify leaks**
-3. **Review embedding cache size**
-4. **Check for connection pool leaks**
-
-### CPU Issues
-
-**Symptoms:**
-- High CPU utilization
-- Slow embedding generation
-- Request queuing
-
-**Investigation:**
-
-```bash
-# Check CPU usage
-kubectl top pods -l app=contex
-
-# Profile with py-spy (if available)
-py-spy record -o profile.svg --pid <pid>
-```
-
-**Resolution:**
-
-1. **Scale horizontally** - add more replicas
-2. **Enable embedding cache** - reduce recomputation
-3. **Use batch operations** - more efficient processing
-4. **Consider GPU acceleration** for embeddings
-
-### Slow Queries
-
-**Investigation:**
-
-```bash
-# Check PostgreSQL slow queries
-psql -c "SELECT query, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 5;"
-```
-
-**Resolution:**
-
-1. **Optimize queries** - reduce result size
-2. **Add indices** - improve search performance
-3. **Increase database resources**
-4. **Enable query caching**
-
----
-
-## Security Incidents
-
-### Suspected Breach
-
-**Immediate Actions:**
-
-1. **Isolate affected systems:**
-   ```bash
-   # Scale down to prevent further access
-   kubectl scale deployment contex --replicas=0
-   ```
-
-2. **Preserve evidence:**
-   ```bash
-   # Capture logs
-   kubectl logs -l app=contex --all-containers > incident-logs.txt
-
-   # Capture network state
-   kubectl get networkpolicies -o yaml > network-state.yaml
-   ```
-
-3. **Rotate credentials:**
-   ```bash
-   # Rotate API key pepper
-   kubectl create secret generic contex-secrets \
-     --from-literal=api_key_pepper=$(openssl rand -base64 32) \
-     --dry-run=client -o yaml | kubectl apply -f -
-
-   # Rotate PostgreSQL password
-   # Rotate AWS credentials
-   ```
-
-4. **Notify stakeholders:**
-   - Security team
-   - Management
-   - Affected users (if applicable)
-
-### API Key Compromise
-
-**Steps:**
-
-1. **Invalidate compromised keys:**
-   ```bash
-   # Delete from database
-   psql -c "DELETE FROM api_keys WHERE key_id = '<compromised_key_id>';"
-   ```
-
-2. **Rotate API key pepper** (invalidates ALL keys):
-   ```bash
-   export API_KEY_PEPPER=$(openssl rand -base64 32)
-   # Redeploy Contex
-   ```
-
-3. **Issue new keys to legitimate users**
-
-4. **Review audit logs:**
-   ```sql
-   -- Check for suspicious activity
-   SELECT * FROM audit_events
-   WHERE actor_id = '<compromised_key_id>'
-   ORDER BY timestamp DESC LIMIT 100;
-   ```
-
-### Secret Exposure
-
-**If secrets are exposed in logs/commits:**
-
-1. **Rotate immediately:**
-   - All API keys
-   - Database passwords
-   - AWS credentials
-
-2. **Audit access:**
-   ```bash
-   # Check who had access to logs
-   # Review git history
-   git log --oneline --all -- '*secret*' '*.env*'
-   ```
-
-3. **Clean up:**
-   ```bash
-   # Remove from git history if committed
-   git filter-branch --force --index-filter \
-     "git rm --cached --ignore-unmatch <secret-file>" \
-     --prune-empty --tag-name-filter cat -- --all
-   ```
-
-4. **Update .gitignore and pre-commit hooks**
-
----
-
-## Monitoring Quick Reference
-
-### Key Metrics to Watch
-
-| Metric | Warning | Critical | Action |
-|--------|---------|----------|--------|
-| Error Rate | > 0.1% | > 1% | Check logs, investigate errors |
-| P99 Latency | > 500ms | > 2s | Scale or optimize |
-| CPU Usage | > 70% | > 90% | Scale horizontally |
-| Memory Usage | > 70% | > 90% | Scale vertically or fix leaks |
-| DB Connections | > 80% pool | > 95% pool | Increase pool or scale |
-| Cache Hit Rate | < 70% | < 50% | Increase cache size |
-
-### Useful Commands
-
-```bash
-# Quick health check
-curl -s http://localhost:8001/health | jq .
-
-# Metrics endpoint (requires METRICS_TOKEN; disabled when unset)
-curl -s -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics | head -100
-
-# PostgreSQL quick check
-psql -c "SELECT 1" && psql -c "SELECT count(*) FROM events;"
-
-# Pod resource usage
-kubectl top pods -l app=contex
-
-# Recent logs
-kubectl logs -l app=contex --tail=50 --since=5m
-```
-
----
-
-## Contact Information
-
-- **On-Call:** [Your On-Call System]
-- **Slack Channel:** #contex-ops
-- **Escalation:** [Your Escalation Path]
-- **Documentation:** [Internal Wiki Link]
+**Rotating `API_KEY_PEPPER`:** every existing key stops working. Set the new
+pepper in `.env`, run `docker compose up -d contex`, then revoke the old keys and
+create new ones with the CLI.
