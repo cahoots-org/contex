@@ -74,14 +74,10 @@ class TestBuildDataKey:
         key = build_data_key("public", "order_items", row, ["order_id", "item_id"])
         assert key == "public.order_items.1:7"
 
-    def test_missing_key_col_renders_empty(self):
-        row = {"name": "Alice"}
-        key = build_data_key("public", "users", row, ["id"])
-        assert key == "public.users."
-
-    def test_none_value_renders_as_none_string(self):
-        row = {"id": None}
-        assert build_data_key("public", "t", row, ["id"]) == "public.t.None"
+    def test_colons_in_values_do_not_collide(self):
+        a = build_data_key("public", "t", {"x": "a:b", "y": "c"}, ["x", "y"])
+        b = build_data_key("public", "t", {"x": "a", "y": "b:c"}, ["x", "y"])
+        assert a != b
 
 
 class TestSelectColumns:
@@ -161,6 +157,9 @@ class TestRowToEvent:
         row = {"order_id": 10, "item_id": 3, "qty": 2}
         event = row_to_event("public", "order_items", row, ["order_id", "item_id"], ["order_id", "item_id", "qty"])
         assert event.key == "public.order_items.10:3"
+
+    def test_null_key_column_skips_row(self):
+        assert row_to_event("public", "events", {"event_id": None}, ["event_id"], ["event_id"]) is None
 
     def test_none_payload_value(self):
         row = {"id": 5, "description": None}

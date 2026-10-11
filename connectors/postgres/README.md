@@ -92,11 +92,12 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 Each row becomes a `ChangeEvent` with:
 
-- `data_key`: `schema.table.pk` (composite PKs joined with `:`).
+- `data_key`: `schema.table.pk` (composite PKs joined with `:`, and a `:` or
+  `\` inside a value escaped with `\`).
 - `payload`: the selected non-binary columns as a JSON dict.
 
 Tables with no primary key and no `key_columns` override are skipped with a
-warning.
+warning, as are rows whose key column is NULL.
 
 ## Limitations
 

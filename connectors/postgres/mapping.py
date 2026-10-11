@@ -50,12 +50,11 @@ def resolve_pk(
 def build_data_key(schema: str, table: str, row: dict, key_cols: list[str]) -> str:
     """Build a stable ``data_key`` from the row's key column values.
 
-    Composite keys are joined with ``:``. A missing key column value is
-    rendered as the empty string so the key is always deterministic.
+    Composite keys are joined with ``:``; a ``:`` or ``\\`` inside a value is
+    backslash-escaped so distinct keys never collide.
     """
-    parts = [str(row.get(col, "")) for col in key_cols]
-    pk_part = ":".join(parts)
-    return f"{schema}.{table}.{pk_part}"
+    parts = [str(row[col]).replace("\\", "\\\\").replace(":", "\\:") for col in key_cols]
+    return f"{schema}.{table}.{':'.join(parts)}"
 
 
 def select_columns(
@@ -88,13 +87,14 @@ def row_to_event(
     row: dict,
     key_cols: list[str],
     selected_columns: list[str],
-) -> ChangeEvent:
-    """Map a single database row to a :class:`ChangeEvent`.
+) -> ChangeEvent | None:
+    """Map a single database row to a :class:`ChangeEvent`, or None when a key column is NULL.
 
-    ``selected_columns`` is the pre-computed list from :func:`select_columns`.
     ``row`` is a mapping of all columns; only ``selected_columns`` are placed
     in the payload.
     """
+    if any(row.get(col) is None for col in key_cols):
+        return None
     payload = {col: _serialize(row[col]) for col in selected_columns if col in row}
     key = build_data_key(schema, table, row, key_cols)
     return ChangeEvent(
