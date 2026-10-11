@@ -150,3 +150,9 @@ async def test_app_rejects_unknown_hosts_except_on_health():
         assert (await c.get("/sandbox/")).status_code == 421
         assert (await c.get("/health")).status_code == 200
 
+
+@pytest.mark.asyncio
+async def test_cross_origin_requests_get_no_cors_grant_by_default():
+    async with AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://localhost:8001") as c:
+        response = await c.get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in response.headers

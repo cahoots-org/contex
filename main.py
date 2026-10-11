@@ -309,8 +309,8 @@ _mcp_starlette_app = _mcp_server.streamable_http_app(
 )
 app.mount("/mcp", _mcp_starlette_app)
 
-# CORS Configuration
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
+# CORS: no cross-origin access unless CORS_ORIGINS lists the origins.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
 
 # Security warning for CORS wildcard
