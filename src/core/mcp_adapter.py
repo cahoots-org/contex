@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import weakref
+from collections import Counter
 from datetime import datetime
 from typing import Optional
 
@@ -16,7 +17,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.subscriptions import InMemorySubscriptionBus, ResourceUpdated
+from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
@@ -32,6 +33,9 @@ from src.core.tenant import TenantManager
 from src.core.version import VERSION
 
 logger = logging.getLogger(__name__)
+
+# Open subscriptions/listen streams allowed per API key; the SDK caps all streams together.
+_MAX_LISTEN_STREAMS_PER_KEY = 32
 
 
 def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[datetime]:
@@ -112,6 +116,17 @@ async def _enforce_project(engine, permission, project_id, *, create_if_absent=F
 async def _enforce_subscription_project(engine, subscription_id, tenant_id):
     """Apply the caller's project scope to the subscription's own project."""
     project_id = await engine.subscriptions.project_of(subscription_id, tenant_id=tenant_id)
+    _enforce(Permission.QUERY_DATA, project_id=project_id)
+
+
+async def _enforce_resource(engine, uri):
+    """Allow watching a subscription resource only within the caller's tenant and project scope."""
+    _enforce(Permission.QUERY_DATA)
+    tok = get_access_token()
+    tid = (tok.claims or {}).get("tenant_id") if tok else None
+    project_id = await engine.subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
+    if project_id is None:
+        raise ToolError(f"Unknown subscription resource {uri}")
     _enforce(Permission.QUERY_DATA, project_id=project_id)
 
 
@@ -321,13 +336,7 @@ def build_mcp_server(engine, db_accessor=None):
 
     async def subscribe_resource(ctx, params: types.SubscribeRequestParams) -> types.EmptyResult:
         uri = str(params.uri)
-        _enforce(Permission.QUERY_DATA)
-        tok = get_access_token()
-        tid = (tok.claims or {}).get("tenant_id") if tok else None
-        project_id = await _get_engine().subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
-        if project_id is None:
-            raise ToolError(f"Unknown subscription resource {uri}")
-        _enforce(Permission.QUERY_DATA, project_id=project_id)
+        await _enforce_resource(_get_engine(), uri)
         legacy.watch(uri, ctx.session._connection)
         return types.EmptyResult()
 
@@ -335,10 +344,31 @@ def build_mcp_server(engine, db_accessor=None):
         legacy.unwatch(str(params.uri), ctx.session._connection)
         return types.EmptyResult()
 
+    listen = ListenHandler(bus)
+    open_listens: Counter[str] = Counter()
+
+    async def listen_subscriptions(ctx, params: types.SubscriptionsListenRequestParams):
+        for uri in params.notifications.resource_subscriptions or ():
+            await _enforce_resource(_get_engine(), uri)
+        tok = get_access_token()
+        if tok is None:
+            return await listen(ctx, params)
+        if open_listens[tok.client_id] >= _MAX_LISTEN_STREAMS_PER_KEY:
+            raise ToolError("Too many open subscription streams")
+        open_listens[tok.client_id] += 1
+        try:
+            return await listen(ctx, params)
+        finally:
+            open_listens[tok.client_id] -= 1
+            if not open_listens[tok.client_id]:
+                del open_listens[tok.client_id]
+
     # The SDK exposes neither a public hook for these legacy methods nor the
     # connection behind a per-request session, so both reach into its internals.
+    # Its own subscriptions/listen handler has no authorization hook, so ours replaces it.
     lowlevel = server._lowlevel_server
     lowlevel.add_request_handler("resources/subscribe", types.SubscribeRequestParams, subscribe_resource)
     lowlevel.add_request_handler("resources/unsubscribe", types.UnsubscribeRequestParams, unsubscribe_resource)
+    lowlevel.add_request_handler("subscriptions/listen", types.SubscriptionsListenRequestParams, listen_subscriptions)
 
     return server, bus

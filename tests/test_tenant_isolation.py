@@ -15,8 +15,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from mcp import Client
 from mcp.server.auth.provider import AccessToken
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.shared.exceptions import MCPError
 from sqlalchemy import text
 
 from main import app
@@ -25,6 +27,7 @@ from src.core.authz import get_identity
 from src.core.context_engine import ContextEngine
 from src.core.identity import Identity
 from src.core.mcp_adapter import build_mcp_server
+from src.core.mcp_bridge import resource_uri_for
 from src.core.rbac import Role, expand_role
 from src.core.subscriptions import SubscriptionService
 
@@ -200,3 +203,38 @@ async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkey
     for i in range(5):
         await server.call_tool("contex_publish", {"project_id": f"p{i}", "data_key": "k", "data": {"a": 1}})
     await server.call_tool("contex_query", {"project_id": "p4", "query": "a"})
+
+
+def _admin_token(tenant_id: str, key_id: str = "key-a") -> AccessToken:
+    return AccessToken(token="t", client_id=key_id, scopes=[p.value for p in expand_role(Role.ADMIN)],
+                       claims={"tenant_id": tenant_id, "projects": []})
+
+
+@pytest.mark.asyncio
+async def test_mcp_listen_on_other_tenants_subscription_is_denied(db, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
+    sub_id = await engine.subscriptions.create("proj-b", ["secrets"], tenant_id="tenant-B")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("tenant-A"))
+    server, _ = build_mcp_server(engine)
+
+    async with Client(server) as client:
+        with pytest.raises(MCPError):
+            async with client.listen(resource_subscriptions=[resource_uri_for(sub_id)]):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_mcp_listen_streams_are_capped_per_key(db, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setattr(mcp_adapter, "_MAX_LISTEN_STREAMS_PER_KEY", 1)
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("default"))
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    async with Client(server) as client:
+        async with client.listen(tools_list_changed=True):
+            with pytest.raises(MCPError):
+                async with client.listen(tools_list_changed=True):
+                    pass
