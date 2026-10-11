@@ -62,7 +62,7 @@ contex_create_subscription {
 
 Read the `contex://subscriptions/sub_...` resource and you get the change back, matched by meaning even though the need and the data share no words. Publish another change and read again. The subscription already reflects it, and your agent never issued a query.
 
-Prefer to watch it happen? Open `http://localhost:8001/sandbox`, type a need, and hit **Watch**.
+To get pushed when it changes instead of re-reading, listen on the resource. [`examples/mcp_watch.py`](examples/mcp_watch.py) shows a client receiving the update as another client publishes. Prefer to watch it in a browser? Open `http://localhost:8001/sandbox`, type a need, and hit **Watch**.
 
 > Production uses `AUTH_ENABLED=true`. The quickstart runs in open dev mode. See [Security](#security).
 
