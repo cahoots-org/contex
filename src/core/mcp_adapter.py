@@ -7,7 +7,6 @@ import base64
 import json
 import logging
 import weakref
-from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -114,24 +113,22 @@ class LegacyResourceSubscriptions:
     """
 
     def __init__(self, bus) -> None:
-        self._watchers: dict[str, weakref.WeakSet] = defaultdict(weakref.WeakSet)
+        self._watchers: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
         self._sends: set[asyncio.Task] = set()
         bus.subscribe(self._on_event)
 
     def watch(self, uri: str, connection) -> None:
-        self._watchers[uri].add(connection)
+        self._watchers.setdefault(connection, set()).add(uri)
 
     def unwatch(self, uri: str, connection) -> None:
-        connections = self._watchers.get(uri)
-        if connections is not None:
-            connections.discard(connection)
-            if not connections:
-                del self._watchers[uri]
+        self._watchers.get(connection, set()).discard(uri)
 
     def _on_event(self, event) -> None:
         if not isinstance(event, ResourceUpdated):
             return
-        for connection in list(self._watchers.get(event.uri, ())):
+        for connection, uris in list(self._watchers.items()):
+            if event.uri not in uris:
+                continue
             # Best effort: the SDK drops the notification if the stream is closed.
             task = asyncio.get_running_loop().create_task(connection.send_resource_updated(event.uri))
             self._sends.add(task)
