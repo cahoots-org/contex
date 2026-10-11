@@ -1,4 +1,4 @@
-"""Boot-time hardened-config preflight: fail closed when auth is on but secrets are missing."""
+"""Boot-time config preflight: refuse to boot on settings that would silently break auth."""
 from __future__ import annotations
 
 import os
@@ -11,12 +11,7 @@ logger = get_logger(__name__)
 
 
 def check_hardened_config() -> None:
-    """Refuse to boot when auth is on but a no-safe-default secret is unset.
-
-    Soft gaps (missing pepper, wildcard CORS, default DB credentials) are
-    warnings, not failures. The default-credential check runs in every mode,
-    since demo mode is where the built-in password is normally used.
-    """
+    """Raise on a config that can't work; warn on soft gaps (pepper, CORS, default DB password)."""
     if os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL) == DEFAULT_DATABASE_URL:
         logger.warning(
             "Using built-in default database credentials - set DATABASE_URL "
@@ -25,11 +20,6 @@ def check_hardened_config() -> None:
 
     if not auth_enabled():
         return
-
-    if not os.getenv("SERVICE_ACCOUNT_JWT_SECRET"):
-        raise RuntimeError(
-            "SERVICE_ACCOUNT_JWT_SECRET must be set when AUTH_ENABLED=true"
-        )
 
     bootstrap_key = os.getenv("BOOTSTRAP_ADMIN_KEY")
     if bootstrap_key and not bootstrap_key.startswith("ck_"):

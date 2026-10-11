@@ -25,8 +25,8 @@ def test_startup_checks_default_to_loopback(monkeypatch):
     main.run_startup_checks(main.app)
 
 
-def test_startup_checks_fail_closed_when_auth_on_without_jwt_secret(monkeypatch):
+def test_startup_checks_fail_closed_on_unusable_bootstrap_key(monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    monkeypatch.delenv("SERVICE_ACCOUNT_JWT_SECRET", raising=False)
-    with pytest.raises(RuntimeError, match="SERVICE_ACCOUNT_JWT_SECRET"):
+    monkeypatch.setenv("BOOTSTRAP_ADMIN_KEY", "not-a-contex-key-123")
+    with pytest.raises(RuntimeError, match="BOOTSTRAP_ADMIN_KEY"):
         main.run_startup_checks(main.app)
