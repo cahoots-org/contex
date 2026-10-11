@@ -1,5 +1,6 @@
 """Semantic data matching using embeddings for agent context discovery"""
 
+import asyncio
 import hashlib
 import json
 import os
@@ -260,7 +261,10 @@ class SemanticDataMatcher:
     ) -> Optional[Dict[str, Any]]:
         """Parse one item and work out which of its nodes need (re-)embedding."""
         # data_key carries the file extension the code parser needs to pick a grammar.
-        parse_result = self.node_converter.parse(data, format_hint, data_key=data_key)
+        # Parsing is CPU-bound (PDF, OCR, DOCX), so it runs off the event loop.
+        parse_result = await asyncio.to_thread(
+            self.node_converter.parse, data, format_hint, data_key=data_key
+        )
 
         if not parse_result.success:
             logger.warning(

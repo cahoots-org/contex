@@ -1,6 +1,7 @@
 """Tests for semantic data matching with PostgreSQL/pgvector"""
 
 import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -360,6 +361,18 @@ class TestSemanticMatcherContentHashDedup:
         await matcher.register_data("projd", "config", {"version": "2.0"})
 
         assert matcher.model.encode.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):
+        parse, threads = matcher.node_converter.parse, []
+
+        def spy(*args, **kwargs):
+            threads.append(threading.current_thread())
+            return parse(*args, **kwargs)
+
+        monkeypatch.setattr(matcher.node_converter, "parse", spy)
+        await matcher.register_data("projd", "notes", "hello")
+        assert threads and threads[0] is not threading.main_thread()
 
 
 class TestSemanticMatcherConcurrency:
