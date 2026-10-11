@@ -15,6 +15,7 @@ import re
 import io
 
 import pymupdf
+import yaml
 
 from .node import Node, NodeType, ParseResult
 
@@ -210,6 +211,15 @@ class JSONNodeParser(BaseNodeParser):
 # YAML Parser
 # ============================================================================
 
+class _NoAliasLoader(yaml.SafeLoader):
+    """Safe loader that rejects aliases, which can expand a few bytes into millions of nodes."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("YAML aliases are not supported")
+        return super().compose_node(parent, index)
+
+
 class YAMLNodeParser(JSONNodeParser):
     """Parse YAML data (reuses JSON logic since YAML → dict)"""
 
@@ -229,8 +239,7 @@ class YAMLNodeParser(JSONNodeParser):
         """Parse YAML into nodes"""
         try:
             if isinstance(data, str):
-                import yaml
-                data = yaml.safe_load(data)
+                data = yaml.load(data, Loader=_NoAliasLoader)
 
             nodes = self._extract_nodes(data, "")
             return ParseResult(
