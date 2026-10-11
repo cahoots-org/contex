@@ -43,6 +43,12 @@ def test_byte_cap_flushes_before_exceeding_limit():
     assert all(b <= cap for b in pub.batch_bytes)  # no request exceeds the cap
 
 
+def test_byte_cap_applies_by_default():
+    pub = _RecordingPublisher()
+    asyncio.run(run(_events(3, "x" * 15_000_000), pub))
+    assert pub.batches == [2, 1]
+
+
 def test_to_item_carries_published_at_only_when_set():
     assert "published_at" not in ChangeEvent(op="upsert", key="k", payload="x").to_item()
     item = ChangeEvent(op="upsert", key="k", payload="x", published_at="2026-01-01T00:00:00Z").to_item()

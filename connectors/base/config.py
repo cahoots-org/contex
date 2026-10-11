@@ -18,9 +18,6 @@ DEFAULT_BATCH_SIZE = 500
 # Files larger than this are binaries, fixtures, or generated data — not content
 # worth embedding. Skipped at the source (no fetch).
 DEFAULT_MAX_FILE_BYTES = 1_048_576  # 1 MiB
-# Flush a publish batch before it would exceed this many bytes, keeping each
-# request well under the server's upload cap (~50 MB) regardless of batch_size.
-DEFAULT_MAX_BATCH_BYTES = 40_000_000
 
 
 def _expand_env(value):
@@ -51,11 +48,6 @@ def resolve_batch_size(config: dict) -> int:
 def resolve_max_file_bytes(config: dict) -> int:
     """Per-file size cap from config; files above it are skipped. Defaults when unset."""
     return int(config.get("max_file_bytes") or DEFAULT_MAX_FILE_BYTES)
-
-
-def resolve_max_batch_bytes(config: dict) -> int:
-    """Per-request byte cap for a publish batch, defaulting when unset."""
-    return int(config.get("max_batch_bytes") or DEFAULT_MAX_BATCH_BYTES)
 
 
 def resolve_flag(config: dict, name: str, default: bool) -> bool:
