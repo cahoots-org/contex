@@ -18,6 +18,11 @@ def check_hardened_config() -> None:
             "before any network-reachable deployment"
         )
 
+    for name in ("API_KEY_PEPPER", "METRICS_TOKEN"):
+        value = os.getenv(name)
+        if value and len(value) < 16:
+            raise RuntimeError(f"{name} must be at least 16 characters")
+
     if not auth_enabled():
         return
 

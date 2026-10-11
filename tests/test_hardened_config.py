@@ -29,3 +29,10 @@ def test_rejects_bootstrap_key_that_cannot_authenticate(monkeypatch):
     monkeypatch.setenv("BOOTSTRAP_ADMIN_KEY", "my-admin-key-1234567890")
     with pytest.raises(RuntimeError, match="BOOTSTRAP_ADMIN_KEY"):
         check_hardened_config()
+
+
+def test_rejects_short_secret(monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setenv("API_KEY_PEPPER", "short")
+    with pytest.raises(RuntimeError, match="API_KEY_PEPPER"):
+        check_hardened_config()
