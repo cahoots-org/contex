@@ -1,7 +1,10 @@
 """Unit tests for the pure mapping functions in connectors.postgres.mapping."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from connectors.postgres.reader import origin_for
 from connectors.postgres.mapping import (
@@ -129,6 +132,14 @@ class TestSelectColumns:
     def test_empty_column_list(self):
         result = select_columns([], include_binary=False, col_include=None, col_exclude=None)
         assert result == []
+
+    def test_example_config_excludes_secret_columns(self):
+        example = yaml.safe_load((Path(__file__).parents[1] / "connector.yaml.example").read_text())
+        cols = self._cols(("id", "integer"), ("password", "text"), ("api_token", "text"))
+        result = select_columns(
+            cols, include_binary=False, col_include=None, col_exclude=example["columns"]["exclude"]
+        )
+        assert result == ["id"]
 
 
 class TestRowToEvent:

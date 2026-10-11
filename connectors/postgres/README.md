@@ -31,7 +31,7 @@ tables:
   exclude: ["audit.*", "public.sessions"]
 
 columns:
-  exclude: ["*.password", "*.*_token"]
+  exclude: ["password", "*_token"]
 
 key_columns:          # for tables without a primary key
   public.events: event_id
@@ -82,7 +82,8 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 - **tables.include / tables.exclude** — glob patterns over `schema.table`.  All
   accessible base tables are discovered; `include` narrows the set; `exclude`
   removes matches.
-- **columns.include / columns.exclude** — glob patterns applied to column names.
+- **columns.include / columns.exclude** — glob patterns over bare column names
+  (`password`, not `*.password`), applied to every table.
 - **include_binary** — binary columns (`bytea`, `bit`, `varbit`) are skipped by
   default. Set `include_binary: true` to include them.  This keeps `pgcrypto`
   ciphertext out of the index by default.
