@@ -10,6 +10,7 @@ import numpy as np
 from sqlalchemy import select, text
 from unittest.mock import Mock, AsyncMock, patch
 from src.core.db_models import Embedding
+from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
 from src.core.models import DataPublishEvent
 
@@ -371,6 +372,13 @@ class TestSemanticMatcherContentHashDedup:
         await matcher.register_data("projd", "config", {"version": "1.0"})
 
         assert matcher.model.encode.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_removed_text_stops_matching_lexically(self, matcher):
+        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nZanzibarquux in v1.", "text")
+        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nGamma in v2.", "text")
+
+        assert await PgFtsLexical(matcher.db).search("projd", "Zanzibarquux", top_k=10) == []
 
     @pytest.mark.asyncio
     async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):

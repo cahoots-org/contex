@@ -15,7 +15,7 @@ from sqlalchemy import text
 INDEX = "embeddings_bm25"
 # Tokenizers that need no arguments beyond k1/b.
 TOKENIZERS = frozenset({"unicode_words", "simple", "whitespace", "source_code", "icu"})
-_TEXT_FIELDS = ("description", "data_original")
+_TEXT_FIELDS = ("description",)
 # Arbitrary constant so concurrent replicas don't rebuild at the same time.
 _LOCK_KEY = 0x626D3235
 

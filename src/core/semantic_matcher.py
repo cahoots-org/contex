@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import json
 import os
 from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
@@ -86,15 +85,6 @@ def collapse_by_document(
     return list(docs.values())
 
 
-def _original_text(data: Any, nodes) -> str:
-    """The published item as text: as is, JSON, or a document's extracted text."""
-    if isinstance(data, str):
-        return data
-    if isinstance(data, (bytes, bytearray)):
-        return "\n\n".join(str(node.content) for node in nodes)
-    return json.dumps(data)
-
-
 class SemanticDataMatcher:
     """
     Matches agent semantic needs to available project data using embeddings.
@@ -149,7 +139,7 @@ class SemanticDataMatcher:
                 rrf_k = int(os.getenv("RRF_K", "60"))
                 self.hybrid_search = HybridSearchService(
                     vector_search=self.vector_search,
-                    lexical_search=PgFtsLexical.from_env(db),
+                    lexical_search=PgFtsLexical(db),
                     k=rrf_k,
                 )
                 logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
@@ -325,7 +315,6 @@ class SemanticDataMatcher:
 
         return {
             "data_key": data_key,
-            "data_original": _original_text(data, nodes),
             "parse_result": parse_result,
             "nodes": nodes,
             "node_keys": node_keys,
@@ -364,7 +353,6 @@ class SemanticDataMatcher:
                     existing.node_type = node.node_type.value
                     existing.description = embedding_text
                     existing.data = node_data
-                    existing.data_original = plan["data_original"]
                     existing.data_format = parse_result.format_name
                     existing.content_hash = content_hash
                     existing.embedding = embedding.tolist()
@@ -381,7 +369,6 @@ class SemanticDataMatcher:
                         node_type=node.node_type.value,
                         description=embedding_text,
                         data=node_data,
-                        data_original=plan["data_original"],
                         data_format=parse_result.format_name,
                         content_hash=content_hash,
                         embedding=embedding.tolist(),

@@ -34,7 +34,7 @@ async def test_top_k_documents_filled_past_monopolizing_documents(db):
     async with db.session() as session:
         session.add_all([
             Embedding(project_id="p", data_key=doc, node_key=key, description=key,
-                      data={}, data_original=key, data_format="text", embedding=vec)
+                      data={}, data_format="text", embedding=vec)
             for doc, key, vec in rows
         ])
         await session.commit()
@@ -63,7 +63,7 @@ async def test_fill_keeps_going_until_top_k_or_exhausted(db):
     async with db.session() as session:
         session.add_all([
             Embedding(project_id="p", data_key=doc, node_key=key, description=key,
-                      data={}, data_original=key, data_format="text", embedding=vec)
+                      data={}, data_format="text", embedding=vec)
             for doc, key, vec in rows
         ])
         await session.commit()
