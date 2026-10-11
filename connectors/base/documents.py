@@ -11,7 +11,7 @@ import os
 import re
 import zipfile
 
-from pypdf import PdfReader
+import pypdfium2
 
 from .change_event import ChangeEvent
 
@@ -49,8 +49,11 @@ def document_text(payload: str, data_format: str) -> str:
     body = base64.b64decode(payload)
     try:
         if data_format == "pdf":
-            pages = PdfReader(io.BytesIO(body)).pages
-            return "\n".join(page.extract_text() for page in pages).strip()
+            pdf = pypdfium2.PdfDocument(body)
+            try:
+                return "\n".join(page.get_textpage().get_text_bounded() for page in pdf).strip()
+            finally:
+                pdf.close()
         if data_format == "docx":
             with zipfile.ZipFile(io.BytesIO(body)) as docx:
                 xml = " ".join(

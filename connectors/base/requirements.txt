@@ -2,7 +2,7 @@
 mcp>=2,<3
 pyyaml>=6,<7
 # Reads PDF text so the secret guard can scan documents before they're sent.
-pypdf>=5,<7
+pypdfium2==5.14.0
 
 # setuptools — unpinned build dep from the base image; floored to force an upgrade
 # over the vulnerable base version (PYSEC-2025-49, PYSEC-2026-3447).
