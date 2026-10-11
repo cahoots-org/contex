@@ -1,4 +1,7 @@
 # tests/test_sandbox_watch.py
+import html
+import json
+import re
 import types
 from pathlib import Path
 
@@ -22,6 +25,19 @@ async def test_sandbox_home_renders(db):
     await engine.initialize()
     resp = await sandbox_home(_request_with(engine, db))
     assert resp.template.name == "sandbox.html"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_home_passes_project_id_to_script_as_a_string(db):
+    project_id = "!',x:alert(document.domain),y:'"
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    await engine.publish_data(DataPublishEvent(project_id=project_id, data_key="k", data={"a": 1}))
+
+    resp = await sandbox_home(_request_with(engine, db))
+
+    expression = re.search(r"selectedProject: (.*),\n", html.unescape(resp.body.decode())).group(1)
+    assert json.loads(expression) == project_id
 
 
 @pytest.mark.asyncio

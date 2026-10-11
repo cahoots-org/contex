@@ -141,7 +141,6 @@ async def execute_query(
         "query_results.html",
         {
             "query": query,
-            "project_id": project_id,
             "matches": enhanced_matches,
             "total_matches": len(enhanced_matches),
             "total_tokens": total_tokens,

@@ -616,12 +616,6 @@ code {
     color: var(--text);
 }
 
-.result-actions {
-    margin-top: 1rem;
-    display: flex;
-    gap: 0.5rem;
-}
-
 /* Results Footer */
 .results-footer {
     margin-top: 2rem;

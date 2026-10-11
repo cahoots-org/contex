@@ -10,7 +10,7 @@
     vectorThreshold: 0.75,
     topK: 10,
     maxTokens: 51200,
-    selectedProject: '{{ projects[0] if projects else '' }}',
+    selectedProject: {{ (projects[0] if projects else '')|tojson|forceescape }},
     watching: false,
     watchLastByKey: {},
     eventSource: null,

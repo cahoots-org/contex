@@ -70,14 +70,6 @@
                 <pre><code class="json">{{ match.data_json }}</code></pre>
             </div>
 
-            <div class="result-actions">
-                <button class="btn-small" @click="window.open('/api/projects/{{ project_id }}/query', '_blank')">
-                    Query API
-                </button>
-                <button class="btn-small" @click="alert('Agent integration coming soon!')">
-                    Add to Agent Context
-                </button>
-            </div>
         </div>
     </div>
     {% endfor %}
