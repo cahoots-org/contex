@@ -25,7 +25,7 @@ from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import get_tracing_manager, initialize_tracing
 from src.core.database import init_database
-from src.core.sentry_integration import init_sentry, flush as sentry_flush
+from src.core.sentry_integration import init_sentry
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
 from src.core.reconcile_sweep import run_sweep
@@ -81,11 +81,7 @@ async def lifespan(app: FastAPI):
                 log_json=LOG_JSON)
 
     # Initialize Sentry for error tracking (if configured)
-    sentry_enabled = init_sentry(
-        release="contex@0.2.0",
-        enable_tracing=os.getenv("SENTRY_ENABLE_TRACING", "true").lower() == "true"
-    )
-    if sentry_enabled:
+    if init_sentry(release="contex@0.2.0"):
         logger.info("Sentry error tracking enabled")
 
     # Connect to PostgreSQL

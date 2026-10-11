@@ -3,6 +3,9 @@
 import signal
 import asyncio
 from typing import Optional, Callable
+
+import sentry_sdk
+
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -137,14 +140,7 @@ async def shutdown_cleanup(app_state):
         except Exception as e:
             logger.error("Error closing PostgreSQL connection", error=str(e))
 
-    # Flush Sentry events
-    try:
-        from src.core.sentry_integration import flush as sentry_flush, is_initialized as sentry_is_initialized
-        if sentry_is_initialized():
-            logger.info("Flushing Sentry events...")
-            sentry_flush(timeout=5.0)
-    except ImportError:
-        pass
+    sentry_sdk.flush(timeout=5.0)
 
     # Any other cleanup tasks
     logger.info("Shutdown cleanup complete")
