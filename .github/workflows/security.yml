@@ -30,7 +30,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Bandit
-        run: pip install bandit[toml]
+        run: pip install "bandit[toml]==1.9.4"
 
       - name: Run Bandit scan
         run: |
@@ -158,16 +158,15 @@ jobs:
           python-version: '3.12'
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install pip-audit==2.10.1
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
 
       - name: Run pip-audit
-        run: |
-          pip-audit --output pip-audit-results.json --format json --progress-spinner off || true
-          pip-audit --format columns
+        # Exits non-zero on any finding; the last step fails only on fixable ones.
+        run: pip-audit --output pip-audit-results.json --format json --progress-spinner off || true
 
       - name: Upload pip-audit results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -175,30 +174,31 @@ jobs:
           name: pip-audit-results
           path: pip-audit-results.json
 
-      - name: Report vulnerabilities with fixes
+      - name: Fail on vulnerabilities with fixes
+        shell: python
         run: |
-          # Parse the JSON report written above (pip-audit's structure is
-          # {"dependencies": [{"vulns": [{"fix_versions": [...]}]}]}). Re-running
-          # and piping stdout is unreliable — the progress spinner corrupts it.
-          FIXABLE=$(python3 -c "import json; d=json.load(open('pip-audit-results.json')); deps=d.get('dependencies', []) if isinstance(d, dict) else d; print(sum(1 for dep in deps for v in dep.get('vulns', []) if v.get('fix_versions')))")
-          if [ "$FIXABLE" -gt 0 ]; then
-            echo "::warning::pip-audit found $FIXABLE vulnerabilities with fixes available"
-          else
-            echo "No fixable vulnerabilities found"
-          fi
+          import json, sys
+          deps = json.load(open("pip-audit-results.json"))["dependencies"]
+          fixable = [(d["name"], d["version"], v["id"], v["fix_versions"])
+                     for d in deps for v in d.get("vulns", []) if v.get("fix_versions")]
+          for name, version, vuln, fixes in fixable:
+              print(f"::error::{name} {version}: {vuln}, fixed in {', '.join(fixes)}")
+          sys.exit(1 if fixable else 0)
 
   # SAST with Semgrep
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:1.180.0
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Report-only: findings go to the Security tab until the open ones are triaged.
       - name: Run Semgrep
-        run: semgrep ci --sarif --output=semgrep-results.sarif || true
+        run: semgrep ci --sarif --output=semgrep-results.sarif
+        continue-on-error: true
         env:
           SEMGREP_RULES: >-
             p/python
