@@ -830,6 +830,19 @@ _LANGUAGE_CONFIG = {
 }
 
 
+def _chunk_blocks(text: str, limit: int = 1500) -> List[str]:
+    """Blank-line-separated blocks of ``text``, merged greedily up to ``limit`` characters."""
+    chunks: List[str] = []
+    for block in (b.strip() for b in text.split("\n\n")):
+        if not block:
+            continue
+        if chunks and len(chunks[-1]) + len(block) < limit:
+            chunks[-1] += "\n\n" + block
+        else:
+            chunks.append(block)
+    return chunks
+
+
 class CodeNodeParser(BaseNodeParser):
     """Parse source code into function/class/method nodes via tree-sitter.
 
@@ -979,11 +992,25 @@ class CodeNodeParser(BaseNodeParser):
 
         summary = "defines: " + ", ".join(r["path"] for r in records)
         if module_refs:
-            summary += "\nimports: " + ", ".join(module_refs)
+            summary += "\nreferences: " + ", ".join(module_refs)
         nodes = [Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
             metadata={"language": lang, "defs": [], "refs": module_refs},
         )]
+        # Module-level code (constants, route registrations, scripts) is
+        # everything outside the top-level definitions.
+        outside, pos = [], 0
+        for r in records:
+            if r["top_level"]:
+                outside.append(src[pos:r["start_byte"]])
+                pos = r["end_byte"]
+        outside.append(src[pos:])
+        module_code = b"".join(outside).decode("utf-8", errors="replace")
+        for i, chunk in enumerate(_chunk_blocks(module_code)):
+            nodes.append(Node(
+                path=f"module_{i}", content=chunk, node_type=NodeType.CODE_BLOCK,
+                metadata={"language": lang, "defs": [], "refs": []},
+            ))
         for r in records:
             nodes.append(Node(
                 path=r["path"], content=r["content"],
@@ -1000,5 +1027,6 @@ class CodeNodeParser(BaseNodeParser):
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
             "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
+            "start_byte": node.start_byte, "end_byte": node.end_byte, "top_level": not stack,
             "content": self._txt(node, src), "defs": [name], "refs": [],
         }
