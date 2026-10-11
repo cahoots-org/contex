@@ -25,7 +25,7 @@ from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
 from src.core.ownership import ensure_project_access
-from src.core.rate_limiter import RateLimitConfig, RateLimiter, _env_int
+from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
 from src.core.recency import window_start
 from src.core.tenant import TenantManager
@@ -65,26 +65,18 @@ def _check_max_age(max_age_seconds: Optional[int]) -> None:
         raise ValueError("max_age_seconds must be a positive number of seconds")
 
 
-async def _throttle(engine, bucket: str, limit_env: str, default_limit: int) -> None:
-    """Per-principal rate limit for a write tool.
+def _throttle(limiter: RateLimiter, bucket: str, limit_env: str, default_limit: int) -> None:
+    """Per-principal rate limit for a tool.
 
-    MCP multiplexes every tool over one HTTP path, so the transport middleware
-    can't throttle one tool and not another — the per-tool decision lives here.
-    ``limit_env`` <= 0 disables throttling (the bulk-ingest tier is exempt by
-    default); set it to impose a ceiling. Raises ``ToolError`` so the backoff
-    hint survives to the client (a plain exception would be redacted).
+    MCP multiplexes every tool over one HTTP path, so the per-tool decision
+    lives here. Raises ``ToolError`` so the backoff hint survives to the client
+    (a plain exception would be redacted).
     """
-    limit = _env_int(limit_env, default_limit)
-    if limit <= 0:
-        return
     tok = get_access_token()
     principal = tok.client_id if tok else "anonymous"
-    window = RateLimitConfig.from_env().window
-    allowed, info = await RateLimiter(engine.db).check_rate_limit(
-        f"{principal}:{bucket}", limit, window
-    )
-    if not allowed:
-        raise ToolError(f"rate_limit_exceeded retry_after={info['retry_after']}")
+    wait = limiter.retry_after(f"{principal}:{bucket}", limit_env, default_limit)
+    if wait is not None:
+        raise ToolError(f"rate_limit_exceeded retry_after={wait}")
 
 
 def _enforce(permission, project_id=None):
@@ -193,6 +185,7 @@ def build_mcp_server(engine, db_accessor=None):
     # reconnect. It is multi-replica-safe because the bridge is driven by shared
     # Postgres notifications.
     bus = InMemorySubscriptionBus()
+    limiter = RateLimiter()
     auth_kwargs = {}
     if auth_enabled() and db_accessor is not None:
         auth_kwargs = dict(
@@ -268,7 +261,7 @@ def build_mcp_server(engine, db_accessor=None):
                              published_at: str | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
-        await _throttle(e, "publish", "RATE_LIMIT_PUBLISH", 60)
+        _throttle(limiter, "publish", "RATE_LIMIT_PUBLISH", 60)
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
             published_at=_parse_timestamp(published_at, "published_at"),
@@ -288,7 +281,7 @@ def build_mcp_server(engine, db_accessor=None):
             check_batch_size(items, "items")
         except ValueError as exc:
             raise ValueError(str(exc))
-        await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
+        _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
         sequences = await e.publish_data_batch([
             DataPublishEvent(
                 project_id=project_id,
@@ -319,7 +312,7 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id)
         check_batch_size(data_keys, "data_keys")
-        await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
+        _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
         return json.dumps(await e.delete_data(project_id, data_keys, source="mcp"))
 
     legacy = LegacyResourceSubscriptions(bus)

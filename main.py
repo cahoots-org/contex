@@ -31,7 +31,6 @@ from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
 from src.core.reconcile_sweep import run_sweep
 from src.core.notifier import Notifier, listen_connect_kwargs
-from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
@@ -166,7 +165,7 @@ async def lifespan(app: FastAPI):
     print(f"MCP endpoint: http://localhost:{port}/mcp")
 
     if auth_enabled():
-        print("Security: API Key Auth + RBAC + Rate Limiting ENABLED")
+        print("Security: API Key Auth + RBAC ENABLED")
     else:
         print("Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
     print()
@@ -369,12 +368,6 @@ if AUTH_ENABLED:
     logger.info("Authentication ENABLED - enforced per-route via authz dependencies")
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
-
-# Rate limiting always runs, independent of AUTH_ENABLED. It is added before the
-# tenant middleware so that it executes after tenant/tracing have populated
-# request.state and the X-API-Key header is available for key derivation.
-app.add_middleware(RateLimitMiddleware)
-logger.info("Rate limiting middleware enabled")
 
 # Tenant middleware always runs: it sets the default-tenant context in demo mode
 # and enforces the identity-derived tenant when auth is on.

@@ -316,22 +316,6 @@ class AuditEvent(Base):
     )
 
 
-class RateLimitEntry(Base):
-    """Rate Limit Entry - sliding window rate limiting."""
-
-    __tablename__ = "rate_limit_entries"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    rate_key: Mapped[str] = mapped_column(String(512), nullable=False)
-    request_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    __table_args__ = (
-        Index("idx_rate_limit_key_time", "rate_key", "request_time"),
-    )
-
-
 class Subscription(TenantScopedMixin, Base):
     """A persistent semantic subscription: needs + a materialized matched bundle."""
 
