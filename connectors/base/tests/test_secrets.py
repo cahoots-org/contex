@@ -17,6 +17,18 @@ def test_flags_secret_filenames():
     assert s.reason("acme/repo:src/main.py", "x = 1") is None
 
 
+def test_filename_match_ignores_case():
+    s = SecretScanner()
+    for key in ["r:.ENV", "r:server.PEM", "r:ID_RSA", "r:Credentials"]:
+        assert s.reason(key, "x") is not None, key
+
+
+def test_flags_prefixed_and_fine_grained_tokens():
+    s = SecretScanner()
+    for token in ["sk-proj-" + "A" * 40, "sk-ant-api03-" + "A" * 40, "github_pat_11ABCDEFG0" + "a" * 60]:
+        assert s.reason("r:config.py", f"key={token}") is not None, token
+
+
 def test_flags_secret_content_in_normal_file():
     s = SecretScanner()
     key = "acme/repo:config/settings.py"
