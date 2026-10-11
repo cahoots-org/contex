@@ -18,6 +18,11 @@ def resource_uri_for(subscription_id: str) -> str:
     return f"{_RESOURCE_URI_PREFIX}{subscription_id}"
 
 
+def subscription_id_for(uri: str) -> str:
+    """The subscription id in a resource URI (the inverse of resource_uri_for)."""
+    return uri.removeprefix(_RESOURCE_URI_PREFIX)
+
+
 async def run_bridge(
     notifier: Notifier, bus, subscription_ids: Callable[[], Awaitable[list[str]]]
 ) -> None:
