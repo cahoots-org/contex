@@ -6,9 +6,10 @@ import types
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
 from src.core.context_engine import ContextEngine
-from src.core.identity import ANONYMOUS_IDENTITY
+from src.core.identity import ANONYMOUS_IDENTITY, Identity
 from src.core.models import DataPublishEvent
 from src.web.routes import execute_query, project_stats, sandbox_home, subscribe_to_updates
 
@@ -106,6 +107,24 @@ async def test_query_renders_matches_as_json(db):
 
     assert resp.status_code == 200
     assert "database connection settings" in resp.body.decode()
+
+
+@pytest.mark.asyncio
+async def test_query_is_rate_limited_per_key(db, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_QUERY", "1")
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
+    identity = Identity(key_id="rate-limited-key", scopes=frozenset(), tenant_id=None, projects=(), role=None)
+
+    async def query():
+        return await execute_query(
+            _request_with(engine), project_id="p", query="anything", top_k=5, threshold=0.5,
+            max_tokens=51200, identity=identity, tenant_mgr=None,
+        )
+
+    await query()
+    with pytest.raises(HTTPException) as limited:
+        await query()
+    assert limited.value.status_code == 429
 
 
 @pytest.mark.asyncio

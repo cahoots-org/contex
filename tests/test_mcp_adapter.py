@@ -1,5 +1,6 @@
 import json
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 from src.core.mcp_adapter import build_mcp_server
@@ -153,3 +154,13 @@ async def test_subscription_scope_since_filters_bundle(db):
     }
     assert "fresh" in keys
     assert "stale" not in keys
+
+
+@pytest.mark.asyncio
+async def test_query_tools_share_a_rate_limit(db, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_QUERY", "1")
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.1, max_matches=10))
+
+    await server.call_tool("contex_query", {"project_id": "p", "query": "anything"})
+    with pytest.raises(ToolError, match="rate_limit_exceeded retry_after="):
+        await server.call_tool("contex_create_subscription", {"project_id": "p", "needs": ["anything"]})

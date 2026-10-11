@@ -211,6 +211,7 @@ def build_mcp_server(engine, db_accessor=None):
                            max_age_seconds: int | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.QUERY_DATA, project_id)
+        _throttle(limiter, "query", "RATE_LIMIT_QUERY", 120)
         _check_max_age(max_age_seconds)
         matches = await e.query_project_data(
             project_id, query, top_k=top_k, threshold=threshold,
@@ -231,6 +232,7 @@ def build_mcp_server(engine, db_accessor=None):
                                          since: str | None = None, max_age_seconds: int | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.QUERY_DATA, project_id)
+        _throttle(limiter, "query", "RATE_LIMIT_QUERY", 120)
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         # Validate eagerly so a bad value fails the call, not reconcile.

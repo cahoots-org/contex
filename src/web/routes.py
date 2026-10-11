@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
 from src.core.authz import require, public, get_identity
 from src.core.identity import Identity
 from src.core.ownership import ensure_project_access
+from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -38,6 +39,16 @@ async def _documents(engine, project_id: str) -> list:
             .order_by(Embedding.data_key)
         )
         return result.all()
+
+
+_limiter = RateLimiter()
+
+
+def _throttle_query(identity: Identity) -> None:
+    """Apply RATE_LIMIT_QUERY per key, as the MCP query tools do; these routes embed and search too."""
+    wait = _limiter.retry_after(f"{identity.key_id}:query", "RATE_LIMIT_QUERY", 120)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail="Too many requests", headers={"Retry-After": str(wait)})
 
 
 def get_tenant_manager(request: Request) -> TenantManager:
@@ -92,6 +103,7 @@ async def execute_query(
 ):
     """Execute a semantic query and return results"""
     await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
+    _throttle_query(identity)
     engine = request.app.state.context_engine
 
     # Pass the per-request threshold through instead of mutating the shared
@@ -240,6 +252,7 @@ async def subscribe_to_updates(
     same reconcile pipeline the MCP bridge uses.
     """
     await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
+    _throttle_query(identity)
     engine = request.app.state.context_engine
     return StreamingResponse(
         stream_subscription_updates(engine, project_id, need),
