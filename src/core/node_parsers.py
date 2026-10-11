@@ -13,8 +13,9 @@ import json
 import os
 import re
 import io
+import subprocess
 
-import pymupdf
+import pypdfium2
 import yaml
 
 from .node import Node, NodeType, ParseResult
@@ -503,12 +504,20 @@ class CSVNodeParser(BaseNodeParser):
 # PDF Parser
 # ============================================================================
 
-def _page_text(page: "pymupdf.Page") -> str:
+def _ocr(image: bytes) -> str:
+    """The text Tesseract reads from an image file's bytes."""
+    result = subprocess.run(["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True)
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def _page_text(page: pypdfium2.PdfPage) -> str:
     """A page's text layer, or its OCR'd text when it has none and OCR is enabled."""
-    text = page.get_text("text").strip()
+    text = page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip()
     if text or not OCR_ENABLED:
         return text
-    return page.get_text("text", textpage=page.get_textpage_ocr(full=True)).strip()
+    pixels = page.render(scale=300 / 72, grayscale=True).to_numpy()
+    height, width = pixels.shape
+    return _ocr(b"P5 %d %d 255\n" % (width, height) + pixels.tobytes())
 
 
 class PDFNodeParser(BaseNodeParser):
@@ -533,8 +542,12 @@ class PDFNodeParser(BaseNodeParser):
             return data[:5] == b'%PDF-'
         return False
 
-    def _open(self, data: bytes) -> "pymupdf.Document":
-        return pymupdf.open(stream=data, filetype="pdf")
+    def _page_texts(self, data: bytes) -> List[str]:
+        pdf = pypdfium2.PdfDocument(data)
+        try:
+            return [_page_text(page) for page in pdf]
+        finally:
+            pdf.close()
 
     def parse(self, data: Any) -> ParseResult:
         """Parse document bytes into nodes"""
@@ -542,13 +555,11 @@ class PDFNodeParser(BaseNodeParser):
         if not isinstance(data, (bytes, bytearray)):
             return ParseResult(nodes=[], format_name=fmt, success=False, error=f"{fmt} parser requires bytes input")
         try:
-            doc = self._open(data)
+            texts = self._page_texts(data)
             nodes = []
-            total_pages = len(doc)
+            total_pages = len(texts)
 
-            for page_num in range(total_pages):
-                text = _page_text(doc[page_num])
-
+            for page_num, text in enumerate(texts):
                 if not text:
                     continue
 
@@ -581,8 +592,6 @@ class PDFNodeParser(BaseNodeParser):
                             }
                         ))
 
-            doc.close()
-
             return ParseResult(
                 nodes=nodes,
                 format_name=fmt,
@@ -611,10 +620,10 @@ class ImageNodeParser(PDFNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         return format_hint == "image"
 
-    def _open(self, data: bytes) -> "pymupdf.Document":
+    def _page_texts(self, data: bytes) -> List[str]:
         if not OCR_ENABLED:
             raise ValueError("images need OCR; set OCR_ENABLED=true")
-        return pymupdf.open(stream=data)
+        return [_ocr(data)]
 
 
 # ============================================================================
