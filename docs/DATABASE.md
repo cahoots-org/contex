@@ -57,11 +57,10 @@ export DATABASE_URL="postgresql+asyncpg://contex:password@localhost:5432/contex"
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `DATABASE_POOL_SIZE` | Connection pool size | `10` |
-| `DATABASE_MAX_OVERFLOW` | Max overflow connections | `20` |
-| `DATABASE_POOL_TIMEOUT` | Pool timeout (seconds) | `30` |
-| `DATABASE_ECHO` | Log SQL queries | `false` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://contex:contex_password@localhost:5432/contex` |
+
+The connection pool holds 5 connections and grows to 15 under load, plus one
+LISTEN connection for live updates.
 
 ### Connection String Format
 
@@ -259,21 +258,6 @@ archive_command = 'cp %p /archive/%f'
 ```
 
 ## Performance Tuning
-
-### Connection Pooling
-
-Configure pool sizes based on your workload:
-
-```python
-# src/core/database.py
-engine = create_async_engine(
-    DATABASE_URL,
-    pool_size=10,       # Base connections
-    max_overflow=20,    # Extra connections under load
-    pool_timeout=30,    # Wait time for connection
-    pool_recycle=3600,  # Recycle connections hourly
-)
-```
 
 ### PostgreSQL Configuration
 
