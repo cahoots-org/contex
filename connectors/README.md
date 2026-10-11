@@ -34,7 +34,10 @@ refresh story. See each connector's design spec under
   `s3:bucket/prefix`). After a full run completes, the runner lists that
   origin's keys with `contex_list_keys` and deletes the ones the source no
   longer has. Runs filtered by a since-date never delete. Set `prune: false` in
-  `connector.yaml` to turn this off.
+  `connector.yaml` to turn this off. The origin names the source, not your
+  filters, so two configs reading one source (say, Jira projects A and B)
+  would delete each other's items: give each a distinct top-level `origin:`
+  name (e.g. `origin: team-a`).
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.

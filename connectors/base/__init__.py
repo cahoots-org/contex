@@ -58,11 +58,14 @@ async def run_connector(
 ) -> RunStats:
     """Open a publisher for ``config`` and publish ``events`` through it.
 
-    ``origin`` tags what this stream publishes. With ``prune``, keys that
-    origin published before but this stream no longer yields are deleted.
+    ``origin`` tags what this stream publishes, suffixed with the config's
+    ``origin`` name when set. With ``prune``, keys that origin published before
+    but this stream no longer yields are deleted.
     """
     if prune and origin is None:
         raise ValueError("prune needs an origin")
+    if origin is not None and config.origin:
+        origin = f"{origin}#{config.origin}"
     async with ContexPublisher(config, origin) as publisher:
         return await run(
             events,
