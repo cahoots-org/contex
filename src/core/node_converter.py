@@ -42,12 +42,13 @@ class NodeConverter:
     ) -> ParseResult:
         """Parse data with the hinted format's parser, else the first that fits.
 
-        A generic or unknown hint falls back to content sniffing; whatever no
-        parser accepts is split as plain text.
+        A generic or unknown hint falls back to content sniffing. Text no parser
+        accepts is split as plain text; bytes no parser accepts fail.
         """
         parsers = [p for p in self.parsers if p.format_name == format_hint]
         if format_hint in GENERIC_FORMATS or not parsers:
             parsers = [p for p in self.parsers if p.can_parse(data, format_hint)]
+        result = None
         for parser in parsers:
             result = (
                 parser.parse(data, data_key=data_key)
@@ -56,4 +57,8 @@ class NodeConverter:
             )
             if result.success:
                 return result
+        if isinstance(data, (bytes, bytearray)):
+            return result or ParseResult(
+                nodes=[], format_name="binary", success=False, error="unrecognised binary data"
+            )
         return PlainTextNodeParser().parse(str(data))

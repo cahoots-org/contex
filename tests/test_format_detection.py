@@ -59,6 +59,11 @@ def test_extension_is_case_insensitive():
     assert resolve_format("text", "owner/repo:App.PY") == "code"
 
 
+def test_unparseable_bytes_fail_instead_of_indexing_their_repr():
+    result = NodeConverter().parse(b"%PDF-1.7 \x00\x01 truncated", "pdf")
+    assert not result.success and result.nodes == []
+
+
 def test_language_for_key_maps_extensions():
     assert language_for_key("owner/repo:a.py") == "python"
     assert language_for_key("b.tsx") == "tsx"
