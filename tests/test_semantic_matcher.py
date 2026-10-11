@@ -9,7 +9,7 @@ import pytest_asyncio
 import numpy as np
 from sqlalchemy import select, text
 from unittest.mock import Mock, AsyncMock, patch
-from src.core.db_models import Embedding
+from src.core.db_models import Embedding, Symbol
 from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
 from src.core.models import DataPublishEvent
@@ -387,6 +387,18 @@ class TestSemanticMatcherContentHashDedup:
             for n in range(10) for i in range(4)
         ], return_exceptions=True)
         assert not [r for r in results if isinstance(r, Exception)]
+
+    @pytest.mark.asyncio
+    async def test_republish_drops_nodes_and_symbols_it_no_longer_has(self, matcher):
+        await matcher.register_data("projd", "lib/util.py", "def helper():\n    return compute()\n", "code")
+        await matcher.register_data("projd", "lib/util.py", "First note.\n\nSecond note.", "text")
+        await matcher.register_data("projd", "lib/util.py", "First note.", "text")
+
+        async with matcher.db.session() as session:
+            nodes = (await session.execute(select(Embedding.node_key))).scalars().all()
+            symbols = (await session.execute(select(Symbol.name))).scalars().all()
+        assert nodes == ["lib/util.py.sentence_0"]
+        assert symbols == []
 
     @pytest.mark.asyncio
     async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):

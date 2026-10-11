@@ -234,16 +234,14 @@ class SemanticDataMatcher:
         """
         published_at = published_at or {}
         if origin is not None:
-            # Unchanged items skip the write below, so tag existing rows here.
+            # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
         plans = [
             plan for data_key, data, format_hint in items
             if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
         ]
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
-        if not texts:
-            return
-        embeddings = await encode_async(self.model, texts, batch_size=16)
+        embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
         offset = 0
         for plan in plans:
@@ -311,15 +309,6 @@ class SemanticDataMatcher:
             if prior_hashes.get(node_key) != content_hash
         ]
 
-        if not changed:
-            logger.info(
-                "Registered data (unchanged, skipped re-embed)",
-                project_id=project_id,
-                data_key=data_key,
-                node_count=len(nodes),
-            )
-            return None
-
         return {
             "data_key": data_key,
             "parse_result": parse_result,
@@ -334,7 +323,7 @@ class SemanticDataMatcher:
         self, project_id: str, plan: Dict[str, Any], embeddings,
         published_at: Optional[datetime] = None, origin: Optional[str] = None,
     ) -> None:
-        """Upsert one item's changed nodes and rewrite its symbols."""
+        """Upsert one item's changed nodes, drop nodes it no longer has, and rewrite its symbols."""
         data_key, parse_result = plan["data_key"], plan["parse_result"]
         nodes, node_keys, changed = plan["nodes"], plan["node_keys"], plan["changed"]
 
@@ -367,15 +356,17 @@ class SemanticDataMatcher:
             },
         )
         async with self.db.session() as session:
-            await session.execute(stmt, rows)
-
-            # Rewrite this source's symbols (defs/refs the parser recorded per
-            # node) in the same transaction as the embeddings. Delete-by-source
-            # first so renamed/removed symbols don't linger across re-ingests.
-            # Only code nodes carry defs/refs, so this is a no-op for other
-            # formats (no rows to delete, none to insert). Reached only when a
-            # node changed, so unchanged files don't churn identical symbol rows.
-            if parse_result.format_name == "code":
+            if rows:
+                await session.execute(stmt, rows)
+            removed = await session.execute(
+                delete(Embedding)
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.data_key == data_key)
+                .where(Embedding.node_key.not_in(node_keys))
+            )
+            # Symbols are the defs/refs the parser recorded per node, rewritten
+            # whenever the nodes change. Unchanged documents keep theirs as is.
+            if rows or removed.rowcount:
                 await session.execute(
                     delete(Symbol)
                     .where(Symbol.project_id == project_id)
