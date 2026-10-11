@@ -11,7 +11,6 @@ from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-import toon_format as toon
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.exc import SQLAlchemyError
@@ -124,51 +123,23 @@ async def execute_query(
     total_tokens = 0
 
     for match in matches:
-        # Generate both JSON and TOON formats
         data_json = json.dumps(match["data"], indent=2)
-        data_toon = toon.encode(match["data"])
-
-        # Calculate token counts for both formats
-        json_tokens = 0
-        toon_tokens = 0
-        if enc:
-            try:
-                json_tokens = len(enc.encode(data_json))
-                toon_tokens = len(enc.encode(data_toon))
-                total_tokens += toon_tokens  # Use TOON tokens for total
-            except:
-                pass
-
-        # Calculate token savings
-        token_savings = 0
-        savings_percent = 0
-        if json_tokens > 0 and toon_tokens > 0:
-            token_savings = json_tokens - toon_tokens
-            savings_percent = round((token_savings / json_tokens) * 100, 1)
-
-        # No preview truncation - will be handled by CSS scrolling
-        preview = data_toon
-
+        token_count = len(enc.encode(data_json)) if enc else 0
+        total_tokens += token_count
         enhanced_matches.append({
             "data_key": match["data_key"],
             "similarity": match["similarity"],
             "similarity_percent": round(match["similarity"] * 100, 1),
             "data": match["data"],
             "data_json": data_json,
-            "data_toon": data_toon,
             "description": match.get("description", ""),
-            "token_count": toon_tokens,
-            "json_tokens": json_tokens,
-            "toon_tokens": toon_tokens,
-            "token_savings": token_savings,
-            "savings_percent": savings_percent,
-            "preview": preview
+            "token_count": token_count,
         })
 
     return templates.TemplateResponse(
+        request,
         "query_results.html",
         {
-            "request": request,
             "query": query,
             "project_id": project_id,
             "matches": enhanced_matches,

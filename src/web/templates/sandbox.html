@@ -15,15 +15,11 @@
     watchLastByKey: {},
     eventSource: null,
     projectData: [],
-    dataFormat: 'json',
     expandAll() {
         this.projectData.forEach(item => item.expanded = true);
     },
     collapseAll() {
         this.projectData.forEach(item => item.expanded = false);
-    },
-    toggleFormat() {
-        this.dataFormat = this.dataFormat === 'json' ? 'toon' : 'json';
     },
     startWatch() {
         if (!this.selectedProject || !this.queryText.trim()) {
@@ -309,13 +305,6 @@
                         @mouseleave="$el.style.background='transparent'; $el.style.borderColor='var(--border)'">
                         ⊖
                     </button>
-                    <div @click="toggleFormat()" title="Toggle between JSON and TOON format" style="display: flex; align-items: center; gap: 0.5rem; background: var(--bg-secondary); padding: 0.375rem 0.75rem; border-radius: 1.5rem; cursor: pointer; border: 1px solid var(--border); white-space: nowrap;">
-                        <span :style="{ color: dataFormat === 'json' ? 'var(--primary)' : 'var(--text-muted)', fontWeight: dataFormat === 'json' ? '700' : '600', fontSize: '0.7rem' }">JSON</span>
-                        <div style="position: relative; width: 36px; height: 20px; background: var(--border); border-radius: 10px;">
-                            <div :style="{ position: 'absolute', top: '2px', left: dataFormat === 'toon' ? '18px' : '2px', width: '16px', height: '16px', background: dataFormat === 'toon' ? 'var(--primary)' : '#f2f6ff', borderRadius: '50%', transition: 'all 0.3s ease', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }"></div>
-                        </div>
-                        <span :style="{ color: dataFormat === 'toon' ? 'var(--primary)' : 'var(--text-muted)', fontWeight: dataFormat === 'toon' ? '700' : '600', fontSize: '0.7rem' }">TOON</span>
-                    </div>
                 </div>
             </div>
             <div class="data-panel-content">
@@ -330,8 +319,7 @@
                                 <span class="expand-icon" x-text="item.expanded ? '▼' : '▶'"></span>
                             </div>
                             <div x-show="item.expanded" class="data-item-body">
-                                <pre x-show="dataFormat === 'json'" x-text="JSON.stringify(item.data, null, 2)"></pre>
-                                <pre x-show="dataFormat === 'toon'" x-text="item.toon || 'TOON format not available'"></pre>
+                                <pre x-text="JSON.stringify(item.data, null, 2)"></pre>
                             </div>
                         </div>
                     </template>

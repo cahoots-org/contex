@@ -3,7 +3,6 @@
 import json
 import logging
 import tiktoken
-import toon_format as toon
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -88,21 +87,6 @@ class ContextEngine:
     async def initialize(self):
         """Initialize pgvector index for vector similarity search"""
         await self.semantic_matcher.initialize_index()
-
-    def _format_data(self, data: Any, format: str = "toon") -> str:
-        """
-        Format data according to agent preference.
-
-        Args:
-            data: Data to format
-            format: 'toon' or 'json'
-
-        Returns:
-            Formatted string
-        """
-        if format == "toon":
-            return toon.encode(data)
-        return json.dumps(data, indent=2)
 
     def _estimate_tokens(self, data: Any) -> int:
         """

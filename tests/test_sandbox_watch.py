@@ -7,7 +7,7 @@ import pytest
 from src.core.context_engine import ContextEngine
 from src.core.identity import ANONYMOUS_IDENTITY
 from src.core.models import DataPublishEvent
-from src.web.routes import project_stats, sandbox_home, subscribe_to_updates
+from src.web.routes import execute_query, project_stats, sandbox_home, subscribe_to_updates
 
 
 def _request_with(engine, db=None):
@@ -73,6 +73,23 @@ async def test_project_stats_renders_from_embeddings(db):
     # Sorted by token_count descending.
     counts = [item["token_count"] for item in ctx["data_items"]]
     assert counts == sorted(counts, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_query_renders_matches_as_json(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    await engine.publish_data(DataPublishEvent(
+        project_id="q-proj", data_key="db", data={"purpose": "database connection settings"},
+    ))
+
+    resp = await execute_query(
+        _request_with(engine), project_id="q-proj", query="database connection",
+        top_k=5, threshold=0.0, max_tokens=51200, identity=ANONYMOUS_IDENTITY, tenant_mgr=None,
+    )
+
+    assert resp.status_code == 200
+    assert "database connection settings" in resp.body.decode()
 
 
 @pytest.mark.asyncio
