@@ -8,6 +8,7 @@ from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
 from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
@@ -42,6 +43,12 @@ def _load_model(model_name: str) -> OnnxEmbedder:
 
 
 _TITLE_FIELDS = ("title", "summary", "name")
+
+# Columns a republished node overwrites.
+_REWRITTEN_COLUMNS = (
+    "data_key", "node_path", "node_type", "description", "data",
+    "data_format", "content_hash", "embedding", "published_at",
+)
 
 
 def _document_title(nodes) -> str:
@@ -331,50 +338,36 @@ class SemanticDataMatcher:
         data_key, parse_result = plan["data_key"], plan["parse_result"]
         nodes, node_keys, changed = plan["nodes"], plan["node_keys"], plan["changed"]
 
-        # pg_search BM25 index is maintained automatically on insert/update via
-        # the embeddings_bm25 index.
+        rows = [
+            {
+                "project_id": project_id,
+                "data_key": data_key,
+                "node_key": node_keys[i],
+                "node_path": nodes[i].path,
+                "node_type": nodes[i].node_type.value,
+                "description": plan["texts"][i],
+                "data": nodes[i].content if isinstance(nodes[i].content, dict) else {"value": nodes[i].content},
+                "data_format": parse_result.format_name,
+                "content_hash": plan["hashes"][i],
+                "embedding": embedding.tolist(),
+                "published_at": published_at,
+                "origin": origin,
+            }
+            for i, embedding in zip(changed, embeddings)
+        ]
+        # An upsert, so concurrent first publishes of one key don't collide on
+        # the unique (project_id, node_key) index.
+        stmt = pg_insert(Embedding)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Embedding.project_id, Embedding.node_key],
+            set_={
+                **{column: stmt.excluded[column] for column in _REWRITTEN_COLUMNS},
+                "origin": func.coalesce(stmt.excluded.origin, Embedding.origin),
+                "updated_at": func.now(),
+            },
+        )
         async with self.db.session() as session:
-            existing_rows = await session.execute(
-                select(Embedding)
-                .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_([node_keys[i] for i in changed]))
-            )
-            existing_by_key = {row.node_key: row for row in existing_rows.scalars()}
-
-            for i, embedding in zip(changed, embeddings):
-                node, node_key = nodes[i], node_keys[i]
-                embedding_text, content_hash = plan["texts"][i], plan["hashes"][i]
-                node_data = node.content if isinstance(node.content, dict) else {"value": node.content}
-
-                existing = existing_by_key.get(node_key)
-                if existing:
-                    existing.data_key = data_key
-                    existing.node_path = node.path
-                    existing.node_type = node.node_type.value
-                    existing.description = embedding_text
-                    existing.data = node_data
-                    existing.data_format = parse_result.format_name
-                    existing.content_hash = content_hash
-                    existing.embedding = embedding.tolist()
-                    existing.updated_at = datetime.utcnow()
-                    existing.published_at = published_at
-                    if origin is not None:
-                        existing.origin = origin
-                else:
-                    session.add(Embedding(
-                        project_id=project_id,
-                        data_key=data_key,
-                        node_key=node_key,
-                        node_path=node.path,
-                        node_type=node.node_type.value,
-                        description=embedding_text,
-                        data=node_data,
-                        data_format=parse_result.format_name,
-                        content_hash=content_hash,
-                        embedding=embedding.tolist(),
-                        published_at=published_at,
-                        origin=origin,
-                    ))
+            await session.execute(stmt, rows)
 
             # Rewrite this source's symbols (defs/refs the parser recorded per
             # node) in the same transaction as the embeddings. Delete-by-source

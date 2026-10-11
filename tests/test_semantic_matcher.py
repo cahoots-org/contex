@@ -381,6 +381,14 @@ class TestSemanticMatcherContentHashDedup:
         assert await PgFtsLexical(matcher.db).search("projd", "Zanzibarquux", top_k=10) == []
 
     @pytest.mark.asyncio
+    async def test_concurrent_first_publishes_of_one_key_all_succeed(self, matcher):
+        results = await asyncio.gather(*[
+            matcher.register_data("projd", f"race{n}.txt", f"Alpha one.\n\nBeta {i}.", "text")
+            for n in range(10) for i in range(4)
+        ], return_exceptions=True)
+        assert not [r for r in results if isinstance(r, Exception)]
+
+    @pytest.mark.asyncio
     async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):
         parse, threads = matcher.node_converter.parse, []
 
