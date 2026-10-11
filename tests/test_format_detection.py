@@ -9,6 +9,7 @@ always wins.
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.core.node_converter import NodeConverter
 from src.core.node_parsers import resolve_format, language_for_key
 
 
@@ -28,8 +29,24 @@ def test_explicit_nongeneric_format_always_wins():
 
 
 def test_non_code_extension_left_unchanged():
-    assert resolve_format("text", "owner/repo:README.md") == "text"
+    assert resolve_format("text", "owner/repo:notes.txt") == "text"
     assert resolve_format(None, "notes.txt") is None
+
+
+def test_document_extensions_name_their_format():
+    assert resolve_format("text", "owner/repo:README.md") == "markdown"
+    assert resolve_format("text", "bucket/deploy.YML") == "yaml"
+
+
+def test_explicit_hint_picks_the_parser():
+    result = NodeConverter().parse("Owner: platform-team\nStatus: draft", "markdown")
+    assert result.format_name == "markdown"
+
+
+def test_key_value_prose_is_not_sniffed_as_yaml():
+    notes = "Attendees: ana, bo\n\nDecision: ship it\n\nRisk: none"
+    result = NodeConverter().parse(notes, "text")
+    assert (result.format_name, len(result.nodes)) == ("text", 3)
 
 
 def test_no_extension_no_signal():

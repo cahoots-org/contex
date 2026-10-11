@@ -3,6 +3,7 @@
 from typing import Any, List, Optional
 from .node import ParseResult
 from .node_parsers import (
+    GENERIC_FORMATS,
     BaseNodeParser,
     JSONNodeParser,
     YAMLNodeParser,
@@ -39,28 +40,20 @@ class NodeConverter:
     def parse(
         self, data: Any, format_hint: Optional[str] = None, data_key: Optional[str] = None
     ) -> ParseResult:
+        """Parse data with the hinted format's parser, else the first that fits.
+
+        A generic or unknown hint falls back to content sniffing; whatever no
+        parser accepts is split as plain text.
         """
-        Parse data into nodes using appropriate parser.
-
-        Args:
-            data: Raw data to parse
-            format_hint: Optional hint about format ("json", "yaml", etc.)
-            data_key: Optional source key; parsers that need the file extension to
-                pick a language (CodeNodeParser) read it.
-
-        Returns:
-            ParseResult with nodes and metadata
-        """
-        # Try parsers in priority order
-        for parser in self.parsers:
-            if parser.can_parse(data, format_hint):
-                result = (
-                    parser.parse(data, data_key=data_key)
-                    if parser.needs_data_key
-                    else parser.parse(data)
-                )
-                if result.success:
-                    return result
-
-        # Fallback: treat as plain text
+        parsers = [p for p in self.parsers if p.format_name == format_hint]
+        if format_hint in GENERIC_FORMATS or not parsers:
+            parsers = [p for p in self.parsers if p.can_parse(data, format_hint)]
+        for parser in parsers:
+            result = (
+                parser.parse(data, data_key=data_key)
+                if parser.needs_data_key
+                else parser.parse(data)
+            )
+            if result.success:
+                return result
         return PlainTextNodeParser().parse(str(data))

@@ -33,39 +33,47 @@ CODE_EXTENSIONS = {
     ".go": "go",
 }
 
-# data_format values that carry no real signal, so key-extension inference wins.
-_GENERIC_FORMATS = {None, "", "text"}
+# Other formats a file extension identifies.
+_EXTENSION_FORMATS = {
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".csv": "csv",
+}
+
+# data_format values that carry no real signal, so the key's extension or
+# content sniffing decides the format.
+GENERIC_FORMATS = {None, "", "text"}
 
 # OCR scanned PDF pages and images with Tesseract (must be installed).
 OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes")
 
 
-def language_for_key(data_key: Optional[str]) -> Optional[str]:
-    """Grammar name for a data_key's file extension, or None.
-
-    Keys are file-ish: "owner/repo:src/app.py", "bucket/dir/foo.ts". Take the
-    basename after the last path or ":" separator, then the lowercased suffix.
-    """
-    if not data_key:
-        return None
-    base = data_key.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+def _extension(data_key: Optional[str]) -> str:
+    """Lowercased suffix of a file-ish key ("owner/repo:src/app.py" -> ".py"), or ""."""
+    base = (data_key or "").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
     dot = base.rfind(".")
-    if dot == -1:
-        return None
-    return CODE_EXTENSIONS.get(base[dot:].lower())
+    return base[dot:].lower() if dot != -1 else ""
+
+
+def language_for_key(data_key: Optional[str]) -> Optional[str]:
+    """Grammar name for a data_key's file extension, or None."""
+    return CODE_EXTENSIONS.get(_extension(data_key))
 
 
 def resolve_format(data_format: Optional[str], data_key: Optional[str]) -> Optional[str]:
-    """Resolve the effective format for a publish, inferring code from the key.
+    """Resolve the effective format for a publish, inferring it from the key.
 
     An explicit, non-generic ``data_format`` always wins. A generic/absent one
     ("text" or None, as emitted by the GitHub/S3 connectors) falls back to the
-    key's extension: a known code extension yields "code", otherwise the format
-    is returned unchanged.
+    key's extension, or is returned unchanged when the extension says nothing.
     """
-    if data_format not in _GENERIC_FORMATS:
+    if data_format not in GENERIC_FORMATS:
         return data_format
-    return "code" if language_for_key(data_key) else data_format
+    if language_for_key(data_key):
+        return "code"
+    return _EXTENSION_FORMATS.get(_extension(data_key), data_format)
 
 
 class BaseNodeParser(ABC):
@@ -212,25 +220,8 @@ class YAMLNodeParser(JSONNodeParser):
         return 11
 
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
-        if format_hint == "yaml":
-            return True
-        if isinstance(data, str) and not data.strip().startswith('{'):
-            # YAML has specific patterns: key: value, lists with -, etc.
-            # Don't catch CSV (has commas) or plain text (no colons)
-            if ',' in data and '\n' in data:
-                # Likely CSV, not YAML
-                return False
-            if ':' not in data and '-' not in data:
-                # No YAML markers, probably plain text
-                return False
-            try:
-                import yaml
-                result = yaml.safe_load(data)
-                # Only accept if it parses to dict or list (not plain string)
-                return isinstance(result, (dict, list))
-            except:
-                return False
-        return False
+        # Too much prose ("Owner: x") is valid YAML to sniff for it.
+        return format_hint == "yaml"
 
     def parse(self, data: Any) -> ParseResult:
         """Parse YAML into nodes"""
