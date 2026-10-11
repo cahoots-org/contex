@@ -7,7 +7,7 @@ Each parser:
 3. Can reconstruct from Nodes back to the format
 """
 
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 from abc import ABC, abstractmethod
 import json
 import os
@@ -95,11 +95,6 @@ class BaseNodeParser(ABC):
     @abstractmethod
     def parse(self, data: Any) -> ParseResult:
         """Parse data into nodes"""
-        pass
-
-    @abstractmethod
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct data from nodes"""
         pass
 
 
@@ -200,95 +195,6 @@ class JSONNodeParser(BaseNodeParser):
 
         return nodes
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct JSON from nodes"""
-        if not nodes:
-            return {}
-
-        # Build nested structure from paths
-        result = {}
-
-        for node in nodes:
-            self._set_by_path(result, node.path, node.content)
-
-        # If target format is string, dump as JSON
-        if target_format == "string":
-            return json.dumps(result, indent=2, ensure_ascii=False)
-
-        return result
-
-    def _set_by_path(self, obj: dict, path: str, value: Any):
-        """Set value in nested dict by path"""
-        if not path or path == "root":
-            if isinstance(value, dict):
-                obj.update(value)
-            return
-
-        parts = []
-        current = ""
-        in_bracket = False
-
-        # Parse path like "a.b[0].c"
-        for char in path:
-            if char == '[':
-                if current:
-                    parts.append(current)
-                    current = ""
-                in_bracket = True
-            elif char == ']':
-                if current:
-                    parts.append(f"[{current}]")
-                    current = ""
-                in_bracket = False
-            elif char == '.' and not in_bracket:
-                if current:
-                    parts.append(current)
-                    current = ""
-            else:
-                current += char
-
-        if current:
-            parts.append(current)
-
-        # Navigate/create structure
-        current_obj = obj
-        for i, part in enumerate(parts[:-1]):
-            if part.startswith('['):
-                # Array index
-                idx = int(part[1:-1])
-                if not isinstance(current_obj, list):
-                    current_obj = []
-                while len(current_obj) <= idx:
-                    current_obj.append({})
-                current_obj = current_obj[idx]
-            else:
-                # Object key
-                if part not in current_obj:
-                    # Look ahead to see if next is array
-                    if i + 1 < len(parts) and parts[i + 1].startswith('['):
-                        current_obj[part] = []
-                    else:
-                        current_obj[part] = {}
-                current_obj = current_obj[part]
-
-        # Set final value
-        final_part = parts[-1] if parts else None
-        if final_part:
-            if final_part.startswith('['):
-                idx = int(final_part[1:-1])
-                if not isinstance(current_obj, list):
-                    current_obj = []
-                while len(current_obj) <= idx:
-                    current_obj.append(None)
-                current_obj[idx] = value
-            else:
-                if isinstance(value, dict):
-                    if final_part not in current_obj:
-                        current_obj[final_part] = {}
-                    current_obj[final_part].update(value)
-                else:
-                    current_obj[final_part] = value
-
 
 # ============================================================================
 # YAML Parser
@@ -347,16 +253,6 @@ class YAMLNodeParser(JSONNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct as YAML string"""
-        result = super().reconstruct(nodes, target_format=None)
-
-        if target_format == "string":
-            import yaml
-            return yaml.dump(result, default_flow_style=False, allow_unicode=True)
-
-        return result
 
 
 # ============================================================================
@@ -433,39 +329,6 @@ class PlainTextNodeParser(BaseNodeParser):
         # Simple sentence splitting
         sentences = re.split(r'[.!?]+\s+', text)
         return [s.strip() for s in sentences if s.strip()]
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct text from nodes"""
-        if not nodes:
-            return ""
-
-        # Group by paragraph if available
-        paragraphs = {}
-        for node in nodes:
-            if node.node_type == NodeType.PARAGRAPH:
-                # Extract paragraph number
-                match = re.match(r'paragraph_(\d+)', node.path)
-                if match:
-                    idx = int(match.group(1))
-                    paragraphs[idx] = str(node.content)
-            elif node.node_type == NodeType.SENTENCE:
-                # Group sentences into paragraph 0
-                if 0 not in paragraphs:
-                    paragraphs[0] = []
-                if not isinstance(paragraphs[0], list):
-                    paragraphs[0] = [paragraphs[0]]
-                paragraphs[0].append(str(node.content))
-
-        # Reconstruct
-        result = []
-        for idx in sorted(paragraphs.keys()):
-            content = paragraphs[idx]
-            if isinstance(content, list):
-                result.append(' '.join(content))
-            else:
-                result.append(content)
-
-        return '\n\n'.join(result)
 
 
 # ============================================================================
@@ -565,24 +428,6 @@ class MarkdownNodeParser(BaseNodeParser):
                 error=str(e)
             )
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct markdown from nodes"""
-        if not nodes:
-            return ""
-
-        parts = []
-        for node in nodes:
-            if node.node_type == NodeType.HEADING:
-                level = node.metadata.get("level", 1)
-                parts.append(f"\n{'#' * level} {node.content}\n")
-            elif node.node_type == NodeType.CODE_BLOCK:
-                language = node.metadata.get("language", "")
-                parts.append(f"\n```{language}\n{node.content}\n```\n")
-            elif node.node_type == NodeType.PARAGRAPH:
-                parts.append(f"\n{node.content}\n")
-
-        return ''.join(parts).strip()
-
 
 # ============================================================================
 # CSV Parser
@@ -650,32 +495,6 @@ class CSVNodeParser(BaseNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct CSV from row nodes"""
-        if not nodes:
-            return ""
-
-        import csv
-        from io import StringIO
-
-        output = StringIO()
-
-        # Get all unique keys for headers
-        all_keys = set()
-        for node in nodes:
-            if isinstance(node.content, dict):
-                all_keys.update(node.content.keys())
-
-        headers = sorted(all_keys)
-        writer = csv.DictWriter(output, fieldnames=headers)
-        writer.writeheader()
-
-        for node in nodes:
-            if isinstance(node.content, dict):
-                writer.writerow(node.content)
-
-        return output.getvalue()
 
 
 # ============================================================================
@@ -778,25 +597,6 @@ class PDFNodeParser(BaseNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct PDF content as plain text (cannot recreate binary PDF)"""
-        if not nodes:
-            return ""
-
-        pages: dict[int, list[str]] = {}
-        for node in nodes:
-            page = node.metadata.get("page", 1)
-            if page not in pages:
-                pages[page] = []
-            pages[page].append(str(node.content))
-
-        parts = []
-        for page_num in sorted(pages.keys()):
-            parts.append(f"--- Page {page_num} ---")
-            parts.append("\n\n".join(pages[page_num]))
-
-        return "\n\n".join(parts)
 
 
 class ImageNodeParser(PDFNodeParser):
@@ -949,29 +749,6 @@ class DOCXNodeParser(BaseNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct DOCX content as plain text (cannot recreate binary DOCX)"""
-        if not nodes:
-            return ""
-
-        parts = []
-        for node in nodes:
-            if node.node_type == NodeType.HEADING:
-                level = node.metadata.get("level", 1)
-                parts.append(f"\n{'#' * level} {node.content}\n")
-            elif node.node_type == NodeType.LIST_ITEM:
-                parts.append(f"  - {node.content}")
-            elif node.node_type == NodeType.ROW:
-                if isinstance(node.content, dict):
-                    row_str = " | ".join(f"{k}: {v}" for k, v in node.content.items())
-                    parts.append(f"  [{row_str}]")
-                else:
-                    parts.append(f"  {node.content}")
-            else:
-                parts.append(str(node.content))
-
-        return "\n\n".join(parts)
 
 
 # ============================================================================
@@ -1206,9 +983,3 @@ class CodeNodeParser(BaseNodeParser):
             "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
             "content": self._txt(node, src), "defs": [name], "refs": [],
         }
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        # Code isn't a reconstruct target in practice; concatenate node sources.
-        return "\n\n".join(
-            str(n.content) for n in nodes if n.node_type != NodeType.DOCUMENT
-        )

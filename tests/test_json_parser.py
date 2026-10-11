@@ -37,6 +37,3 @@ def test_parent_primitives_kept_alongside_nested_children():
 def test_no_parent_node_when_only_nested_children():
     assert "root" not in _by_path({"a": {"x": 1}, "b": [{"y": 2}]})
 
-
-def test_reconstruct_round_trips():
-    assert parser.reconstruct(parser.parse(ISSUE).nodes) == ISSUE
