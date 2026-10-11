@@ -124,7 +124,7 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
     app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
     try:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8001") as c:
             r = await c.get(
                 "/sandbox/subscribe",
                 params={"project_id": "proj-b-sub", "need": "auth tokens"},
@@ -150,7 +150,7 @@ async def test_sandbox_project_routes_cross_tenant_is_403(db, monkeypatch, metho
     app.state.context_engine = MagicMock()
     app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
     try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as c:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8001") as c:
             r = await c.request(method, path, data=form)
         assert r.status_code == 403
     finally:

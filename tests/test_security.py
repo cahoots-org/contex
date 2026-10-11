@@ -6,6 +6,8 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from httpx import AsyncClient
+
+import main
 from src.core.security_headers import SecurityHeadersMiddleware
 
 
@@ -140,3 +142,11 @@ class TestCORSMiddlewareCoercion:
         """Wildcard origins with credentials=False must remain False (no-op coercion)."""
         app = _build_cors_app(["*"], allow_credentials=False)
         assert self._cors_kwargs(app)["allow_credentials"] is False
+
+
+@pytest.mark.asyncio
+async def test_app_rejects_unknown_hosts_except_on_health():
+    async with AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://rebind.attacker.example") as c:
+        assert (await c.get("/sandbox/")).status_code == 421
+        assert (await c.get("/health")).status_code == 200
+

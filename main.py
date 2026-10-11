@@ -6,7 +6,7 @@ import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
@@ -18,6 +18,7 @@ from src.core.hardened_config import check_hardened_config
 from src.core.upload_limits import get_max_upload_size
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from src.core import ContextEngine
 from src.core.auth import bootstrap_admin
 from src.core.logging import setup_logging, get_logger
@@ -254,7 +255,7 @@ _LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
 
 def mcp_transport_security() -> TransportSecuritySettings:
-    """DNS-rebinding protection for /mcp, driven by CONTEX_ALLOWED_HOSTS.
+    """DNS-rebinding protection for the whole app, driven by CONTEX_ALLOWED_HOSTS.
 
     Unset: localhost only (the SDK default). Comma-separated hosts: those plus
     localhost. "*": protection off, for proxies that rewrite or vary the Host.
@@ -270,11 +271,41 @@ def mcp_transport_security() -> TransportSecuritySettings:
     )
 
 
+# Probed by infrastructure that may not use an allowed hostname; neither
+# returns data a rebinding page could use (/metrics needs its token).
+_HOST_CHECK_EXEMPT = {"/health", "/metrics"}
+
+
+class AllowedHostMiddleware:
+    """Reject requests whose Host header isn't allowed, as the MCP transport does for /mcp."""
+
+    def __init__(self, app, allowed_hosts: list[str]):
+        self.app = app
+        self.allowed_hosts = allowed_hosts
+
+    def _allowed(self, host: str) -> bool:
+        return any(
+            host == allowed or (allowed.endswith(":*") and host.startswith(allowed[:-1]))
+            for allowed in self.allowed_hosts
+        )
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope["path"] not in _HOST_CHECK_EXEMPT
+            and not self._allowed(Headers(scope=scope).get("host", ""))
+        ):
+            await PlainTextResponse("Invalid Host header", status_code=421)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+_transport_security = mcp_transport_security()
 _mcp_starlette_app = _mcp_server.streamable_http_app(
     streamable_http_path="/",
     session_idle_timeout=600,
     max_request_body_size=get_max_upload_size(),
-    transport_security=mcp_transport_security(),
+    transport_security=_transport_security,
 )
 app.mount("/mcp", _mcp_starlette_app)
 
@@ -349,6 +380,10 @@ logger.info("Rate limiting middleware enabled")
 # and enforces the identity-derived tenant when auth is on.
 app.add_middleware(TenantMiddleware)
 logger.info("Tenant middleware enabled")
+
+# Outermost, so a disallowed Host is turned away before any other work.
+if _transport_security.enable_dns_rebinding_protection:
+    app.add_middleware(AllowedHostMiddleware, allowed_hosts=_transport_security.allowed_hosts)
 
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"
