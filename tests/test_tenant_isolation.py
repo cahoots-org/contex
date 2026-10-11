@@ -15,11 +15,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from mcp.server.auth.provider import AccessToken
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import text
 
 from main import app
+from src.core import mcp_adapter
 from src.core.authz import get_identity
+from src.core.context_engine import ContextEngine
 from src.core.identity import Identity
+from src.core.mcp_adapter import build_mcp_server
 from src.core.rbac import Role, expand_role
 from src.core.subscriptions import SubscriptionService
 
@@ -127,3 +132,48 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
         assert r.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+# ── MCP project-scoped tools: cross-tenant → denied ────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool,args", [
+    ("contex_query", {"query": "secrets"}),
+    ("contex_create_subscription", {"needs": ["secrets"]}),
+    ("contex_publish", {"data_key": "k", "data": {"a": 1}}),
+    ("contex_publish_batch", {"items": [{"data_key": "k", "data": {"a": 1}}]}),
+    ("contex_list_keys", {"origin": "o"}),
+    ("contex_delete", {"data_keys": ["k"]}),
+])
+async def test_mcp_tool_cross_tenant_is_denied(db, monkeypatch, tool, args):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    await _seed_tenant_project(db, "tenant-B", "proj-b")
+
+    token = AccessToken(token="t", client_id="key-a", scopes=[p.value for p in expand_role(Role.ADMIN)],
+                        claims={"tenant_id": "tenant-A", "projects": []})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    with pytest.raises(ToolError) as denied:
+        await server.call_tool(tool, {"project_id": "proj-b", **args})
+    assert isinstance(denied.value.__cause__, PermissionError)
+
+
+@pytest.mark.asyncio
+async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkeypatch):
+    """Publishing binds new projects to the caller's tenant, with the default tenant as migrations leave it."""
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    async with db.session() as session:
+        await session.execute(text("UPDATE tenants SET quotas = '{}' WHERE tenant_id = 'default'"))
+        await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id = 'default'"))
+    token = AccessToken(token="t", client_id="key-d", scopes=[p.value for p in expand_role(Role.ADMIN)],
+                        claims={"tenant_id": "default", "projects": []})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    for i in range(5):
+        await server.call_tool("contex_publish", {"project_id": f"p{i}", "data_key": "k", "data": {"a": 1}})
+    await server.call_tool("contex_query", {"project_id": "p4", "query": "a"})

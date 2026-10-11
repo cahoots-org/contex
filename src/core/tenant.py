@@ -370,12 +370,7 @@ class TenantManager:
 
         Returns:
             Full project key (tenant_id:project:project_id)
-
-        Raises:
-            ValueError: If quota exceeded
         """
-        await self.enforce_quota(tenant_id, "projects")
-
         async with self.db.session() as session:
             # Add to tenant projects
             project_record = TenantProjectModel(

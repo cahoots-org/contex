@@ -20,13 +20,15 @@ from mcp.server.subscriptions import InMemorySubscriptionBus, ResourceUpdated
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
-from src.core.identity import resolve_identity
+from src.core.identity import Identity, resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
+from src.core.ownership import ensure_project_access
 from src.core.rate_limiter import RateLimitConfig, RateLimiter, _env_int
 from src.core.rbac import Permission
 from src.core.recency import window_start
+from src.core.tenant import TenantManager
 from src.core.version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -96,6 +98,23 @@ def _enforce(permission, project_id=None):
         projects = (tok.claims or {}).get("projects") or []
         if projects and project_id not in projects:
             raise PermissionError("Permission denied")
+
+
+async def _enforce_project(engine, permission, project_id, *, create_if_absent=False):
+    """_enforce, plus the check that the caller's tenant owns ``project_id``."""
+    _enforce(permission, project_id=project_id)
+    tok = get_access_token()
+    if tok is None:
+        return
+    claims = tok.claims or {}
+    identity = Identity(
+        key_id=tok.client_id,
+        scopes=frozenset(Permission(s) for s in tok.scopes),
+        tenant_id=claims.get("tenant_id"),
+        projects=tuple(claims.get("projects") or ()),
+        role=None,
+    )
+    await ensure_project_access(identity, project_id, TenantManager(engine.db), create_if_absent=create_if_absent)
 
 
 async def _enforce_subscription_project(engine, subscription_id, tenant_id):
@@ -197,9 +216,9 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_query(project_id: str, query: str, top_k: int = 5,
                            threshold: float | None = None, since: str | None = None,
                            max_age_seconds: int | None = None) -> str:
-        _enforce(Permission.QUERY_DATA, project_id=project_id)
-        _check_max_age(max_age_seconds)
         e = _get_engine()
+        await _enforce_project(e, Permission.QUERY_DATA, project_id)
+        _check_max_age(max_age_seconds)
         matches = await e.query_project_data(
             project_id, query, top_k=top_k, threshold=threshold,
             since=window_start(_parse_timestamp(since), max_age_seconds),
@@ -217,14 +236,14 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_create_subscription(project_id: str, needs: list[str],
                                          top_k: int = 5, threshold: float | None = None,
                                          since: str | None = None, max_age_seconds: int | None = None) -> str:
-        _enforce(Permission.QUERY_DATA, project_id=project_id)
+        e = _get_engine()
+        await _enforce_project(e, Permission.QUERY_DATA, project_id)
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         # Validate eagerly so a bad value fails the call, not reconcile.
         _parse_timestamp(since)
         _check_max_age(max_age_seconds)
         scope = {k: v for k, v in (("since", since), ("max_age_seconds", max_age_seconds)) if v is not None} or None
-        e = _get_engine()
         sub_id = await e.subscriptions.create(
             project_id, needs, tenant_id=tid, top_k=top_k, threshold=threshold, scope=scope
         )
@@ -247,8 +266,8 @@ def build_mcp_server(engine, db_accessor=None):
                              "time windows use it instead of ingest time.")
     async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json",
                              published_at: str | None = None) -> str:
-        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
         e = _get_engine()
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         await _throttle(e, "publish", "RATE_LIMIT_PUBLISH", 60)
         seq = await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
@@ -263,12 +282,12 @@ def build_mcp_server(engine, db_accessor=None):
                              "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
                              "list what it published.")
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
-        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
+        e = _get_engine()
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         try:
             check_batch_size(items, "items")
         except ValueError as exc:
             raise ValueError(str(exc))
-        e = _get_engine()
         await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
         sequences = await e.publish_data_batch([
             DataPublishEvent(
@@ -286,9 +305,10 @@ def build_mcp_server(engine, db_accessor=None):
                  description="List the data_keys an origin last published, in order, up to limit per page. "
                              "Pass the returned next as after to fetch the following page; next is null on the last page.")
     async def contex_list_keys(project_id: str, origin: str, after: str | None = None, limit: int = 1000) -> str:
-        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
+        e = _get_engine()
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id)
         limit = max(1, min(limit, MAX_BATCH_SIZE))
-        keys = await _get_engine().list_keys(project_id, origin, after=after, limit=limit)
+        keys = await e.list_keys(project_id, origin, after=after, limit=limit)
         return json.dumps({"keys": keys, "next": keys[-1] if len(keys) == limit else None})
 
     @server.tool(name="contex_delete",
@@ -296,9 +316,9 @@ def build_mcp_server(engine, db_accessor=None):
                              "field of a query match). Returns which keys were deleted and which "
                              "were not found.")
     async def contex_delete(project_id: str, data_keys: list[str]) -> str:
-        _enforce(Permission.PUBLISH_DATA, project_id=project_id)
-        check_batch_size(data_keys, "data_keys")
         e = _get_engine()
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id)
+        check_batch_size(data_keys, "data_keys")
         await _throttle(e, "ingest", "RATE_LIMIT_INGEST", 0)
         return json.dumps(await e.delete_data(project_id, data_keys, source="mcp"))
 
