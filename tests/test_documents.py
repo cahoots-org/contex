@@ -11,6 +11,7 @@ from docx import Document
 from src.core import node_parsers
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
+from src.core.node_parsers import DOCXNodeParser, PDFNodeParser
 
 needs_tesseract = pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract not installed")
 
@@ -110,3 +111,10 @@ async def test_images_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
     matches = await _publish_and_query(db, _image(), "image")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
+
+
+def test_oversized_documents_are_refused(monkeypatch):
+    monkeypatch.setattr(node_parsers, "MAX_DOCX_UNZIPPED_BYTES", 1000)
+    monkeypatch.setattr(node_parsers, "MAX_PDF_PAGES", 0)
+    assert not DOCXNodeParser().parse(_docx()).success
+    assert not PDFNodeParser().parse(_pdf()).success

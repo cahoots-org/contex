@@ -14,9 +14,11 @@ import os
 import re
 import io
 import subprocess
+import zipfile
 
 import pypdfium2
 import yaml
+from docx import Document
 
 from .node import Node, NodeType, ParseResult
 
@@ -50,6 +52,12 @@ GENERIC_FORMATS = {None, "", "text"}
 
 # OCR scanned PDF pages and images with Tesseract (must be installed).
 OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
+# Bounds on what one uploaded document may cost to parse.
+MAX_PDF_PAGES = 2000
+MAX_OCR_PAGES = 50
+MAX_OCR_PIXELS_PER_SIDE = 6000
+MAX_DOCX_UNZIPPED_BYTES = 200 * 2**20
 
 
 def _extension(data_key: Optional[str]) -> str:
@@ -510,12 +518,10 @@ def _ocr(image: bytes) -> str:
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
-def _page_text(page: pypdfium2.PdfPage) -> str:
-    """A page's text layer, or its OCR'd text when it has none and OCR is enabled."""
-    text = page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip()
-    if text or not OCR_ENABLED:
-        return text
-    pixels = page.render(scale=300 / 72, grayscale=True).to_numpy()
+def _ocr_page(page: pypdfium2.PdfPage) -> str:
+    """OCR a page rendered at 300 dpi, or smaller if that would be huge."""
+    scale = min(300 / 72, MAX_OCR_PIXELS_PER_SIDE / max(page.get_size()))
+    pixels = page.render(scale=scale, grayscale=True).to_numpy()
     height, width = pixels.shape
     return _ocr(b"P5 %d %d 255\n" % (width, height) + pixels.tobytes())
 
@@ -523,7 +529,8 @@ def _page_text(page: pypdfium2.PdfPage) -> str:
 class PDFNodeParser(BaseNodeParser):
     """Parse PDF documents into nodes by extracting text per page/section.
 
-    Pages with no text layer (scans) are OCR'd when OCR_ENABLED is set.
+    Up to MAX_OCR_PAGES pages with no text layer (scans) are OCR'd when
+    OCR_ENABLED is set.
     """
 
     @property
@@ -545,7 +552,14 @@ class PDFNodeParser(BaseNodeParser):
     def _page_texts(self, data: bytes) -> List[str]:
         pdf = pypdfium2.PdfDocument(data)
         try:
-            return [_page_text(page) for page in pdf]
+            if len(pdf) > MAX_PDF_PAGES:
+                raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
+            texts = [page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip() for page in pdf]
+            if OCR_ENABLED:
+                scanned = [i for i, text in enumerate(texts) if not text]
+                for i in scanned[:MAX_OCR_PAGES]:
+                    texts[i] = _ocr_page(pdf[i])
+            return texts
         finally:
             pdf.close()
 
@@ -652,10 +666,11 @@ class DOCXNodeParser(BaseNodeParser):
     def parse(self, data: Any) -> ParseResult:
         """Parse DOCX bytes into nodes"""
         try:
-            from docx import Document
-            from docx.opc.exceptions import PackageNotFoundError
-
             if isinstance(data, (bytes, bytearray)):
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    unzipped = sum(info.file_size for info in archive.infolist())
+                if unzipped > MAX_DOCX_UNZIPPED_BYTES:
+                    raise ValueError("DOCX expands beyond the size limit")
                 doc = Document(io.BytesIO(data))
             else:
                 return ParseResult(
@@ -745,13 +760,6 @@ class DOCXNodeParser(BaseNodeParser):
                 format_name="docx",
                 success=True,
                 metadata={"node_count": len(nodes)}
-            )
-        except ImportError:
-            return ParseResult(
-                nodes=[],
-                format_name="docx",
-                success=False,
-                error="python-docx is required for DOCX parsing: pip install python-docx"
             )
         except Exception as e:
             return ParseResult(
