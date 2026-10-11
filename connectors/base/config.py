@@ -58,9 +58,22 @@ def resolve_max_batch_bytes(config: dict) -> int:
     return int(config.get("max_batch_bytes") or DEFAULT_MAX_BATCH_BYTES)
 
 
+def resolve_flag(config: dict, name: str, default: bool) -> bool:
+    """A true/false setting; an empty value (an unset ``${VAR}``) means ``default``."""
+    value = config.get(name)
+    if value is None or value == "":
+        return default
+    text = str(value).strip().lower()
+    if text in ("true", "yes", "on", "1"):
+        return True
+    if text in ("false", "no", "off", "0"):
+        return False
+    raise ValueError(f"{name} must be true or false, got {value!r}")
+
+
 def resolve_prune(config: dict) -> bool:
     """Whether a full run deletes what the source no longer has (default on)."""
-    return bool(config.get("prune", True))
+    return resolve_flag(config, "prune", True)
 
 
 def resolve_secret_scanner(config: dict):
@@ -81,13 +94,13 @@ def resolve_secret_scanner(config: dict):
         SecretScanner,
     )
 
-    if bool(config.get("allow_secrets", False)):
+    if resolve_flag(config, "allow_secrets", False):
         return None
     sec = config.get("secrets") or {}
     return SecretScanner(
         file_patterns=(*DEFAULT_SECRET_FILE_PATTERNS, *(sec.get("files") or ())),
         content_patterns=(*DEFAULT_SECRET_CONTENT_PATTERNS, *(sec.get("content") or ())),
-        scan_content=bool(sec.get("scan_content", True)),
+        scan_content=resolve_flag(sec, "scan_content", True),
     )
 
 

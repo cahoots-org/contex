@@ -10,6 +10,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_flag,
     resolve_document_types,
     resolve_max_batch_bytes,
     resolve_max_file_bytes,
@@ -55,7 +56,7 @@ async def _run(config_path: str) -> None:
     repos: list[str] = source.get("repos") or []
     resources: list[str] = source.get("resources") or ["files", "issues", "pulls"]
     state: str = source.get("state", "all")
-    include_binary: bool = bool(config.get("include_binary", False))
+    include_binary: bool = resolve_flag(config, "include_binary", False)
 
     paths_cfg = config.get("paths") or {}
     include_globs: list[str] | None = paths_cfg.get("include") or None

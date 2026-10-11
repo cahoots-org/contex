@@ -16,6 +16,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_flag,
     resolve_prune,
     resolve_secret_scanner,
     run_connector,
@@ -57,7 +58,7 @@ def _reader_for(resource: str, client: AtlassianClient, source: dict):
             projects=jira.get("projects"),
             extra_jql=jira.get("jql"),
             since=jira.get("since"),
-            include_comments=bool(jira.get("include_comments", True)),
+            include_comments=resolve_flag(jira, "include_comments", True),
         )
     if resource == "confluence":
         conf = source.get("confluence") or {}
@@ -65,8 +66,8 @@ def _reader_for(resource: str, client: AtlassianClient, source: dict):
             client,
             site_url=site_url,
             spaces=conf.get("spaces"),
-            include_personal=bool(conf.get("include_personal", False)),
-            include_comments=bool(conf.get("include_comments", True)),
+            include_personal=resolve_flag(conf, "include_personal", False),
+            include_comments=resolve_flag(conf, "include_comments", True),
             since=conf.get("since"),
         )
     logging.warning("unknown resource %r — skipping", resource)

@@ -10,6 +10,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_flag,
     resolve_prune,
     resolve_secret_scanner,
     run_connector,
@@ -56,7 +57,7 @@ def _read_events(config: dict):
     tables_cfg = config.get("tables") or {}
     columns_cfg = config.get("columns") or {}
     key_columns = config.get("key_columns") or {}
-    include_binary = bool(config.get("include_binary", False))
+    include_binary = resolve_flag(config, "include_binary", False)
 
     return read_tables(
         dsn=dsn,

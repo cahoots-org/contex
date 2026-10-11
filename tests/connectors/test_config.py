@@ -1,6 +1,12 @@
 import pytest
 
-from connectors.base import ContexConfig, load_config, resolve_batch_size
+from connectors.base import (
+    ContexConfig,
+    load_config,
+    resolve_batch_size,
+    resolve_prune,
+    resolve_secret_scanner,
+)
 from connectors.base.config import DEFAULT_BATCH_SIZE, _expand_env
 
 
@@ -57,3 +63,11 @@ def test_contex_config_requires_url_and_project(missing):
 def test_resolve_batch_size_default_and_override():
     assert resolve_batch_size({}) == DEFAULT_BATCH_SIZE
     assert resolve_batch_size({"batch_size": 50}) == 50
+
+
+def test_env_expanded_false_is_false():
+    assert resolve_prune({"prune": "false"}) is False
+    assert resolve_prune({"prune": ""}) is True
+    assert resolve_secret_scanner({"allow_secrets": "false"}) is not None
+    with pytest.raises(ValueError):
+        resolve_prune({"prune": "maybe"})
