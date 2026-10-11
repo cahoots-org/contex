@@ -5,7 +5,7 @@
 contex:
   url: ${CONTEX_URL}
   project_id: ${CONTEX_PROJECT_ID}
-  service_account_token: ${CONTEX_TOKEN}
+  api_key: ${CONTEX_TOKEN}
 
 source:
   bucket: ${S3_BUCKET}

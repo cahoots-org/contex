@@ -33,7 +33,7 @@ Copy `connector.yaml.example` to `connector.yaml` and edit:
 contex:
   url: http://localhost:8001/mcp
   project_id: my-app
-  service_account_token: ${CONTEX_TOKEN}   # optional; omit if auth is off
+  api_key: ${CONTEX_TOKEN}   # optional; omit if auth is off
 
 source:
   bucket: my-knowledge-bucket
@@ -74,7 +74,7 @@ env-driven — no config file needed:
 docker run --rm \
   -e CONTEX_URL=http://contex:8001/mcp \
   -e CONTEX_PROJECT_ID=my-app \
-  -e CONTEX_TOKEN=svc_... \
+  -e CONTEX_TOKEN=ck_... \
   -e S3_BUCKET=my-knowledge-bucket \
   -e S3_PREFIX=docs/ \
   -e AWS_REGION=us-east-1 \
@@ -87,7 +87,7 @@ docker run --rm \
 |---|---|---|
 | `CONTEX_URL` | `contex.url` | MCP endpoint |
 | `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
-| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `CONTEX_TOKEN` | `contex.api_key` | Optional; omit if auth is off |
 | `S3_BUCKET` | `source.bucket` | Bucket to ingest |
 | `S3_PREFIX` | `source.prefix` | Optional; defaults to `""` |
 | `AWS_REGION` | `source.region` | Optional |

@@ -98,11 +98,11 @@ def resolve_secret_scanner(config: dict):
 
 @dataclass
 class ContexConfig:
-    """Where a connector publishes: the MCP endpoint, project, token, and stream name."""
+    """Where a connector publishes: the MCP endpoint, project, API key, and stream name."""
 
     url: str
     project_id: str
-    service_account_token: str | None = None
+    api_key: str | None = None
     origin: str | None = None
 
     @classmethod
@@ -114,8 +114,10 @@ class ContexConfig:
             raise ValueError("contex.url is required")
         if not project_id:
             raise ValueError("contex.project_id is required")
-        # An unset ${VAR} expands to "" — treat that as no token (auth off).
-        token = contex.get("service_account_token") or None
+        # An unset ${VAR} expands to "" — treat that as no key (auth off).
         return cls(
-            url=url, project_id=project_id, service_account_token=token, origin=config.get("origin") or None,
+            url=url,
+            project_id=project_id,
+            api_key=contex.get("api_key") or None,
+            origin=config.get("origin") or None,
         )

@@ -7,7 +7,7 @@ the server.
 
 ```
 source (read-only)  ->  connector  ->  MCP: contex_publish_batch  ->  Contex
-                        reads -> ChangeEvents   (as a service account)   embeds + stores
+                        reads -> ChangeEvents   (with an API key)        embeds + stores
 ```
 
 v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
@@ -23,7 +23,7 @@ refresh story. See each connector's design spec under
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. Batches are bounded by the server's `MAX_BATCH_SIZE`.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
-  `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with a service-account token when
+  `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with an API key when
   one is configured.
 - **Documents** — `document_event` sends a PDF, `.docx`, or image as base64,
   and Contex extracts the text server-side. `documents:` in `connector.yaml`

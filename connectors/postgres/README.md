@@ -19,7 +19,7 @@ Copy `connector.yaml.example` to `connector.yaml` and fill in your values:
 contex:
   url: http://localhost:8001/mcp
   project_id: my-app
-  service_account_token: ${CONTEX_TOKEN}   # omit when AUTH_ENABLED=false
+  api_key: ${CONTEX_TOKEN}   # omit when AUTH_ENABLED=false
 
 source:
   dsn: postgresql://readonly@db.internal:5432/app
@@ -56,7 +56,7 @@ env-driven — no config file needed:
 docker run --rm \
   -e CONTEX_URL=http://contex:8001/mcp \
   -e CONTEX_PROJECT_ID=my-app \
-  -e CONTEX_TOKEN=svc_... \
+  -e CONTEX_TOKEN=ck_... \
   -e POSTGRES_DSN=postgresql://readonly@db.internal:5432/app \
   ghcr.io/cahoots-org/contex-connector-postgres:latest
 ```
@@ -65,7 +65,7 @@ docker run --rm \
 |---|---|---|
 | `CONTEX_URL` | `contex.url` | MCP endpoint |
 | `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
-| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `CONTEX_TOKEN` | `contex.api_key` | Optional; omit if auth is off |
 | `POSTGRES_DSN` | `source.dsn` | Read-only DSN for the source database |
 | `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
 

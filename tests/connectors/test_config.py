@@ -30,26 +30,26 @@ def test_load_config_reads_and_expands(tmp_path, monkeypatch):
         "contex:\n"
         "  url: http://localhost:8001/mcp\n"
         "  project_id: my-app\n"
-        "  service_account_token: ${CONTEX_TOKEN}\n"
+        "  api_key: ${CONTEX_TOKEN}\n"
         "batch_size: 200\n"
     )
     config = load_config(str(path))
-    assert config["contex"]["service_account_token"] == "tok123"
+    assert config["contex"]["api_key"] == "tok123"
     assert config["batch_size"] == 200
 
 
 def test_contex_config_from_dict():
     config = ContexConfig.from_dict(
-        {"contex": {"url": "http://x/mcp", "project_id": "p", "service_account_token": "t"}}
+        {"contex": {"url": "http://x/mcp", "project_id": "p", "api_key": "t"}}
     )
-    assert config == ContexConfig(url="http://x/mcp", project_id="p", service_account_token="t")
+    assert config == ContexConfig(url="http://x/mcp", project_id="p", api_key="t")
 
 
 def test_contex_config_empty_token_is_none():
     config = ContexConfig.from_dict(
-        {"contex": {"url": "http://x/mcp", "project_id": "p", "service_account_token": ""}}
+        {"contex": {"url": "http://x/mcp", "project_id": "p", "api_key": ""}}
     )
-    assert config.service_account_token is None
+    assert config.api_key is None
 
 
 @pytest.mark.parametrize("missing", ["url", "project_id"])

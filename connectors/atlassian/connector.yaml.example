@@ -1,7 +1,7 @@
 contex:
   url: ${CONTEX_URL}
   project_id: my-app
-  service_account_token: ${CONTEX_TOKEN}
+  api_key: ${CONTEX_TOKEN}
 
 source:
   site_url: ${ATLASSIAN_URL}        # e.g. https://your-org.atlassian.net
