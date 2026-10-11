@@ -71,3 +71,20 @@ async def test_sweep_purges_expired_subscriptions(db, reconcile):
     assert await sweep_once(db, svc, reconcile) is True
 
     assert await svc.all_ids() == [live]
+
+
+@pytest.mark.asyncio
+async def test_sweep_notifies_listeners_of_purged_subscriptions(db, notifier):
+    svc = SubscriptionService(db, _Matcher())
+    stale = await svc.create("p1", ["a"])
+    queue = notifier.listen(stale)
+    async with db.session() as session:
+        await session.execute(
+            update(Subscription).where(Subscription.subscription_id == stale)
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+        )
+        await session.commit()
+
+    assert await sweep_once(db, svc, reconcile=False) is True
+
+    assert await asyncio.wait_for(queue.get(), 2.0) == stale

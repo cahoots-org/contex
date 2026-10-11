@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select, text
 
 from src.core.db_models import Subscription
+from src.core.subscriptions import notify_updated
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,14 @@ async def sweep_once(db, subscriptions, reconcile: bool = True) -> bool:
                     await subscriptions.reconcile_project(project_id)
                 except Exception:
                     logger.exception("sweep reconcile failed for %s", project_id)
-        await lock_session.execute(delete(Subscription).where(Subscription.expires_at <= func.now()))
+        purged = (await lock_session.execute(
+            delete(Subscription).where(Subscription.expires_at <= func.now())
+            .returning(Subscription.subscription_id)
+        )).scalars().all()
+        # Listeners re-read, find it gone, and can re-create it.
+        now = datetime.now(timezone.utc)
+        for subscription_id in purged:
+            await notify_updated(lock_session, subscription_id, now)
         await lock_session.commit()
     return True
 
