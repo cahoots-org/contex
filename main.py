@@ -61,7 +61,7 @@ def run_startup_checks(app: FastAPI) -> None:
     # Refuse to bind a non-loopback address when auth is off, unless the
     # operator explicitly opts out via CONTEX_PROTECTED_MODE=false.
     check_protected_mode(
-        os.getenv("CONTEX_HOST", "0.0.0.0"),
+        os.getenv("CONTEX_HOST", "127.0.0.1"),
         auth_on=auth_enabled(),
         protected=os.getenv("CONTEX_PROTECTED_MODE", "true").lower() == "true",
     )
@@ -74,6 +74,7 @@ def run_startup_checks(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
+    run_startup_checks(app)
     logger.info("Contex starting", version="0.2.0")
     logger.info("Configuration loaded",
                 similarity_threshold=SIMILARITY_THRESHOLD,
@@ -218,8 +219,9 @@ async def lifespan(app: FastAPI):
     print("Contex is ready!")
     print("=" * 60)
     print()
-    print("Web UI: http://localhost:8001/")
-    print("MCP endpoint: http://localhost:8001/mcp")
+    port = os.getenv("CONTEX_PORT", "8001")
+    print(f"Web UI: http://localhost:{port}/")
+    print(f"MCP endpoint: http://localhost:{port}/mcp")
 
     if auth_enabled():
         print("Security: API Key Auth + RBAC + Rate Limiting ENABLED")
@@ -230,8 +232,6 @@ async def lifespan(app: FastAPI):
     # Store in app state
     app.state.db = db
     app.state.context_engine = context_engine
-
-    run_startup_checks(app)
 
     # Wire MCP server: store references and enter the session manager context.
     # The MCP server and bus were built at module level with a lazy engine accessor;
@@ -483,7 +483,7 @@ except Exception as e:
 
 if __name__ == "__main__":
     import uvicorn
-    host = os.getenv("CONTEX_HOST", "0.0.0.0")
+    host = os.getenv("CONTEX_HOST", "127.0.0.1")
     port = int(os.getenv("CONTEX_PORT", "8001"))
     # Open MCP streams never close on their own; cap the wait so shutdown
     # cleanup runs inside Docker's 10s stop grace period.

@@ -55,6 +55,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app \
+    CONTEX_HOST=0.0.0.0 \
     CONTEX_VERSION=${CONTEX_VERSION}
 
 # Copy virtual environment from builder
