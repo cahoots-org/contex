@@ -302,11 +302,11 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         _throttle(limiter, "publish", "RATE_LIMIT_PUBLISH", 60)
-        seq = await e.publish_data(DataPublishEvent(
+        await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
             published_at=_parse_timestamp(published_at, "published_at"),
         ), source='mcp')
-        return json.dumps({"published": data_key, "sequence": str(seq)})
+        return json.dumps({"published": data_key})
 
     @server.tool(name="contex_publish_batch",
                  description="Publish/update many context items for a project in one call. "

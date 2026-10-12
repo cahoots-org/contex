@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -120,61 +119,6 @@ class APIKeyRole(Base):
 
     # Relationships
     api_key: Mapped["APIKey"] = relationship(back_populates="role")
-
-
-class Event(TenantScopedMixin, Base):
-    """Event model - event sourcing table."""
-
-    __tablename__ = "events"
-
-    _tenant_ondelete = "CASCADE"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    event_type: Mapped[str] = mapped_column(Text, nullable=False)
-    data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    data_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    source: Mapped[str] = mapped_column(
-        String(50), nullable=False, server_default="api"
-    )
-    actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    actor_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    actor_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    __table_args__ = (
-        Index("idx_events_project_sequence", "project_id", "sequence", unique=True),
-        Index("idx_events_project_created", "project_id", "created_at"),
-        Index("idx_events_tenant", "tenant_id"),
-        Index(
-            "idx_events_project_data_key_sequence",
-            "project_id",
-            "data_key",
-            sequence.desc(),
-        ),
-    )
-
-
-class EventSequenceCounter(Base):
-    """Per-project event sequence counter.
-
-    Backs atomic, race-free sequence assignment for the event log (#104). The
-    event store bumps a project's counter with a single
-    ``INSERT ... ON CONFLICT (project_id) DO UPDATE ... RETURNING`` statement,
-    which row-locks the counter and serialises concurrent publishes to the same
-    project while keeping sequences per-project, monotonic, and starting from 1.
-    Kept in agreement with alembic migration 006 (which is the schema source).
-    """
-
-    __tablename__ = "event_sequence_counters"
-
-    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    last_sequence: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, server_default="0"
-    )
 
 
 class Embedding(Base):
