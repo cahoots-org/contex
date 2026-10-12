@@ -105,3 +105,19 @@ def test_comment_inside_a_fenced_block_is_not_a_heading():
 def test_a_version_number_does_not_make_prose_markdown():
     result = NodeConverter().parse("We shipped version 2.5 today. It is faster. Try it now!")
     assert result.format_name == "text"
+
+
+@pytest.mark.parametrize("fence", ["```bash\r", "``` bash", "```bash ", '```bash title="setup.sh"', "```shell-session", "~~~bash"])
+def test_fenced_code_survives_common_fence_forms(fence):
+    close = "~~~" if fence.startswith("~") else "```"
+    doc = f"# Install\n\n{fence}\nmake install\n{close}\n"
+    result = NodeConverter().parse(doc, "markdown")
+    assert [(n.node_type.value, n.content.strip()) for n in result.nodes] == [
+        ("heading", "Install"), ("code_block", "make install"),
+    ]
+
+
+def test_a_fence_mentioned_in_prose_keeps_later_sections():
+    doc = "# Doc\n\nWrap code in ``` fences.\n\n# Usage\n\nCall it.\n\n```py\nx = 1\n```\n"
+    contents = [n.content for n in NodeConverter().parse(doc, "markdown").nodes]
+    assert "Usage" in contents and "Call it." in contents and "x = 1" in contents
