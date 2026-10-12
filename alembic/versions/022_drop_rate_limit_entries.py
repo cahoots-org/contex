@@ -2,8 +2,8 @@
 
 Rate limits are counted in process memory now, so the table is unused.
 
-Revision ID: 021
-Revises: 020
+Revision ID: 022
+Revises: 021
 Create Date: 2026-10-11 00:00:00.000000
 
 """
@@ -12,8 +12,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = '021'
-down_revision: Union[str, None] = '020'
+revision: str = '022'
+down_revision: Union[str, None] = '021'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

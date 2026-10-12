@@ -5,8 +5,8 @@ MCP tools check ownership, give every project that has data or
 subscriptions but no owner to the default tenant, which is where its
 events and subscriptions already sit.
 
-Revision ID: 020
-Revises: 019
+Revision ID: 021
+Revises: 020
 Create Date: 2026-10-11 00:00:00.000000
 
 """
@@ -14,8 +14,8 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = '020'
-down_revision: Union[str, None] = '019'
+revision: str = '021'
+down_revision: Union[str, None] = '020'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
