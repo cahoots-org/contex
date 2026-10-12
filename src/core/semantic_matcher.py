@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
-import numpy as np
 from sqlalchemy import Text, all_, any_, delete, func, literal, select, text, update
 from sqlalchemy.dialects.postgresql import ARRAY, insert as pg_insert
 
@@ -19,7 +18,6 @@ from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
 from src.core.node_parsers import DocumentRejected
-from src.core.recency import recency_filter
 from src.core.relevance import JevReranker
 from src.core.vector_search import PgVectorSearch
 
