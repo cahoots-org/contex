@@ -84,7 +84,7 @@ To get pushed when it changes instead of re-reading, listen on the resource. [`e
 - **Semantic matching:** matches needs to data by meaning, using sentence-transformer embeddings.
 - **Hybrid search:** combines vector similarity and BM25 keyword matching.
 - **Live subscriptions:** matched context that refreshes when your data changes.
-- **Time windows:** limit a query or subscription to recent data with `since` or `max_age_seconds`. On a sliding window, items drop out as they age. Connectors publish each item at the source's own update time, so backfilled history counts as old.
+- **Time windows:** limit a query or subscription to recent data with `since` or `max_age_seconds`. On a sliding window, items drop out as they age. The S3, Jira, Confluence and GitHub issue, PR and commit connectors publish each item at the source's own update time, so their backfilled history counts as old; Postgres rows and GitHub files count as new on their first load.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
 - **Documents:** publish PDFs and Word files as base64, and Contex extracts their text. With `OCR_ENABLED`, scanned pages and images are read too.
 - **Security:** API-key auth and RBAC, off by default for local dev.
