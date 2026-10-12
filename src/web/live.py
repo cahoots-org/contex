@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import uuid4
 
@@ -35,7 +34,7 @@ async def stream_subscription_updates(
 
         # Read AFTER listening so a change racing the create() is not missed.
         bundle = await engine.subscriptions.get_bundle(sub_id)
-        yield _sse({"type": "bundle", "bundle": bundle, "updated_at": None})
+        yield _sse({"type": "bundle", "bundle": bundle})
 
         # A quiet stream never reads, so renew the lease well before it lapses.
         renew_every = engine.subscriptions.ttl.total_seconds() / 2
@@ -46,11 +45,7 @@ async def stream_subscription_updates(
                 await engine.subscriptions.renew(sub_id)
                 continue
             bundle = await engine.subscriptions.get_bundle(sub_id)
-            yield _sse({
-                "type": "bundle",
-                "bundle": bundle,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            yield _sse({"type": "bundle", "bundle": bundle})
     finally:
         try:
             if queue is not None:

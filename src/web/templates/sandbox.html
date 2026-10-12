@@ -10,12 +10,12 @@
     watching: false,
     watchLastByKey: {},
     eventSource: null,
-    projectData: [],
+    projectData: null,
     expandAll() {
-        this.projectData.forEach(item => item.expanded = true);
+        (this.projectData || []).forEach(item => item.expanded = true);
     },
     collapseAll() {
-        this.projectData.forEach(item => item.expanded = false);
+        (this.projectData || []).forEach(item => item.expanded = false);
     },
     startWatch() {
         if (!this.selectedProject || !this.queryText.trim()) {
@@ -193,7 +193,7 @@
                 </div>
             </div>
             <div class="data-panel-content">
-                <div x-show="!projectData || projectData.length === 0" class="no-data">
+                <div x-show="projectData && projectData.length === 0" class="no-data">
                     No data in this project.
                 </div>
                 <div x-show="projectData && projectData.length > 0" class="data-items">
