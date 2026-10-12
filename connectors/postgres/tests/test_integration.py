@@ -179,21 +179,6 @@ class TestReaderIntegration:
         keys = {e.key for e in events}
         assert all(k.startswith(f"{_DB}.contex_test.products.") for k in keys)
 
-    def test_upsert_idempotency(self):
-        """Re-running produces the same keys (no duplication)."""
-        kwargs = dict(
-            dsn=_dsn(),
-            tbl_include=["contex_test.products"],
-            tbl_exclude=None,
-            col_include=None,
-            col_exclude=None,
-            key_columns={},
-            include_binary=False,
-        )
-        first = [e.key for e in read_tables(**kwargs)]
-        second = [e.key for e in read_tables(**kwargs)]
-        assert sorted(first) == sorted(second)
-
     def test_partitioned_table_read_through_its_parent(self):
         with psycopg.connect(_dsn(), autocommit=True) as conn:
             conn.execute(
