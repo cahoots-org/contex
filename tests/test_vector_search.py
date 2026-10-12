@@ -34,6 +34,7 @@ async def test_hnsw_scan_widened_to_the_request(db):
         await search._widen_hnsw_scan(session, top_k=100)
         assert await session.scalar(text("SHOW hnsw.ef_search")) == "100"
         assert await session.scalar(text("SHOW hnsw.iterative_scan")) == "strict_order"
+        assert await session.scalar(text("SHOW hnsw.max_scan_tuples")) == "2147483647"
 
 
 @pytest.mark.asyncio

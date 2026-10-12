@@ -13,6 +13,8 @@ import onnxruntime as ort
 from huggingface_hub import hf_hub_download
 from tokenizers import Tokenizer
 
+from src.core.limits import MAX_EMBED_CHARS, MAX_SEQ_LENGTH
+
 ONNX_FILE = "onnx/model.onnx"
 
 
@@ -22,11 +24,9 @@ async def encode_async(model, texts, **kwargs):
 
 
 class OnnxEmbedder:
-    def __init__(self, model_name: str, max_seq_length: int = 512):
+    def __init__(self, model_name: str):
         self.tokenizer = Tokenizer.from_file(hf_hub_download(model_name, "tokenizer.json"))
-        self.tokenizer.enable_truncation(max_seq_length)
-        # Tokenizing costs memory in proportion to the text; this many chars is well past max_seq_length tokens.
-        self._max_chars = max_seq_length * 16
+        self.tokenizer.enable_truncation(MAX_SEQ_LENGTH)
         self.tokenizer.enable_padding()
         self.session = ort.InferenceSession(
             hf_hub_download(model_name, ONNX_FILE), providers=["CPUExecutionProvider"]
@@ -53,7 +53,7 @@ class OnnxEmbedder:
         return out
 
     def _encode_batch(self, texts: List[str]) -> np.ndarray:
-        encodings = self.tokenizer.encode_batch([t[: self._max_chars] for t in texts])
+        encodings = self.tokenizer.encode_batch([t[:MAX_EMBED_CHARS] for t in texts])
         input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
         mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
         feed = {"input_ids": input_ids, "attention_mask": mask}

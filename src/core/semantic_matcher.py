@@ -335,28 +335,26 @@ class SemanticDataMatcher:
                 raise RuntimeError("document changed while it was being registered")
             if rows:
                 await session.execute(stmt, rows)
-            removed = await session.execute(
+            await session.execute(
                 delete(Embedding)
                 .where(Embedding.project_id == project_id)
                 .where(Embedding.data_key == data_key)
                 .where(Embedding.node_key != all_(literal(node_keys, ARRAY(Text))))
             )
-            # Symbols are the defs/refs the parser recorded per node, rewritten
-            # whenever the nodes change. Unchanged documents keep theirs as is.
-            if rows or removed.rowcount:
-                await session.execute(
-                    delete(Symbol)
-                    .where(Symbol.project_id == project_id)
-                    .where(Symbol.data_key == data_key)
-                )
-                session.add_all([
-                    Symbol(project_id=project_id, data_key=data_key, node_key=node_key,
-                           name=name, role=role)
-                    for node, node_key in zip(nodes, node_keys)
-                    for role, names in (("def", node.metadata.get("defs", [])),
-                                        ("ref", node.metadata.get("refs", [])))
-                    for name in names if len(name) <= 255
-                ])
+            # Symbols are the defs/refs the parser recorded per node.
+            await session.execute(
+                delete(Symbol)
+                .where(Symbol.project_id == project_id)
+                .where(Symbol.data_key == data_key)
+            )
+            session.add_all([
+                Symbol(project_id=project_id, data_key=data_key, node_key=node_key,
+                       name=name, role=role)
+                for node, node_key in zip(nodes, node_keys)
+                for role, names in (("def", node.metadata.get("defs", [])),
+                                    ("ref", node.metadata.get("refs", [])))
+                for name in names if len(name) <= 255
+            ])
 
         logger.info(
             "Registered data",
@@ -480,11 +478,11 @@ class SemanticDataMatcher:
             return []
         async with self.db.session() as session:
             result = await session.execute(
-                select(Embedding)
+                select(Embedding.node_key, Embedding.data_key, Embedding.data)
                 .where(Embedding.project_id == project_id)
                 .where(Embedding.node_key.in_([key for key, _ in ranked]))
             )
-            rows = {row.node_key: row for row in result.scalars()}
+            rows = {row.node_key: row for row in result}
         return [
             {
                 "data_key": key,

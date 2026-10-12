@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
@@ -18,6 +20,7 @@ async def test_reconcile_honors_persisted_params(db):
         await engine.publish_data(DataPublishEvent(
             project_id="p", data_key=key, data=data, data_format="json",
         ))
+    await asyncio.gather(*engine._reconcile_tasks.values())
     bundle = await engine.subscriptions.get_bundle(sub_id)
     total = sum(len(v) for v in bundle.values())
     # if reconcile used the engine default (max_matches=1) this would be 1; the persisted top_k=10 must win

@@ -25,7 +25,8 @@ class PgVectorSearch:
 
         By default the scan stops at ``hnsw.ef_search`` (40) candidates and the
         project filter runs afterwards, so other projects' rows use up slots.
-        Iterative scans (pgvector 0.8+) keep scanning until the limit is met.
+        Iterative scans (pgvector 0.8+) keep scanning until the limit is met,
+        bounded only by memory rather than the default 20,000 tuples.
         """
         if self._iterative_scan is None:
             version = await session.scalar(
@@ -38,6 +39,7 @@ class PgVectorSearch:
         await session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         if self._iterative_scan:
             await session.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
+            await session.execute(text("SET LOCAL hnsw.max_scan_tuples = 2147483647"))
 
     async def search(
         self, project_id: str, query: str, top_k: int,

@@ -9,6 +9,7 @@ from src.core.db_models import Subscription
 
 from src.core.limits import (
     MAX_BATCH_SIZE,
+    MAX_EMBED_CHARS,
     MAX_NEEDS,
     MAX_TOP_K,
     check_batch_size,
@@ -31,6 +32,9 @@ def test_check_needs_rejects_oversized():
     check_needs(["a"] * MAX_NEEDS)             # at the cap is fine
     with pytest.raises(ValueError, match="Too many needs"):
         check_needs(["a"] * (MAX_NEEDS + 1))
+    check_needs(["a" * MAX_EMBED_CHARS])
+    with pytest.raises(ValueError, match="Need too long"):
+        check_needs(["a" * (MAX_EMBED_CHARS + 1)])
 
 
 def test_check_batch_size_rejects_oversized():

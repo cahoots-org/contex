@@ -1,34 +1,69 @@
 """Tests for Context Engine"""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 import numpy as np
-from unittest.mock import Mock, AsyncMock, MagicMock, patch
+from unittest.mock import Mock, AsyncMock, MagicMock, call, patch
 
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 
 
+def _engine(errors, reconcile):
+    engine = ContextEngine.__new__(ContextEngine)
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=errors))
+    engine.subscriptions = MagicMock(reconcile_project=reconcile)
+    engine._reconcile_pending, engine._reconcile_tasks = {}, {}
+    return engine
+
+
 @pytest.mark.asyncio
 async def test_publish_batch_reconciles_once_with_all_keys():
-    engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None] * 3))
-    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
+    engine = _engine([None] * 3, AsyncMock())
 
     events = [DataPublishEvent(project_id="p1", data_key=k, data={"a": 1}) for k in ("k1", "k2", "k3")]
     published, failed = await engine.publish_data_batch(events)
+    await asyncio.gather(*engine._reconcile_tasks.values())
 
     assert (published, failed) == (["k1", "k2", "k3"], [])
     engine.subscriptions.reconcile_project.assert_awaited_once_with("p1", {"k1", "k2", "k3"})
 
 
 @pytest.mark.asyncio
+async def test_publish_returns_while_reconcile_runs_and_merges_the_next_one():
+    release = asyncio.Event()
+
+    async def blocked(*_):
+        await release.wait()
+
+    engine = _engine([None], AsyncMock(side_effect=blocked))
+
+    for key in ("k1", "k2", "k3"):
+        await asyncio.wait_for(engine.publish_data(DataPublishEvent(project_id="p1", data_key=key, data={"a": 1})), 1)
+        await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(*engine._reconcile_tasks.values())
+
+    assert engine.subscriptions.reconcile_project.await_args_list == [call("p1", {"k1"}), call("p1", {"k2", "k3"})]
+
+
+@pytest.mark.asyncio
 async def test_publish_survives_reconcile_failure():
-    engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
-    engine.subscriptions = MagicMock(reconcile_project=AsyncMock(side_effect=RuntimeError("boom")))
+    engine = _engine([None], AsyncMock(side_effect=RuntimeError("boom")))
 
     await engine.publish_data(DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1}))
+    await asyncio.gather(*engine._reconcile_tasks.values())
+
+
+@pytest.mark.asyncio
+async def test_dict_under_a_file_key_keeps_its_implicit_format():
+    engine = _engine([None], AsyncMock())
+
+    await engine.publish_data(DataPublishEvent(project_id="p1", data_key="users.csv", data={"host": "db"}))
+
+    assert engine.semantic_matcher.register_data_batch.await_args.args[1] == [("users.csv", {"host": "db"}, None)]
 
 
 class TestContextEngine:

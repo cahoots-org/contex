@@ -1,5 +1,6 @@
 """Main Context Engine orchestrator"""
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
@@ -64,8 +65,27 @@ class ContextEngine:
             default_threshold=self.semantic_matcher.threshold,
             default_top_k=self.semantic_matcher.max_matches,
         )
+        # Background reconcile per project: one running, the next one's keys pending.
+        self._reconcile_pending: Dict[str, set] = {}
+        self._reconcile_tasks: Dict[str, asyncio.Task] = {}
 
         logger.info("Initialized")
+
+    def _reconcile_later(self, project_id: str, keys: set) -> None:
+        """Reconcile ``keys`` in the background, merged into the project's next run."""
+        self._reconcile_pending.setdefault(project_id, set()).update(keys)
+        if project_id not in self._reconcile_tasks:
+            self._reconcile_tasks[project_id] = asyncio.create_task(self._run_reconciles(project_id))
+
+    async def _run_reconciles(self, project_id: str) -> None:
+        try:
+            while keys := self._reconcile_pending.pop(project_id, None):
+                try:
+                    await self.subscriptions.reconcile_project(project_id, keys)
+                except Exception:
+                    logger.exception("subscription reconcile failed for %s", project_id)
+        finally:
+            del self._reconcile_tasks[project_id]
 
     async def publish_data(self, event: DataPublishEvent) -> None:
         """Publish one document (any format); raises ValueError if it can't be read."""
@@ -91,11 +111,11 @@ class ContextEngine:
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")
 
-        # Connectors (GitHub/S3) emit the generic "text"; infer "code" from the
-        # key extension here so code reaches CodeNodeParser instead of the
-        # plain-text splitter. Explicit non-generic formats pass through.
+        # A generic or absent format is inferred from the key's extension, but
+        # only for documents; structured data keeps its implicit format.
         prepared = [
-            (e, _strip_nul_bytes(e.data), resolve_format(e.data_format, e.data_key))
+            (e, _strip_nul_bytes(e.data),
+             resolve_format(e.data_format, e.data_key if isinstance(e.data, (str, bytes)) else None))
             for e in events
         ]
 
@@ -109,13 +129,8 @@ class ContextEngine:
         published = [e.data_key for e, error in zip(events, errors) if error is None]
         failed = [{"data_key": e.data_key, "error": error} for e, error in zip(events, errors) if error]
 
-        # Reconcile once for the whole batch. The data is already stored, so a
-        # reconcile failure must not fail the publish.
         if published:
-            try:
-                await self.subscriptions.reconcile_project(project_id, set(published))
-            except Exception:
-                logger.exception("subscription reconcile failed for %s", project_id)
+            self._reconcile_later(project_id, set(published))
 
         return published, failed
 
@@ -126,17 +141,14 @@ class ContextEngine:
         return await self.semantic_matcher.list_keys(project_id, origin, after, limit)
 
     async def delete_data(self, project_id: str, data_keys: List[str]) -> Dict[str, List[str]]:
-        """Delete documents by key and reconcile once.
+        """Delete documents by key; subscriptions catch up in the background.
 
         Returns the requested keys split into ``deleted`` and ``missing``.
         """
         keys = list(dict.fromkeys(data_keys))
         deleted = set(await self.semantic_matcher.delete_data_keys(project_id, keys))
         if deleted:
-            try:
-                await self.subscriptions.reconcile_project(project_id, deleted)
-            except Exception:
-                logger.exception("subscription reconcile failed after deleting from %s", project_id)
+            self._reconcile_later(project_id, deleted)
         return {
             "deleted": [k for k in keys if k in deleted],
             "missing": [k for k in keys if k not in deleted],

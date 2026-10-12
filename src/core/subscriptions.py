@@ -379,10 +379,10 @@ class SubscriptionService:
             # Matched nodes are candidates too: a matched caller still links to a matched callee.
             emb_by_key = {
                 e.node_key: e for e in (await session.execute(
-                    select(Embedding)
+                    select(Embedding.node_key, Embedding.data_key, Embedding.data)
                     .where(Embedding.project_id == project_id)
                     .where(Embedding.node_key.in_({nk for _, nk in def_rows}))
-                )).scalars().all()
+                ))
             }
 
         refs_by_node: dict[str, set[str]] = {}
