@@ -1,6 +1,7 @@
 import pytest
 
 from src.core.db_models import Symbol
+from src.core import subscriptions
 from src.core.subscriptions import SubscriptionService
 
 
@@ -76,6 +77,17 @@ async def test_reconcile_falls_back_to_all_when_filter_raises(db):
     svc.matcher.calls.clear()
 
     await svc.reconcile_project("p1", {"a.py"})
+
+    assert sorted(svc.matcher.calls) == [("a",), ("b",)]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_with_more_keys_than_a_batch_rematches_all(db, monkeypatch):
+    svc, _, _ = await _service(db)
+    monkeypatch.setattr(subscriptions, "MAX_BATCH_SIZE", 1)
+    svc.matcher.calls.clear()
+
+    await svc.reconcile_project("p1", {"a.py", "c.py"})
 
     assert sorted(svc.matcher.calls) == [("a",), ("b",)]
 
