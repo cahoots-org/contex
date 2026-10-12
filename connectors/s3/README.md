@@ -6,9 +6,9 @@ upserts it by `bucket/key`, so re-running (e.g. on a cron) is the refresh story.
 
 ## What gets ingested
 
-Text-like objects only: `.txt .md .markdown .json .csv .tsv .yaml .yml .html
-.log .rst` by default (configurable via `content_types`). Binary objects (images,
-archives, executables) are skipped. Objects over `max_object_bytes` (default
+Text objects (`.txt .md .markdown .json .csv .tsv .yaml .yml .html .log .rst` by
+default, configurable via `content_types`), plus the `documents:` types (PDF and
+`.docx` by default) whatever `content_types` says. Other binary objects are skipped. Objects over `max_object_bytes` (default
 5 MB) are also skipped and logged.
 
 `.json` objects are parsed into a dict (`data_format=json`). Everything else is

@@ -25,7 +25,8 @@
         this.stopWatch();
         this.watchLastByKey = {};
         const url = '/sandbox/subscribe?project_id=' + encodeURIComponent(this.selectedProject)
-                  + '&need=' + encodeURIComponent(this.queryText);
+                  + '&need=' + encodeURIComponent(this.queryText)
+                  + '&top_k=' + this.topK + '&threshold=' + this.threshold;
         this.eventSource = new EventSource(url);
         this.watching = true;
         this.eventSource.onmessage = (e) => {
@@ -103,7 +104,6 @@
                 <form
                     hx-post="/sandbox/query"
                     hx-target="#results"
-                    hx-indicator="#loading"
                     class="query-form"
                     @submit="stopWatch(); $event.target.querySelector('button').disabled = true"
                 >
@@ -157,8 +157,7 @@
         </div>
 
             <button type="submit" class="btn-primary">
-                <span class="htmx-indicator" id="loading">Searching...</span>
-                <span>Find matches</span>
+                Find matches
             </button>
             <button type="button" class="btn-secondary" @click="watching ? stopWatch() : startWatch()">
                 <span x-show="!watching">Watch</span>
@@ -195,7 +194,7 @@
             </div>
             <div class="data-panel-content">
                 <div x-show="!projectData || projectData.length === 0" class="no-data">
-                    Loading project data...
+                    No data in this project.
                 </div>
                 <div x-show="projectData && projectData.length > 0" class="data-items">
                     <template x-for="(item, index) in projectData" :key="index">

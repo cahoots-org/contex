@@ -18,7 +18,7 @@ config = context.config
 
 # In-process runs pass the URL; the alembic CLI reads DATABASE_URL.
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL))
+    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL).replace("%", "%%"))
 
 # Interpret the config file for Python logging, but only from the alembic CLI.
 # In-process runs (app boot, test fixtures) set configure_logger=False so

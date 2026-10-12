@@ -27,15 +27,10 @@ _MAX_RETRIES = 4
 _DEFAULT_RETRY_WAIT = 60.0
 
 
-class RateLimitError(Exception):
-    """Raised when the Atlassian API keeps returning 429 after retries."""
-
-
 class AtlassianClient:
     """Async Atlassian Cloud REST client for one site.
 
-    Retries on ``429`` using the ``Retry-After`` header, then raises
-    :class:`RateLimitError` if still limited.
+    Retries on ``429`` using the ``Retry-After`` header, then raises the HTTP error.
     """
 
     def __init__(
@@ -75,10 +70,6 @@ class AtlassianClient:
     async def get(self, path: str, **params: Any) -> Any:
         """GET one resource, backing off on rate limit."""
         return await self._request("GET", path, params=params or None)
-
-    async def post(self, path: str, json_body: dict) -> Any:
-        """POST a JSON body and return the parsed response."""
-        return await self._request("POST", path, json=json_body)
 
     # -- pagination --------------------------------------------------------
 
@@ -137,7 +128,6 @@ class AtlassianClient:
             if not response.content:
                 return {}
             return response.json()
-        raise RateLimitError(f"Rate limited after {_MAX_RETRIES} attempts on {url}")
 
 
 def _retry_after(response: httpx.Response) -> float:

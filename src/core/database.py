@@ -42,7 +42,7 @@ def _alembic_config(database_url: str) -> Config:
     """Build an alembic Config pointed at our script dir and the given asyncpg URL."""
     cfg = Config(str(_ALEMBIC_INI))
     cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
-    cfg.set_main_option("sqlalchemy.url", database_url)
+    cfg.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     cfg.attributes["configure_logger"] = False
     return cfg
 
