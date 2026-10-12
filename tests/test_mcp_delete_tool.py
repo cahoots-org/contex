@@ -14,7 +14,7 @@ from src.core.mcp_adapter import build_mcp_server
 
 async def _server_with_doc(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     await server.call_tool("contex_publish", {
         "project_id": "p", "data_key": "cfg", "data": {"purpose": "database connection settings"},

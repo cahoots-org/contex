@@ -19,7 +19,7 @@ async def _publish_once(server, key):
 async def test_direct_publish_throttled_at_configured_limit(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "2")
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     await _publish_once(server, "a")
@@ -35,7 +35,7 @@ async def test_bulk_ingest_exempt_by_default(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "1")  # direct is tight...
     monkeypatch.delenv("RATE_LIMIT_INGEST", raising=False)  # ...but ingest is exempt
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     for _ in range(5):
@@ -48,7 +48,7 @@ async def test_bulk_ingest_exempt_by_default(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_publish_tool_updates_subscription_bundle(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("p", ["database connection settings"], top_k=10, threshold=0.1)
 
@@ -65,7 +65,7 @@ async def test_publish_tool_updates_subscription_bundle(db):
 @pytest.mark.asyncio
 async def test_batch_item_without_format_is_detected_from_its_key(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     await server.call_tool("contex_publish_batch", {
@@ -80,7 +80,7 @@ async def test_batch_item_without_format_is_detected_from_its_key(db):
 @pytest.mark.asyncio
 async def test_batch_reports_unreadable_items_and_empty_content_clears_old_nodes(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     await server.call_tool("contex_publish", {
         "project_id": "p", "data_key": "notes", "data": {"text": "old secret content here."},

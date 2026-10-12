@@ -64,7 +64,7 @@ def _docx() -> bytes:
 
 async def _publish_and_query(db, data: bytes, data_key: str, data_format: str | None = None) -> list:
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
         {"data_key": data_key, "data": base64.b64encode(data).decode(), "data_format": data_format},
@@ -85,7 +85,7 @@ async def test_base64_document_is_extracted(db, make, data_key):
 @pytest.mark.asyncio
 async def test_bad_batch_items_are_listed_in_failed(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     out = await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
         {"data_key": "r.pdf", "data": "not base64!"},

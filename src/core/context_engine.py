@@ -78,10 +78,6 @@ class ContextEngine:
 
         logger.info("Initialized")
 
-    async def initialize(self):
-        """Initialize pgvector index for vector similarity search"""
-        await self.semantic_matcher.initialize_index()
-
     def _estimate_tokens(self, data: Any) -> int:
         """
         Estimate token count for data.

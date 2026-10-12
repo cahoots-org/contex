@@ -13,7 +13,7 @@ from src.core.mcp_adapter import build_mcp_server
 @pytest.mark.asyncio
 async def test_contex_query_tool_returns_matches(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(
         project_id="p", data_key="db", data={"purpose": "database connection settings"}, data_format="json",
     ))
@@ -33,7 +33,7 @@ async def test_query_no_matches_returns_empty(db):
     """A query against a project with no data (or no matches above threshold)
     must return an empty matches list."""
     engine = ContextEngine(db=db, similarity_threshold=0.99, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     result = await server.call_tool("contex_query", {
@@ -48,7 +48,7 @@ async def test_query_no_matches_returns_empty(db):
 @pytest.mark.asyncio
 async def test_contex_publish_batch_publishes_all_items(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     result = await server.call_tool("contex_publish_batch", {
@@ -74,7 +74,7 @@ async def test_contex_publish_batch_publishes_all_items(db):
 async def test_contex_publish_batch_rejects_oversized_batch(db, monkeypatch):
     monkeypatch.setattr(limits, "MAX_BATCH_SIZE", 2)
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     items = [{"data_key": f"k{i}", "data": {"v": i}} for i in range(3)]
@@ -94,7 +94,7 @@ async def _age_row(db, data_key, *, created_at):
 @pytest.mark.asyncio
 async def test_contex_query_since_filters_old_data(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(
         project_id="tw", data_key="fresh", data={"purpose": "payments api"}, data_format="json",
     ))
@@ -117,7 +117,7 @@ async def test_contex_query_since_filters_old_data(db):
 @pytest.mark.asyncio
 async def test_contex_query_rejects_bad_since(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     with pytest.raises(Exception):
         await server.call_tool("contex_query", {
@@ -128,7 +128,7 @@ async def test_contex_query_rejects_bad_since(db):
 @pytest.mark.asyncio
 async def test_subscription_scope_since_filters_bundle(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(
         project_id="tws", data_key="fresh", data={"purpose": "payments api"}, data_format="json",
     ))
