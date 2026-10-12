@@ -1,7 +1,10 @@
 """Unit tests for the pure mapping functions in connectors.postgres.mapping."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from connectors.postgres.reader import origin_for
 from connectors.postgres.mapping import (
@@ -71,14 +74,10 @@ class TestBuildDataKey:
         key = build_data_key("public", "order_items", row, ["order_id", "item_id"])
         assert key == "public.order_items.1:7"
 
-    def test_missing_key_col_renders_empty(self):
-        row = {"name": "Alice"}
-        key = build_data_key("public", "users", row, ["id"])
-        assert key == "public.users."
-
-    def test_none_value_renders_as_none_string(self):
-        row = {"id": None}
-        assert build_data_key("public", "t", row, ["id"]) == "public.t.None"
+    def test_colons_in_values_do_not_collide(self):
+        a = build_data_key("public", "t", {"x": "a:b", "y": "c"}, ["x", "y"])
+        b = build_data_key("public", "t", {"x": "a", "y": "b:c"}, ["x", "y"])
+        assert a != b
 
 
 class TestSelectColumns:
@@ -130,6 +129,14 @@ class TestSelectColumns:
         result = select_columns([], include_binary=False, col_include=None, col_exclude=None)
         assert result == []
 
+    def test_example_config_excludes_secret_columns(self):
+        example = yaml.safe_load((Path(__file__).parents[1] / "connector.yaml.example").read_text())
+        cols = self._cols(("id", "integer"), ("password", "text"), ("api_token", "text"))
+        result = select_columns(
+            cols, include_binary=False, col_include=None, col_exclude=example["columns"]["exclude"]
+        )
+        assert result == ["id"]
+
 
 class TestRowToEvent:
     def test_basic(self):
@@ -150,6 +157,9 @@ class TestRowToEvent:
         row = {"order_id": 10, "item_id": 3, "qty": 2}
         event = row_to_event("public", "order_items", row, ["order_id", "item_id"], ["order_id", "item_id", "qty"])
         assert event.key == "public.order_items.10:3"
+
+    def test_null_key_column_skips_row(self):
+        assert row_to_event("public", "events", {"event_id": None}, ["event_id"], ["event_id"]) is None
 
     def test_none_payload_value(self):
         row = {"id": 5, "description": None}

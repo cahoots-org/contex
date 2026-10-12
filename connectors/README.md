@@ -7,7 +7,7 @@ the server.
 
 ```
 source (read-only)  ->  connector  ->  MCP: contex_publish_batch  ->  Contex
-                        reads -> ChangeEvents   (as a service account)   embeds + stores
+                        reads -> ChangeEvents   (with an API key)        embeds + stores
 ```
 
 v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
@@ -23,25 +23,30 @@ refresh story. See each connector's design spec under
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. Batches are bounded by the server's `MAX_BATCH_SIZE`.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
-  `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with a service-account token when
+  `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with an API key when
   one is configured.
 - **Documents** — `document_event` sends a PDF, `.docx`, or image as base64,
-  and Contex extracts the text server-side, so connectors need no parsing
-  libraries. `documents:` in `connector.yaml` lists the extensions to send:
-  `[.pdf, .docx]` by default. Add `.png`, `.jpg`, or `.tiff` only when the
-  server runs with `OCR_ENABLED=true`, which also OCRs scanned PDF pages.
+  and Contex extracts the text server-side. `documents:` in `connector.yaml`
+  lists the extensions to send: `[.pdf, .docx]` by default. Add `.png`, `.jpg`,
+  or `.tiff` only when the server runs with `OCR_ENABLED=true`, which also OCRs
+  scanned PDF pages.
 - **Deletes** — each run tags what it publishes with an origin (e.g.
   `s3:bucket/prefix`). After a full run completes, the runner lists that
   origin's keys with `contex_list_keys` and deletes the ones the source no
   longer has. Runs filtered by a since-date never delete. Set `prune: false` in
-  `connector.yaml` to turn this off.
+  `connector.yaml` to turn this off. The origin names the source, not your
+  filters, so two configs reading one source (say, Jira projects A and B)
+  would delete each other's items: give each a distinct top-level `origin:`
+  name (e.g. `origin: team-a`).
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.
 - **Secret guard** — on by default, the runner drops any item that is or
   contains a secret (`.env`, `*.pem`, `id_rsa`, private-key blocks, `AKIA…` /
   `ghp_…` / Slack / Google keys) before it is published, and counts the drops in
-  `RunStats.skipped_secrets`. Configure in `connector.yaml`:
+  `RunStats.skipped_secrets`. Documents are scanned by their text, so images
+  and scanned PDFs, which have none to read, are dropped too while content
+  scanning is on. Configure in `connector.yaml`:
 
   ```yaml
   allow_secrets: false   # the switch: true ingests secrets as-is (no scanning)

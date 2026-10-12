@@ -71,6 +71,9 @@ async def read_files(
         f"/repos/{owner}/{repo}/git/trees/{default_branch}",
         recursive=1,
     )
+    if tree_data.get("truncated"):
+        # A partial listing would make prune delete every file past the cutoff.
+        raise RuntimeError(f"{owner}/{repo} has too many files to list in one tree request")
     blobs = [item for item in tree_data.get("tree", []) if item.get("type") == "blob"]
 
     for blob in blobs:

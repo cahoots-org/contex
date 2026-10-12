@@ -16,6 +16,10 @@ from .change_event import ChangeEvent
 
 log = logging.getLogger(__name__)
 
+# Flush a publish batch before it would exceed this many bytes, keeping each
+# request well under the server's upload cap (~50 MB) regardless of batch_size.
+MAX_BATCH_BYTES = 40_000_000
+
 
 @dataclass
 class RunStats:
@@ -42,7 +46,7 @@ async def run(
     publisher,
     batch_size: int = 500,
     progress: Callable[[int], None] | None = None,
-    max_batch_bytes: int | None = None,
+    max_batch_bytes: int = MAX_BATCH_BYTES,
     secret_scanner=None,
     prune: bool = False,
 ) -> RunStats:
@@ -54,8 +58,8 @@ async def run(
     ``progress`` is called with the running published-count after each flushed
     batch.
 
-    A batch flushes when it reaches ``batch_size`` items or, if ``max_batch_bytes``
-    is set, before its serialized size would exceed that cap — so one oversized
+    A batch flushes when it reaches ``batch_size`` items or before its
+    serialized size would exceed ``max_batch_bytes`` — so one oversized
     item can't push a request past the server's upload limit regardless of count.
 
     When ``secret_scanner`` is set, any event it flags is dropped before publish
@@ -100,7 +104,7 @@ async def run(
             item = event.key
         else:
             if secret_scanner is not None:
-                why = secret_scanner.reason(event.key, event.payload)
+                why = secret_scanner.reason(event.key, event.payload, event.data_format)
                 if why is not None:
                     stats.skipped_secrets += 1
                     log.warning("skip secret %s (%s)", event.key, why)
@@ -108,11 +112,7 @@ async def run(
             item = event.to_item()
             seen.add(event.key)
         item_bytes = len(json.dumps(item, default=str))
-        if (
-            buffer
-            and max_batch_bytes is not None
-            and buffer_bytes + item_bytes > max_batch_bytes
-        ):
+        if buffer and buffer_bytes + item_bytes > max_batch_bytes:
             await flush()
         buffer.append(item)
         buffer_bytes += item_bytes

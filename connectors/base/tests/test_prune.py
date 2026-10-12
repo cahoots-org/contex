@@ -5,7 +5,8 @@ import asyncio
 
 import pytest
 
-from connectors.base import ChangeEvent
+import connectors.base
+from connectors.base import ChangeEvent, ContexConfig, run_connector
 from connectors.base.runner import run
 from connectors.base.secrets import SecretScanner
 
@@ -88,3 +89,24 @@ def test_prune_deletes_in_batches():
     pub.delete_batch = recording_delete
     asyncio.run(run([], pub, batch_size=2, prune=True))
     assert calls == [2, 1]
+
+
+def test_origin_name_separates_configs_on_one_source(monkeypatch):
+    origins: list[str] = []
+
+    class _Recording(_Publisher):
+        def __init__(self, config, origin):
+            super().__init__([])
+            origins.append(origin)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+    monkeypatch.setattr(connectors.base, "ContexPublisher", _Recording)
+    for name in ("team-a", "team-b"):
+        config = ContexConfig.from_dict({"contex": {"url": "u", "project_id": "p"}, "origin": name})
+        asyncio.run(run_connector(config, [], origin="jira:site", prune=True))
+    assert origins == ["jira:site#team-a", "jira:site#team-b"]

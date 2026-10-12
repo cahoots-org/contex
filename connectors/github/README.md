@@ -15,7 +15,7 @@ cp connectors/github/connector.yaml.example connector.yaml
 # edit connector.yaml — set GITHUB_TOKEN and CONTEX_TOKEN in the environment
 
 export GITHUB_TOKEN=ghp_...
-export CONTEX_TOKEN=svc_...
+export CONTEX_TOKEN=ck_...
 
 python -m connectors.github --config connector.yaml
 ```
@@ -28,7 +28,7 @@ See `connector.yaml.example` for the full schema. Key fields:
 |---|---|
 | `contex.url` | MCP endpoint of your Contex instance |
 | `contex.project_id` | Target project |
-| `contex.service_account_token` | Optional service-account token (expand from env) |
+| `contex.api_key` | Optional Contex API key (expand from env) |
 | `source.token` | GitHub PAT with `repo` read scope (or App installation token) |
 | `source.repos` | List of `owner/repo` slugs to ingest |
 | `source.resources` | Subset of `[files, issues, pulls, commits]`; defaults to `[files, issues, pulls]` |
@@ -50,7 +50,7 @@ slug:
 docker run --rm \
   -e CONTEX_URL=http://contex:8001/mcp \
   -e CONTEX_PROJECT_ID=my-app \
-  -e CONTEX_TOKEN=svc_... \
+  -e CONTEX_TOKEN=ck_... \
   -e GITHUB_TOKEN=ghp_... \
   -e GITHUB_REPOS=cahoots-org/contex \
   ghcr.io/cahoots-org/contex-connector-github:latest
@@ -60,7 +60,7 @@ docker run --rm \
 |---|---|---|
 | `CONTEX_URL` | `contex.url` | MCP endpoint |
 | `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
-| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `CONTEX_TOKEN` | `contex.api_key` | Optional; omit if auth is off |
 | `GITHUB_TOKEN` | `source.token` | PAT with `repo` read scope |
 | `GITHUB_REPOS` | `source.repos` | A single `owner/repo` slug |
 | `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |

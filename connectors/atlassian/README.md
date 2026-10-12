@@ -17,7 +17,7 @@ export ATLASSIAN_URL=https://your-org.atlassian.net
 export ATLASSIAN_EMAIL=you@your-org.com
 export ATLASSIAN_API_KEY=...        # https://id.atlassian.com/manage-profile/security/api-tokens
 export CONTEX_URL=http://localhost:8001/mcp
-export CONTEX_TOKEN=svc_...          # only if AUTH_ENABLED
+export CONTEX_TOKEN=ck_...          # only if AUTH_ENABLED
 
 # read a few items without publishing (no Contex needed):
 python -m connectors.atlassian --config connector.yaml --dry-run 5
@@ -33,7 +33,7 @@ See `connector.yaml.example` for the full schema. Key fields:
 | Field | Description |
 |---|---|
 | `contex.url` / `contex.project_id` | MCP endpoint and target project |
-| `contex.service_account_token` | Optional service-account token (expand from env) |
+| `contex.api_key` | Optional Contex API key (expand from env) |
 | `source.site_url` | Atlassian site base URL (`https://org.atlassian.net`) |
 | `source.email` / `source.token` | Basic-auth credentials (account email + API token) |
 | `source.resources` | Subset of `[jira, confluence]`; defaults to both |
@@ -56,7 +56,7 @@ env-driven — no config file needed:
 docker run --rm \
   -e CONTEX_URL=http://contex:8001/mcp \
   -e CONTEX_PROJECT_ID=my-app \
-  -e CONTEX_TOKEN=svc_... \
+  -e CONTEX_TOKEN=ck_... \
   -e ATLASSIAN_URL=https://your-org.atlassian.net \
   -e ATLASSIAN_EMAIL=you@your-org.com \
   -e ATLASSIAN_API_KEY=... \
@@ -67,7 +67,7 @@ docker run --rm \
 |---|---|---|
 | `CONTEX_URL` | `contex.url` | MCP endpoint |
 | `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
-| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `CONTEX_TOKEN` | `contex.api_key` | Optional; omit if auth is off |
 | `ATLASSIAN_URL` | `source.site_url` | Site base URL (`https://org.atlassian.net`) |
 | `ATLASSIAN_EMAIL` | `source.email` | Account the API token belongs to |
 | `ATLASSIAN_API_KEY` | `source.token` | Atlassian API token (basic auth) |

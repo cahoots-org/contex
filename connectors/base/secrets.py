@@ -12,7 +12,11 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from fnmatch import fnmatch
+from fnmatch import fnmatchcase
+
+from .documents import FORMATS, document_text
+
+DOCUMENT_FORMATS = frozenset(FORMATS.values())
 
 # Files that are secrets by nature — never useful KB content.
 DEFAULT_SECRET_FILE_PATTERNS: tuple[str, ...] = (
@@ -29,7 +33,8 @@ DEFAULT_SECRET_CONTENT_PATTERNS: tuple[str, ...] = (
     r"\bgh[pousr]_[A-Za-z0-9]{36,}\b",             # GitHub tokens
     r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b",           # Slack tokens
     r"\bAIza[0-9A-Za-z_\-]{35}\b",                 # Google API key
-    r"\bsk-[A-Za-z0-9]{20,}\b",                    # OpenAI-style secret key
+    r"\bgithub_pat_[A-Za-z0-9_]{22,}",              # GitHub fine-grained token
+    r"\bsk-[A-Za-z0-9_-]{20,}",                     # OpenAI/Anthropic-style secret key
     r"https://hooks\.slack\.com/services/[A-Za-z0-9/]+",
 )
 
@@ -43,22 +48,28 @@ class SecretScanner:
         content_patterns: Sequence[str] = DEFAULT_SECRET_CONTENT_PATTERNS,
         scan_content: bool = True,
     ) -> None:
-        self.file_patterns = tuple(file_patterns)
+        self.file_patterns = tuple(p.lower() for p in file_patterns)
         self.scan_content = scan_content
         self._content_res = [re.compile(p) for p in content_patterns]
 
-    def reason(self, key: str, payload: object) -> str | None:
+    def reason(self, key: str, payload: object, data_format: str = "text") -> str | None:
         """A short reason the item is a secret (names the pattern, not the value), else None.
 
         ``key`` is the item key — for file connectors a repo path like
         ``owner/repo:path``; the trailing filename is what filename patterns match.
-        ``payload`` is the item content (str for files, dict for issues/rows).
+        ``payload`` is the item content (str for files, dict for issues/rows,
+        base64 for documents, whose text is scanned instead).
         """
+        key = key.lower()
         name = key.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
         for pat in self.file_patterns:
-            if fnmatch(name, pat) or fnmatch(key, pat):
+            if fnmatchcase(name, pat) or fnmatchcase(key, pat):
                 return f"secret-file pattern {pat!r}"
         if self.scan_content:
+            if data_format in DOCUMENT_FORMATS:
+                payload = document_text(payload, data_format)
+                if not payload:
+                    return "document text can't be read to scan"
             text = payload if isinstance(payload, str) else json.dumps(payload, default=str)
             for rx in self._content_res:
                 if rx.search(text):

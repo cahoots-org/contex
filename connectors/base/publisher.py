@@ -1,4 +1,4 @@
-"""The MCP transport: publish batches to Contex as a service account.
+"""The MCP transport: publish batches to Contex with an API key.
 
 ContexPublisher opens one MCP session for the life of a run and pushes each
 batch through the ``contex_publish_batch`` or ``contex_delete`` tool. It is the only connector module
@@ -43,9 +43,9 @@ class ContexPublisher:
     async def __aenter__(self) -> "ContexPublisher":
         self._stack = AsyncExitStack()
         http_client = None
-        if self._config.service_account_token:
+        if self._config.api_key:
             http_client = create_mcp_http_client(
-                headers={"Authorization": f"Bearer {self._config.service_account_token}"}
+                headers={"Authorization": f"Bearer {self._config.api_key}"}
             )
         streams = await self._stack.enter_async_context(
             streamable_http_client(self._config.url, http_client=http_client)

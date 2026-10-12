@@ -158,8 +158,14 @@ def read_tables(
 
             # Key columns must always be fetched even if excluded from payload.
             fetch_cols = list(dict.fromkeys(key_cols + selected))
-            row_count = 0
+            row_count = null_keys = 0
             for row in _page_rows(conn, schema, table, fetch_cols, page_size):
-                yield row_to_event(schema, table, row, key_cols, selected)
+                event = row_to_event(schema, table, row, key_cols, selected)
+                if event is None:
+                    null_keys += 1
+                    continue
+                yield event
                 row_count += 1
+            if null_keys:
+                logger.warning("%s: skipped %d row(s) with a NULL key column", qualified, null_keys)
             logger.info("%s: yielded %d row(s)", qualified, row_count)

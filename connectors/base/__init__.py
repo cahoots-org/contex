@@ -17,7 +17,7 @@ from .config import (
     ContexConfig,
     load_config,
     resolve_batch_size,
-    resolve_max_batch_bytes,
+    resolve_flag,
     resolve_max_file_bytes,
     resolve_prune,
     resolve_secret_scanner,
@@ -38,7 +38,7 @@ __all__ = [
     "matches_any",
     "resolve_batch_size",
     "resolve_document_types",
-    "resolve_max_batch_bytes",
+    "resolve_flag",
     "resolve_max_file_bytes",
     "resolve_prune",
     "resolve_secret_scanner",
@@ -52,25 +52,26 @@ async def run_connector(
     events,
     batch_size: int = 500,
     progress: Callable[[int], None] | None = None,
-    max_batch_bytes: int | None = None,
     secret_scanner=None,
     origin: str | None = None,
     prune: bool = False,
 ) -> RunStats:
     """Open a publisher for ``config`` and publish ``events`` through it.
 
-    ``origin`` tags what this stream publishes. With ``prune``, keys that
-    origin published before but this stream no longer yields are deleted.
+    ``origin`` tags what this stream publishes, suffixed with the config's
+    ``origin`` name when set. With ``prune``, keys that origin published before
+    but this stream no longer yields are deleted.
     """
     if prune and origin is None:
         raise ValueError("prune needs an origin")
+    if origin is not None and config.origin:
+        origin = f"{origin}#{config.origin}"
     async with ContexPublisher(config, origin) as publisher:
         return await run(
             events,
             publisher,
             batch_size=batch_size,
             progress=progress,
-            max_batch_bytes=max_batch_bytes,
             secret_scanner=secret_scanner,
             prune=prune,
         )

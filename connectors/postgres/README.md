@@ -19,7 +19,7 @@ Copy `connector.yaml.example` to `connector.yaml` and fill in your values:
 contex:
   url: http://localhost:8001/mcp
   project_id: my-app
-  service_account_token: ${CONTEX_TOKEN}   # omit when AUTH_ENABLED=false
+  api_key: ${CONTEX_TOKEN}   # omit when AUTH_ENABLED=false
 
 source:
   dsn: postgresql://readonly@db.internal:5432/app
@@ -31,7 +31,7 @@ tables:
   exclude: ["audit.*", "public.sessions"]
 
 columns:
-  exclude: ["*.password", "*.*_token"]
+  exclude: ["password", "*_token"]
 
 key_columns:          # for tables without a primary key
   public.events: event_id
@@ -56,7 +56,7 @@ env-driven — no config file needed:
 docker run --rm \
   -e CONTEX_URL=http://contex:8001/mcp \
   -e CONTEX_PROJECT_ID=my-app \
-  -e CONTEX_TOKEN=svc_... \
+  -e CONTEX_TOKEN=ck_... \
   -e POSTGRES_DSN=postgresql://readonly@db.internal:5432/app \
   ghcr.io/cahoots-org/contex-connector-postgres:latest
 ```
@@ -65,7 +65,7 @@ docker run --rm \
 |---|---|---|
 | `CONTEX_URL` | `contex.url` | MCP endpoint |
 | `CONTEX_PROJECT_ID` | `contex.project_id` | Target project |
-| `CONTEX_TOKEN` | `contex.service_account_token` | Optional; omit if auth is off |
+| `CONTEX_TOKEN` | `contex.api_key` | Optional; omit if auth is off |
 | `POSTGRES_DSN` | `source.dsn` | Read-only DSN for the source database |
 | `CONTEX_BATCH_SIZE` | `batch_size` | Optional; defaults to 500 |
 
@@ -82,7 +82,8 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 - **tables.include / tables.exclude** — glob patterns over `schema.table`.  All
   accessible base tables are discovered; `include` narrows the set; `exclude`
   removes matches.
-- **columns.include / columns.exclude** — glob patterns applied to column names.
+- **columns.include / columns.exclude** — glob patterns over bare column names
+  (`password`, not `*.password`), applied to every table.
 - **include_binary** — binary columns (`bytea`, `bit`, `varbit`) are skipped by
   default. Set `include_binary: true` to include them.  This keeps `pgcrypto`
   ciphertext out of the index by default.
@@ -91,11 +92,12 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 Each row becomes a `ChangeEvent` with:
 
-- `data_key`: `schema.table.pk` (composite PKs joined with `:`).
+- `data_key`: `schema.table.pk` (composite PKs joined with `:`, and a `:` or
+  `\` inside a value escaped with `\`).
 - `payload`: the selected non-binary columns as a JSON dict.
 
 Tables with no primary key and no `key_columns` override are skipped with a
-warning.
+warning, as are rows whose key column is NULL.
 
 ## Limitations
 
