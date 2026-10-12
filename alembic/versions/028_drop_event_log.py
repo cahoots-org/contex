@@ -3,7 +3,7 @@
 Nothing writes or reads events, and they kept copies of deleted content.
 
 Revision ID: 028
-Revises: 026
+Revises: 027
 Create Date: 2026-10-12 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = '028'
-down_revision: Union[str, None] = '026'
+down_revision: Union[str, None] = '027'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
