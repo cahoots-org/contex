@@ -26,7 +26,7 @@ def test_prepends_document_title():
 
 def test_document_title_reads_root_title_field():
     nodes = [
-        Node(path="root", content={"key": "DEV-1", "summary": "Login times out"}, node_type=NodeType.OBJECT),
+        Node(path="", content={"key": "DEV-1", "summary": "Login times out"}, node_type=NodeType.OBJECT),
         Node(path="comments[0]", content={"title": "not me"}, node_type=NodeType.OBJECT),
     ]
     assert _document_title(nodes) == "Login times out"

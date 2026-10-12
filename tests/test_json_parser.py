@@ -2,6 +2,9 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+import yaml
+
 from src.core.node_parsers import JSONNodeParser, YAMLNodeParser
 
 parser = JSONNodeParser()
@@ -24,7 +27,7 @@ def _by_path(data):
 
 def test_parent_primitives_kept_alongside_nested_children():
     nodes = _by_path(ISSUE)
-    assert nodes["root"] == {
+    assert nodes[""] == {
         "summary": "Follow meta-refresh redirects",
         "status": "Done",
         "labels": ["content"],
@@ -35,7 +38,7 @@ def test_parent_primitives_kept_alongside_nested_children():
 
 
 def test_no_parent_node_when_only_nested_children():
-    assert "root" not in _by_path({"a": {"x": 1}, "b": [{"y": 2}]})
+    assert "" not in _by_path({"a": {"x": 1}, "b": [{"y": 2}]})
 
 
 
@@ -46,4 +49,10 @@ def test_dotted_keys_do_not_collide_with_nesting():
 
 def test_yaml_aliases_are_rejected():
     bomb = "a: &a {x: 1}\nb: &b [*a, *a, *a]\nc: [*b, *b, *b]"
-    assert not YAMLNodeParser().parse(bomb).success
+    with pytest.raises(yaml.YAMLError):
+        YAMLNodeParser().parse(bomb)
+
+
+def test_top_level_key_named_root_does_not_replace_the_root_object():
+    nodes = _by_path({"title": "Q3 plan", "root": {"a": 1}})
+    assert nodes == {"": {"title": "Q3 plan"}, "root": {"a": 1}}

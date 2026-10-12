@@ -313,23 +313,24 @@ def build_mcp_server(engine, db_accessor=None):
                              "items is a list of {data_key, data, data_format?, published_at?}; for data_format "
                              "pdf, docx or image, data is the file as a base64 string. "
                              "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
-                             "list what it published.")
+                             "list what it published. Items that can't be read are skipped and listed in "
+                             "failed with the reason.")
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
-        sequences = await e.publish_data_batch([
+        sequences, failed = await e.publish_data_batch([
             DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
-                data=_item_data(item["data"], item.get("data_format", "json")),
-                data_format=item.get("data_format", "json"),
+                data=_item_data(item["data"], item.get("data_format")),
+                data_format=item.get("data_format"),
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items
         ], source='mcp', origin=origin)
-        return json.dumps({"published": len(sequences)})
+        return json.dumps({"published": len(sequences), "failed": failed})
 
     @server.tool(name="contex_list_keys",
                  description="List the data_keys an origin last published, in order, up to limit per page. "

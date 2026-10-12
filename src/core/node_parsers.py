@@ -1,10 +1,7 @@
 """
 Format parsers that convert various data formats into Nodes.
 
-Each parser:
-1. Detects if it can handle the input
-2. Parses input into a list of Nodes
-3. Can reconstruct from Nodes back to the format
+Each parser detects whether it can handle the input and parses it into Nodes.
 """
 
 from typing import Any, List, Optional
@@ -19,6 +16,7 @@ import zipfile
 import pypdfium2
 import yaml
 from docx import Document
+from PIL import Image
 
 from .node import Node, NodeType, ParseResult
 
@@ -57,7 +55,20 @@ OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes
 MAX_PDF_PAGES = 2000
 MAX_OCR_PAGES = 50
 MAX_OCR_PIXELS_PER_SIDE = 6000
+OCR_TIMEOUT_SECONDS = 120
 MAX_DOCX_UNZIPPED_BYTES = 200 * 2**20
+MAX_NODES = 10_000
+
+
+class DocumentRejected(ValueError):
+    """A document this server won't ingest; its message is safe to show the publisher."""
+
+
+def _add(nodes: List[Node], node: Node) -> None:
+    """Append ``node``, refusing a document once it exceeds MAX_NODES parts."""
+    if len(nodes) >= MAX_NODES:
+        raise DocumentRejected(f"document has more than {MAX_NODES} parts; split it into smaller documents")
+    nodes.append(node)
 
 
 def _extension(data_key: Optional[str]) -> str:
@@ -151,39 +162,29 @@ class JSONNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse JSON into nodes"""
-        try:
-            # Parse string to dict if needed
-            if isinstance(data, str):
-                data = json.loads(data)
+        # Parse string to dict if needed
+        if isinstance(data, str):
+            data = json.loads(data)
 
-            nodes = self._extract_nodes(data, "")
-            return ParseResult(
-                nodes=nodes,
-                format_name="json",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
-            return ParseResult(
-                nodes=[],
-                format_name="json",
-                success=False,
-                error=str(e)
-            )
+        nodes = self._extract_nodes(data, "", [])
+        return ParseResult(
+            nodes=nodes,
+            format_name="json",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
-    def _extract_nodes(self, data: Any, path: str) -> List[Node]:
-        """Recursively extract nodes from JSON structure"""
-        nodes = []
-
+    def _extract_nodes(self, data: Any, path: str, nodes: List[Node]) -> List[Node]:
+        """Recursively append the JSON structure's nodes to ``nodes`` and return it."""
         if isinstance(data, dict):
             # Primitive fields (and lists of primitives) stay with this object;
             # nested objects and arrays of objects become their own nodes.
             own = {k: v for k, v in data.items() if not _is_complex(v)}
-            # Emitted before children so reconstruct merges them in order. An
-            # empty dict still gets a node so it isn't silently dropped.
+            # An empty dict still gets a node so it isn't silently dropped. The
+            # top-level object's path is "", so its node_key is the data_key.
             if own or not data:
-                nodes.append(Node(
-                    path=path or "root",
+                _add(nodes, Node(
+                    path=path,
                     content=own,
                     node_type=NodeType.OBJECT,
                     metadata={"format": "json"}
@@ -194,19 +195,19 @@ class JSONNodeParser(BaseNodeParser):
                 child_path = f"{path}.{segment}" if path else segment
                 if isinstance(value, list) and _is_complex(value):
                     for idx, item in enumerate(value):
-                        nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
+                        self._extract_nodes(item, f"{child_path}[{idx}]", nodes)
                 elif isinstance(value, dict):
-                    nodes.extend(self._extract_nodes(value, child_path))
+                    self._extract_nodes(value, child_path, nodes)
 
         elif isinstance(data, list):
             # Top-level array
             for idx, item in enumerate(data):
                 item_path = f"{path}[{idx}]" if path else f"[{idx}]"
-                nodes.extend(self._extract_nodes(item, item_path))
+                self._extract_nodes(item, item_path, nodes)
 
         else:
             # Primitive value
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=path or "value",
                 content=data,
                 node_type=NodeType.PRIMITIVE,
@@ -246,24 +247,16 @@ class YAMLNodeParser(JSONNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse YAML into nodes"""
-        try:
-            if isinstance(data, str):
-                data = yaml.load(data, Loader=_NoAliasLoader)
+        if isinstance(data, str):
+            data = yaml.load(data, Loader=_NoAliasLoader)
 
-            nodes = self._extract_nodes(data, "")
-            return ParseResult(
-                nodes=nodes,
-                format_name="yaml",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
-            return ParseResult(
-                nodes=[],
-                format_name="yaml",
-                success=False,
-                error=str(e)
-            )
+        nodes = self._extract_nodes(data, "", [])
+        return ParseResult(
+            nodes=nodes,
+            format_name="yaml",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
 
 # ============================================================================
@@ -286,54 +279,46 @@ class PlainTextNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse text into nodes"""
-        try:
-            text = str(data).strip()
+        text = str(data).strip()
 
-            if not text:
-                return ParseResult(
-                    nodes=[],
-                    format_name="text",
-                    success=True
-                )
-
-            nodes = []
-
-            # Split into paragraphs
-            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-
-            if len(paragraphs) == 1:
-                # Single paragraph - split into sentences
-                sentences = self._split_sentences(paragraphs[0])
-                for i, sentence in enumerate(sentences):
-                    nodes.append(Node(
-                        path=f"sentence_{i}",
-                        content=sentence,
-                        node_type=NodeType.SENTENCE,
-                        metadata={"format": "text"}
-                    ))
-            else:
-                # Multiple paragraphs
-                for i, para in enumerate(paragraphs):
-                    nodes.append(Node(
-                        path=f"paragraph_{i}",
-                        content=para,
-                        node_type=NodeType.PARAGRAPH,
-                        metadata={"format": "text"}
-                    ))
-
-            return ParseResult(
-                nodes=nodes,
-                format_name="text",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
+        if not text:
             return ParseResult(
                 nodes=[],
                 format_name="text",
-                success=False,
-                error=str(e)
+                success=True
             )
+
+        nodes = []
+
+        # Split into paragraphs
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+        if len(paragraphs) == 1:
+            # Single paragraph - split into sentences
+            sentences = self._split_sentences(paragraphs[0])
+            for i, sentence in enumerate(sentences):
+                _add(nodes, Node(
+                    path=f"sentence_{i}",
+                    content=sentence,
+                    node_type=NodeType.SENTENCE,
+                    metadata={"format": "text"}
+                ))
+        else:
+            # Multiple paragraphs
+            for i, para in enumerate(paragraphs):
+                _add(nodes, Node(
+                    path=f"paragraph_{i}",
+                    content=para,
+                    node_type=NodeType.PARAGRAPH,
+                    metadata={"format": "text"}
+                ))
+
+        return ParseResult(
+            nodes=nodes,
+            format_name="text",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
     def _split_sentences(self, text: str) -> List[str]:
         """Split text into sentences"""
@@ -369,75 +354,67 @@ class MarkdownNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse markdown into nodes"""
-        try:
-            text = str(data).strip()
-            nodes = []
+        text = str(data).strip()
+        nodes = []
 
-            # Split by headings
-            sections = re.split(r'^(#{1,6}\s+.+)$', text, flags=re.MULTILINE)
+        # Split by headings
+        sections = re.split(r'^(#{1,6}\s+.+)$', text, flags=re.MULTILINE)
 
-            current_heading = None
-            section_idx = 0
+        current_heading = None
+        section_idx = 0
 
-            for i, part in enumerate(sections):
-                part = part.strip()
-                if not part:
-                    continue
+        for i, part in enumerate(sections):
+            part = part.strip()
+            if not part:
+                continue
 
-                # Check if it's a heading
-                heading_match = re.match(r'^(#{1,6})\s+(.+)$', part)
-                if heading_match:
-                    level = len(heading_match.group(1))
-                    title = heading_match.group(2)
-                    current_heading = title
-                    nodes.append(Node(
-                        path=f"heading_{section_idx}",
-                        content=title,
-                        node_type=NodeType.HEADING,
-                        metadata={"format": "markdown", "level": level}
-                    ))
-                    section_idx += 1
-                else:
-                    # Content section
-                    # Check for code blocks
-                    code_blocks = list(re.finditer(r'```(\w*)\n(.*?)```', part, re.DOTALL))
+            # Check if it's a heading
+            heading_match = re.match(r'^(#{1,6})\s+(.+)$', part)
+            if heading_match:
+                level = len(heading_match.group(1))
+                title = heading_match.group(2)
+                current_heading = title
+                _add(nodes, Node(
+                    path=f"heading_{section_idx}",
+                    content=title,
+                    node_type=NodeType.HEADING,
+                    metadata={"format": "markdown", "level": level}
+                ))
+                section_idx += 1
+            else:
+                # Content section
+                # Check for code blocks
+                code_blocks = list(re.finditer(r'```(\w*)\n(.*?)```', part, re.DOTALL))
 
-                    if code_blocks:
-                        for cb in code_blocks:
-                            language = cb.group(1) or "text"
-                            code = cb.group(2).strip()
-                            nodes.append(Node(
-                                path=f"code_block_{len(nodes)}",
-                                content=code,
-                                node_type=NodeType.CODE_BLOCK,
-                                metadata={"format": "markdown", "language": language}
-                            ))
+                if code_blocks:
+                    for cb in code_blocks:
+                        language = cb.group(1) or "text"
+                        code = cb.group(2).strip()
+                        _add(nodes, Node(
+                            path=f"code_block_{len(nodes)}",
+                            content=code,
+                            node_type=NodeType.CODE_BLOCK,
+                            metadata={"format": "markdown", "language": language}
+                        ))
 
-                    # Remove code blocks and parse remaining as paragraphs
-                    remaining = re.sub(r'```.*?```', '', part, flags=re.DOTALL).strip()
-                    if remaining:
-                        paragraphs = [p.strip() for p in remaining.split('\n\n') if p.strip()]
-                        for para in paragraphs:
-                            nodes.append(Node(
-                                path=f"paragraph_{len(nodes)}",
-                                content=para,
-                                node_type=NodeType.PARAGRAPH,
-                                metadata={"format": "markdown", "heading": current_heading}
-                            ))
+                # Remove code blocks and parse remaining as paragraphs
+                remaining = re.sub(r'```.*?```', '', part, flags=re.DOTALL).strip()
+                if remaining:
+                    paragraphs = [p.strip() for p in remaining.split('\n\n') if p.strip()]
+                    for para in paragraphs:
+                        _add(nodes, Node(
+                            path=f"paragraph_{len(nodes)}",
+                            content=para,
+                            node_type=NodeType.PARAGRAPH,
+                            metadata={"format": "markdown", "heading": current_heading}
+                        ))
 
-            return ParseResult(
-                nodes=nodes,
-                format_name="markdown",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
-            return ParseResult(
-                nodes=[],
-                format_name="markdown",
-                success=False,
-                error=str(e)
-            )
+        return ParseResult(
+            nodes=nodes,
+            format_name="markdown",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
 
 # ============================================================================
@@ -477,35 +454,27 @@ class CSVNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse CSV into row nodes"""
-        try:
-            import csv
-            from io import StringIO
+        import csv
+        from io import StringIO
 
-            text = str(data).strip()
-            reader = csv.DictReader(StringIO(text))
+        text = str(data).strip()
+        reader = csv.DictReader(StringIO(text))
 
-            nodes = []
-            for i, row in enumerate(reader):
-                nodes.append(Node(
-                    path=f"row_{i}",
-                    content=dict(row),
-                    node_type=NodeType.ROW,
-                    metadata={"format": "csv"}
-                ))
+        nodes = []
+        for i, row in enumerate(reader):
+            _add(nodes, Node(
+                path=f"row_{i}",
+                content=dict(row),
+                node_type=NodeType.ROW,
+                metadata={"format": "csv"}
+            ))
 
-            return ParseResult(
-                nodes=nodes,
-                format_name="csv",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
-            return ParseResult(
-                nodes=[],
-                format_name="csv",
-                success=False,
-                error=str(e)
-            )
+        return ParseResult(
+            nodes=nodes,
+            format_name="csv",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
 
 # ============================================================================
@@ -514,7 +483,9 @@ class CSVNodeParser(BaseNodeParser):
 
 def _ocr(image: bytes) -> str:
     """The text Tesseract reads from an image file's bytes."""
-    result = subprocess.run(["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True)
+    result = subprocess.run(
+        ["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True, timeout=OCR_TIMEOUT_SECONDS,
+    )
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
@@ -553,7 +524,7 @@ class PDFNodeParser(BaseNodeParser):
         pdf = pypdfium2.PdfDocument(data)
         try:
             if len(pdf) > MAX_PDF_PAGES:
-                raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
+                raise DocumentRejected(f"PDF has more than {MAX_PDF_PAGES} pages")
             texts = [page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip() for page in pdf]
             if OCR_ENABLED:
                 scanned = [i for i, text in enumerate(texts) if not text]
@@ -568,60 +539,54 @@ class PDFNodeParser(BaseNodeParser):
         fmt = self.format_name
         if not isinstance(data, (bytes, bytearray)):
             return ParseResult(nodes=[], format_name=fmt, success=False, error=f"{fmt} parser requires bytes input")
-        try:
-            texts = self._page_texts(data)
-            nodes = []
-            total_pages = len(texts)
+        texts = self._page_texts(data)
+        nodes = []
+        total_pages = len(texts)
 
-            for page_num, text in enumerate(texts):
-                if not text:
-                    continue
+        for page_num, text in enumerate(texts):
+            if not text:
+                continue
 
-                # Split page text into paragraphs
-                paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+            # Split page text into paragraphs
+            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
 
-                if len(paragraphs) <= 1:
-                    # Single block of text for this page — one section node
-                    nodes.append(Node(
-                        path=f"page_{page_num + 1}",
-                        content=text,
-                        node_type=NodeType.SECTION,
+            if len(paragraphs) <= 1:
+                # Single block of text for this page — one section node
+                _add(nodes, Node(
+                    path=f"page_{page_num + 1}",
+                    content=text,
+                    node_type=NodeType.SECTION,
+                    metadata={
+                        "format": fmt,
+                        "page": page_num + 1,
+                        "total_pages": total_pages,
+                    }
+                ))
+            else:
+                # Multiple paragraphs — create individual nodes
+                for i, para in enumerate(paragraphs):
+                    _add(nodes, Node(
+                        path=f"page_{page_num + 1}.paragraph_{i}",
+                        content=para,
+                        node_type=NodeType.PARAGRAPH,
                         metadata={
                             "format": fmt,
                             "page": page_num + 1,
                             "total_pages": total_pages,
                         }
                     ))
-                else:
-                    # Multiple paragraphs — create individual nodes
-                    for i, para in enumerate(paragraphs):
-                        nodes.append(Node(
-                            path=f"page_{page_num + 1}.paragraph_{i}",
-                            content=para,
-                            node_type=NodeType.PARAGRAPH,
-                            metadata={
-                                "format": fmt,
-                                "page": page_num + 1,
-                                "total_pages": total_pages,
-                            }
-                        ))
 
-            return ParseResult(
-                nodes=nodes,
-                format_name=fmt,
-                success=True,
-                metadata={
-                    "node_count": len(nodes),
-                    "total_pages": total_pages,
-                }
-            )
-        except Exception as e:
-            return ParseResult(
-                nodes=[],
-                format_name=fmt,
-                success=False,
-                error=str(e)
-            )
+        if not nodes:
+            raise DocumentRejected(f"no text found in the {fmt}")
+        return ParseResult(
+            nodes=nodes,
+            format_name=fmt,
+            success=True,
+            metadata={
+                "node_count": len(nodes),
+                "total_pages": total_pages,
+            }
+        )
 
 
 class ImageNodeParser(PDFNodeParser):
@@ -636,7 +601,10 @@ class ImageNodeParser(PDFNodeParser):
 
     def _page_texts(self, data: bytes) -> List[str]:
         if not OCR_ENABLED:
-            raise ValueError("images need OCR; set OCR_ENABLED=true")
+            raise DocumentRejected("reading text from images is not enabled on this server")
+        with Image.open(io.BytesIO(data)) as image:
+            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE:
+                raise DocumentRejected(f"image is over {MAX_OCR_PIXELS_PER_SIDE} pixels on a side")
         return [_ocr(data)]
 
 
@@ -665,109 +633,101 @@ class DOCXNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse DOCX bytes into nodes"""
-        try:
-            if isinstance(data, (bytes, bytearray)):
-                with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                    unzipped = sum(info.file_size for info in archive.infolist())
-                if unzipped > MAX_DOCX_UNZIPPED_BYTES:
-                    raise ValueError("DOCX expands beyond the size limit")
-                doc = Document(io.BytesIO(data))
-            else:
-                return ParseResult(
-                    nodes=[],
-                    format_name="docx",
-                    success=False,
-                    error="DOCX parser requires bytes input"
-                )
-
-            nodes = []
-            current_heading = None
-            para_idx = 0
-
-            for paragraph in doc.paragraphs:
-                text = paragraph.text.strip()
-                if not text:
-                    continue
-
-                style_name = paragraph.style.name if paragraph.style else ""
-
-                if style_name.startswith("Heading"):
-                    # Extract heading level from style name (e.g., "Heading 1" -> 1)
-                    try:
-                        level = int(style_name.split()[-1])
-                    except (ValueError, IndexError):
-                        level = 1
-                    current_heading = text
-                    nodes.append(Node(
-                        path=f"heading_{len(nodes)}",
-                        content=text,
-                        node_type=NodeType.HEADING,
-                        metadata={
-                            "format": "docx",
-                            "level": level,
-                            "style": style_name,
-                        }
-                    ))
-                elif style_name.startswith("List"):
-                    nodes.append(Node(
-                        path=f"list_item_{len(nodes)}",
-                        content=text,
-                        node_type=NodeType.LIST_ITEM,
-                        metadata={
-                            "format": "docx",
-                            "heading": current_heading,
-                            "style": style_name,
-                        }
-                    ))
-                else:
-                    nodes.append(Node(
-                        path=f"paragraph_{para_idx}",
-                        content=text,
-                        node_type=NodeType.PARAGRAPH,
-                        metadata={
-                            "format": "docx",
-                            "heading": current_heading,
-                            "style": style_name,
-                        }
-                    ))
-                    para_idx += 1
-
-            # Extract tables
-            for t_idx, table in enumerate(doc.tables):
-                # Get headers from first row
-                headers = []
-                if table.rows:
-                    headers = [cell.text.strip() for cell in table.rows[0].cells]
-
-                for r_idx, row in enumerate(table.rows[1:], start=1):
-                    row_data = {}
-                    for c_idx, cell in enumerate(row.cells):
-                        key = headers[c_idx] if c_idx < len(headers) else f"col_{c_idx}"
-                        row_data[key] = cell.text.strip()
-                    if any(v for v in row_data.values()):
-                        nodes.append(Node(
-                            path=f"table_{t_idx}.row_{r_idx}",
-                            content=row_data,
-                            node_type=NodeType.ROW,
-                            metadata={
-                                "format": "docx",
-                                "table_index": t_idx,
-                            }
-                        ))
-
-            return ParseResult(
-                nodes=nodes,
-                format_name="docx",
-                success=True,
-                metadata={"node_count": len(nodes)}
-            )
-        except Exception as e:
+        if isinstance(data, (bytes, bytearray)):
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                unzipped = sum(info.file_size for info in archive.infolist())
+            if unzipped > MAX_DOCX_UNZIPPED_BYTES:
+                raise DocumentRejected("DOCX expands beyond the size limit")
+            doc = Document(io.BytesIO(data))
+        else:
             return ParseResult(
                 nodes=[],
                 format_name="docx",
                 success=False,
-                error=str(e)
+                error="DOCX parser requires bytes input"
             )
+
+        nodes = []
+        current_heading = None
+        para_idx = 0
+
+        for paragraph in doc.paragraphs:
+            text = paragraph.text.strip()
+            if not text:
+                continue
+
+            style_name = paragraph.style.name if paragraph.style else ""
+
+            if style_name.startswith("Heading"):
+                # Extract heading level from style name (e.g., "Heading 1" -> 1)
+                try:
+                    level = int(style_name.split()[-1])
+                except (ValueError, IndexError):
+                    level = 1
+                current_heading = text
+                _add(nodes, Node(
+                    path=f"heading_{len(nodes)}",
+                    content=text,
+                    node_type=NodeType.HEADING,
+                    metadata={
+                        "format": "docx",
+                        "level": level,
+                        "style": style_name,
+                    }
+                ))
+            elif style_name.startswith("List"):
+                _add(nodes, Node(
+                    path=f"list_item_{len(nodes)}",
+                    content=text,
+                    node_type=NodeType.LIST_ITEM,
+                    metadata={
+                        "format": "docx",
+                        "heading": current_heading,
+                        "style": style_name,
+                    }
+                ))
+            else:
+                _add(nodes, Node(
+                    path=f"paragraph_{para_idx}",
+                    content=text,
+                    node_type=NodeType.PARAGRAPH,
+                    metadata={
+                        "format": "docx",
+                        "heading": current_heading,
+                        "style": style_name,
+                    }
+                ))
+                para_idx += 1
+
+        # Extract tables
+        for t_idx, table in enumerate(doc.tables):
+            # Get headers from first row
+            headers = []
+            if table.rows:
+                headers = [cell.text.strip() for cell in table.rows[0].cells]
+
+            for r_idx, row in enumerate(table.rows[1:], start=1):
+                row_data = {}
+                for c_idx, cell in enumerate(row.cells):
+                    key = headers[c_idx] if c_idx < len(headers) else f"col_{c_idx}"
+                    row_data[key] = cell.text.strip()
+                if any(v for v in row_data.values()):
+                    _add(nodes, Node(
+                        path=f"table_{t_idx}.row_{r_idx}",
+                        content=row_data,
+                        node_type=NodeType.ROW,
+                        metadata={
+                            "format": "docx",
+                            "table_index": t_idx,
+                        }
+                    ))
+
+        return ParseResult(
+            nodes=nodes,
+            format_name="docx",
+            success=True,
+            metadata={"node_count": len(nodes)}
+        )
 
 
 # ============================================================================
@@ -874,18 +834,15 @@ class CodeNodeParser(BaseNodeParser):
                 nodes=[], format_name="code", success=False,
                 error=f"no supported grammar for key {data_key!r}",
             )
-        try:
-            from tree_sitter_language_pack import get_parser
+        from tree_sitter_language_pack import get_parser
 
-            src = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
-            tree = get_parser(lang).parse(src)
-            nodes = self._walk(tree.root_node, src, lang, cfg)
-            return ParseResult(
-                nodes=nodes, format_name="code", success=True,
-                metadata={"language": lang, "node_count": len(nodes)},
-            )
-        except Exception as e:  # parse failure must not kill ingest; fall back to text
-            return ParseResult(nodes=[], format_name="code", success=False, error=str(e))
+        src = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
+        tree = get_parser(lang).parse(src)
+        nodes = self._walk(tree.root_node, src, lang, cfg)
+        return ParseResult(
+            nodes=nodes, format_name="code", success=True,
+            metadata={"language": lang, "node_count": len(nodes)},
+        )
 
     @staticmethod
     def _txt(node, src: bytes) -> str:
@@ -993,10 +950,11 @@ class CodeNodeParser(BaseNodeParser):
         summary = "defines: " + ", ".join(r["path"] for r in records)
         if module_refs:
             summary += "\nreferences: " + ", ".join(module_refs)
-        nodes = [Node(
+        nodes: List[Node] = []
+        _add(nodes, Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
             metadata={"language": lang, "defs": [], "refs": module_refs},
-        )]
+        ))
         # Module-level code (constants, route registrations, scripts) is
         # everything outside the top-level definitions.
         outside, pos = [], 0
@@ -1007,12 +965,12 @@ class CodeNodeParser(BaseNodeParser):
         outside.append(src[pos:])
         module_code = b"".join(outside).decode("utf-8", errors="replace")
         for i, chunk in enumerate(_chunk_blocks(module_code)):
-            nodes.append(Node(
-                path=f"module_{i}", content=chunk, node_type=NodeType.CODE_BLOCK,
+            _add(nodes, Node(
+                path=f"<module>[{i}]", content=chunk, node_type=NodeType.CODE_BLOCK,
                 metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=r["path"], content=r["content"],
                 node_type=_KIND_TO_NODETYPE[r["kind"]],
                 metadata={

@@ -9,8 +9,10 @@ always wins.
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from src.core.node_converter import NodeConverter
-from src.core.node_parsers import resolve_format, language_for_key
+from src.core.node_parsers import MAX_NODES, DocumentRejected, resolve_format, language_for_key
 
 
 def test_generic_text_with_code_extension_becomes_code():
@@ -62,6 +64,17 @@ def test_extension_is_case_insensitive():
 def test_unparseable_bytes_fail_instead_of_indexing_their_repr():
     result = NodeConverter().parse(b"%PDF-1.7 \x00\x01 truncated", "pdf")
     assert not result.success and result.nodes == []
+
+
+def test_documents_over_the_node_limit_are_rejected_not_reparsed_as_text():
+    rows = "a,b\n" + "\n".join(f"{i},x" for i in range(MAX_NODES + 1))
+    with pytest.raises(DocumentRejected):
+        NodeConverter().parse(rows, "csv")
+
+
+def test_documents_with_colliding_paths_are_rejected():
+    with pytest.raises(DocumentRejected):
+        NodeConverter().parse({"": {"a": 1}, "b": 2}, "json")
 
 
 def test_language_for_key_maps_extensions():

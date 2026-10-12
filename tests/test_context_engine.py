@@ -22,7 +22,7 @@ async def _event_types(engine, project_id):
 async def test_publish_data_forwards_provenance_to_event_store():
     """Test that publish_data forwards source/actor/tenant_id to append_event"""
     engine = ContextEngine.__new__(ContextEngine)  # bypass __init__
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
     engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
 
@@ -41,21 +41,21 @@ async def test_publish_data_forwards_provenance_to_event_store():
 @pytest.mark.asyncio
 async def test_publish_batch_reconciles_once_with_all_keys():
     engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None] * 3))
     engine.event_store = MagicMock(append_event=AsyncMock(side_effect=["1", "2", "3"]))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
 
     events = [DataPublishEvent(project_id="p1", data_key=k, data={"a": 1}) for k in ("k1", "k2", "k3")]
-    seqs = await engine.publish_data_batch(events)
+    seqs, failed = await engine.publish_data_batch(events)
 
-    assert seqs == ["1", "2", "3"]
+    assert (seqs, failed) == (["1", "2", "3"], [])
     engine.subscriptions.reconcile_project.assert_awaited_once_with("p1", {"k1", "k2", "k3"})
 
 
 @pytest.mark.asyncio
 async def test_publish_survives_reconcile_failure():
     engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock())
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
     engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock(side_effect=RuntimeError("boom")))
 

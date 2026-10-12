@@ -21,7 +21,7 @@ async def test_contex_query_tool_returns_matches(db):
     # call_tool returns a CallToolResult; its content carries the JSON payload text
     text = result.content[0].text
     payload = json.loads(text)
-    # Engine decomposes JSON objects into nodes; "db" data_key becomes "db.root" (or "db.<path>")
+    # Engine decomposes JSON objects into nodes; "db" data_key becomes "db" (or "db.<path>")
     assert any(m["data_key"].startswith("db") for m in payload["matches"])
 
 

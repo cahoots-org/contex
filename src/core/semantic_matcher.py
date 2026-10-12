@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
-from sqlalchemy import delete, func, select, text, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import Text, all_, any_, delete, func, literal, select, text, update
+from sqlalchemy.dialects.postgresql import ARRAY, insert as pg_insert
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
@@ -18,6 +18,7 @@ from src.core.limits import positive_int_env
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
+from src.core.node_parsers import DocumentRejected
 from src.core.recency import recency_filter
 from src.core.relevance import JevReranker
 from src.core.vector_search import PgVectorSearch
@@ -53,7 +54,7 @@ _REWRITTEN_COLUMNS = (
 
 def _document_title(nodes) -> str:
     """The root object's title-like field (a ticket summary, a PR or page title)."""
-    root = next((n for n in nodes if n.path == "root"), None)
+    root = next((n for n in nodes if n.path == ""), None)
     if root is None or not isinstance(root.content, dict):
         return ""
     return next(
@@ -215,7 +216,9 @@ class SemanticDataMatcher:
             data: The actual data in any format (dict, YAML string, text, etc.)
             format_hint: Optional format hint ("json", "yaml", "markdown", "text")
         """
-        await self.register_data_batch(project_id, [(data_key, data, format_hint)])
+        [error] = await self.register_data_batch(project_id, [(data_key, data, format_hint)])
+        if error:
+            raise DocumentRejected(error)
 
     async def register_data_batch(
         self,
@@ -223,7 +226,7 @@ class SemanticDataMatcher:
         items: List[Tuple[str, Any, Optional[str]]],
         published_at: Optional[Dict[str, datetime]] = None,
         origin: Optional[str] = None,
-    ):
+    ) -> List[Optional[str]]:
         """Register many ``(data_key, data, format_hint)`` items with one encode call.
 
         Encoding is the expensive step and pads each batch to its longest text,
@@ -231,15 +234,20 @@ class SemanticDataMatcher:
         batching work across the whole set rather than one file at a time.
         ``published_at`` maps a data_key to when its source changed it.
         ``origin`` tags every item, including unchanged ones, with its source stream.
+        Returns, per item, None or why it was not registered.
         """
         published_at = published_at or {}
         if origin is not None:
             # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
-        plans = [
-            plan for data_key, data, format_hint in items
-            if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
-        ]
+        plans, errors = [], []
+        for data_key, data, format_hint in items:
+            try:
+                plans.append(await self._plan_registration(project_id, data_key, data, format_hint))
+                errors.append(None)
+            except DocumentRejected as e:
+                logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
+                errors.append(str(e))
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
@@ -250,10 +258,11 @@ class SemanticDataMatcher:
                 project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
             )
             offset += n
+        return errors
 
     async def _plan_registration(
         self, project_id: str, data_key: str, data: Any, format_hint: Optional[str],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Parse one item and work out which of its nodes need (re-)embedding."""
         # data_key carries the file extension the code parser needs to pick a grammar.
         # Parsing is CPU-bound (PDF, OCR, DOCX), so it runs off the event loop.
@@ -262,19 +271,12 @@ class SemanticDataMatcher:
         )
 
         if not parse_result.success:
-            logger.warning(
-                "Failed to parse data",
-                project_id=project_id,
-                data_key=data_key,
-                error=parse_result.error,
-            )
-            return None
+            logger.warning("Failed to parse data", project_id=project_id, data_key=data_key,
+                           error=parse_result.error)
+            raise DocumentRejected(f"could not read the document as {parse_result.format_name}")
 
+        # Empty content still gets a plan, so publishing it removes the old nodes.
         nodes = parse_result.nodes
-        if not nodes:
-            logger.warning("No nodes extracted from data", project_id=project_id, data_key=data_key)
-            return None
-
         logger.debug(
             "Parsed data into nodes",
             project_id=project_id,
@@ -299,7 +301,7 @@ class SemanticDataMatcher:
             prior = await session.execute(
                 select(Embedding.node_key, Embedding.content_hash)
                 .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_(node_keys))
+                .where(Embedding.node_key == any_(literal(node_keys, ARRAY(Text))))
             )
             prior_hashes = dict(prior.all())
 
@@ -362,7 +364,7 @@ class SemanticDataMatcher:
                 delete(Embedding)
                 .where(Embedding.project_id == project_id)
                 .where(Embedding.data_key == data_key)
-                .where(Embedding.node_key.not_in(node_keys))
+                .where(Embedding.node_key != all_(literal(node_keys, ARRAY(Text))))
             )
             # Symbols are the defs/refs the parser recorded per node, rewritten
             # whenever the nodes change. Unchanged documents keep theirs as is.
@@ -525,25 +527,19 @@ class SemanticDataMatcher:
     ) -> None:
         """Add each document's root node data (a ticket's own fields, a code
         file's summary) to its result unless that root already matched."""
-        root_keys = {
-            r["document"]: (f'{r["document"]}.root', r["document"]) for r in results
-        }
-        if not root_keys:
+        if not results:
             return
         async with self.db.session() as session:
             rows = await session.execute(
                 select(Embedding.node_key, Embedding.data)
                 .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_([k for keys in root_keys.values() for k in keys]))
+                .where(Embedding.node_key.in_([r["document"] for r in results]))
             )
             roots = dict(rows.all())
         for result in results:
             matched = {result["data_key"], *(r["data_key"] for r in result["related"])}
-            for key in root_keys[result["document"]]:
-                if key in roots:
-                    if key not in matched:
-                        result["document_data"] = roots[key]
-                    break
+            if result["document"] in roots and result["document"] not in matched:
+                result["document_data"] = roots[result["document"]]
 
     async def get_registered_data(self, project_id: str) -> List[str]:
         """Get all registered data keys for a project (unique data_key values)."""
@@ -597,56 +593,3 @@ class SemanticDataMatcher:
                         .where(model.data_key.in_(existing))
                     )
         return existing
-
-    async def clear_project(self, project_id: str) -> int:
-        """
-        Remove all data for a project.
-
-        Args:
-            project_id: Project identifier
-
-        Returns:
-            Number of deleted entries
-        """
-        async with self.db.session() as session:
-            result = await session.execute(
-                delete(Embedding).where(Embedding.project_id == project_id)
-            )
-            deleted_count = result.rowcount
-
-        logger.info(
-            "Cleared project embeddings",
-            project_id=project_id,
-            deleted_count=deleted_count,
-        )
-
-        return deleted_count
-
-    async def get_embedding_count(self, project_id: str) -> int:
-        """Get total number of embeddings for a project."""
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(func.count(Embedding.id))
-                .where(Embedding.project_id == project_id)
-            )
-            return result.scalar() or 0
-
-    def _auto_describe(self, data_key: str, data: Dict[str, Any]) -> str:
-        """Auto-generate natural language description from data structure."""
-        return data_key
-
-    def _flatten_dict(self, d: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
-        """Flatten nested dict to extract field paths."""
-        items = {}
-
-        for key, value in d.items():
-            new_key = f"{prefix}.{key}" if prefix else key
-
-            if isinstance(value, dict) and value:
-                items.update(self._flatten_dict(value, new_key))
-            elif isinstance(value, list) and value and isinstance(value[0], dict):
-                items[f"{new_key}[*]"] = "array"
-            else:
-                items[new_key] = value
-
-        return items
