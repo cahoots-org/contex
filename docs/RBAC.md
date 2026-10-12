@@ -54,8 +54,8 @@ python -m src.cli keys revoke <key_id>
 
 ## Best practices
 
-- **Least privilege:** give data sources `publisher` and agents `consumer`.
-  Reserve `admin` for operators.
+- **Least privilege:** give data sources `publisher` and read-only agents `consumer`.
+  An agent that both publishes and reads needs `admin`, the only role with both.
 - **Separate keys per service** so a leak is contained and revocation is
   surgical.
 - **Scope keys to projects** they actually need rather than granting all-project
