@@ -64,6 +64,7 @@ async def test_matched_node_links_to_cross_file_def(ingest, db):
     assert [l["data_key"] for l in links] == ["repo:a.py\x1fhelper"]
     assert links[0]["name"] == "helper"
     assert links[0]["document"] == "repo:a.py"
+    assert "description" not in links[0]
 
 
 @pytest.mark.asyncio
@@ -114,4 +115,13 @@ async def test_no_refs_leaves_bundle_untouched(ingest, db):
     svc = SubscriptionService(db, _StubMatcher({}))
     # a.py.helper has no refs -> no links key added.
     linked = await svc._link_bundle("p", _bundle_for("repo:a.py\x1fhelper"))
+    assert "links" not in linked["need"][0]
+
+
+@pytest.mark.asyncio
+async def test_related_nodes_are_not_repeated_as_links(ingest, db):
+    await ingest.register_data_batch("p", [("repo:c.py", A_PY + B_PY, "code")])
+    bundle = _bundle_for("repo:c.py\x1fcaller")
+    bundle["need"][0]["related"] = [{"data_key": "repo:c.py\x1fhelper"}]
+    linked = await SubscriptionService(db, _StubMatcher({}))._link_bundle("p", bundle)
     assert "links" not in linked["need"][0]

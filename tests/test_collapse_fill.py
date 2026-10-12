@@ -43,6 +43,7 @@ async def test_top_k_documents_filled_past_monopolizing_documents(db):
     documents = [m["document"] for m in result["q"]]
     assert len(documents) == 5
     assert set(documents[:2]) == {"big-a", "big-b"}  # nearest documents still lead
+    assert all("description" not in m for m in result["q"])
 
 
 @pytest.mark.asyncio

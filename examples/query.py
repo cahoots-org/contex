@@ -53,7 +53,6 @@ async def main():
             )
             for match in result["matches"]:
                 print(f"  {match['data_key']}  (score {match['similarity']:.4f})")
-                print(f"    {match['description']}")
 
 
 if __name__ == "__main__":

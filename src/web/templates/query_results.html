@@ -31,9 +31,6 @@
             <div class="result-title">
                 <span class="check-icon">✓</span>
                 <strong>{{ match.data_key }}</strong>
-                {% if match.description %}
-                <p class="result-description">{{ match.description }}</p>
-                {% endif %}
             </div>
             <div class="result-meta">
                 <span class="similarity-score" :class="{ 'high': {{ match.similarity }} >= 0.8, 'medium': {{ match.similarity }} >= 0.6 }">
