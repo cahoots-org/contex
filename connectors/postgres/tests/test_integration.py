@@ -194,6 +194,18 @@ class TestReaderIntegration:
         second = [e.key for e in read_tables(**kwargs)]
         assert sorted(first) == sorted(second)
 
+    def test_partitioned_table_read_through_its_parent(self):
+        with psycopg.connect(_dsn(), autocommit=True) as conn:
+            conn.execute(
+                "CREATE TABLE contex_test.events (id INT, region TEXT, PRIMARY KEY (id, region))"
+                " PARTITION BY LIST (region)"
+            )
+            conn.execute("CREATE TABLE contex_test.events_eu PARTITION OF contex_test.events FOR VALUES IN ('eu')")
+            conn.execute("CREATE TABLE contex_test.events_us PARTITION OF contex_test.events FOR VALUES IN ('us')")
+            conn.execute("INSERT INTO contex_test.events VALUES (1, 'eu'), (2, 'us')")
+        keys = {e.key for e in self._collect(tbl_include=["contex_test.events*"])}
+        assert keys == {f"{_DB}.contex_test.events.1:eu", f"{_DB}.contex_test.events.2:us"}
+
     def test_unreadable_table_fails_the_run(self):
         with psycopg.connect(_dsn(), autocommit=True) as conn:
             conn.execute("DROP ROLE IF EXISTS contex_test_reader")

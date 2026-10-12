@@ -26,7 +26,8 @@ SELECT
     c.relname  AS table
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r'
+WHERE c.relkind IN ('r', 'p')
+  AND NOT c.relispartition
   AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
   AND has_schema_privilege(n.nspname, 'USAGE')
 ORDER BY n.nspname, c.relname;
