@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/social-card.png" alt="Contex: the context bus for agents" width="820">
+  <img src="design/social-card.png" alt="Contex: the context bus for agents" width="820">
 </p>
 
 <p align="center"><b>Agents subscribe to the context they need, and Contex keeps it current as your data changes.</b></p>
