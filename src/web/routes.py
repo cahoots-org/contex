@@ -1,7 +1,6 @@
 """Web UI routes for Contex Query Sandbox"""
 
 import json
-import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
 from src.core.authz import auth_enabled
 from src.core.rate_limiter import RateLimiter
@@ -97,7 +96,6 @@ async def execute_query(
     query: str = Form(...),
     top_k: int = Form(10),
     threshold: float = Form(0.5),
-    max_tokens: int = Form(51200),
 ):
     """Execute a semantic query and return results"""
     _throttle_query()
@@ -115,26 +113,10 @@ async def execute_query(
     # Defensive cap (the matcher already limits to top_k)
     matches = matches[:top_k]
 
-    # Apply token limit truncation if specified
-    if max_tokens and matches:
-        matches_dict = {query: matches}
-        truncated = engine._truncate_matches(matches_dict, max_tokens)
-        matches = truncated.get(query, [])
-
-    # Calculate token counts
-    try:
-        enc = tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        enc = None
-
     # Enhance matches with metadata
     enhanced_matches = []
-    total_tokens = 0
-
     for match in matches:
         data_json = json.dumps(match["data"], indent=2)
-        token_count = len(enc.encode(data_json)) if enc else 0
-        total_tokens += token_count
         enhanced_matches.append({
             "data_key": match["data_key"],
             "similarity": match["similarity"],
@@ -142,7 +124,6 @@ async def execute_query(
             "data": match["data"],
             "data_json": data_json,
             "description": match.get("description", ""),
-            "token_count": token_count,
         })
 
     return templates.TemplateResponse(
@@ -152,7 +133,6 @@ async def execute_query(
             "query": query,
             "matches": enhanced_matches,
             "total_matches": len(enhanced_matches),
-            "total_tokens": total_tokens,
             "threshold": threshold,
             "top_k": top_k
         }
@@ -171,32 +151,10 @@ async def project_stats(
     """
     rows = await _documents(request.app.state.context_engine, project_id)
 
-    # Calculate stats
-    try:
-        enc = tiktoken.get_encoding("cl100k_base")
-    except Exception:
-        enc = None
-
-    total_tokens = 0
-    data_items = []
-
-    for data_key, data_format, nodes in rows:
-        data_str = json.dumps(nodes)
-
-        # Calculate token count
-        token_count = 0
-        if enc:
-            try:
-                token_count = len(enc.encode(data_str))
-                total_tokens += token_count
-            except Exception:
-                pass
-
-        data_items.append({
-            "data_key": data_key,
-            "description": f"{data_key} ({data_format or 'unknown'})",
-            "token_count": token_count,
-        })
+    data_items = [
+        {"data_key": data_key, "description": f"{data_key} ({data_format or 'unknown'})"}
+        for data_key, data_format, _ in rows
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -204,8 +162,7 @@ async def project_stats(
         {
             "project_id": project_id,
             "data_count": len(data_items),
-            "total_tokens": total_tokens,
-            "data_items": sorted(data_items, key=lambda x: x["token_count"], reverse=True),
+            "data_items": data_items,
         },
     )
 

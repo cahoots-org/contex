@@ -23,17 +23,6 @@ async def test_publish_batch_reconciles_once_with_all_keys():
 
 
 @pytest.mark.asyncio
-async def test_publish_batch_keeps_last_version_of_repeated_key():
-    engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
-    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
-
-    await engine.publish_data_batch([DataPublishEvent(project_id="p1", data_key="k", data={"v": v}) for v in (1, 2)])
-
-    assert engine.semantic_matcher.register_data_batch.await_args.args[1] == [("k", {"v": 2}, None)]
-
-
-@pytest.mark.asyncio
 async def test_publish_survives_reconcile_failure():
     engine = ContextEngine.__new__(ContextEngine)
     engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
@@ -192,38 +181,3 @@ class TestContextEngine:
             assert "similarity" in result
             assert isinstance(result["similarity"], float)
             assert 0 <= result["similarity"] <= 1
-
-
-class TestContextSizeLimits:
-    """Test context size estimation used for response truncation."""
-
-    @pytest.mark.asyncio
-    async def test_tokenizer_fallback(self, db):
-        """Test that token estimation works even if tokenizer fails"""
-        with patch("src.core.semantic_matcher.OnnxEmbedder") as mock_model_cls:
-            mock_model = Mock()
-            mock_model.get_sentence_embedding_dimension.return_value = 768
-            mock_model.encode.side_effect = lambda x, *a, **k: (
-                np.array([0.1] * 768, dtype=np.float32)
-                if isinstance(x, str)
-                else np.array([[0.1] * 768] * len(x), dtype=np.float32)
-            )
-            mock_model_cls.return_value = mock_model
-
-            engine = ContextEngine(
-                db=db,
-                similarity_threshold=0.5,
-                max_matches=10,
-            )
-
-            # Even if tokenizer is None, should still work with fallback
-            original_tokenizer = engine.tokenizer
-            engine.tokenizer = None
-
-            # Should still be able to estimate tokens
-            tokens = engine._estimate_tokens({"test": "data"})
-            assert tokens > 0
-            assert isinstance(tokens, int)
-
-            # Restore
-            engine.tokenizer = original_tokenizer

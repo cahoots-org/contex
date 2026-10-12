@@ -32,11 +32,8 @@ services:
       # it beyond this machine (see README).
       - CONTEX_HOST=0.0.0.0
       - CONTEX_PROTECTED_MODE=false
-      - SIMILARITY_THRESHOLD=0.5
-      - MAX_MATCHES=10
-      # Hybrid search runs entirely on Postgres (pgvector + native FTS, fused with RRF).
+      # Hybrid search runs entirely on Postgres (pgvector + pg_search BM25, fused with RRF).
       - HYBRID_SEARCH_ENABLED=true
-      - RRF_K=60
     depends_on:
       postgres:
         condition: service_healthy

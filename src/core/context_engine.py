@@ -1,8 +1,6 @@
 """Main Context Engine orchestrator"""
 
-import json
 import logging
-import tiktoken
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -67,134 +65,7 @@ class ContextEngine:
             default_top_k=self.semantic_matcher.max_matches,
         )
 
-        # Initialize tokenizer for context size estimation (cl100k_base is GPT-4 tokenizer)
-        try:
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        except Exception:
-            # Fallback if tiktoken has issues
-            self.tokenizer = None
-            logger.warning("Tiktoken unavailable, context size limits disabled")
-
         logger.info("Initialized")
-
-    def _estimate_tokens(self, data: Any) -> int:
-        """
-        Estimate token count for data.
-
-        Args:
-            data: Data to estimate tokens for
-
-        Returns:
-            Estimated token count
-        """
-        if not self.tokenizer:
-            # Fallback: rough estimate of 4 chars per token
-            return len(json.dumps(data)) // 4
-
-        try:
-            text = json.dumps(data)
-            return len(self.tokenizer.encode(text))
-        except Exception:
-            # Fallback on error
-            return len(json.dumps(data)) // 4
-
-    def _match_tokens(self, match: Dict[str, Any]) -> int:
-        """Estimated tokens for a match's data, its related nodes and its document root."""
-        parts = [match["data"], *(r["data"] for r in match.get("related", ()))]
-        if "document_data" in match:
-            parts.append(match["document_data"])
-        return sum(self._estimate_tokens(part) for part in parts)
-
-    def _truncate_matches(
-        self, matches: Dict[str, List[Dict[str, Any]]], max_tokens: int
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Truncate matches to fit within token budget.
-
-        Strategy: Keep at least one match per need if possible, then
-        distribute remaining budget proportionally by similarity scores.
-
-        Args:
-            matches: Dictionary mapping needs to their matches
-            max_tokens: Maximum total tokens allowed
-
-        Returns:
-            Truncated matches dictionary
-        """
-        if not matches:
-            return matches
-
-        # Calculate token cost for each match
-        match_costs = []  # List of (need, match_idx, match, tokens)
-        for need, need_matches in matches.items():
-            for idx, match in enumerate(need_matches):
-                tokens = self._match_tokens(match)
-                match_costs.append((need, idx, match, tokens))
-
-        # Calculate total tokens
-        total_tokens = sum(cost[3] for cost in match_costs)
-
-        if total_tokens <= max_tokens:
-            return matches  # No truncation needed
-
-        logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-            "Context size (%s tokens) exceeds limit (%s tokens)", total_tokens, max_tokens
-        )
-        logger.warning("Truncating to fit budget...")
-
-        # Phase 1: Keep highest similarity match from each need
-        result = {need: [] for need in matches.keys()}
-        budget_used = 0
-        reserved_matches = set()
-
-        for need, need_matches in matches.items():
-            if not need_matches:
-                continue
-
-            # Keep the highest similarity match (first one, since they're sorted)
-            best_match = need_matches[0]
-            tokens = self._match_tokens(best_match)
-
-            if budget_used + tokens <= max_tokens:
-                result[need].append(best_match)
-                budget_used += tokens
-                reserved_matches.add((need, 0))
-
-        # Phase 2: Fill remaining budget with additional matches, sorted by similarity
-        remaining_budget = max_tokens - budget_used
-
-        # Get all non-reserved matches sorted by similarity
-        candidate_matches = []
-        for need, idx, match, tokens in match_costs:
-            if (need, idx) not in reserved_matches:
-                candidate_matches.append((need, match, tokens, match["similarity"]))
-
-        # Sort by similarity (highest first)
-        candidate_matches.sort(key=lambda x: x[3], reverse=True)
-
-        # Add matches until budget exhausted
-        for need, match, tokens, similarity in candidate_matches:
-            if tokens <= remaining_budget:
-                result[need].append(match)
-                remaining_budget -= tokens
-
-            if remaining_budget <= 0:
-                break
-
-        # Calculate final stats
-        final_tokens = sum(
-            self._match_tokens(match)
-            for need_matches in result.values()
-            for match in need_matches
-        )
-        original_count = sum(len(need_matches) for need_matches in matches.values())
-        truncated_count = sum(len(need_matches) for need_matches in result.values())
-
-        logger.warning(
-            "Kept %s/%s matches (%s tokens)", truncated_count, original_count, final_tokens
-        )
-
-        return result
 
     async def publish_data(self, event: DataPublishEvent) -> None:
         """Publish one document (any format); raises ValueError if it can't be read."""
@@ -216,8 +87,6 @@ class ContextEngine:
         """
         if not events:
             return [], []
-        # A key repeated in one batch keeps only its last version.
-        events = list({e.data_key: e for e in events}.values())
         project_id = events[0].project_id
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")

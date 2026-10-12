@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         raise
 
     # Bring the schema up to head via alembic. This is the single, canonical schema
-    # path: the migration chain owns the schema (real vector(384) column, HNSW
+    # path: the migration chain owns the schema (pgvector column, HNSW
     # index, alembic_version row). The alembic command API is sync and drives its
     # own event loop, so migrate_to_head offloads it to a worker thread.
     #

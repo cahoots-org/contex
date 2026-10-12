@@ -5,11 +5,6 @@ import pytest
 import pytest_asyncio
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
 from sqlalchemy import text
 
 from src.core.database import DatabaseManager, run_migrations_to_head
@@ -23,30 +18,6 @@ from src.core.tenant import DEFAULT_TENANT_ID, TenantManager
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-
-
-class TestDatabaseManager(DatabaseManager):
-    """Database manager with a bounded pool for the test database."""
-
-    async def connect_test(self, database_url: str) -> None:
-        """Connect to test database."""
-        self.engine = create_async_engine(
-            database_url,
-            echo=False,
-            # Bounded so concurrency tests can't exhaust a shared server's connections.
-            pool_size=10,
-            max_overflow=0,
-        )
-
-        self.session_factory = async_sessionmaker(
-            bind=self.engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-            autocommit=False,
-            autoflush=False,
-        )
-
-        self._is_connected = True
 
 
 @pytest.fixture(autouse=True)
@@ -86,10 +57,11 @@ async def db(_migrated_schema) -> AsyncGenerator[DatabaseManager, None]:
 
     Uses the test database and cleans up after each test.
     """
-    manager = TestDatabaseManager()
+    manager = DatabaseManager()
 
     try:
-        await manager.connect_test(TEST_DATABASE_URL)
+        # Bounded so concurrency tests can't exhaust a shared server's connections.
+        await manager.connect(TEST_DATABASE_URL, pool_size=10, max_overflow=0)
 
         # Start every test from a clean slate. The schema is provisioned once per
         # session (`_migrated_schema`); truncating here makes each test immune to

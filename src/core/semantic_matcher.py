@@ -71,6 +71,16 @@ def _embedding_text(data_key: str, node, title: str = "") -> str:
     return f"{header}\n{text}" if header else text
 
 
+async def _stored_hashes(session, project_id: str, node_keys: List[str]) -> Dict[str, str]:
+    """Stored content hash per node_key, for those of node_keys that exist."""
+    result = await session.execute(
+        select(Embedding.node_key, Embedding.content_hash)
+        .where(Embedding.project_id == project_id)
+        .where(Embedding.node_key == any_(literal(node_keys, ARRAY(Text))))
+    )
+    return dict(result.all())
+
+
 def collapse_by_document(
     candidates: List[Dict[str, Any]], top_k: int, per_document: int
 ) -> List[Dict[str, Any]]:
@@ -136,22 +146,15 @@ class SemanticDataMatcher:
         self.candidate_pool_factor = positive_int_env("CANDIDATE_POOL_FACTOR", 10)
         self.reranker = JevReranker.from_env()
 
-        # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
-        # (lexical) fused with backend-agnostic RRF. Single database, no extra
-        # stateful services.
+        # Hybrid search: pgvector (vector) + pg_search BM25 (lexical), fused with RRF.
         self.hybrid_search = None
         if os.getenv("HYBRID_SEARCH_ENABLED", "false").lower() == "true":
-            try:
-                rrf_k = int(os.getenv("RRF_K", "60"))
-                self.hybrid_search = HybridSearchService(
-                    vector_search=self.vector_search,
-                    lexical_search=PgFtsLexical(db),
-                    k=rrf_k,
-                )
-                logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
-            except Exception as e:
-                logger.warning("Failed to initialize hybrid search", error=str(e))
-                self.hybrid_search = None
+            self.hybrid_search = HybridSearchService(
+                vector_search=self.vector_search,
+                lexical_search=PgFtsLexical(db),
+                k=positive_int_env("RRF_K", 60),
+            )
+            logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
 
         logger.info(
             "Semantic matcher initialized",
@@ -259,12 +262,7 @@ class SemanticDataMatcher:
             for t in embedding_texts
         ]
         async with self.db.session() as session:
-            prior = await session.execute(
-                select(Embedding.node_key, Embedding.content_hash)
-                .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key == any_(literal(node_keys, ARRAY(Text))))
-            )
-            prior_hashes = dict(prior.all())
+            prior_hashes = await _stored_hashes(session, project_id, node_keys)
 
         changed = [
             i
@@ -319,6 +317,16 @@ class SemanticDataMatcher:
             },
         )
         async with self.db.session() as session:
+            # Serialize writers of one document, and refuse a plan whose skipped
+            # nodes another writer has since replaced.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:project_id || chr(31) || :data_key, 0))"),
+                {"project_id": project_id, "data_key": data_key},
+            )
+            rewritten = set(changed)
+            skipped = {k: h for i, (k, h) in enumerate(zip(node_keys, plan["hashes"])) if i not in rewritten}
+            if await _stored_hashes(session, project_id, list(skipped)) != skipped:
+                raise RuntimeError("document changed while it was being registered")
             if rows:
                 await session.execute(stmt, rows)
             removed = await session.execute(

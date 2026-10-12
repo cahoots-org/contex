@@ -37,7 +37,10 @@ refresh story.
   `connector.yaml` to turn this off. The origin names the source, not your
   filters, so two configs reading one source (say, Jira projects A and B)
   would delete each other's items: give each a distinct top-level `origin:`
-  name (e.g. `origin: team-a`).
+  name (e.g. `origin: team-a`). Postgres keys don't name the host, nor S3
+  keys the endpoint, so two servers with a same-named database, or two
+  endpoints with a same-named bucket, overwrite each other: publish each to
+  its own project.
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.

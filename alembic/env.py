@@ -15,7 +15,7 @@ from src.core.db_models import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override sqlalchemy.url from environment if set
+# The database URL comes from the environment.
 database_url = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"

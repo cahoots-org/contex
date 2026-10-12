@@ -9,7 +9,6 @@
     keywordThreshold: 1.0,
     vectorThreshold: 0.75,
     topK: 10,
-    maxTokens: 51200,
     selectedProject: {{ (projects[0] if projects else '')|tojson|forceescape }},
     watching: false,
     watchLastByKey: {},
@@ -232,20 +231,6 @@
                     x-model="vectorThreshold"
                 >
                 <small x-text="`${(vectorThreshold * 100).toFixed(0)}%`"></small>
-            </div>
-
-            <div class="form-group inline">
-                <label for="max_tokens">Max Tokens</label>
-                <input
-                    type="number"
-                    name="max_tokens"
-                    id="max_tokens"
-                    min="1000"
-                    max="128000"
-                    value="51200"
-                    x-model="maxTokens"
-                >
-                <small x-text="`${(maxTokens / 1000).toFixed(0)}k tokens`"></small>
             </div>
         </div>
 
