@@ -14,8 +14,8 @@ from src.core.tenant import DEFAULT_TENANT_ID, TenantManager
 async def create_key(db: DatabaseManager, name: str, role: Role, tenant: str, projects: list[str]) -> str:
     """Create a key with a role, tenant and optional project scope; return the raw key."""
     await TenantManager(db).ensure_tenant(tenant)
-    raw_key, key = await create_api_key(db, name, tenant_id=tenant)
-    await assign_role(db, key.key_id, role, projects=projects)
+    raw_key, key_id = await create_api_key(db, name, tenant_id=tenant)
+    await assign_role(db, key_id, role, projects=projects)
     return raw_key
 
 
