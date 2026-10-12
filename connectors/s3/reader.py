@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Iterator
 
 import boto3
+from botocore.exceptions import ClientError
 
 from connectors.base import ChangeEvent, allowed, document_event, document_format, resolve_document_types
 
@@ -141,8 +142,13 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
                 continue
 
             logger.debug("fetching %s (%d bytes)", key, size)
-            resp = client.get_object(Bucket=bucket, Key=key)
-            body: bytes = resp["Body"].read()
+            try:
+                body: bytes = client.get_object(Bucket=bucket, Key=key)["Body"].read()
+            except ClientError as exc:
+                logger.warning("failed to fetch %s: %s", key, exc)
+                # Still listed, so a prune must not delete what we already have.
+                yield ChangeEvent(op="retain", key=key, payload=None)
+                continue
 
             try:
                 event = object_to_event(key, body, obj.get("LastModified"), document_types)

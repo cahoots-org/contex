@@ -206,3 +206,27 @@ def test_content_types_override():
     assert "config/settings.json" in keys
     assert "docs/readme.md" not in keys
     assert "data/export.csv" not in keys
+
+
+@mock_aws
+def test_unreadable_object_is_retained_not_fatal(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    from connectors.s3.reader import read_objects
+
+    s3 = boto3.client("s3", region_name=REGION)
+    _seed_bucket(s3)
+    get_object = s3.get_object
+
+    def denied(**kwargs):
+        if kwargs["Key"] == "docs/readme.md":
+            raise ClientError({"Error": {"Code": "AccessDenied"}}, "GetObject")
+        return get_object(**kwargs)
+
+    monkeypatch.setattr(s3, "get_object", denied)
+    monkeypatch.setattr("connectors.s3.reader.boto3.client", lambda *args, **kwargs: s3)
+
+    events = {e.key: e.op for e in read_objects(_make_config(keys={"exclude": ["archive/*"]}))}
+
+    assert events["docs/readme.md"] == "retain"
+    assert events["config/settings.json"] == "upsert"
