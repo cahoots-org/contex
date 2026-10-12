@@ -135,12 +135,7 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize context engine", error=str(e))
         raise
 
-    # Initialize vector storage index
-    try:
-        await context_engine.semantic_matcher.initialize_index()
-    except Exception as e:
-        logger.warning("Vector index initialization failed", error=str(e))
-
+    await context_engine.semantic_matcher.initialize_index()
 
     logger.info("Contex is ready!")
 
