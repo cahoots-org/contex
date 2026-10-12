@@ -12,8 +12,7 @@ source (read-only)  ->  connector  ->  MCP: contex_publish_batch  ->  Contex
 
 v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
 upserts every item by a stable key, so re-running (e.g. on a cron) is the
-refresh story. See each connector's design spec under
-[`docs/superpowers/specs/`](../docs/superpowers/specs/).
+refresh story.
 
 ## The shared framework (`connectors/base/`)
 
@@ -21,7 +20,8 @@ refresh story. See each connector's design spec under
   source_meta, data_format}`. `op` is `"upsert"`, `"delete"`, or `"retain"`
   (keep an item that could not be fetched this run).
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
-  batch, reporting progress. Batches are bounded by the server's `MAX_BATCH_SIZE`.
+  batch, reporting progress. A batch holds up to `batch_size` items (default
+  500); the server rejects batches over 1000 items by default, so keep it at or below that.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
   `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with an API key when
   one is configured.
@@ -69,7 +69,7 @@ def read_rows(source_config):
     for row in ...:                      # source-specific
         yield ChangeEvent(
             op="upsert",
-            key=f"{schema}.{table}.{pk}",
+            key=f"{database}.{schema}.{table}.{pk}",
             payload=row_as_dict,
             source_meta={"source": "postgres", "schema": schema, "table": table},
         )

@@ -8,7 +8,6 @@ re-runs are idempotent.
 
 ```
 pip install -r connectors/postgres/requirements.txt
-pip install -r requirements.txt   # installs the base connector framework
 ```
 
 ## Configure
