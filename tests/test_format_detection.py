@@ -121,3 +121,10 @@ def test_a_fence_mentioned_in_prose_keeps_later_sections():
     doc = "# Doc\n\nWrap code in ``` fences.\n\n# Usage\n\nCall it.\n\n```py\nx = 1\n```\n"
     contents = [n.content for n in NodeConverter().parse(doc, "markdown").nodes]
     assert "Usage" in contents and "Call it." in contents and "x = 1" in contents
+
+
+def test_inline_code_at_a_line_start_does_not_open_a_fence():
+    doc = "# Notes\n\n```fenced``` blocks, so bare code failed.\n\n## Method\n\nWe re-ran it.\n\n```python\nx = 1\n```\n"
+    nodes = [(n.node_type.value, n.content) for n in NodeConverter().parse(doc, "markdown").nodes]
+    assert ("heading", "Method") in nodes and ("code_block", "x = 1") in nodes
+    assert any("bare code failed" in content for _, content in nodes)
