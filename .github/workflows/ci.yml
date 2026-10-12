@@ -39,14 +39,14 @@ jobs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
     - name: Install Tesseract for the OCR tests
       run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
@@ -131,6 +131,21 @@ jobs:
       contents: read
       packages: write
 
+    services:
+      postgres:
+        image: paradedb/paradedb:0.25.9-pg18
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: contex
+          POSTGRES_USER: contex
+          POSTGRES_PASSWORD: contex_password
+        options: >-
+          --health-cmd "pg_isready -U contex -d contex"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
     - name: Free disk space
       run: |
@@ -156,7 +171,15 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Verify image was built
+    - name: Boot the image
       run: |
-        docker images contex:test
-        echo "✅ Docker image built successfully"
+        docker run -d --name contex --network host \
+          -e DATABASE_URL=postgresql+asyncpg://contex:contex_password@localhost:5432/contex \
+          -e CONTEX_PROTECTED_MODE=false \
+          contex:test
+        for i in $(seq 1 60); do
+          if curl -sf http://localhost:8001/health; then exit 0; fi
+          sleep 2
+        done
+        docker logs contex
+        exit 1

@@ -20,7 +20,7 @@ are permitted — see the auth-posture note in the [README](../README.md).
 | `consumer` | Agents that read context | `query_data`, `view_project_data`, `view_project_events`, `view_version_history` |
 | `readonly` | Dashboards / auditors | `query_data`, `view_project_data`, `view_project_events`, `view_version_history` |
 
-Keys default to `readonly` when no role is assigned.
+A key with no role has no permissions.
 
 ## Permissions
 
@@ -39,12 +39,19 @@ means "all projects". A permission check for a specific project passes only when
 the project is in the key's allowed list; global checks (no project) pass when
 the role holds the permission.
 
-## Role assignment
+## Creating keys
 
-Roles are assigned server-side (`src.core.rbac.assign_role`) during
-provisioning/bootstrap. There is no client-facing role-management API in this
-version — the REST admin surface was removed in favor of the MCP-native
-interface. Assign roles as part of your deployment/provisioning flow.
+The bootstrap admin key is created at the first boot with auth on. Create the
+rest with the key CLI, which talks to the database directly:
+
+```bash
+python -m src.cli keys create --name agent-a --role consumer --tenant acme --project p1 --project p2
+python -m src.cli keys list
+python -m src.cli keys revoke <key_id>
+```
+
+`--tenant` defaults to `default` and is created if it doesn't exist. Leave out
+`--project` to allow every project in the tenant. `create` prints the key once.
 
 ## Best practices
 

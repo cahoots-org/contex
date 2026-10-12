@@ -16,35 +16,9 @@ Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persi
 
 ### Docker Compose (Recommended)
 
-The `docker-compose.yml` includes all required services:
-
-```yaml
-services:
-  postgres:
-    image: paradedb/paradedb:0.25.9-pg18
-    environment:
-      - POSTGRES_DB=contex
-      - POSTGRES_USER=contex
-      - POSTGRES_PASSWORD=contex_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contex -d contex"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  postgres-data:
-```
-
-Start services:
-
-```bash
-docker compose up -d
-```
+`docker compose up -d` starts ParadeDB alongside Contex. Postgres isn't
+published to the host; reach it with
+`docker compose exec postgres psql -U contex -d contex`.
 
 ### Manual Setup
 
@@ -83,11 +57,10 @@ export DATABASE_URL="postgresql+asyncpg://contex:password@localhost:5432/contex"
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `DATABASE_POOL_SIZE` | Connection pool size | `10` |
-| `DATABASE_MAX_OVERFLOW` | Max overflow connections | `20` |
-| `DATABASE_POOL_TIMEOUT` | Pool timeout (seconds) | `30` |
-| `DATABASE_ECHO` | Log SQL queries | `false` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://contex:contex_password@localhost:5432/contex` |
+
+The connection pool holds 5 connections and grows to 15 under load, plus one
+LISTEN connection for live updates.
 
 ### Connection String Format
 
@@ -286,21 +259,6 @@ archive_command = 'cp %p /archive/%f'
 
 ## Performance Tuning
 
-### Connection Pooling
-
-Configure pool sizes based on your workload:
-
-```python
-# src/core/database.py
-engine = create_async_engine(
-    DATABASE_URL,
-    pool_size=10,       # Base connections
-    max_overflow=20,    # Extra connections under load
-    pool_timeout=30,    # Wait time for connection
-    pool_recycle=3600,  # Recycle connections hourly
-)
-```
-
 ### PostgreSQL Configuration
 
 For production workloads:
@@ -339,18 +297,6 @@ curl http://localhost:8001/health
 {
   "status": "healthy"
 }
-```
-
-### Prometheus Metrics
-
-Available at `/metrics` (gated by `METRICS_TOKEN`; see [METRICS.md](METRICS.md)):
-
-```
-contex_db_connections_active
-contex_db_connections_idle
-contex_db_query_duration_seconds
-contex_embeddings_count
-contex_events_count
 ```
 
 ### pg_stat Queries

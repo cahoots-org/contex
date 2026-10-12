@@ -31,11 +31,13 @@ jobs:
 
     - name: Calculate version
       id: version
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          if [ -n "${{ inputs.version }}" ]; then
+        if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]; then
+          if [ -n "$INPUT_VERSION" ]; then
             # User provided version
-            VERSION="${{ inputs.version }}"
+            VERSION="$INPUT_VERSION"
           else
             # Auto-bump patch version
             LATEST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -1)
@@ -59,6 +61,11 @@ jobs:
         # tag and release name, so a v-prefixed input (e.g. v0.3.5) would
         # otherwise double to vv0.3.5.
         VERSION="${VERSION#v}"
+        # Later steps put the version in shell commands and image tags.
+        if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Version must look like 1.2.3, got: $VERSION"
+          exit 1
+        fi
 
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag=v$VERSION" >> $GITHUB_OUTPUT
@@ -96,7 +103,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
     - name: Wait for PostgreSQL
       run: |

@@ -1,8 +1,10 @@
 """Tests for authentication with PostgreSQL"""
 
 import pytest
-from src.core.auth import create_api_key, list_api_keys, revoke_api_key
+from src.core.auth import bootstrap_admin, create_api_key, list_api_keys, revoke_api_key
 from src.core.db_models import Tenant as TenantModel
+from src.core.identity import resolve_identity
+from src.core.rbac import Role
 
 
 @pytest.mark.asyncio
@@ -141,3 +143,14 @@ async def test_revoke_api_key_tenant_match(db):
             select(APIKey).where(APIKey.key_id == key_t1.key_id)
         )
         assert row.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_uses_provided_key_once(db, monkeypatch):
+    monkeypatch.setenv("BOOTSTRAP_ADMIN_KEY", "ck_provided_admin_key_123")
+    await bootstrap_admin(db)
+    await bootstrap_admin(db)
+
+    ident = await resolve_identity(db, "ck_provided_admin_key_123")
+    assert ident.role == Role.ADMIN
+    assert len(await list_api_keys(db)) == 1

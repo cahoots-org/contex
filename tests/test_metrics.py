@@ -1,14 +1,18 @@
 """Tests for Prometheus metrics"""
 
+from fastapi import APIRouter, FastAPI
+from fastapi.testclient import TestClient
+from starlette.applications import Starlette
+
 from src.core.metrics import (
     http_requests_total,
     active_requests,
     record_http_request,
     increment_active_requests,
     decrement_active_requests,
-    record_tenant_request,
     get_metrics,
 )
+from src.core.metrics_middleware import MetricsMiddleware
 
 
 class TestMetricsCounters:
@@ -31,11 +35,6 @@ class TestMetricsCounters:
         )._value.get()
 
         assert final > initial
-
-    def test_record_tenant_request_has_no_tenant_id_label(self):
-        """Tenant request metric is aggregate: no tenant_id label (see #78)."""
-        record_tenant_request("GET", "/x")
-        assert "tenant_id" not in get_metrics().decode("utf-8")
 
 
 class TestMetricsGauges:
@@ -69,7 +68,6 @@ class TestMetricsExport:
         """Test that exported metrics contain expected metric names"""
         metrics = get_metrics().decode('utf-8')
         assert "contex_http_requests_total" in metrics
-        assert "contex_tenant_requests_total" in metrics
 
     def test_get_metrics_prometheus_format(self):
         """Test that metrics are in Prometheus format"""
@@ -79,38 +77,23 @@ class TestMetricsExport:
 
     def test_no_id_labels_exposed(self):
         """No tenant/project IDs may appear as labels in the scrape output (#78)."""
-        record_tenant_request("GET", "/x")
         record_http_request("GET", "/health", 200)
         metrics = get_metrics().decode("utf-8")
         assert "tenant_id" not in metrics
         assert "project_id" not in metrics
 
 
-class TestMetricsMiddleware:
-    """Test metrics middleware"""
+def test_endpoint_label_is_the_route_template():
+    router = APIRouter()
+    router.add_api_route("/projects/{project_id}/data", lambda project_id: {})
+    app = FastAPI()
+    app.include_router(router, prefix="/sandbox")
+    app.mount("/static", Starlette())
+    app.add_middleware(MetricsMiddleware)
+    client = TestClient(app)
+    for path in ("/sandbox/projects/my-proj/data", "/static/no-such-file.js", "/wp-login.php"):
+        client.get(path)
 
-    def test_endpoint_normalization(self):
-        """Test that endpoints are normalized correctly"""
-        from src.core.metrics_middleware import MetricsMiddleware
-
-        middleware = MetricsMiddleware(None)
-
-        assert middleware._normalize_endpoint("/sandbox/agents/550e8400-e29b-41d4-a716-446655440000") == "/sandbox/agents/{id}"
-        assert middleware._normalize_endpoint("/sandbox/projects/123/data") == "/sandbox/projects/{id}/data"
-        assert middleware._normalize_endpoint("/sandbox/agents/agent-123") == "/sandbox/agents/{id}"
-        assert middleware._normalize_endpoint("/health") == "/health"
-
-    def test_looks_like_id(self):
-        """Test ID detection"""
-        from src.core.metrics_middleware import MetricsMiddleware
-
-        middleware = MetricsMiddleware(None)
-
-        assert middleware._looks_like_id("550e8400-e29b-41d4-a716-446655440000")  # UUID
-        assert middleware._looks_like_id("123")  # Numeric
-        assert middleware._looks_like_id("agent-123")  # Prefixed
-        assert middleware._looks_like_id("proj-abc123")  # Prefixed
-
-        assert not middleware._looks_like_id("health")
-        assert not middleware._looks_like_id("publish")
-        assert not middleware._looks_like_id("agents")
+    labels = {s.labels["endpoint"] for s in http_requests_total.collect()[0].samples}
+    assert {"/sandbox/projects/{project_id}/data", "/static", "other"} <= labels
+    assert not any(word in label for label in labels for word in ("my-proj", "no-such", "wp-login"))

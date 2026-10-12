@@ -5,7 +5,6 @@ fastapi==0.141.1
 uvicorn[standard]==0.54.0
 httpx==0.28.1
 jinja2==3.1.6
-aiofiles==25.1.0
 python-multipart==0.0.32
 prometheus-client==0.26.0
 
@@ -21,7 +20,6 @@ greenlet==3.5.5
 onnxruntime==1.30.0
 tokenizers==0.23.2
 huggingface_hub==1.31.0
-scikit-learn==1.9.1
 
 # Numerical operations for embeddings / rank fusion
 numpy==2.5.3
@@ -38,11 +36,9 @@ tree-sitter==0.25.2
 tree-sitter-language-pack==0.13.0
 
 # Utilities
-python-dotenv==1.2.3
 tiktoken==0.14.0
 toon-format==0.1.0
 pyyaml==6.0.3
-toml==0.10.2
 
 # JWT — transitive dep of mcp[crypto] (auth); pinned for CVE-2026-101918
 PyJWT==2.15.0
@@ -60,9 +56,3 @@ opentelemetry-api==1.45.0
 opentelemetry-sdk==1.45.0
 opentelemetry-instrumentation-fastapi==0.66b0
 opentelemetry-exporter-otlp==1.45.0
-
-# Testing
-pytest==9.1.1
-pytest-asyncio==1.4.0
-pytest-mock==3.16.0
-aiosqlite==0.22.1
