@@ -15,18 +15,18 @@ def test_startup_checks_pass_when_auth_off_on_loopback(monkeypatch):
     # "'bool' object is not callable" here.
     monkeypatch.setenv("AUTH_ENABLED", "false")
     monkeypatch.setenv("CONTEX_HOST", "127.0.0.1")
-    main.run_startup_checks(main.app)
+    main.run_startup_checks()
 
 
 def test_startup_checks_default_to_loopback(monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
     monkeypatch.delenv("CONTEX_HOST", raising=False)
     monkeypatch.delenv("CONTEX_PROTECTED_MODE", raising=False)
-    main.run_startup_checks(main.app)
+    main.run_startup_checks()
 
 
 def test_startup_checks_fail_closed_on_unusable_bootstrap_key(monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("BOOTSTRAP_ADMIN_KEY", "not-a-contex-key-123")
     with pytest.raises(RuntimeError, match="BOOTSTRAP_ADMIN_KEY"):
-        main.run_startup_checks(main.app)
+        main.run_startup_checks()

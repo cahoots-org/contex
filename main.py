@@ -7,7 +7,7 @@ import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import auth_enabled
@@ -51,7 +51,7 @@ setup_logging(level=LOG_LEVEL, json_output=LOG_JSON, service_name="contex")
 logger = get_logger(__name__)
 
 
-def run_startup_checks(app: FastAPI) -> None:
+def run_startup_checks() -> None:
     """Boot-time fail-closed gates; reads env/config only, so it is testable without a database."""
     # Refuse to bind a non-loopback address when auth is off, unless the
     # operator explicitly opts out via CONTEX_PROTECTED_MODE=false.
@@ -69,7 +69,7 @@ def run_startup_checks(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
-    run_startup_checks(app)
+    run_startup_checks()
     logger.info("Contex starting", version=VERSION)
     logger.info("Configuration loaded",
                 similarity_threshold=SIMILARITY_THRESHOLD,
@@ -195,11 +195,6 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-
-@app.exception_handler(PermissionError)
-async def _permission_denied_handler(request, exc):
-    return JSONResponse(status_code=403, content={"detail": "Forbidden"})
-
 
 # Global sanitizing handler for uncaught exceptions: logs the full error
 # server-side and returns a generic 500 so internals never leak. Registered
@@ -328,14 +323,6 @@ logger.info("Body-limit middleware enabled")
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
 logger.info("Tracing middleware enabled")
-
-# Authentication applies to the MCP endpoint via its token verifier.
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
-if AUTH_ENABLED:
-    logger.info("Authentication ENABLED - enforced on the MCP endpoint")
-else:
-    logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
-
 
 # Outermost, so a disallowed Host is turned away before any other work.
 if _transport_security.enable_dns_rebinding_protection:
