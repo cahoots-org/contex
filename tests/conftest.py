@@ -153,7 +153,6 @@ def mock_db():
     session_context.__aexit__.return_value = None
     mock.session.return_value = session_context
 
-    mock.health_check = AsyncMock(return_value={"status": "healthy"})
 
     return mock
 

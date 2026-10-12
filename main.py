@@ -431,7 +431,7 @@ try:
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
     FastAPIInstrumentor.instrument_app(
         app,
-        excluded_urls="health,ready,metrics"
+        excluded_urls="health,metrics"
     )
     logger.info("Tracing: FastAPI instrumented")
 except Exception as e:

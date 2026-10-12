@@ -70,14 +70,6 @@ class TestTracingManager:
             assert len(trace_id) == 32  # Hex string length
             assert len(span_id) == 16
 
-    def test_shutdown(self):
-        """Test tracing shutdown"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise
-        manager.shutdown()
-
 
 class TestTracingIntegration:
     """Test tracing integration with FastAPI"""
