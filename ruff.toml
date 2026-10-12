@@ -3,8 +3,3 @@ target-version = "py312"
 [lint]
 select = ["F", "E9"]
 
-[lint.per-file-ignores]
-"src/core/audit.py" = ["F401"]
-"src/core/semantic_matcher.py" = ["F401"]
-"src/core/tenant.py" = ["F401"]
-"tests/test_audit.py" = ["F401"]
