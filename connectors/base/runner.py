@@ -119,7 +119,8 @@ async def run(
         if len(buffer) >= batch_size:
             await flush()
     await flush()
-    if prune:
+    # A run that read nothing is far likelier a credential or access failure than an empty source.
+    if prune and (seen or stats.skipped_secrets):
         stale = sorted(set(await publisher.list_keys()) - seen)
         for start in range(0, len(stale), batch_size):
             stats.deleted += int(await publisher.delete_batch(stale[start:start + batch_size]))
