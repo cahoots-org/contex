@@ -250,6 +250,8 @@ async def _space_key_by_id(
         if wanted is not None and key not in wanted:
             continue
         mapping[str(space["id"])] = key or ""
+    if missing := (wanted or set()) - set(mapping.values()):
+        raise RuntimeError(f"Confluence spaces not visible to this token: {', '.join(sorted(missing))}")
     return mapping
 
 
