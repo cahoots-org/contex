@@ -146,22 +146,15 @@ class SemanticDataMatcher:
         self.candidate_pool_factor = positive_int_env("CANDIDATE_POOL_FACTOR", 10)
         self.reranker = JevReranker.from_env()
 
-        # Initialize hybrid search if enabled: pgvector (vector) + pg_search BM25 (lexical)
-        # (lexical) fused with backend-agnostic RRF. Single database, no extra
-        # stateful services.
+        # Hybrid search: pgvector (vector) + pg_search BM25 (lexical), fused with RRF.
         self.hybrid_search = None
         if os.getenv("HYBRID_SEARCH_ENABLED", "false").lower() == "true":
-            try:
-                rrf_k = int(os.getenv("RRF_K", "60"))
-                self.hybrid_search = HybridSearchService(
-                    vector_search=self.vector_search,
-                    lexical_search=PgFtsLexical(db),
-                    k=rrf_k,
-                )
-                logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
-            except Exception as e:
-                logger.warning("Failed to initialize hybrid search", error=str(e))
-                self.hybrid_search = None
+            self.hybrid_search = HybridSearchService(
+                vector_search=self.vector_search,
+                lexical_search=PgFtsLexical(db),
+                k=positive_int_env("RRF_K", 60),
+            )
+            logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
 
         logger.info(
             "Semantic matcher initialized",
