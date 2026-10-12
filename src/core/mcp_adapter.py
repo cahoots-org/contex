@@ -18,6 +18,7 @@ from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedResourceError, UnexpectedToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
+from mcp.shared.exceptions import MCPError
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
@@ -37,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 # Open subscriptions/listen streams allowed per API key; the SDK caps all streams together.
 _MAX_LISTEN_STREAMS_PER_KEY = 32
+
+_EXPIRED = "Subscription expired. Call contex_create_subscription with the same arguments to resume it."
 
 
 def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[datetime]:
@@ -113,13 +116,16 @@ async def _enforce_subscription_project(engine, subscription_id, tenant_id):
 
 async def _enforce_resource(engine, uri):
     """Allow watching a subscription resource only within the caller's tenant and project scope."""
-    _enforce(Permission.QUERY_DATA)
-    tok = get_access_token()
-    tid = (tok.claims or {}).get("tenant_id") if tok else None
-    project_id = await engine.subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
-    if project_id is None:
-        raise ToolError(f"Unknown subscription resource {uri}")
-    _enforce(Permission.QUERY_DATA, project_id=project_id)
+    try:
+        _enforce(Permission.QUERY_DATA)
+        tok = get_access_token()
+        tid = (tok.claims or {}).get("tenant_id") if tok else None
+        project_id = await engine.subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
+        if project_id is None:
+            raise MCPError(types.INVALID_PARAMS, _EXPIRED)
+        _enforce(Permission.QUERY_DATA, project_id=project_id)
+    except PermissionError:
+        raise MCPError(types.INVALID_REQUEST, "Permission denied") from None
 
 
 class LegacyResourceSubscriptions:
@@ -287,9 +293,7 @@ def build_mcp_server(engine, db_accessor=None):
         try:
             bundle = await e.subscriptions.get_bundle(id, tenant_id=tid)
         except KeyError:
-            raise ResourceError(
-                "Subscription expired. Call contex_create_subscription with the same arguments to resume it."
-            ) from None
+            raise ResourceError(_EXPIRED) from None
         return json.dumps(bundle)
 
     @server.tool(name="contex_publish",
@@ -381,7 +385,7 @@ def build_mcp_server(engine, db_accessor=None):
         if tok is None:
             return await listen(ctx, params)
         if open_listens[tok.client_id] >= _MAX_LISTEN_STREAMS_PER_KEY:
-            raise ToolError("Too many open subscription streams")
+            raise MCPError(types.INVALID_REQUEST, "Too many open subscription streams")
         open_listens[tok.client_id] += 1
         try:
             return await listen(ctx, params)

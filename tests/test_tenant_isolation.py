@@ -159,7 +159,7 @@ async def test_mcp_listen_on_other_tenants_subscription_is_denied(db, monkeypatc
     server, _ = build_mcp_server(engine)
 
     async with Client(server) as client:
-        with pytest.raises(MCPError):
+        with pytest.raises(MCPError, match="^Permission denied$"):
             async with client.listen(resource_subscriptions=[resource_uri_for(sub_id)]):
                 pass
 
@@ -173,6 +173,6 @@ async def test_mcp_listen_streams_are_capped_per_key(db, monkeypatch):
 
     async with Client(server) as client:
         async with client.listen(tools_list_changed=True):
-            with pytest.raises(MCPError):
+            with pytest.raises(MCPError, match="Too many open subscription streams"):
                 async with client.listen(tools_list_changed=True):
                     pass
