@@ -199,21 +199,14 @@ app = FastAPI(
 register_exception_handlers(app)
 
 
-# Build the MCP server at module level with a lazy engine accessor so the
-# /mcp route exists in app.routes at import time (the test asserts this).
-# The engine is resolved at handler call time via app.state.context_engine,
-# which is populated during lifespan startup before any requests are served.
+# The engine is resolved per call from app.state, which lifespan populates before serving.
 _mcp_server, _mcp_bus = build_mcp_server(
     lambda: app.state.context_engine,
     db_accessor=lambda: app.state.db,
 )
-# Mount the MCP streamable-HTTP app under /mcp. The sub-app serves at its own root
-# ("/"), so the endpoint is /mcp — passing streamable_http_path="/mcp" here would
-# compose with the mount prefix to /mcp/mcp. The session-manager lifecycle is run in lifespan.
-# The transport is unauthenticated, so the idle timeout is tightened from the SDK
-# default of 1800s to 600s to limit accumulation of orphaned sessions.
-# max_request_body_size: raise the SDK's 4 MiB cap (it 413s before parsing) to our
-# upload limit, so CONTEX_MAX_UPLOAD_SIZE is the single real ceiling.
+# The MCP app is mounted at /mcp and serves at its own root; lifespan runs its session manager.
+# The idle timeout is cut from the SDK's 1800s to limit orphaned sessions, and the SDK's 4 MiB
+# body cap is raised so CONTEX_MAX_UPLOAD_SIZE is the single real ceiling.
 _LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
 
