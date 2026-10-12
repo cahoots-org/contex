@@ -8,6 +8,7 @@ from src.core.identity import Identity
 from src.core.ownership import ensure_project_access
 from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
+from src.core.version import VERSION
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -57,6 +58,7 @@ def get_tenant_manager(request: Request) -> TenantManager:
 # Setup templates
 templates_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
+templates.env.globals["version"] = VERSION
 
 
 @router.get("/", response_class=HTMLResponse, dependencies=[Depends(public)])

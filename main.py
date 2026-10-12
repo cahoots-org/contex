@@ -1,4 +1,4 @@
-"""Contex v0.2.0 - Semantic Context Routing Platform"""
+"""Contex - Semantic Context Routing Platform"""
 
 import asyncio
 import os
@@ -25,6 +25,7 @@ from src.core.logging import setup_logging, get_logger
 from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import initialize_tracing
+from src.core.version import VERSION
 from src.core.database import init_database
 from src.core.sentry_integration import init_sentry
 from src.core.mcp_adapter import build_mcp_server
@@ -72,7 +73,7 @@ def run_startup_checks(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
     run_startup_checks(app)
-    logger.info("Contex starting", version="0.2.0")
+    logger.info("Contex starting", version=VERSION)
     logger.info("Configuration loaded",
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
@@ -81,7 +82,7 @@ async def lifespan(app: FastAPI):
                 log_json=LOG_JSON)
 
     # Initialize Sentry for error tracking (if configured)
-    if init_sentry(release="contex@0.2.0"):
+    if init_sentry(release=f"contex@{VERSION}"):
         logger.info("Sentry error tracking enabled")
 
     # Connect to PostgreSQL
@@ -211,7 +212,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Contex",
     description="Semantic context routing for AI agents",
-    version="0.2.0",
+    version=VERSION,
     lifespan=lifespan,
     # No REST API remains, so the auto-generated OpenAPI/Swagger/ReDoc pages
     # would only advertise the internal /health, /metrics and /sandbox routes.
@@ -429,7 +430,7 @@ async def root():
 try:
     initialize_tracing(
         service_name="contex",
-        service_version="0.2.0"
+        service_version=VERSION
     )
     logger.info("Tracing: TracerProvider initialized")
 except Exception as e:
