@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.embedder import encode_async
-from src.core.limits import MAX_SUBSCRIPTIONS_PER_PROJECT, check_needs, clamp_top_k, positive_int_env
+from src.core.limits import MAX_BATCH_SIZE, MAX_SUBSCRIPTIONS_PER_PROJECT, check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 from src.core.notifier import SUBSCRIPTION_UPDATED
@@ -208,8 +208,10 @@ class SubscriptionService:
         for any whose materialized bundle changed, atomically swaps the stored bundle
         (buffer-until-complete) and emits a `subscription:{id}:updated` event. Returns
         the list of subscription ids that changed. `changed_keys` names the documents
-        just published; `None` reconciles every subscription.
+        just published; `None`, or more keys than one batch holds, reconciles every subscription.
         """
+        if changed_keys is not None and len(changed_keys) > MAX_BATCH_SIZE:
+            changed_keys = None
         async with self._project_lock(project_id):
             return await self._reconcile_locked(project_id, changed_keys)
 
