@@ -142,16 +142,17 @@ def read_objects(config: dict) -> Iterator[ChangeEvent]:
                 continue
 
             logger.debug("fetching %s (%d bytes)", key, size)
+            data_key = f"{bucket}/{key}"
             try:
                 body: bytes = client.get_object(Bucket=bucket, Key=key)["Body"].read()
             except ClientError as exc:
                 logger.warning("failed to fetch %s: %s", key, exc)
                 # Still listed, so a prune must not delete what we already have.
-                yield ChangeEvent(op="retain", key=key, payload=None)
+                yield ChangeEvent(op="retain", key=data_key, payload=None)
                 continue
 
             try:
-                event = object_to_event(key, body, obj.get("LastModified"), document_types)
+                event = object_to_event(data_key, body, obj.get("LastModified"), document_types)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 logger.warning("skipping %s: %s", key, exc)
                 continue

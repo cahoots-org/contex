@@ -80,9 +80,9 @@ def test_eligible_objects_yielded():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert "docs/readme.md" in keys
-    assert "config/settings.json" in keys
-    assert "data/export.csv" in keys
+    assert f"{BUCKET}/docs/readme.md" in keys
+    assert f"{BUCKET}/config/settings.json" in keys
+    assert f"{BUCKET}/data/export.csv" in keys
 
 
 @mock_aws
@@ -96,7 +96,7 @@ def test_binary_objects_skipped():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert "images/logo.png" not in keys
+    assert f"{BUCKET}/images/logo.png" not in keys
 
 
 @mock_aws
@@ -110,7 +110,7 @@ def test_oversized_objects_skipped():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert "large/file.txt" not in keys
+    assert f"{BUCKET}/large/file.txt" not in keys
 
 
 @mock_aws
@@ -124,7 +124,7 @@ def test_excluded_objects_skipped():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert "archive/old.md" not in keys
+    assert f"{BUCKET}/archive/old.md" not in keys
 
 
 @mock_aws
@@ -137,7 +137,7 @@ def test_json_object_mapped_correctly():
     config = _make_config(max_object_bytes=100, keys={"exclude": ["archive/*"]})
     events = {e.key: e for e in read_objects(config)}
 
-    json_event = events["config/settings.json"]
+    json_event = events[f"{BUCKET}/config/settings.json"]
     assert json_event.data_format == "json"
     assert json_event.payload == {"env": "prod"}
 
@@ -152,7 +152,7 @@ def test_text_object_mapped_correctly():
     config = _make_config(max_object_bytes=100, keys={"exclude": ["archive/*"]})
     events = {e.key: e for e in read_objects(config)}
 
-    md_event = events["docs/readme.md"]
+    md_event = events[f"{BUCKET}/docs/readme.md"]
     assert md_event.data_format == "text"
     assert md_event.payload == "# Hello world"
 
@@ -184,7 +184,7 @@ def test_prefix_filters_objects():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert keys == {"docs/readme.md"}
+    assert keys == {f"{BUCKET}/docs/readme.md"}
 
 
 @mock_aws
@@ -203,9 +203,9 @@ def test_content_types_override():
     events = list(read_objects(config))
     keys = {e.key for e in events}
 
-    assert "config/settings.json" in keys
-    assert "docs/readme.md" not in keys
-    assert "data/export.csv" not in keys
+    assert f"{BUCKET}/config/settings.json" in keys
+    assert f"{BUCKET}/docs/readme.md" not in keys
+    assert f"{BUCKET}/data/export.csv" not in keys
 
 
 @mock_aws
@@ -228,5 +228,5 @@ def test_unreadable_object_is_retained_not_fatal(monkeypatch):
 
     events = {e.key: e.op for e in read_objects(_make_config(keys={"exclude": ["archive/*"]}))}
 
-    assert events["docs/readme.md"] == "retain"
-    assert events["config/settings.json"] == "upsert"
+    assert events[f"{BUCKET}/docs/readme.md"] == "retain"
+    assert events[f"{BUCKET}/config/settings.json"] == "upsert"
