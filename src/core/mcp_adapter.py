@@ -65,15 +65,15 @@ def _check_max_age(max_age_seconds: Optional[int]) -> None:
 
 
 def _throttle(limiter: RateLimiter, bucket: str, limit_env: str, default_limit: int) -> None:
-    """Per-principal rate limit for a tool.
+    """Per-key rate limit for a tool; callers without a key aren't limited.
 
-    MCP multiplexes every tool over one HTTP path, so the per-tool decision
-    lives here. Raises ``ToolError`` so the backoff hint survives to the client
-    (a plain exception would be redacted).
+    Raises ``ToolError`` so the backoff hint survives to the client (a plain
+    exception would be redacted).
     """
     tok = get_access_token()
-    principal = tok.client_id if tok else "anonymous"
-    wait = limiter.retry_after(f"{principal}:{bucket}", limit_env, default_limit)
+    if tok is None:
+        return
+    wait = limiter.retry_after(f"{tok.client_id}:{bucket}", limit_env, default_limit)
     if wait is not None:
         raise ToolError(f"rate_limit_exceeded retry_after={wait}")
 

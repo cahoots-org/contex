@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import text
+from mcp.server.auth.provider import AccessToken
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from src.core import limits, mcp_adapter
 from src.core.context_engine import ContextEngine
@@ -158,7 +159,10 @@ async def test_subscription_scope_since_filters_bundle(db):
 async def test_query_tools_share_a_rate_limit(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_QUERY", "1")
     server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.1, max_matches=10))
+    for _ in range(2):  # without a key, nothing to limit
+        await server.call_tool("contex_query", {"project_id": "p", "query": "anything"})
 
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: AccessToken(token="t", client_id="k", scopes=[]))
     await server.call_tool("contex_query", {"project_id": "p", "query": "anything"})
     with pytest.raises(ToolError, match="rate_limit_exceeded retry_after="):
         await server.call_tool("contex_create_subscription", {"project_id": "p", "needs": ["anything"]})
