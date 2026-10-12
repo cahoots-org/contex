@@ -21,7 +21,7 @@ from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, Res
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
-from src.core.identity import Identity, resolve_identity
+from src.core.identity import ANONYMOUS_IDENTITY, Identity, resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
@@ -101,15 +101,16 @@ async def _enforce_project(engine, permission, project_id, *, create_if_absent=F
     _enforce(permission, project_id=project_id)
     tok = get_access_token()
     if tok is None:
-        return
-    claims = tok.claims or {}
-    identity = Identity(
-        key_id=tok.client_id,
-        scopes=frozenset(Permission(s) for s in tok.scopes),
-        tenant_id=claims.get("tenant_id"),
-        projects=tuple(claims.get("projects") or ()),
-        role=None,
-    )
+        identity = ANONYMOUS_IDENTITY
+    else:
+        claims = tok.claims or {}
+        identity = Identity(
+            key_id=tok.client_id,
+            scopes=frozenset(Permission(s) for s in tok.scopes),
+            tenant_id=claims.get("tenant_id"),
+            projects=tuple(claims.get("projects") or ()),
+            role=None,
+        )
     await ensure_project_access(identity, project_id, TenantManager(engine.db), create_if_absent=create_if_absent)
 
 

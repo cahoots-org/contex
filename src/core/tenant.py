@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Tenant as TenantModel
@@ -360,30 +361,17 @@ class TenantManager:
     # Project Management
     # ============================================================
 
-    async def add_project(self, tenant_id: str, project_id: str) -> str:
-        """
-        Add a project to a tenant.
-
-        Args:
-            tenant_id: Tenant identifier
-            project_id: Project identifier
-
-        Returns:
-            Full project key (tenant_id:project:project_id)
-        """
+    async def claim_project(self, tenant_id: str, project_id: str) -> str:
+        """Bind `project_id` to `tenant_id` unless it already has an owner; return the owner."""
         async with self.db.session() as session:
-            # Add to tenant projects
-            project_record = TenantProjectModel(
-                tenant_id=tenant_id,
-                project_id=project_id,
+            await session.execute(
+                pg_insert(TenantProjectModel)
+                .values(tenant_id=tenant_id, project_id=project_id)
+                .on_conflict_do_nothing(index_elements=[TenantProjectModel.project_id])
             )
-            session.add(project_record)
-
-        # Increment usage
-        await self.increment_usage(tenant_id, "projects_count")
-
-        # Return the full project key for namespacing
-        return f"{tenant_id}:project:{project_id}"
+            return (await session.execute(
+                select(TenantProjectModel.tenant_id).where(TenantProjectModel.project_id == project_id)
+            )).scalar_one()
 
     async def get_project_tenant(self, project_id: str) -> Optional[str]:
         """

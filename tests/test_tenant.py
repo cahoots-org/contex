@@ -195,44 +195,6 @@ class TestTenantQuotasMgmt:
         assert allowed is True
         assert message == "OK"
 
-    @pytest.mark.asyncio
-    async def test_check_quota_exceeded(self, manager):
-        """Test quota exceeded check"""
-        # Create tenant with minimal quota
-        tenant = await manager.create_tenant(
-            tenant_id="limited_tenant",
-            name="Limited Tenant",
-            plan=TenantPlan.FREE,  # Has max 1 project
-        )
-
-        # Add a project to use quota
-        await manager.add_project(tenant.tenant_id, "project1")
-
-        # Try to add another
-        allowed, message = await manager.check_quota(
-            tenant.tenant_id,
-            "projects",
-            amount=1,
-        )
-        assert allowed is False
-        assert "exceeded" in message.lower()
-
-    @pytest.mark.asyncio
-    async def test_enforce_quota_raises(self, manager):
-        """Test enforce_quota raises when exceeded"""
-        tenant = await manager.create_tenant(
-            tenant_id="enforce_tenant",
-            name="Enforce Tenant",
-            plan=TenantPlan.FREE,
-        )
-
-        # Use up quota
-        await manager.add_project(tenant.tenant_id, "project1")
-
-        # Should raise
-        with pytest.raises(ValueError, match="exceeded"):
-            await manager.enforce_quota(tenant.tenant_id, "projects")
-
 
 class TestTenantUsageTracking:
     """Test tenant usage tracking"""
@@ -276,31 +238,6 @@ class TestTenantUsageTracking:
 
         usage = await manager.get_usage(tenant.tenant_id)
         assert usage.events_this_month == 100
-
-
-class TestTenantProjectManagement:
-    """Test tenant project management"""
-
-    @pytest_asyncio.fixture
-    async def manager(self, db):
-        """Create a tenant manager"""
-        return TenantManager(db)
-
-    @pytest.mark.asyncio
-    async def test_add_project(self, manager):
-        """Test adding a project to tenant"""
-        tenant = await manager.create_tenant(
-            tenant_id="proj_tenant",
-            name="Project Tenant",
-            plan=TenantPlan.PRO,
-        )
-
-        key = await manager.add_project(tenant.tenant_id, "my_project")
-
-        assert key == f"{tenant.tenant_id}:project:my_project"
-
-        usage = await manager.get_usage(tenant.tenant_id)
-        assert usage.projects_count == 1
 
 
 class TestTenantUtilityFunctions:

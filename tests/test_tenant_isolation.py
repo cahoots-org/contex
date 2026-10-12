@@ -205,6 +205,20 @@ async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkey
     await server.call_tool("contex_query", {"project_id": "p4", "query": "a"})
 
 
+@pytest.mark.asyncio
+async def test_projects_published_with_auth_off_stay_with_the_default_tenant(db, monkeypatch):
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+    await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "k", "data": {"a": 1}})
+
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "acme")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("acme"))
+    with pytest.raises(ToolError, match="Permission denied"):
+        await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "x", "data": {"a": 1}})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("default"))
+    await server.call_tool("contex_query", {"project_id": "my-app", "query": "a"})
+
+
 def _admin_token(tenant_id: str, key_id: str = "key-a") -> AccessToken:
     return AccessToken(token="t", client_id=key_id, scopes=[p.value for p in expand_role(Role.ADMIN)],
                        claims={"tenant_id": tenant_id, "projects": []})

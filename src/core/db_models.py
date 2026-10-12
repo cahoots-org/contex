@@ -98,7 +98,7 @@ class TenantProject(Base):
     __tablename__ = "tenant_projects"
 
     tenant_id: Mapped[str] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), primary_key=True
+        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False
     )
     project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
