@@ -102,7 +102,7 @@ class TestSemanticDataMatcher:
         )
         await matcher.register_data("proj1", "notes", {"body": "unrelated"})
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("notes", 0.8),
+            ("jira:DEV-1\x1fcomments[0]", 0.9), ("notes", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
@@ -118,7 +118,7 @@ class TestSemanticDataMatcher:
             {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
         )
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1", 0.8),
+            ("jira:DEV-1\x1fcomments[0]", 0.9), ("jira:DEV-1", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
@@ -335,8 +335,17 @@ class TestSemanticMatcherContentHashDedup:
         async with matcher.db.session() as session:
             nodes = (await session.execute(select(Embedding.node_key))).scalars().all()
             symbols = (await session.execute(select(Symbol.name))).scalars().all()
-        assert nodes == ["lib/util.py.sentence_0"]
+        assert nodes == ["lib/util.py\x1fsentence_0"]
         assert symbols == []
+
+    @pytest.mark.asyncio
+    async def test_dotted_keys_do_not_share_nodes(self, matcher):
+        await matcher.register_data("projd", "config", {"name": "app", "prod": {"host": "prod-db"}})
+        await matcher.register_data("projd", "config.prod", {"owner": "ops"})
+
+        async with matcher.db.session() as session:
+            keys = (await session.execute(select(Embedding.data_key))).scalars().all()
+        assert sorted(keys) == ["config", "config", "config.prod"]
 
     @pytest.mark.asyncio
     async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):
@@ -465,9 +474,9 @@ class TestSemanticMatcherTimeWindow:
 
     @staticmethod
     def _data_keys(need_matches):
-        # A match's data_key is the node_key (`<data_key>.<path>`); reduce to the
+        # A match's data_key is the node_key (`<data_key>\x1f<path>`); reduce to the
         # published data_key for assertions.
-        return {m["data_key"].split(".", 1)[0] for m in need_matches}
+        return {m["data_key"].split("\x1f", 1)[0] for m in need_matches}
 
     @pytest.mark.asyncio
     async def test_since_excludes_older_rows(self, matcher, db):

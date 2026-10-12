@@ -74,7 +74,7 @@ async def test_batch_item_without_format_is_detected_from_its_key(db):
 
     async with db.session() as session:
         keys = set((await session.execute(select(Embedding.node_key))).scalars())
-    assert "app.py.hello" in keys
+    assert "app.py\x1fhello" in keys
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ class DataPublishEvent(BaseModel):
 
     project_id: str = Field(..., description="Project identifier")
     data_key: str = Field(
-        ..., description="Data identifier (e.g., 'tech_stack', 'event_model')"
+        ..., description="Data identifier (e.g., 'tech_stack', 'event_model')", pattern=r"^[^\x00-\x1f]*$"
     )
     data: Any = Field(
         ...,

@@ -6,6 +6,7 @@ Each parser detects whether it can handle the input and parses it into Nodes.
 
 from typing import Any, List, Optional
 from abc import ABC, abstractmethod
+import csv
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import pypdfium2
 import yaml
 from docx import Document
 from PIL import Image
+from tree_sitter_language_pack import get_parser
 
 from .node import Node, NodeType, ParseResult
 
@@ -42,6 +44,9 @@ _EXTENSION_FORMATS = {
     ".yaml": "yaml",
     ".yml": "yaml",
     ".csv": "csv",
+    ".pdf": "pdf",
+    ".docx": "docx",
+    **dict.fromkeys((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"), "image"),
 }
 
 # data_format values that carry no real signal, so the key's extension or
@@ -454,11 +459,8 @@ class CSVNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse CSV into row nodes"""
-        import csv
-        from io import StringIO
-
         text = str(data).strip()
-        reader = csv.DictReader(StringIO(text))
+        reader = csv.DictReader(io.StringIO(text))
 
         nodes = []
         for i, row in enumerate(reader):
@@ -603,8 +605,8 @@ class ImageNodeParser(PDFNodeParser):
         if not OCR_ENABLED:
             raise DocumentRejected("reading text from images is not enabled on this server")
         with Image.open(io.BytesIO(data)) as image:
-            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE:
-                raise DocumentRejected(f"image is over {MAX_OCR_PIXELS_PER_SIDE} pixels on a side")
+            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE or getattr(image, "n_frames", 1) > 1:
+                raise DocumentRejected(f"image must be one frame of at most {MAX_OCR_PIXELS_PER_SIDE} pixels a side")
         return [_ocr(data)]
 
 
@@ -647,57 +649,12 @@ class DOCXNodeParser(BaseNodeParser):
                 error="DOCX parser requires bytes input"
             )
 
+        # Paragraph styles are not read: python-docx resolves each one by scanning every style.
         nodes = []
-        current_heading = None
-        para_idx = 0
-
-        for paragraph in doc.paragraphs:
-            text = paragraph.text.strip()
-            if not text:
-                continue
-
-            style_name = paragraph.style.name if paragraph.style else ""
-
-            if style_name.startswith("Heading"):
-                # Extract heading level from style name (e.g., "Heading 1" -> 1)
-                try:
-                    level = int(style_name.split()[-1])
-                except (ValueError, IndexError):
-                    level = 1
-                current_heading = text
-                _add(nodes, Node(
-                    path=f"heading_{len(nodes)}",
-                    content=text,
-                    node_type=NodeType.HEADING,
-                    metadata={
-                        "format": "docx",
-                        "level": level,
-                        "style": style_name,
-                    }
-                ))
-            elif style_name.startswith("List"):
-                _add(nodes, Node(
-                    path=f"list_item_{len(nodes)}",
-                    content=text,
-                    node_type=NodeType.LIST_ITEM,
-                    metadata={
-                        "format": "docx",
-                        "heading": current_heading,
-                        "style": style_name,
-                    }
-                ))
-            else:
-                _add(nodes, Node(
-                    path=f"paragraph_{para_idx}",
-                    content=text,
-                    node_type=NodeType.PARAGRAPH,
-                    metadata={
-                        "format": "docx",
-                        "heading": current_heading,
-                        "style": style_name,
-                    }
-                ))
-                para_idx += 1
+        texts = [p.text.strip() for p in doc.paragraphs]
+        for i, text in enumerate(t for t in texts if t):
+            _add(nodes, Node(path=f"paragraph_{i}", content=text, node_type=NodeType.PARAGRAPH,
+                             metadata={"format": "docx"}))
 
         # Extract tables
         for t_idx, table in enumerate(doc.tables):
@@ -790,6 +747,16 @@ _LANGUAGE_CONFIG = {
 }
 
 
+def _own_text(src: bytes, start: int, end: int, holes: List[dict]) -> str:
+    """``src[start:end]`` with the byte spans of the (ordered) ``holes`` cut out."""
+    parts, pos = [], start
+    for hole in holes:
+        parts.append(src[pos:hole["start_byte"]])
+        pos = hole["end_byte"]
+    parts.append(src[pos:end])
+    return b"".join(parts).decode("utf-8", errors="replace")
+
+
 def _chunk_blocks(text: str, limit: int = 1500) -> List[str]:
     """Blank-line-separated blocks of ``text``, merged greedily up to ``limit`` characters."""
     chunks: List[str] = []
@@ -834,8 +801,6 @@ class CodeNodeParser(BaseNodeParser):
                 nodes=[], format_name="code", success=False,
                 error=f"no supported grammar for key {data_key!r}",
             )
-        from tree_sitter_language_pack import get_parser
-
         src = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
         tree = get_parser(lang).parse(src)
         nodes = self._walk(tree.root_node, src, lang, cfg)
@@ -895,13 +860,13 @@ class CodeNodeParser(BaseNodeParser):
 
     def _walk(self, root, src: bytes, lang: str, cfg) -> List[Node]:
         records: List[dict] = []
-        module_refs: List[str] = []
+        module = {"refs": [], "holes": []}
 
         def add(seq: List[str], name: Optional[str]) -> None:
             if name and name not in seq:
                 seq.append(name)
 
-        def visit(node, enclosing_refs: List[str], stack) -> None:
+        def visit(node, scope: dict, stack) -> None:
             t = node.type
             # Definition -> its own node; descend with it as the enclosing scope.
             if t in cfg["defs"]:
@@ -910,10 +875,11 @@ class CodeNodeParser(BaseNodeParser):
                     kind = "method"
                 name = self._name_of(node, src)
                 if name:
-                    rec = self._record(node, kind, name, stack, src)
+                    rec = self._record(node, kind, name, stack)
                     records.append(rec)
+                    scope["holes"].append(rec)
                     for c in node.children:
-                        visit(c, rec["refs"], stack + [(kind, name)])
+                        visit(c, rec, stack + [(kind, name)])
                     return
             # const x = () => {} / function expression assigned to a name.
             if cfg["var_fn"] and t == "variable_declarator":
@@ -924,20 +890,21 @@ class CodeNodeParser(BaseNodeParser):
                     name = self._name_of(node, src)
                     if name:
                         kind = "method" if any(k == "class" for k, _ in stack) else "function"
-                        rec = self._record(node, kind, name, stack, src)
+                        rec = self._record(node, kind, name, stack)
                         records.append(rec)
+                        scope["holes"].append(rec)
                         for c in node.children:
-                            visit(c, rec["refs"], stack + [(kind, name)])
+                            visit(c, rec, stack + [(kind, name)])
                         return
             if t == cfg["call_type"]:
-                add(enclosing_refs, self._callee_name(node, cfg, src))
+                add(scope["refs"], self._callee_name(node, cfg, src))
             if t in cfg["import_types"]:
                 for nm in self._import_names(node, cfg, src):
-                    add(module_refs, nm)
+                    add(module["refs"], nm)
             for c in node.children:
-                visit(c, enclosing_refs, stack)
+                visit(c, scope, stack)
 
-        visit(root, module_refs, [])
+        visit(root, module, [])
 
         # Same-named defs in one scope (property getter/setter, overloads) would
         # share a path, and node_key must be unique; suffix repeats with #n.
@@ -948,30 +915,23 @@ class CodeNodeParser(BaseNodeParser):
                 r["path"] = f'{r["path"]}#{seen[r["path"]]}'
 
         summary = "defines: " + ", ".join(r["path"] for r in records)
-        if module_refs:
-            summary += "\nreferences: " + ", ".join(module_refs)
+        if module["refs"]:
+            summary += "\nreferences: " + ", ".join(module["refs"])
         nodes: List[Node] = []
         _add(nodes, Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
-            metadata={"language": lang, "defs": [], "refs": module_refs},
+            metadata={"language": lang, "defs": [], "refs": module["refs"]},
         ))
         # Module-level code (constants, route registrations, scripts) is
         # everything outside the top-level definitions.
-        outside, pos = [], 0
-        for r in records:
-            if r["top_level"]:
-                outside.append(src[pos:r["start_byte"]])
-                pos = r["end_byte"]
-        outside.append(src[pos:])
-        module_code = b"".join(outside).decode("utf-8", errors="replace")
-        for i, chunk in enumerate(_chunk_blocks(module_code)):
+        for i, chunk in enumerate(_chunk_blocks(_own_text(src, 0, len(src), module["holes"]))):
             _add(nodes, Node(
                 path=f"<module>[{i}]", content=chunk, node_type=NodeType.CODE_BLOCK,
                 metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
             _add(nodes, Node(
-                path=r["path"], content=r["content"],
+                path=r["path"], content=_own_text(src, r["start_byte"], r["end_byte"], r["holes"]),
                 node_type=_KIND_TO_NODETYPE[r["kind"]],
                 metadata={
                     "language": lang, "defs": r["defs"], "refs": r["refs"],
@@ -980,11 +940,11 @@ class CodeNodeParser(BaseNodeParser):
             ))
         return nodes
 
-    def _record(self, node, kind: str, name: str, stack, src: bytes) -> dict:
+    def _record(self, node, kind: str, name: str, stack) -> dict:
         return {
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
             "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
-            "start_byte": node.start_byte, "end_byte": node.end_byte, "top_level": not stack,
-            "content": self._txt(node, src), "defs": [name], "refs": [],
+            "start_byte": node.start_byte, "end_byte": node.end_byte,
+            "defs": [name], "refs": [], "holes": [],
         }

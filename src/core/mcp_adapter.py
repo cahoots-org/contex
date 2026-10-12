@@ -25,6 +25,7 @@ from src.core.identity import ANONYMOUS_IDENTITY, Identity, resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
+from src.core.node_parsers import resolve_format
 from src.core.ownership import ensure_project_access
 from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
@@ -52,16 +53,6 @@ def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[dat
 
 # Formats published as base64 strings, since MCP arguments are JSON.
 _BINARY_FORMATS = frozenset({"pdf", "docx", "image"})
-
-
-def _item_data(data, data_format: str):
-    """Decode a base64 document to bytes; other data passes through."""
-    if data_format not in _BINARY_FORMATS:
-        return data
-    try:
-        return base64.b64decode(data, validate=True)
-    except (TypeError, ValueError):
-        raise ToolError(f"data for a {data_format} item must be a base64 string")
 
 
 def _check_max_age(max_age_seconds: Optional[int]) -> None:
@@ -328,17 +319,24 @@ def build_mcp_server(engine, db_accessor=None):
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
-        sequences, failed = await e.publish_data_batch([
-            DataPublishEvent(
-                project_id=project_id,
-                data_key=item["data_key"],
-                data=_item_data(item["data"], item.get("data_format")),
-                data_format=item.get("data_format"),
-                published_at=_parse_timestamp(item.get("published_at"), "published_at"),
-            )
-            for item in items
-        ], origin=origin)
-        return json.dumps({"published": len(sequences), "failed": failed})
+        events, failed = [], []
+        for item in items:
+            try:
+                event = DataPublishEvent(
+                    project_id=project_id,
+                    data_key=item["data_key"],
+                    data=item["data"],
+                    data_format=item.get("data_format"),
+                    published_at=_parse_timestamp(item.get("published_at"), "published_at"),
+                )
+                if resolve_format(event.data_format, event.data_key) in _BINARY_FORMATS:
+                    event.data = base64.b64decode(event.data, validate=True)
+                events.append(event)
+            except (KeyError, TypeError, ValueError):
+                failed.append({"data_key": item.get("data_key"), "error": "invalid item: check its data_key, "
+                               "data_format and published_at, and that document data is base64"})
+        published, rejected = await e.publish_data_batch(events, origin=origin)
+        return json.dumps({"published": len(published), "failed": failed + rejected})
 
     @server.tool(name="contex_list_keys",
                  description="List the data_keys an origin last published, in order, up to limit per page. "
