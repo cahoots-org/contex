@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -257,12 +258,14 @@ def mcp_transport_security() -> TransportSecuritySettings:
     """DNS-rebinding protection for the whole app, driven by CONTEX_ALLOWED_HOSTS.
 
     Unset: localhost only (the SDK default). Comma-separated hosts: those plus
-    localhost. "*": protection off, for proxies that rewrite or vary the Host.
+    localhost; a host without a port matches any port. "*": protection off, for
+    proxies that rewrite or vary the Host.
     """
     raw = os.getenv("CONTEX_ALLOWED_HOSTS", "").strip()
     if raw == "*":
         return TransportSecuritySettings(enable_dns_rebinding_protection=False)
-    hosts = _LOCAL_HOSTS + [h.strip() for h in raw.split(",") if h.strip()]
+    entries = [h.strip() for h in raw.split(",") if h.strip()]
+    hosts = _LOCAL_HOSTS + entries + [f"{h}:*" for h in entries if not re.search(r":(\d+|\*)$", h)]
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=hosts,
