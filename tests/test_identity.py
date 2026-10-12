@@ -1,7 +1,7 @@
 # tests/test_identity.py
 import hashlib
 import pytest
-from src.core.identity import resolve_identity, Identity, ANONYMOUS_IDENTITY
+from src.core.identity import resolve_identity
 from src.core import keyhash
 from src.core.auth import create_api_key
 from src.core.rbac import Permission, Role, assign_role
@@ -35,7 +35,6 @@ async def test_role_preset_expands_to_scopes(db):
     ident = await resolve_identity(db, "ck_role_preset_aaaa1111")
     assert Permission.PUBLISH_DATA in ident.scopes
     assert Permission.QUERY_DATA not in ident.scopes
-    assert ident.role == Role.PUBLISHER
     assert ident.projects == ("p1",)
 
 
@@ -54,18 +53,6 @@ async def test_tenant_comes_from_key(db):
     await _make_key(db, "ck_tenant_cccc3333", tenant_id="tenant-x")
     ident = await resolve_identity(db, "ck_tenant_cccc3333")
     assert ident.tenant_id == "tenant-x"
-
-
-def test_anonymous_identity_has_all_scopes():
-    assert ANONYMOUS_IDENTITY.scopes == frozenset(Permission)
-
-
-def test_has_project():
-    scoped = Identity(key_id="k", scopes=frozenset(), tenant_id=None, projects=("p1",), role=None)
-    assert scoped.has_project("p1") is True
-    assert scoped.has_project("p2") is False
-    unscoped = Identity(key_id="k", scopes=frozenset(), tenant_id=None, projects=(), role=None)
-    assert unscoped.has_project("anything") is True  # empty = all projects
 
 
 @pytest.mark.asyncio

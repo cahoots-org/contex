@@ -23,24 +23,6 @@ class Identity:
     scopes: frozenset[Permission]
     tenant_id: str | None
     projects: tuple[str, ...]           # empty = all projects within tenant
-    role: Role | None                   # preset label; not consulted for authz
-
-    def has_project(self, project_id: str | None) -> bool:
-        if not self.projects:
-            return True
-        if project_id is None:
-            return True
-        return project_id in self.projects
-
-
-# Used ONLY when AUTH_ENABLED is false (demo mode). Never returned by resolve_identity.
-ANONYMOUS_IDENTITY = Identity(
-    key_id="anonymous",
-    scopes=frozenset(Permission),
-    tenant_id=None,
-    projects=(),
-    role=Role.ADMIN,
-)
 
 
 async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None:
@@ -77,7 +59,6 @@ async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None
             scopes=scopes,
             tenant_id=key.tenant_id,
             projects=projects,
-            role=role,
         )
 
 

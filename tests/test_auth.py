@@ -7,7 +7,7 @@ from sqlalchemy import select
 from src.core.auth import bootstrap_admin, create_api_key, list_api_keys, revoke_api_key
 from src.core.db_models import APIKey, Tenant as TenantModel
 from src.core.identity import resolve_identity
-from src.core.rbac import Role
+from src.core.rbac import Role, expand_role
 
 
 @pytest.mark.asyncio
@@ -84,5 +84,5 @@ async def test_bootstrap_admin_uses_provided_key_once(db, monkeypatch):
     await bootstrap_admin(db)
 
     ident = await resolve_identity(db, "ck_provided_admin_key_123")
-    assert ident.role == Role.ADMIN
+    assert ident.scopes == expand_role(Role.ADMIN)
     assert len(await list_api_keys(db)) == 1

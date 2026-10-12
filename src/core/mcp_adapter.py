@@ -22,7 +22,7 @@ from mcp.shared.exceptions import MCPError
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
-from src.core.identity import ANONYMOUS_IDENTITY, Identity, resolve_identity
+from src.core.identity import resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
@@ -94,18 +94,8 @@ async def _enforce_project(engine, permission, project_id, *, create_if_absent=F
     """_enforce, plus the check that the caller's tenant owns ``project_id``."""
     _enforce(permission, project_id=project_id)
     tok = get_access_token()
-    if tok is None:
-        identity = ANONYMOUS_IDENTITY
-    else:
-        claims = tok.claims or {}
-        identity = Identity(
-            key_id=tok.client_id,
-            scopes=frozenset(Permission(s) for s in tok.scopes),
-            tenant_id=claims.get("tenant_id"),
-            projects=tuple(claims.get("projects") or ()),
-            role=None,
-        )
-    await ensure_project_access(identity, project_id, TenantManager(engine.db), create_if_absent=create_if_absent)
+    tenant_id = (tok.claims or {}).get("tenant_id") if tok else None
+    await ensure_project_access(tenant_id, project_id, TenantManager(engine.db), create_if_absent=create_if_absent)
 
 
 async def _enforce_subscription_project(engine, subscription_id, tenant_id):
@@ -198,7 +188,6 @@ class ApiKeyVerifier(TokenVerifier):
             client_id=identity.key_id,
             scopes=[p.value for p in identity.scopes],
             claims={
-                "role": identity.role.value if identity.role else None,
                 "tenant_id": identity.tenant_id,
                 "projects": list(identity.projects),
             },

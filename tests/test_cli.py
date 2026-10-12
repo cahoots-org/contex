@@ -11,7 +11,6 @@ async def test_created_key_carries_role_tenant_and_projects(db):
 
     ident = await resolve_identity(db, raw_key)
     assert ident.tenant_id == "acme"
-    assert ident.role == Role.PUBLISHER
     assert ident.projects == ("p1",)
     assert Permission.PUBLISH_DATA in ident.scopes
 
