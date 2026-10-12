@@ -16,7 +16,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
 
 from src.core.authz import auth_enabled
@@ -161,6 +161,22 @@ class LegacyResourceSubscriptions:
             task.add_done_callback(self._sends.discard)
 
 
+class _ContexServer(MCPServer):
+    """MCPServer that reports permission and validation failures to the caller."""
+
+    async def call_tool(self, name, arguments, context=None):
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, PermissionError):
+                raise ToolError(f"Error executing tool {name}: Permission denied") from cause
+            # Only our own plain ValueErrors; library subclasses may carry internals.
+            if type(cause) is ValueError:
+                raise ToolError(f"Error executing tool {name}: {cause}") from cause
+            raise
+
+
 class ApiKeyVerifier(TokenVerifier):
     """Resolve a Contex API key into an MCP AccessToken. DB is resolved lazily."""
 
@@ -211,7 +227,7 @@ def build_mcp_server(engine, db_accessor=None):
                 required_scopes=None,               # per-tool checks live in handlers
             ),
         )
-    server = MCPServer(name="contex", version=VERSION, subscriptions=bus, **auth_kwargs)
+    server = _ContexServer(name="contex", version=VERSION, subscriptions=bus, **auth_kwargs)
 
     def _get_engine():
         """Resolve the engine, supporting both concrete instances and lazy callables."""
@@ -294,10 +310,7 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
-        try:
-            check_batch_size(items, "items")
-        except ValueError as exc:
-            raise ValueError(str(exc))
+        check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
         sequences = await e.publish_data_batch([
             DataPublishEvent(

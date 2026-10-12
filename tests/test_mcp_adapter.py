@@ -1,6 +1,7 @@
 import json
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+from src.core import mcp_adapter
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 from src.core.mcp_adapter import build_mcp_server
@@ -164,3 +165,18 @@ async def test_query_tools_share_a_rate_limit(db, monkeypatch):
     await server.call_tool("contex_query", {"project_id": "p", "query": "anything"})
     with pytest.raises(ToolError, match="rate_limit_exceeded retry_after="):
         await server.call_tool("contex_create_subscription", {"project_id": "p", "needs": ["anything"]})
+
+
+@pytest.mark.asyncio
+async def test_validation_and_permission_errors_reach_the_client(db, monkeypatch):
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.1, max_matches=10))
+
+    with pytest.raises(ToolError, match="Invalid 'since' value") as invalid:
+        await server.call_tool("contex_query", {"project_id": "p", "query": "x", "since": "bad"})
+    assert not isinstance(invalid.value, UnexpectedToolError)
+
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: None)
+    with pytest.raises(ToolError, match="Permission denied") as denied:
+        await server.call_tool("contex_publish", {"project_id": "p", "data_key": "k", "data": {}})
+    assert not isinstance(denied.value, UnexpectedToolError)
