@@ -6,6 +6,7 @@ Each parser detects whether it can handle the input and parses it into Nodes.
 
 from typing import Any, List, Optional
 from abc import ABC, abstractmethod
+import csv
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import pypdfium2
 import yaml
 from docx import Document
 from PIL import Image
+from tree_sitter_language_pack import get_parser
 
 from .node import Node, NodeType, ParseResult
 
@@ -454,11 +456,8 @@ class CSVNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse CSV into row nodes"""
-        import csv
-        from io import StringIO
-
         text = str(data).strip()
-        reader = csv.DictReader(StringIO(text))
+        reader = csv.DictReader(io.StringIO(text))
 
         nodes = []
         for i, row in enumerate(reader):
@@ -834,8 +833,6 @@ class CodeNodeParser(BaseNodeParser):
                 nodes=[], format_name="code", success=False,
                 error=f"no supported grammar for key {data_key!r}",
             )
-        from tree_sitter_language_pack import get_parser
-
         src = bytes(data) if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8")
         tree = get_parser(lang).parse(src)
         nodes = self._walk(tree.root_node, src, lang, cfg)
