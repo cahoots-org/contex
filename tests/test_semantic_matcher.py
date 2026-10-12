@@ -417,6 +417,34 @@ class TestSemanticMatcherConcurrency:
                 "concurrent requests cross-contaminated shared state"
             )
 
+    @pytest.mark.asyncio
+    async def test_write_planned_against_a_replaced_version_fails(self, matcher):
+        """A writer that planned before another committed must not store a mix of both."""
+        doc = "# Doc\n\n## X\n\n{x}\n\n## {extra}\n\nmore\n"
+        await matcher.register_data_batch("race", [("doc.md", "# Doc\n\n## X\n\nold\n", "markdown")])
+
+        planned, release = asyncio.Event(), asyncio.Event()
+        write = matcher._write_registration
+
+        async def held_write(*args, **kwargs):
+            planned.set()
+            await release.wait()
+            return await write(*args, **kwargs)
+
+        with patch.object(matcher, "_write_registration", held_write):
+            late = asyncio.create_task(matcher.register_data_batch(
+                "race", [("doc.md", doc.format(x="old", extra="Z"), "markdown")]))
+            await planned.wait()
+        assert await matcher.register_data_batch(
+            "race", [("doc.md", doc.format(x="new", extra="Y"), "markdown")]) == [None]
+        release.set()
+
+        assert (await late)[0] is not None
+        async with matcher.db.session() as session:
+            stored = str((await session.execute(
+                select(Embedding.data).where(Embedding.project_id == "race"))).scalars().all())
+        assert "new" in stored and "old" not in stored
+
 
 class TestSemanticMatcherTimeWindow:
     """`since` restricts matches to rows created/updated on or after a cutoff.
