@@ -303,8 +303,8 @@ def build_mcp_server(engine, db_accessor=None):
             DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
-                data=_item_data(item["data"], item.get("data_format", "json")),
-                data_format=item.get("data_format", "json"),
+                data=_item_data(item["data"], item.get("data_format")),
+                data_format=item.get("data_format"),
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items

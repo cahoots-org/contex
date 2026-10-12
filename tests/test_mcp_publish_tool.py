@@ -1,6 +1,9 @@
 import json
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
+from sqlalchemy import select
+
+from src.core.db_models import Embedding
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
 
@@ -108,3 +111,18 @@ async def test_query_methods_surface_source(db):
     since_events = await engine.event_store.get_events_since("p", "0")
     assert all("source" in e for e in all_events)
     assert all("source" in e for e in since_events)
+
+
+@pytest.mark.asyncio
+async def test_batch_item_without_format_is_detected_from_its_key(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    server, _ = build_mcp_server(engine)
+
+    await server.call_tool("contex_publish_batch", {
+        "project_id": "p", "items": [{"data_key": "app.py", "data": "def hello():\n    return 1\n"}],
+    })
+
+    async with db.session() as session:
+        keys = set((await session.execute(select(Embedding.node_key))).scalars())
+    assert "app.py.hello" in keys
