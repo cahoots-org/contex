@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.core.db_models import Embedding, Symbol
 from src.core.semantic_matcher import SemanticDataMatcher
@@ -80,6 +80,16 @@ async def test_reingest_replaces_symbols(matcher, db):
     # old names from v1 are gone
     assert ("top_level", "def") not in syms
     assert ("load_config", "ref") not in syms
+
+
+@pytest.mark.asyncio
+async def test_republishing_unchanged_text_rewrites_its_symbols(matcher, db):
+    await matcher.register_data_batch("p", [("repo:app.py", PY, "code")])
+    async with db.session() as session:
+        await session.execute(update(Symbol).values(name="stale"))
+    await matcher.register_data_batch("p", [("repo:app.py", PY, "code")])
+    syms = await _symbols(db, "p")
+    assert ("load_config", "ref") in syms and ("stale", "ref") not in syms
 
 
 @pytest.mark.asyncio
