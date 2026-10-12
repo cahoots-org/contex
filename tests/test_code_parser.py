@@ -174,3 +174,9 @@ def test_def_named_like_a_module_chunk_keeps_the_module_code():
     nodes = nc.parse("X = 1\n\ndef module_0():\n    return 42\n", "code", data_key="m.py").nodes
     by = {n.path: n.content for n in nodes}
     assert len(by) == len(nodes) and "X = 1" in by.values() and "module_0" in by
+
+
+def test_nested_definitions_are_stored_once():
+    by = {n.path: n.content for n in nc.parse(
+        "def outer():\n    def inner():\n        return 'deep'\n    return inner\n", "code", data_key="m.py").nodes}
+    assert "deep" in by["outer.inner"] and "deep" not in by["outer"] and "return inner" in by["outer"]

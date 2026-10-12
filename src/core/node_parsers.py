@@ -789,6 +789,16 @@ _LANGUAGE_CONFIG = {
 }
 
 
+def _own_text(src: bytes, start: int, end: int, holes: List[dict]) -> str:
+    """``src[start:end]`` with the byte spans of the (ordered) ``holes`` cut out."""
+    parts, pos = [], start
+    for hole in holes:
+        parts.append(src[pos:hole["start_byte"]])
+        pos = hole["end_byte"]
+    parts.append(src[pos:end])
+    return b"".join(parts).decode("utf-8", errors="replace")
+
+
 def _chunk_blocks(text: str, limit: int = 1500) -> List[str]:
     """Blank-line-separated blocks of ``text``, merged greedily up to ``limit`` characters."""
     chunks: List[str] = []
@@ -892,13 +902,13 @@ class CodeNodeParser(BaseNodeParser):
 
     def _walk(self, root, src: bytes, lang: str, cfg) -> List[Node]:
         records: List[dict] = []
-        module_refs: List[str] = []
+        module = {"refs": [], "holes": []}
 
         def add(seq: List[str], name: Optional[str]) -> None:
             if name and name not in seq:
                 seq.append(name)
 
-        def visit(node, enclosing_refs: List[str], stack) -> None:
+        def visit(node, scope: dict, stack) -> None:
             t = node.type
             # Definition -> its own node; descend with it as the enclosing scope.
             if t in cfg["defs"]:
@@ -907,10 +917,11 @@ class CodeNodeParser(BaseNodeParser):
                     kind = "method"
                 name = self._name_of(node, src)
                 if name:
-                    rec = self._record(node, kind, name, stack, src)
+                    rec = self._record(node, kind, name, stack)
                     records.append(rec)
+                    scope["holes"].append(rec)
                     for c in node.children:
-                        visit(c, rec["refs"], stack + [(kind, name)])
+                        visit(c, rec, stack + [(kind, name)])
                     return
             # const x = () => {} / function expression assigned to a name.
             if cfg["var_fn"] and t == "variable_declarator":
@@ -921,20 +932,21 @@ class CodeNodeParser(BaseNodeParser):
                     name = self._name_of(node, src)
                     if name:
                         kind = "method" if any(k == "class" for k, _ in stack) else "function"
-                        rec = self._record(node, kind, name, stack, src)
+                        rec = self._record(node, kind, name, stack)
                         records.append(rec)
+                        scope["holes"].append(rec)
                         for c in node.children:
-                            visit(c, rec["refs"], stack + [(kind, name)])
+                            visit(c, rec, stack + [(kind, name)])
                         return
             if t == cfg["call_type"]:
-                add(enclosing_refs, self._callee_name(node, cfg, src))
+                add(scope["refs"], self._callee_name(node, cfg, src))
             if t in cfg["import_types"]:
                 for nm in self._import_names(node, cfg, src):
-                    add(module_refs, nm)
+                    add(module["refs"], nm)
             for c in node.children:
-                visit(c, enclosing_refs, stack)
+                visit(c, scope, stack)
 
-        visit(root, module_refs, [])
+        visit(root, module, [])
 
         # Same-named defs in one scope (property getter/setter, overloads) would
         # share a path, and node_key must be unique; suffix repeats with #n.
@@ -945,30 +957,23 @@ class CodeNodeParser(BaseNodeParser):
                 r["path"] = f'{r["path"]}#{seen[r["path"]]}'
 
         summary = "defines: " + ", ".join(r["path"] for r in records)
-        if module_refs:
-            summary += "\nreferences: " + ", ".join(module_refs)
+        if module["refs"]:
+            summary += "\nreferences: " + ", ".join(module["refs"])
         nodes: List[Node] = []
         _add(nodes, Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
-            metadata={"language": lang, "defs": [], "refs": module_refs},
+            metadata={"language": lang, "defs": [], "refs": module["refs"]},
         ))
         # Module-level code (constants, route registrations, scripts) is
         # everything outside the top-level definitions.
-        outside, pos = [], 0
-        for r in records:
-            if r["top_level"]:
-                outside.append(src[pos:r["start_byte"]])
-                pos = r["end_byte"]
-        outside.append(src[pos:])
-        module_code = b"".join(outside).decode("utf-8", errors="replace")
-        for i, chunk in enumerate(_chunk_blocks(module_code)):
+        for i, chunk in enumerate(_chunk_blocks(_own_text(src, 0, len(src), module["holes"]))):
             _add(nodes, Node(
                 path=f"<module>[{i}]", content=chunk, node_type=NodeType.CODE_BLOCK,
                 metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
             _add(nodes, Node(
-                path=r["path"], content=r["content"],
+                path=r["path"], content=_own_text(src, r["start_byte"], r["end_byte"], r["holes"]),
                 node_type=_KIND_TO_NODETYPE[r["kind"]],
                 metadata={
                     "language": lang, "defs": r["defs"], "refs": r["refs"],
@@ -977,11 +982,11 @@ class CodeNodeParser(BaseNodeParser):
             ))
         return nodes
 
-    def _record(self, node, kind: str, name: str, stack, src: bytes) -> dict:
+    def _record(self, node, kind: str, name: str, stack) -> dict:
         return {
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
             "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
-            "start_byte": node.start_byte, "end_byte": node.end_byte, "top_level": not stack,
-            "content": self._txt(node, src), "defs": [name], "refs": [],
+            "start_byte": node.start_byte, "end_byte": node.end_byte,
+            "defs": [name], "refs": [], "holes": [],
         }
