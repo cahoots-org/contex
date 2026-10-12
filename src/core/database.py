@@ -250,48 +250,6 @@ class DatabaseManager:
         """Check if database is connected."""
         return self._is_connected
 
-    async def health_check(self) -> dict:
-        """
-        Perform a health check on the database connection.
-
-        Returns:
-            dict with status, latency, and pool info
-        """
-        import time
-
-        if not self._is_connected or not self.engine:
-            return {
-                "status": "unhealthy",
-                "error": "Not connected",
-            }
-
-        try:
-            start = time.perf_counter()
-            async with self.engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
-            latency_ms = (time.perf_counter() - start) * 1000
-
-            pool = self.engine.pool
-            pool_status = {
-                "size": pool.size() if hasattr(pool, "size") else None,
-                "checked_in": pool.checkedin() if hasattr(pool, "checkedin") else None,
-                "checked_out": pool.checkedout() if hasattr(pool, "checkedout") else None,
-                "overflow": pool.overflow() if hasattr(pool, "overflow") else None,
-            }
-
-            status = "healthy" if latency_ms < 100 else "degraded"
-
-            return {
-                "status": status,
-                "latency_ms": round(latency_ms, 2),
-                "pool": pool_status,
-            }
-        except Exception as e:
-            return {
-                "status": "unhealthy",
-                "error": str(e),
-            }
-
 
 # Global database manager instance
 _db_manager: Optional[DatabaseManager] = None

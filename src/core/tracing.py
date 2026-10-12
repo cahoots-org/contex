@@ -116,12 +116,6 @@ class TracingManager:
             return format(span.get_span_context().span_id, '016x')
         return None
 
-    def shutdown(self):
-        """Shutdown tracing and flush remaining spans"""
-        if self.tracer_provider:
-            self.tracer_provider.shutdown()
-            logger.info("Tracing shutdown complete")
-
 
 # Global tracing manager instance
 _tracing_manager: Optional[TracingManager] = None

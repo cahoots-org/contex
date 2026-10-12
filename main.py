@@ -7,7 +7,7 @@ import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
@@ -15,7 +15,7 @@ from src.core.metrics import get_metrics
 from src.core.bm25_index import Bm25Settings, ensure_bm25_index
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
-from src.core.upload_limits import get_max_upload_size
+from src.core.upload_limits import BodyLimitMiddleware, get_max_upload_size
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import Headers
@@ -32,6 +32,12 @@ from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
 from src.core.reconcile_sweep import run_sweep
 from src.core.notifier import Notifier, listen_connect_kwargs
+from src.core.metrics_middleware import MetricsMiddleware
+from src.core.security_headers import SecurityHeadersMiddleware
+from src.core.tracing_middleware import TracingMiddleware
+from src.web import router as web_router
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+import uvicorn
 
 # Environment variables
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
@@ -137,20 +143,6 @@ async def lifespan(app: FastAPI):
 
 
     logger.info("Contex is ready!")
-    print("=" * 60)
-    print()
-    print("Contex is ready!")
-    print("=" * 60)
-    print()
-    port = os.getenv("CONTEX_PORT", "8001")
-    print(f"Web UI: http://localhost:{port}/")
-    print(f"MCP endpoint: http://localhost:{port}/mcp")
-
-    if auth_enabled():
-        print("Security: API Key Auth + RBAC ENABLED")
-    else:
-        print("Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
-    print()
 
     # Store in app state
     app.state.db = db
@@ -320,24 +312,19 @@ app.add_middleware(
 logger.info("CORS configured", origins=CORS_ORIGINS, allow_credentials=CORS_ALLOW_CREDENTIALS)
 
 # Add Metrics Middleware (first, to track all requests)
-from src.core.metrics_middleware import MetricsMiddleware
 app.add_middleware(MetricsMiddleware)
 
 # Add security headers middleware
-from src.core.security_headers import SecurityHeadersMiddleware
 ENABLE_HSTS = os.getenv("ENABLE_HSTS", "true").lower() == "true"
 app.add_middleware(SecurityHeadersMiddleware, enable_hsts=ENABLE_HSTS)
 logger.info("Security headers middleware enabled", hsts=ENABLE_HSTS)
 
 # Global body-size limit (defense-in-depth): bounds every request body so no
 # handler can buffer an unbounded payload, even with a spoofed Content-Length.
-from src.core.upload_limits import BodyLimitMiddleware
 app.add_middleware(BodyLimitMiddleware)
 logger.info("Body-limit middleware enabled")
 
 # Add security middleware stack (order matters - executed in reverse)
-from src.core.tracing_middleware import TracingMiddleware
-
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
 logger.info("Tracing middleware enabled")
@@ -360,7 +347,6 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Mount Web UI routes
-from src.web import router as web_router
 app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 
 # Root-level health endpoint (for Docker health checks)
@@ -394,11 +380,11 @@ async def metrics(request: Request):
 
 
 # Root redirect to sandbox
-from fastapi.responses import RedirectResponse
-
 @app.get("/", dependencies=[Depends(public)])
 async def root():
-    """Redirect to query sandbox"""
+    """Redirect to the query sandbox, which is served only with auth off."""
+    if auth_enabled():
+        raise HTTPException(status_code=404)
     return RedirectResponse(url="/sandbox")
 
 
@@ -415,21 +401,12 @@ except Exception as e:
 
 # Instrument FastAPI with OpenTelemetry at module level (must happen after
 # TracerProvider is set, and after all middleware/routes are configured)
-try:
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    FastAPIInstrumentor.instrument_app(
-        app,
-        excluded_urls="health,ready,metrics"
-    )
-    logger.info("Tracing: FastAPI instrumented")
-except Exception as e:
-    logger.warning("Tracing: Failed to instrument FastAPI", error=str(e))
+FastAPIInstrumentor.instrument_app(app, excluded_urls="health,metrics")
 
 
 if __name__ == "__main__":
-    import uvicorn
     host = os.getenv("CONTEX_HOST", "127.0.0.1")
     port = int(os.getenv("CONTEX_PORT", "8001"))
     # Open MCP streams never close on their own; cap the wait so shutdown
     # cleanup runs inside Docker's 10s stop grace period.
-    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5)
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5, log_config=None)

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sys
 from datetime import datetime
 from io import StringIO
 from src.core.logging import (
@@ -64,7 +65,6 @@ class TestStructuredFormatter:
         try:
             raise ValueError("Test error")
         except ValueError:
-            import sys
             exc_info = sys.exc_info()
         
         record = logging.LogRecord(

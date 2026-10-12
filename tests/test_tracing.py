@@ -11,6 +11,7 @@ from src.core.tracing import (
     get_current_trace_id,
     get_current_span_id,
 )
+from src.core.tracing_middleware import TracingMiddleware
 
 
 class TestTracingManager:
@@ -70,14 +71,6 @@ class TestTracingManager:
             assert len(trace_id) == 32  # Hex string length
             assert len(span_id) == 16
 
-    def test_shutdown(self):
-        """Test tracing shutdown"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise
-        manager.shutdown()
-
 
 class TestTracingIntegration:
     """Test tracing integration with FastAPI"""
@@ -112,8 +105,6 @@ class TestTracingIntegration:
 
     def test_tracing_with_fastapi_request(self):
         """Test tracing with actual FastAPI request"""
-        from src.core.tracing_middleware import TracingMiddleware
-
         app = FastAPI()
 
         # Initialize tracing
@@ -141,8 +132,6 @@ class TestTracingMiddleware:
 
     def test_middleware_adds_trace_headers(self):
         """Test middleware integration"""
-        from src.core.tracing_middleware import TracingMiddleware
-
         app = FastAPI()
 
         # Initialize tracing
@@ -167,8 +156,6 @@ class TestTracingMiddleware:
 
     def test_middleware_without_tracing(self):
         """Test middleware works without tracing initialized"""
-        from src.core.tracing_middleware import TracingMiddleware
-
         app = FastAPI()
         app.add_middleware(TracingMiddleware)
 

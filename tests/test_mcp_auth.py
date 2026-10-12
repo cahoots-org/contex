@@ -4,8 +4,9 @@ import hashlib
 import pytest
 
 from src.core import mcp_adapter
+from src.core.db_models import APIKey, Tenant
 from src.core.mcp_adapter import ApiKeyVerifier
-from src.core.rbac import Permission
+from src.core.rbac import Permission, Role, assign_role
 
 
 @pytest.mark.asyncio
@@ -16,9 +17,6 @@ async def test_verifier_rejects_unknown_key(db):
 
 @pytest.mark.asyncio
 async def test_verifier_accepts_and_carries_claims(db):
-    from src.core.db_models import APIKey, Tenant
-    from src.core.rbac import assign_role, Role
-
     raw = "ck_mcp_verifier_dddd4444"
     async with db.session() as s:
         # FK: api_keys.tenant_id references tenants.tenant_id — create tenant first.

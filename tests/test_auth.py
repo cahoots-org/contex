@@ -1,8 +1,11 @@
 """Tests for authentication with PostgreSQL"""
 
+import hashlib
+
 import pytest
+from sqlalchemy import select
 from src.core.auth import bootstrap_admin, create_api_key, list_api_keys, revoke_api_key
-from src.core.db_models import Tenant as TenantModel
+from src.core.db_models import APIKey, Tenant as TenantModel
 from src.core.identity import resolve_identity
 from src.core.rbac import Role
 
@@ -15,10 +18,6 @@ async def test_key_management(db):
     assert api_key.name == "test-mgmt"
 
     # Verify existence in database
-    from sqlalchemy import select
-    from src.core.db_models import APIKey
-    import hashlib
-
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     async with db.session() as session:
         result = await session.execute(

@@ -56,6 +56,7 @@ async def test_per_subscription_queue_coalesces(db, notifier):
     mine = notifier.listen("sub_a")
     await _notify(db, "sub_a")
     await _notify(db, "sub_a")
+    await asyncio.sleep(0.3)  # let both arrive before reading
     assert await _next(mine) == "sub_a"
     await _assert_empty(mine)
 

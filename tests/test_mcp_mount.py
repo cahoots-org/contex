@@ -1,3 +1,5 @@
+import inspect
+
 import main
 
 
@@ -16,7 +18,6 @@ def test_mcp_mount_prefix_is_exactly_slash_mcp():
 
 def test_build_mcp_server_is_wired_in_main():
     # the factory + bridge are imported and used by main
-    import inspect
     src = inspect.getsource(main)
     assert "build_mcp_server" in src and "run_bridge" in src and "session_manager" in src
 

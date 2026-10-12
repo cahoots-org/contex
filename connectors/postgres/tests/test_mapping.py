@@ -1,6 +1,7 @@
 """Unit tests for the pure mapping functions in connectors.postgres.mapping."""
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 import yaml
@@ -147,8 +148,7 @@ class TestRowToEvent:
         assert event.payload["description"] is None
 
     def test_non_json_value_serialized_as_string(self):
-        import decimal
-        row = {"id": 1, "price": decimal.Decimal("9.99")}
+        row = {"id": 1, "price": Decimal("9.99")}
         event = row_to_event("app", "public", "products", row, ["id"], ["id", "price"])
         assert event.payload["price"] == "9.99"
 
