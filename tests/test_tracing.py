@@ -1,10 +1,8 @@
 """Tests for distributed tracing functionality"""
 
-import pytest
-import pytest_asyncio
-from unittest.mock import Mock, patch, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.core.tracing import (
     TracingManager,
@@ -57,12 +55,12 @@ class TestTracingManager:
         assert trace_id is None
         assert span_id is None
 
-    def test_start_span(self):
-        """Test creating custom spans"""
+    def test_get_trace_ids_in_span(self):
+        """Test getting trace IDs inside an active span"""
         manager = TracingManager(enable_otlp_export=False)
         manager.initialize()
 
-        with manager.start_span("test-operation", key="value") as span:
+        with manager.tracer.start_as_current_span("test-operation"):
             # Should have active span
             trace_id = manager.get_current_trace_id()
             span_id = manager.get_current_span_id()
@@ -71,33 +69,6 @@ class TestTracingManager:
             assert span_id is not None
             assert len(trace_id) == 32  # Hex string length
             assert len(span_id) == 16
-
-    def test_start_span_with_exception(self):
-        """Test span records exceptions"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        with pytest.raises(ValueError):
-            with manager.start_span("test-operation"):
-                raise ValueError("Test error")
-
-    def test_add_span_attributes(self):
-        """Test adding attributes to current span"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        with manager.start_span("test-operation"):
-            # Should not raise
-            manager.add_span_attributes(key1="value1", key2="value2")
-
-    def test_add_span_event(self):
-        """Test adding events to current span"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        with manager.start_span("test-operation"):
-            # Should not raise
-            manager.add_span_event("test-event", data="test")
 
     def test_shutdown(self):
         """Test tracing shutdown"""
@@ -110,16 +81,6 @@ class TestTracingManager:
 
 class TestTracingIntegration:
     """Test tracing integration with FastAPI"""
-
-    def test_instrument_fastapi(self):
-        """Test FastAPI instrumentation"""
-        app = FastAPI()
-
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise
-        manager.instrument_fastapi(app)
 
     def test_initialize_tracing_from_env(self, monkeypatch):
         """Test initializing tracing from environment variables"""
@@ -158,7 +119,7 @@ class TestTracingIntegration:
         # Initialize tracing
         manager = TracingManager(enable_otlp_export=False)
         manager.initialize()
-        manager.instrument_fastapi(app)
+        FastAPIInstrumentor.instrument_app(app, tracer_provider=manager.tracer_provider)
 
         # Add tracing middleware
         app.add_middleware(TracingMiddleware)
@@ -187,7 +148,7 @@ class TestTracingMiddleware:
         # Initialize tracing
         manager = TracingManager(enable_otlp_export=False)
         manager.initialize()
-        manager.instrument_fastapi(app)
+        FastAPIInstrumentor.instrument_app(app, tracer_provider=manager.tracer_provider)
 
         # Add tracing middleware
         app.add_middleware(TracingMiddleware)
@@ -266,47 +227,3 @@ class TestTracingConfiguration:
         assert manager.service_name == "my-service"
         assert manager.service_version == "2.0.0"
 
-
-class TestTracingEdgeCases:
-    """Test edge cases for tracing"""
-
-    def test_start_span_without_initialization(self):
-        """Test starting span without initialization"""
-        manager = TracingManager(enable_otlp_export=False)
-        # Don't initialize
-
-        with manager.start_span("test") as span:
-            # Should handle gracefully
-            assert span is None
-
-    def test_multiple_spans_nested(self):
-        """Test nested spans"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        with manager.start_span("outer") as outer_span:
-            outer_trace_id = manager.get_current_trace_id()
-
-            with manager.start_span("inner") as inner_span:
-                inner_trace_id = manager.get_current_trace_id()
-
-                # Should have same trace ID
-                assert outer_trace_id == inner_trace_id
-                # But different span IDs
-                assert outer_span != inner_span
-
-    def test_span_attributes_no_active_span(self):
-        """Test adding attributes when no span is active"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise
-        manager.add_span_attributes(key="value")
-
-    def test_span_event_no_active_span(self):
-        """Test adding events when no span is active"""
-        manager = TracingManager(enable_otlp_export=False)
-        manager.initialize()
-
-        # Should not raise
-        manager.add_span_event("test-event")

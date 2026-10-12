@@ -1,6 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
 
 import main
+
+pytestmark = pytest.mark.integration
 
 
 def test_lifespan_wires_engine_and_notifier(monkeypatch):

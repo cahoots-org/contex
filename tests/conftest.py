@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -15,17 +14,17 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 
-# Set test database URL before any imports that might use it
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
-)
+# Tests truncate every table, so they only run against TEST_DATABASE_URL. App code
+# under test reads DATABASE_URL; point it at the same database.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+if TEST_DATABASE_URL:
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
-from src.core.database import DatabaseManager
+from src.core.database import DatabaseManager, run_migrations_to_head
 from src.core.embedder import OnnxEmbedder
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
-from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
+from src.core.tenant import ensure_default_tenant
 
 
 class TestDatabaseManager(DatabaseManager):
@@ -35,18 +34,10 @@ class TestDatabaseManager(DatabaseManager):
         super().__init__()
         self._test_session = None
 
-    async def connect_test(
-        self,
-        database_url: str = None,
-    ) -> None:
+    async def connect_test(self, database_url: str) -> None:
         """Connect to test database."""
-        url = database_url or os.getenv(
-            "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
-        )
-
         self.engine = create_async_engine(
-            url,
+            database_url,
             echo=False,
             poolclass=NullPool,
         )
@@ -76,7 +67,7 @@ def _evict_mock_models():
             del _MODEL_CACHE[name]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def _migrated_schema():
     """Bring the test database schema up to alembic head, once per session.
 
@@ -89,14 +80,11 @@ def _migrated_schema():
     run_migrations_to_head is synchronous (it drives alembic's own event loop),
     so this fixture is a plain sync, session-scoped fixture.
     """
-    if not os.getenv("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set")
-    from src.core.database import run_migrations_to_head
-    run_migrations_to_head(os.environ["DATABASE_URL"])
+    run_migrations_to_head(TEST_DATABASE_URL)
 
 
 @pytest_asyncio.fixture
-async def db() -> AsyncGenerator[DatabaseManager, None]:
+async def db(_migrated_schema) -> AsyncGenerator[DatabaseManager, None]:
     """
     Create a database manager for testing.
 
@@ -104,13 +92,8 @@ async def db() -> AsyncGenerator[DatabaseManager, None]:
     """
     manager = TestDatabaseManager()
 
-    database_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test"
-    )
-
     try:
-        await manager.connect_test(database_url)
+        await manager.connect_test(TEST_DATABASE_URL)
 
         # Start every test from a clean slate. The schema is provisioned once per
         # session (`_migrated_schema`); truncating here makes each test immune to
@@ -183,11 +166,11 @@ def pytest_configure(config):
     )
 
 
-# Skip integration tests if database is not available
 def pytest_collection_modifyitems(config, items):
-    """Skip integration tests if DATABASE_URL is not set."""
-    if not os.getenv("DATABASE_URL"):
-        skip_integration = pytest.mark.skip(reason="DATABASE_URL not set")
-        for item in items:
-            if "integration" in item.keywords:
-                item.add_marker(skip_integration)
+    """Skip database tests when TEST_DATABASE_URL is not set."""
+    if TEST_DATABASE_URL:
+        return
+    skip_db = pytest.mark.skip(reason="TEST_DATABASE_URL not set")
+    for item in items:
+        if "integration" in item.keywords or "db" in getattr(item, "fixturenames", ()):
+            item.add_marker(skip_db)

@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import pytest
 from src.core import keyhash
 
 

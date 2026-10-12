@@ -7,7 +7,7 @@ request as defense-in-depth.
 
 import httpx
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from fastapi import FastAPI, Request
 from httpx import AsyncClient
 

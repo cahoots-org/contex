@@ -71,7 +71,7 @@ def test_has_project():
 @pytest.mark.asyncio
 async def test_powerless_key_has_empty_scopes(db):
     """A key with no role and empty scopes is valid but grants nothing."""
-    key_id = await _make_key(db, "ck_powerless_dddd4444", scopes=[])
+    await _make_key(db, "ck_powerless_dddd4444", scopes=[])
     ident = await resolve_identity(db, "ck_powerless_dddd4444")
     assert ident is not None, "Key exists — must not be None"
     assert ident.scopes == frozenset(), "No role, no scopes — must be empty frozenset"
@@ -80,8 +80,8 @@ async def test_powerless_key_has_empty_scopes(db):
 @pytest.mark.asyncio
 async def test_parse_scopes_ignores_legacy_strings(db):
     """Unknown scope strings are silently dropped; valid Permission values are kept."""
-    key_id = await _make_key(db, "ck_legacy_scopes_eeee5555",
-                             scopes=["read", "write", Permission.QUERY_DATA.value])
+    await _make_key(db, "ck_legacy_scopes_eeee5555",
+                    scopes=["read", "write", Permission.QUERY_DATA.value])
     ident = await resolve_identity(db, "ck_legacy_scopes_eeee5555")
     assert ident is not None
     assert ident.scopes == frozenset({Permission.QUERY_DATA})

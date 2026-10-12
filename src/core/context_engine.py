@@ -144,7 +144,7 @@ class ContextEngine:
         if total_tokens <= max_tokens:
             return matches  # No truncation needed
 
-        logger.warning(
+        logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             "Context size (%s tokens) exceeds limit (%s tokens)", total_tokens, max_tokens
         )
         logger.warning("Truncating to fit budget...")

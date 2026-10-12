@@ -1,7 +1,7 @@
 name: Bug Report
 description: Report a bug or unexpected behavior
 title: "[Bug]: "
-labels: ["bug", "triage"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -24,9 +24,8 @@ body:
       description: Steps to reproduce the behavior
       placeholder: |
         1. Start Contex with '...'
-        2. Register agent with '...'
-        3. Publish data '...'
-        4. See error
+        2. Publish data '...'
+        3. See error
     validations:
       required: true
 
@@ -53,16 +52,12 @@ body:
       description: Paste relevant logs here (use `docker compose logs contex` or check application output)
       render: shell
 
-  - type: dropdown
+  - type: input
     id: version
     attributes:
       label: Contex Version
-      description: What version of Contex are you running?
-      options:
-        - latest (main branch)
-        - 0.2.0
-        - 0.1.0
-        - Other (please specify in additional context)
+      description: The release tag or commit you're running.
+      placeholder: "v1.1.0"
     validations:
       required: true
 

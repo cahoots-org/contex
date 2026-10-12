@@ -13,9 +13,11 @@ from sqlalchemy.pool import NullPool
 
 from src.core.database import DatabaseManager
 
+pytestmark = pytest.mark.integration
+
 
 def _url(dbname: str) -> str:
-    base = os.environ["DATABASE_URL"].rsplit("/", 1)[0]
+    base = os.environ["TEST_DATABASE_URL"].rsplit("/", 1)[0]
     return f"{base}/{dbname}"
 
 
@@ -25,7 +27,7 @@ async def test_migrate_refuses_populated_unstamped_db():
     # CREATE/DROP DATABASE from the test DB itself (always present); a dedicated
     # maintenance DB like "contex" is not guaranteed in CI.
     admin = create_async_engine(
-        os.environ["DATABASE_URL"], poolclass=NullPool, isolation_level="AUTOCOMMIT"
+        os.environ["TEST_DATABASE_URL"], poolclass=NullPool, isolation_level="AUTOCOMMIT"
     )
     try:
         async with admin.connect() as conn:
@@ -55,7 +57,7 @@ async def test_migrate_ignores_extension_owned_tables():
     # first boot failed for every new install.
     tmp = "contex_ext_only_guard"
     admin = create_async_engine(
-        os.environ["DATABASE_URL"], poolclass=NullPool, isolation_level="AUTOCOMMIT"
+        os.environ["TEST_DATABASE_URL"], poolclass=NullPool, isolation_level="AUTOCOMMIT"
     )
     try:
         async with admin.connect() as conn:
@@ -89,4 +91,4 @@ async def test_migrate_allows_empty_db(db):
     # An empty (no tables, no alembic_version) database migrates normally; a
     # properly-stamped one is a no-op. The session-migrated test DB already has
     # alembic_version, so this just confirms the guard doesn't false-positive.
-    await db.migrate_to_head(os.environ["DATABASE_URL"])
+    await db.migrate_to_head(os.environ["TEST_DATABASE_URL"])

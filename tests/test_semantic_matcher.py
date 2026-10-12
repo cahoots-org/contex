@@ -12,7 +12,6 @@ from unittest.mock import Mock, AsyncMock, patch
 from src.core.db_models import Embedding, Symbol
 from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
-from src.core.models import DataPublishEvent
 
 
 class TestSemanticDataMatcher:

@@ -35,7 +35,7 @@ class PgVectorSearch:
                 int(part) for part in version.split(".")[:2]
             ) >= (0, 8)
         ef_search = min(max(top_k, 40), _MAX_EF_SEARCH)
-        await session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))
+        await session.execute(text(f"SET LOCAL hnsw.ef_search = {ef_search}"))  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
         if self._iterative_scan:
             await session.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
 
