@@ -146,20 +146,6 @@ async def lifespan(app: FastAPI):
 
 
     logger.info("Contex is ready!")
-    print("=" * 60)
-    print()
-    print("Contex is ready!")
-    print("=" * 60)
-    print()
-    port = os.getenv("CONTEX_PORT", "8001")
-    print(f"Web UI: http://localhost:{port}/")
-    print(f"MCP endpoint: http://localhost:{port}/mcp")
-
-    if auth_enabled():
-        print("Security: API Key Auth + RBAC ENABLED")
-    else:
-        print("Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
-    print()
 
     # Store in app state
     app.state.db = db
@@ -410,7 +396,9 @@ from fastapi.responses import RedirectResponse
 
 @app.get("/", dependencies=[Depends(public)])
 async def root():
-    """Redirect to query sandbox"""
+    """Redirect to the query sandbox, which is served only with auth off."""
+    if auth_enabled():
+        raise HTTPException(status_code=404)
     return RedirectResponse(url="/sandbox")
 
 
@@ -444,4 +432,4 @@ if __name__ == "__main__":
     port = int(os.getenv("CONTEX_PORT", "8001"))
     # Open MCP streams never close on their own; cap the wait so shutdown
     # cleanup runs inside Docker's 10s stop grace period.
-    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5)
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5, log_config=None)
