@@ -662,7 +662,6 @@ _JS_CONFIG = {
     "member_field": "property",
     "import_types": {"import_statement"},
     "import_lang": "js",
-    "var_fn": True,  # const x = () => {} / function expression assigned to a name
 }
 
 _LANGUAGE_CONFIG = {
@@ -675,7 +674,6 @@ _LANGUAGE_CONFIG = {
         "member_field": "attribute",
         "import_types": {"import_from_statement"},
         "import_lang": "python",
-        "var_fn": False,
     },
     "javascript": _JS_CONFIG,
     "typescript": _JS_CONFIG,
@@ -693,7 +691,6 @@ _LANGUAGE_CONFIG = {
         "member_field": "field",
         "import_types": set(),  # Go imports are package names, not symbol defs.
         "import_lang": None,
-        "var_fn": False,
     },
 }
 
@@ -821,34 +818,22 @@ class CodeNodeParser(BaseNodeParser):
 
         def visit(node, scope: dict, stack) -> None:
             t = node.type
+            kind = cfg["defs"].get(t)
+            # const x = () => {} / function expression assigned to a name.
+            value = node.child_by_field_name("value") if t == "variable_declarator" else None
+            if value is not None and value.type in ("arrow_function", "function", "function_expression"):
+                kind = "function"
+            name = self._name_of(node, src) if kind else None
             # Definition -> its own node; descend with it as the enclosing scope.
-            if t in cfg["defs"]:
-                kind = cfg["defs"][t]
+            if name:
                 if kind == "function" and any(k == "class" for k, _ in stack):
                     kind = "method"
-                name = self._name_of(node, src)
-                if name:
-                    rec = self._record(node, kind, name, stack, cfg)
-                    records.append(rec)
-                    scope["holes"].append(rec)
-                    for c in node.children:
-                        visit(c, rec, stack + [(kind, name)])
-                    return
-            # const x = () => {} / function expression assigned to a name.
-            if cfg["var_fn"] and t == "variable_declarator":
-                value = node.child_by_field_name("value")
-                if value is not None and value.type in (
-                    "arrow_function", "function", "function_expression",
-                ):
-                    name = self._name_of(node, src)
-                    if name:
-                        kind = "method" if any(k == "class" for k, _ in stack) else "function"
-                        rec = self._record(node, kind, name, stack, cfg)
-                        records.append(rec)
-                        scope["holes"].append(rec)
-                        for c in node.children:
-                            visit(c, rec, stack + [(kind, name)])
-                        return
+                rec = self._record(node, kind, name, stack, cfg)
+                records.append(rec)
+                scope["holes"].append(rec)
+                for c in node.children:
+                    visit(c, rec, stack + [(kind, name)])
+                return
             if t == cfg["call_type"]:
                 add(scope["refs"], self._callee_name(node, cfg, src))
             if t in cfg["import_types"]:
