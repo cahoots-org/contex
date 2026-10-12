@@ -115,9 +115,6 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .btn-small, .icon-btn { padding: var(--space-1) var(--space-3); }
 .btn-small:hover, .icon-btn:hover { background: var(--accent-quiet); }
 
-.htmx-indicator { display: none; }
-.htmx-request .htmx-indicator { display: inline; }
-.htmx-request button span:not(.htmx-indicator) { display: none; }
 
 .results-container { margin-top: var(--space-12); }
 

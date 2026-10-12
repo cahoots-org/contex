@@ -13,16 +13,13 @@ import anyio
 
 logger = logging.getLogger(__name__)
 
-DEMO_TOP_K = 10
-DEMO_THRESHOLD = 0.3
-
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
 async def stream_subscription_updates(
-    engine, project_id: str, need: str, *, top_k: int = DEMO_TOP_K, threshold: float = DEMO_THRESHOLD,
+    engine, project_id: str, need: str, *, top_k: int = 10, threshold: float = 0.5,
 ) -> AsyncIterator[str]:
     """Create an ephemeral subscription for `need`, stream its bundle, and re-stream
     it on every update notification. The subscription is always deleted when the

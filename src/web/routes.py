@@ -162,6 +162,8 @@ async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),
     need: str = Query(...),
+    top_k: int = Query(10),
+    threshold: float = Query(0.5),
 ):
     """Stream a natural-language need as a live-updating context bundle over SSE.
 
@@ -171,7 +173,7 @@ async def subscribe_to_updates(
     _throttle_query()
     engine = request.app.state.context_engine
     return StreamingResponse(
-        stream_subscription_updates(engine, project_id, need),
+        stream_subscription_updates(engine, project_id, need, top_k=top_k, threshold=threshold),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
