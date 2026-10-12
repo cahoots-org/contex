@@ -78,9 +78,10 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 ## Selection model
 
-- **tables.include / tables.exclude** — glob patterns over `schema.table`.  All
-  accessible base tables are discovered; `include` narrows the set; `exclude`
-  removes matches.
+- **tables.include / tables.exclude** — glob patterns over `schema.table`.  Every
+  table in a schema the role can use is discovered; `include` narrows the set;
+  `exclude` removes matches. A selected table the role can't read fails the
+  run, so scope the role's tables with these lists.
 - **columns.include / columns.exclude** — glob patterns over bare column names
   (`password`, not `*.password`), applied to every table.
 - **include_binary** — binary columns (`bytea`, `bit`, `varbit`) are skipped by
