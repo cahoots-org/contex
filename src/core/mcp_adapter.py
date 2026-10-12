@@ -320,8 +320,7 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_publish_batch",
                  description="Publish/update many context items for a project in one call. "
-                             "items is a list of {data_key, data, data_format?, published_at?}; for data_format "
-                             "pdf, docx or image, data is the file as a base64 string. "
+                             "items is a list of {data_key, data, data_format?, published_at?}, each as for contex_publish. "
                              "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
                              "list what it published. Items that can't be read are skipped and listed in "
                              "failed with the reason.")
