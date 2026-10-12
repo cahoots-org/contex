@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import func, select
+from starlette.responses import StreamingResponse
 
 from src.core.context_engine import ContextEngine
 from src.core.db_models import Subscription
@@ -74,3 +75,25 @@ async def test_stream_cleans_up_subscription_when_setup_fails(db, notifier, monk
         )).scalar_one()
     assert count == 0, "Subscription was orphaned after setup failure"
     assert notifier._by_sub == {}
+
+
+@pytest.mark.asyncio
+async def test_client_disconnect_deletes_subscription(db, notifier):
+    engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    response = StreamingResponse(stream_subscription_updates(engine, "p", "payments"))
+    first_frame = asyncio.Event()
+
+    async def send(message):
+        if message.get("body"):
+            first_frame.set()
+
+    async def receive():
+        await first_frame.wait()
+        return {"type": "http.disconnect"}
+
+    scope = {"type": "http", "asgi": {"spec_version": "2.3"}, "method": "GET"}
+    await asyncio.wait_for(response(scope, receive, send), 10)
+
+    async with db.session() as session:
+        assert await session.scalar(select(func.count()).select_from(Subscription)) == 0

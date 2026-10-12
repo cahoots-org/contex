@@ -75,8 +75,7 @@ To get pushed when it changes instead of re-reading, listen on the resource. [`e
 | `contex_delete` | Deletes documents by key. |
 | `contex_list_keys` | Lists the keys a source (origin) published, so connectors can remove what the source deleted. |
 | `contex_query` | Searches a project's context once, without subscribing. |
-| `contex_create_subscription` | Creates a live subscription from plain-English needs. Returns a `contex://subscriptions/{id}` resource. |
-| `contex_delete_subscription` | Deletes a subscription. |
+| `contex_create_subscription` | Creates a live subscription from plain-English needs. Returns a `contex://subscriptions/{id}` resource. Identical requests share one subscription, which expires once nobody reads it. |
 
 **Resource:** `contex://subscriptions/{id}` holds a subscription's matched context. Contex re-matches it when the underlying data changes, so every read is up to date.
 

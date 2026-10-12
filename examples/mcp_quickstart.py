@@ -76,8 +76,6 @@ async def main():
             bundle = _resource_json(await session.read_resource(resource_uri))
             print(json.dumps(bundle, indent=2))
 
-            await session.call_tool("contex_delete_subscription", {"subscription_id": sub["subscription_id"]})
-
 
 if __name__ == "__main__":
     asyncio.run(main())

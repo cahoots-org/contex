@@ -7,7 +7,6 @@ import base64
 import json
 import logging
 import weakref
-from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -114,24 +113,22 @@ class LegacyResourceSubscriptions:
     """
 
     def __init__(self, bus) -> None:
-        self._watchers: dict[str, weakref.WeakSet] = defaultdict(weakref.WeakSet)
+        self._watchers: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
         self._sends: set[asyncio.Task] = set()
         bus.subscribe(self._on_event)
 
     def watch(self, uri: str, connection) -> None:
-        self._watchers[uri].add(connection)
+        self._watchers.setdefault(connection, set()).add(uri)
 
     def unwatch(self, uri: str, connection) -> None:
-        connections = self._watchers.get(uri)
-        if connections is not None:
-            connections.discard(connection)
-            if not connections:
-                del self._watchers[uri]
+        self._watchers.get(connection, set()).discard(uri)
 
     def _on_event(self, event) -> None:
         if not isinstance(event, ResourceUpdated):
             return
-        for connection in list(self._watchers.get(event.uri, ())):
+        for connection, uris in list(self._watchers.items()):
+            if event.uri not in uris:
+                continue
             # Best effort: the SDK drops the notification if the stream is closed.
             task = asyncio.get_running_loop().create_task(connection.send_resource_updated(event.uri))
             self._sends.add(task)
@@ -211,7 +208,8 @@ def build_mcp_server(engine, db_accessor=None):
 
     @server.tool(name="contex_create_subscription",
                  description="Create a live subscription; returns its resource URI to subscribe to. "
-                             "It expires when neither read nor re-created for a while; calling again with the "
+                             "Callers passing the same arguments share one subscription, so there is no delete: "
+                             "it expires once nobody reads or re-creates it for a while, and calling again with the "
                              "same arguments resumes it with the same URI. "
                              "Pass since (ISO-8601) to keep the bundle scoped to data created or updated on or after that time. "
                              "Pass max_age_seconds for a sliding window: items drop out of the bundle once older than that, "
@@ -231,16 +229,6 @@ def build_mcp_server(engine, db_accessor=None):
             project_id, needs, tenant_id=tid, top_k=top_k, threshold=threshold, scope=scope
         )
         return json.dumps({"subscription_id": sub_id, "resource_uri": f"contex://subscriptions/{sub_id}"})
-
-    @server.tool(name="contex_delete_subscription", description="Delete a subscription.")
-    async def contex_delete_subscription(subscription_id: str) -> str:
-        _enforce(Permission.QUERY_DATA)
-        tok = get_access_token()
-        tid = (tok.claims or {}).get("tenant_id") if tok else None
-        e = _get_engine()
-        await _enforce_subscription_project(e, subscription_id, tid)
-        await e.subscriptions.delete(subscription_id, tenant_id=tid)
-        return json.dumps({"deleted": subscription_id})
 
     @server.resource("contex://subscriptions/{id}", name="subscription",
                      description="A subscription's current matched context bundle.",

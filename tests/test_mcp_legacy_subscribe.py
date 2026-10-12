@@ -1,5 +1,6 @@
 """2025-era clients subscribe with resources/subscribe and still get push (#264)."""
 import asyncio
+import gc
 import json
 import warnings
 
@@ -9,7 +10,7 @@ from mcp.server.subscriptions import ResourceUpdated
 from mcp.shared.exceptions import MCPError
 
 from src.core.context_engine import ContextEngine
-from src.core.mcp_adapter import build_mcp_server
+from src.core.mcp_adapter import LegacyResourceSubscriptions, build_mcp_server
 
 warnings.filterwarnings("ignore", message="resources/(un)?subscribe is removed")
 
@@ -66,3 +67,19 @@ async def test_unknown_subscription_cannot_be_subscribed(db):
     async with Client(server, mode="legacy") as client:
         with pytest.raises(MCPError):
             await client.subscribe_resource("contex://subscriptions/sub_missing")
+
+
+def test_closed_connections_leave_no_watcher_entries():
+    class Bus:
+        def subscribe(self, handler):
+            pass
+
+    class Connection:
+        pass
+
+    legacy = LegacyResourceSubscriptions(Bus())
+    for i in range(100):
+        legacy.watch(f"contex://subscriptions/sub_{i}", Connection())
+    gc.collect()
+
+    assert len(legacy._watchers) == 0
