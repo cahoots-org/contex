@@ -406,10 +406,11 @@ class SubscriptionService:
 
         for ms in bundle.values():
             for m in ms:
-                links, seen = [], set()
+                links = []
+                seen = {m["data_key"], *(r["data_key"] for r in m.get("related", ()))}
                 for name in sorted(refs_by_node.get(m["data_key"], ())):
                     for dk in sorted(defs_by_name.get(name, ())):
-                        if dk == m["data_key"] or dk in seen or dk not in emb_by_key:
+                        if dk in seen or dk not in emb_by_key:
                             continue
                         seen.add(dk)
                         e = emb_by_key[dk]
