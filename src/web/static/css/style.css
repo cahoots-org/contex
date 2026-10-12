@@ -1,47 +1,3 @@
-/* Contex Query Sandbox Styles
-   Colors mirror design/tokens.css (the canonical brand palette): a midnight-navy
-   canvas the cyan->red-orange context stream disperses across. Cyan is the one
-   interactive accent; the gradient is the single "wow" per view.
-   ponytail: values duplicated from design/tokens.css — no CSS build step here;
-   keep in sync if the brand tokens change. */
-
-:root {
-    /* Spectrum stops (the stream heating up, source -> tail) */
-    --brand-cyan: #2fd4e6;
-    --brand-blue: #3e6bf6;
-    --brand-violet: #9b30fb;
-    --brand-magenta: #e836fb;
-    --brand-pink: #ff2e93;
-    --brand-red: #ff4a2e;
-    --stream: linear-gradient(90deg, var(--brand-cyan) 0%, var(--brand-blue) 18%,
-        #5b34f5 30%, var(--brand-violet) 44%, var(--brand-magenta) 60%,
-        var(--brand-pink) 82%, var(--brand-red) 100%);
-    --stream-soft: linear-gradient(135deg, rgba(47,212,230,.14),
-        rgba(155,48,251,.14), rgba(255,74,46,.14));
-
-    /* Interactive accent = cyan (the mark); it stays put while the stream moves */
-    --primary: #2fd4e6;
-    --primary-hover: #5fe3f2;
-    --secondary: #8a97b3;
-    --success: #2fd6a0;
-    --warning: #f5b23e;
-    --danger: #f2495f;
-
-    /* Dark canvas; elevation climbs by getting lighter navy, never grayer */
-    --bg: #111829;            /* cards, panels (surface-1)        */
-    --bg-secondary: #0a0e1a;  /* page + inset wells (surface-0)   */
-    --bg-tertiary: #19223a;   /* raised code/payload (surface-2)  */
-    --border: #263355;        /* hairline                         */
-    --border-strong: #35446b;
-    --text: #f2f6ff;
-    --text-muted: #8a97b3;
-    --text-on-accent: #06121f; /* text on cyan/gradient fills     */
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
-    --ring: 0 0 0 3px rgba(47, 212, 230, 0.45); /* keyboard focus  */
-    --glow: 0 0 24px rgba(47, 212, 230, 0.35);
-}
-
 * {
     margin: 0;
     padding: 0;
@@ -52,7 +8,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     line-height: 1.6;
     color: var(--text);
-    background: var(--bg-secondary);
+    background: var(--surface-0);
 }
 
 .container {
@@ -63,8 +19,8 @@ body {
 
 /* Header */
 header {
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--hairline);
     padding: 1.5rem 0;
     margin-bottom: 2rem;
 }
@@ -85,7 +41,7 @@ header .logo-mark {
 header .logo h1 {
     font-size: 2rem;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--accent);
     margin-bottom: 0.25rem;
 }
 
@@ -101,10 +57,10 @@ main {
 
 /* Sandbox */
 .sandbox {
-    background: var(--bg);
+    background: var(--surface-1);
     border-radius: 0.75rem;
     padding: 2.5rem;
-    box-shadow: var(--shadow);
+    box-shadow: var(--elev-1);
     max-width: 95%;
     width: 100%;
     margin: 0 auto;
@@ -113,7 +69,7 @@ main {
 .sandbox-header {
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 2px solid var(--border);
+    border-bottom: 2px solid var(--hairline);
 }
 
 .sandbox-header h2 {
@@ -127,7 +83,7 @@ main {
 .project-selector {
     margin-bottom: 1.5rem;
     padding: 1rem;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     border-radius: 0.5rem;
     display: flex;
     align-items: center;
@@ -144,10 +100,10 @@ main {
     flex: 1;
     max-width: 300px;
     padding: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
     border-radius: 0.375rem;
     font-size: 1rem;
-    background: var(--bg);
+    background: var(--surface-1);
 }
 
 /* Split View */
@@ -156,7 +112,7 @@ main {
     flex-direction: row;
     gap: 0;
     min-height: 600px;
-    border: 2px solid var(--border-strong);
+    border: 2px solid var(--hairline-strong);
     border-radius: 0.75rem;
     overflow: hidden;
 }
@@ -164,13 +120,13 @@ main {
 .query-panel,
 .data-panel {
     flex: 1;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     padding: 1.5rem;
     min-width: 0;
 }
 
 .query-panel {
-    border-right: 3px solid var(--border-strong);
+    border-right: 3px solid var(--hairline-strong);
 }
 
 /* Responsive - Stack when narrow or portrait */
@@ -181,7 +137,7 @@ main {
 
     .query-panel {
         border-right: none;
-        border-bottom: 3px solid var(--border-strong);
+        border-bottom: 3px solid var(--hairline-strong);
     }
 }
 
@@ -203,12 +159,12 @@ main {
 
 /* Forms */
 .query-form {
-    background: var(--bg);
+    background: var(--surface-1);
     border-radius: 0.75rem;
     padding: 2rem;
     margin-bottom: 2rem;
-    border: 2px solid var(--border);
-    box-shadow: var(--shadow);
+    border: 2px solid var(--hairline);
+    box-shadow: var(--elev-1);
 }
 
 .form-group {
@@ -235,12 +191,12 @@ main {
 .form-group input[type="range"] {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
     border-radius: 0.5rem;
     font-size: 1rem;
     font-family: inherit;
     transition: all 0.2s;
-    background: var(--bg);
+    background: var(--surface-1);
 }
 
 .form-group textarea {
@@ -253,7 +209,7 @@ main {
 .form-group textarea:focus,
 .form-group input:focus {
     outline: none;
-    border-color: var(--primary);
+    border-color: var(--accent);
     box-shadow: var(--ring);
 }
 
@@ -271,7 +227,7 @@ main {
     gap: 1.5rem;
     margin-bottom: 1.5rem;
     padding: 1.5rem;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     border-radius: 0.5rem;
 }
 
@@ -310,12 +266,12 @@ button[type="submit"]:hover {
 }
 
 .btn-secondary {
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
     color: var(--text);
 }
 
 .btn-secondary:hover {
-    background: var(--border);
+    background: var(--hairline);
 }
 
 .btn-small {
@@ -343,10 +299,10 @@ button:disabled {
 /* Results */
 .results-container {
     min-height: 300px;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     border-radius: 0.75rem;
     padding: 1.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
 }
 
 .placeholder {
@@ -361,10 +317,10 @@ button:disabled {
     max-width: 600px;
     margin-left: auto;
     margin-right: auto;
-    background: var(--bg);
+    background: var(--surface-1);
     padding: 1.5rem;
     border-radius: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
 }
 
 .example-queries h4 {
@@ -381,20 +337,20 @@ button:disabled {
     padding: 0.75rem;
     color: var(--text-muted);
     margin-bottom: 0.5rem;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     border-radius: 0.375rem;
     transition: all 0.2s;
 }
 
 .example-queries li:hover {
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
     color: var(--text);
     transform: translateX(4px);
 }
 
 .example-queries li::before {
     content: "→ ";
-    color: var(--primary);
+    color: var(--accent);
     font-weight: bold;
     margin-right: 0.5rem;
 }
@@ -432,16 +388,16 @@ button:disabled {
 }
 
 .result-item {
-    background: var(--bg);
-    border: 2px solid var(--border);
+    background: var(--surface-1);
+    border: 2px solid var(--hairline);
     border-radius: 0.75rem;
     overflow: hidden;
     transition: all 0.2s;
 }
 
 .result-item:hover {
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary);
+    box-shadow: var(--elev-2);
+    border-color: var(--accent);
 }
 
 .result-header {
@@ -484,7 +440,7 @@ button:disabled {
     border-radius: 9999px;
     font-size: 0.875rem;
     font-weight: 600;
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
     color: var(--text-muted);
 }
 
@@ -507,9 +463,9 @@ button:disabled {
 }
 
 .result-content {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--hairline);
     padding: 1rem;
-    background: var(--bg);
+    background: var(--surface-1);
 }
 
 .content-header {
@@ -526,7 +482,7 @@ button:disabled {
 }
 
 pre {
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
     padding: 1rem;
     border-radius: 0.375rem;
     overflow-x: auto;
@@ -542,7 +498,7 @@ code {
 .results-footer {
     margin-top: 2rem;
     padding-top: 1.5rem;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--hairline);
 }
 
 .export-actions {
@@ -600,7 +556,7 @@ table th,
 table td {
     padding: 0.75rem;
     text-align: left;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--hairline);
 }
 
 table th {
@@ -611,7 +567,7 @@ table th {
 }
 
 table tr:hover {
-    background: var(--bg-secondary);
+    background: var(--surface-0);
 }
 
 /* Scrollable Content */
@@ -648,7 +604,7 @@ footer {
     align-items: center;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 2px solid var(--border);
+    border-bottom: 2px solid var(--hairline);
 }
 
 .data-panel-header h3 {
@@ -676,16 +632,16 @@ footer {
 }
 
 .data-item {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: var(--surface-1);
+    border: 1px solid var(--hairline);
     border-radius: 0.5rem;
     overflow: hidden;
     transition: all 0.2s;
 }
 
 .data-item:hover {
-    box-shadow: var(--shadow);
-    border-color: var(--primary);
+    box-shadow: var(--elev-1);
+    border-color: var(--accent);
 }
 
 .data-item-header {
@@ -694,16 +650,16 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: var(--bg-secondary);
+    background: var(--surface-0);
     transition: background 0.2s;
 }
 
 .data-item-header:hover {
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
 }
 
 .data-item-header strong {
-    color: var(--primary);
+    color: var(--accent);
     font-size: 1rem;
 }
 
@@ -729,7 +685,7 @@ footer {
 }
 
 .data-item-body pre {
-    background: var(--bg-tertiary);
+    background: var(--surface-2);
     padding: 1rem;
     border-radius: 0.375rem;
     overflow-x: auto;
@@ -815,12 +771,12 @@ footer {
 
 /* Sandbox Watch (live subscription) results */
 .watch-item {
-    border: 1px solid var(--border);
+    border: 1px solid var(--hairline);
     border-radius: 8px;
     padding: 10px 12px;
     margin: 10px 0;
 }
-.watch-key { font-weight: 600; color: var(--primary); }
+.watch-key { font-weight: 600; color: var(--accent); }
 .watch-item pre { margin: 6px 0 0; white-space: pre-wrap; }
 .flash { animation: flash 1.2s ease; }
 @keyframes flash {

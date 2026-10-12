@@ -327,6 +327,7 @@ if _transport_security.enable_dns_rebinding_protection:
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/design", StaticFiles(directory=str(Path(__file__).parent / "design")), name="design")
 
 
 # Mount Web UI routes

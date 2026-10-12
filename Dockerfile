@@ -70,6 +70,9 @@ WORKDIR /app
 # Copy the context engine code
 COPY src/ ./src/
 
+# The brand files the sandbox serves at /design
+COPY design/tokens.css design/icon-16.png design/icon-32.png design/icon-64.png design/apple-touch-icon.png ./design/
+
 # Copy the main entry points
 COPY main.py ./
 
