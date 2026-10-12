@@ -34,7 +34,6 @@ services:
       - CONTEX_PROTECTED_MODE=false
       - SIMILARITY_THRESHOLD=0.5
       - MAX_MATCHES=10
-      - MAX_CONTEXT_SIZE=51200
       # Hybrid search runs entirely on Postgres (pgvector + native FTS, fused with RRF).
       - HYBRID_SEARCH_ENABLED=true
       - RRF_K=60
