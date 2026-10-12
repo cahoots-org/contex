@@ -378,7 +378,7 @@ class SemanticDataMatcher:
                     for node, node_key in zip(nodes, node_keys)
                     for role, names in (("def", node.metadata.get("defs", [])),
                                         ("ref", node.metadata.get("refs", [])))
-                    for name in names
+                    for name in names if len(name) <= 255
                 ])
 
         logger.info(

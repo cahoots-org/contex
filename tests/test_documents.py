@@ -83,14 +83,17 @@ async def test_base64_document_is_extracted(db, make, data_key):
 
 
 @pytest.mark.asyncio
-async def test_non_base64_document_is_rejected(db):
+async def test_bad_batch_items_are_listed_in_failed(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
-    with pytest.raises(Exception, match="base64"):
-        await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
-            {"data_key": "r.pdf", "data": "not base64!", "data_format": "pdf"},
-        ]})
+    out = await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
+        {"data_key": "r.pdf", "data": "not base64!"},
+        {"data_key": "no-data"},
+        {"data_key": "b.py", "data": f"def {'x' * 300}():\n    return 1\n"},
+    ]})
+    result = json.loads(out.content[0].text)
+    assert result["published"] == 1 and [f["data_key"] for f in result["failed"]] == ["r.pdf", "no-data"]
 
 
 @pytest.mark.asyncio
