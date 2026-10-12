@@ -2,10 +2,11 @@
 import importlib
 import os
 
+from src.core import version
+
 
 def _reload_version():
-    import src.core.version as v
-    return importlib.reload(v)
+    return importlib.reload(version)
 
 
 def test_falls_back_to_dev(monkeypatch):

@@ -1,5 +1,5 @@
 target-version = "py312"
 
 [lint]
-select = ["F", "E9"]
+select = ["F", "E9", "E402", "PLC0415"]
 

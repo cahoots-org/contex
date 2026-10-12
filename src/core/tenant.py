@@ -113,16 +113,3 @@ class TenantManager:
             return (await session.execute(
                 select(TenantProjectModel.tenant_id).where(TenantProjectModel.project_id == project_id)
             )).scalar_one_or_none()
-
-
-async def ensure_default_tenant(db: DatabaseManager) -> Tenant:
-    """Return the default tenant, creating it if needed."""
-    manager = TenantManager(db)
-    tenant = await manager.get_tenant(DEFAULT_TENANT_ID)
-    if tenant:
-        return tenant
-    return await manager.create_tenant(
-        tenant_id=DEFAULT_TENANT_ID,
-        name="Default Tenant",
-        settings={"is_default": True},
-    )

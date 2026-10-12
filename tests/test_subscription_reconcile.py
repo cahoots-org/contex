@@ -171,3 +171,32 @@ async def test_slow_reconcile_does_not_overwrite_newer_bundle(db):
     await asyncio.gather(slow, fast)
 
     assert [m["data_key"] for m in (await svc.get_bundle(sub))["x"]] == ["A", "B"]
+
+
+@pytest.mark.asyncio
+async def test_slow_create_does_not_overwrite_newer_bundle(db):
+    """A create that matched before a publish must not commit over that publish's reconcile."""
+    gate = asyncio.Event()
+    data = [{"data_key": "A", "similarity": 0.9, "data": {}}]
+
+    class Matcher:
+        calls = 0
+
+        async def match(self, project_id, needs, **kw):
+            Matcher.calls += 1
+            snapshot = list(data)
+            if Matcher.calls == 1:
+                await gate.wait()
+            return {needs[0]: snapshot}
+
+    svc = SubscriptionService(db, Matcher())
+    slow = asyncio.create_task(svc.create("p", ["x"]))
+    await asyncio.sleep(0.2)
+    data.append({"data_key": "B", "similarity": 0.8, "data": {}})
+    fast = asyncio.create_task(svc.create("p", ["x"]))
+    reconcile = asyncio.create_task(svc.reconcile_project("p", {"B"}))
+    await asyncio.sleep(0.2)
+    gate.set()
+    sub, *_ = await asyncio.gather(fast, slow, reconcile)
+
+    assert [m["data_key"] for m in (await svc.get_bundle(sub))["x"]] == ["A", "B"]

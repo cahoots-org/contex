@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import os
 
+import psycopg
 import pytest
+
+from connectors.postgres.reader import read_tables
 
 _DEFAULT_DSN = "postgresql://postgres:postgres@localhost:5432/postgres"
 
@@ -27,8 +30,6 @@ _DB = _dsn().rsplit("/", 1)[-1]
 
 def _can_connect() -> bool:
     try:
-        import psycopg
-
         conn = psycopg.connect(_dsn(), connect_timeout=2)
         conn.close()
         return True
@@ -47,8 +48,6 @@ class TestReaderIntegration:
     @pytest.fixture(autouse=True)
     def setup_schema(self):
         """Create a throwaway schema with test tables for the duration of the test."""
-        import psycopg
-
         dsn = _dsn()
         with psycopg.connect(dsn, autocommit=True) as conn:
             conn.execute("DROP SCHEMA IF EXISTS contex_test CASCADE")
@@ -107,8 +106,6 @@ class TestReaderIntegration:
             conn.execute("DROP SCHEMA IF EXISTS contex_test CASCADE")
 
     def _collect(self, **kwargs):
-        from connectors.postgres.reader import read_tables
-
         defaults = dict(
             dsn=_dsn(),
             tbl_include=["contex_test.*"],
@@ -184,8 +181,6 @@ class TestReaderIntegration:
 
     def test_upsert_idempotency(self):
         """Re-running produces the same keys (no duplication)."""
-        from connectors.postgres.reader import read_tables
-
         kwargs = dict(
             dsn=_dsn(),
             tbl_include=["contex_test.products"],

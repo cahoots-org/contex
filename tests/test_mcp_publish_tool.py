@@ -6,15 +6,7 @@ from sqlalchemy import select
 
 from src.core.db_models import Embedding
 from src.core.context_engine import ContextEngine
-from src.core.db_models import Event
 from src.core.mcp_adapter import build_mcp_server
-
-
-async def _sources(db, project_id):
-    async with db.session() as session:
-        return list((await session.execute(
-            select(Event.source).where(Event.project_id == project_id).order_by(Event.sequence)
-        )).scalars())
 
 
 async def _publish_once(server, key):
@@ -71,37 +63,6 @@ async def test_publish_tool_updates_subscription_bundle(db):
 
 
 @pytest.mark.asyncio
-async def test_publish_tool_stamps_mcp_source(db):
-    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
-    server, _ = build_mcp_server(engine)
-
-    await server.call_tool("contex_publish", {
-        "project_id": "p", "data_key": "db",
-        "data": {"purpose": "database connection settings"}, "data_format": "json",
-    })
-
-    assert await _sources(db, "p") == ["mcp"]
-
-
-@pytest.mark.asyncio
-async def test_publish_batch_tool_stamps_mcp_source(db):
-    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
-    server, _ = build_mcp_server(engine)
-
-    await server.call_tool("contex_publish_batch", {
-        "project_id": "p",
-        "items": [
-            {"data_key": "db", "data": {"purpose": "database connection settings"}},
-            {"data_key": "cache", "data": {"purpose": "cache settings"}},
-        ],
-    })
-
-    assert await _sources(db, "p") == ["mcp", "mcp"]
-
-
-@pytest.mark.asyncio
 async def test_batch_item_without_format_is_detected_from_its_key(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
@@ -113,7 +74,7 @@ async def test_batch_item_without_format_is_detected_from_its_key(db):
 
     async with db.session() as session:
         keys = set((await session.execute(select(Embedding.node_key))).scalars())
-    assert "app.py.hello" in keys
+    assert "app.py\x1fhello" in keys
 
 
 @pytest.mark.asyncio

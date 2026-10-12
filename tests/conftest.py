@@ -11,20 +11,19 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
 from sqlalchemy import text
+
+from src.core.database import DatabaseManager, run_migrations_to_head
+from src.core.embedder import OnnxEmbedder
+from src.core.notifier import Notifier, listen_connect_kwargs
+from src.core.semantic_matcher import _MODEL_CACHE
+from src.core.tenant import DEFAULT_TENANT_ID, TenantManager
 
 # Tests truncate every table, so they only run against TEST_DATABASE_URL. App code
 # under test reads DATABASE_URL; point it at the same database.
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-
-from src.core.database import DatabaseManager, run_migrations_to_head
-from src.core.embedder import OnnxEmbedder
-from src.core.notifier import Notifier, listen_connect_kwargs
-from src.core.semantic_matcher import _MODEL_CACHE
-from src.core.tenant import ensure_default_tenant
 
 
 class TestDatabaseManager(DatabaseManager):
@@ -39,7 +38,9 @@ class TestDatabaseManager(DatabaseManager):
         self.engine = create_async_engine(
             database_url,
             echo=False,
-            poolclass=NullPool,
+            # Bounded so concurrency tests can't exhaust a shared server's connections.
+            pool_size=10,
+            max_overflow=0,
         )
 
         self.session_factory = async_sessionmaker(
@@ -135,7 +136,7 @@ async def _reset_database(manager: DatabaseManager) -> None:
             quoted = ", ".join(f'"{t}"' for t in tables)
             await session.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
-    await ensure_default_tenant(manager)
+    await TenantManager(manager).create_tenant(DEFAULT_TENANT_ID, "Default Tenant")
 
 
 @pytest.fixture
@@ -153,7 +154,6 @@ def mock_db():
     session_context.__aexit__.return_value = None
     mock.session.return_value = session_context
 
-    mock.health_check = AsyncMock(return_value={"status": "healthy"})
 
     return mock
 

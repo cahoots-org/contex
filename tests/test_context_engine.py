@@ -4,51 +4,21 @@ import pytest
 import pytest_asyncio
 import numpy as np
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
-from sqlalchemy import select
 
 from src.core.context_engine import ContextEngine
-from src.core.db_models import Event
 from src.core.models import DataPublishEvent
-
-
-async def _event_types(engine, project_id):
-    async with engine.event_store.db.session() as session:
-        return list((await session.execute(
-            select(Event.event_type).where(Event.project_id == project_id).order_by(Event.sequence)
-        )).scalars())
-
-
-@pytest.mark.asyncio
-async def test_publish_data_forwards_provenance_to_event_store():
-    """Test that publish_data forwards source/actor/tenant_id to append_event"""
-    engine = ContextEngine.__new__(ContextEngine)  # bypass __init__
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
-    engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
-    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
-
-    evt = DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1})
-    actor = {"actor_id": "key-1", "actor_type": "api_key", "actor_ip": "1.2.3.4"}
-
-    seq = await engine.publish_data(evt, source="api", actor=actor, tenant_id="tenant-1")
-
-    assert seq == "1"
-    _, kwargs = engine.event_store.append_event.call_args
-    assert kwargs["source"] == "api"
-    assert kwargs["actor"] == actor
-    assert kwargs["tenant_id"] == "tenant-1"
 
 
 @pytest.mark.asyncio
 async def test_publish_batch_reconciles_once_with_all_keys():
     engine = ContextEngine.__new__(ContextEngine)
     engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None] * 3))
-    engine.event_store = MagicMock(append_event=AsyncMock(side_effect=["1", "2", "3"]))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
 
     events = [DataPublishEvent(project_id="p1", data_key=k, data={"a": 1}) for k in ("k1", "k2", "k3")]
-    seqs, failed = await engine.publish_data_batch(events)
+    published, failed = await engine.publish_data_batch(events)
 
-    assert (seqs, failed) == (["1", "2", "3"], [])
+    assert (published, failed) == (["k1", "k2", "k3"], [])
     engine.subscriptions.reconcile_project.assert_awaited_once_with("p1", {"k1", "k2", "k3"})
 
 
@@ -56,12 +26,9 @@ async def test_publish_batch_reconciles_once_with_all_keys():
 async def test_publish_survives_reconcile_failure():
     engine = ContextEngine.__new__(ContextEngine)
     engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
-    engine.event_store = MagicMock(append_event=AsyncMock(return_value="1"))
     engine.subscriptions = MagicMock(reconcile_project=AsyncMock(side_effect=RuntimeError("boom")))
 
-    seq = await engine.publish_data(DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1}))
-
-    assert seq == "1"
+    await engine.publish_data(DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1}))
 
 
 class TestContextEngine:
@@ -97,21 +64,6 @@ class TestContextEngine:
     async def test_initialization(self, context_engine):
         """Test that ContextEngine initializes correctly"""
         assert context_engine.semantic_matcher is not None
-        assert context_engine.event_store is not None
-
-    @pytest.mark.asyncio
-    async def test_publish_data(self, context_engine):
-        """Test publishing data"""
-        event = DataPublishEvent(
-            project_id="proj1",
-            data_key="tech_stack",
-            data={"backend": "FastAPI", "frontend": "React"},
-        )
-
-        sequence = await context_engine.publish_data(event)
-
-        assert sequence is not None
-        assert isinstance(sequence, str)
 
     @pytest.mark.asyncio
     async def test_publish_registers_with_semantic_matcher(self, context_engine):
@@ -125,29 +77,6 @@ class TestContextEngine:
         # Check semantic matcher has the data (now using PostgreSQL)
         registered_keys = await context_engine.semantic_matcher.get_registered_data("proj1")
         assert "api_docs" in registered_keys
-
-    @pytest.mark.asyncio
-    async def test_publish_appends_to_event_store(self, context_engine):
-        """Test that publishing appends to event store"""
-        event = DataPublishEvent(
-            project_id="proj1", data_key="config", data={"setting": "value"}
-        )
-
-        await context_engine.publish_data(event)
-
-        # Check event store has the event
-        assert await _event_types(context_engine, "proj1") == ["config_updated"]
-
-    @pytest.mark.asyncio
-    async def test_publish_with_custom_event_type(self, context_engine):
-        """Test publishing with custom event type"""
-        event = DataPublishEvent(
-            project_id="proj1", data_key="data", data={}, event_type="custom_event"
-        )
-
-        await context_engine.publish_data(event)
-
-        assert await _event_types(context_engine, "proj1") == ["custom_event"]
 
     @pytest.mark.asyncio
     async def test_query_project_data(self, context_engine):

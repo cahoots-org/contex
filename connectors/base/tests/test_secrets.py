@@ -39,8 +39,8 @@ def test_flags_secret_content_in_normal_file():
     assert s.reason(key, "def add(a, b):\n    return a + b\n") is None
 
 
-def _pdf(*pages: str) -> bytes:
-    """A PDF with one Helvetica page per entry; an empty entry is a page with no text layer."""
+def _pdf(*pages: str | None) -> bytes:
+    """A PDF with one Helvetica page per entry; "" is a blank page and None a page holding only an image."""
     n = len(pages)
     kids = b" ".join(b"%d 0 R" % (4 + 2 * i) for i in range(n))
     objects = [
@@ -49,7 +49,7 @@ def _pdf(*pages: str) -> bytes:
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
     for i, text in enumerate(pages):
-        content = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode() if text else b""
+        content = b"BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI" if text is None else f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode() if text else b""
         objects.append(
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents %d 0 R"
             b" /Resources << /Font << /F1 3 0 R >> >> >>" % (5 + 2 * i)
@@ -76,19 +76,15 @@ def _docx(xml: str) -> bytes:
 def test_scans_document_text_not_base64():
     s = SecretScanner()
     secret_pdf = document_event("r:a.pdf", _pdf("key AKIAIOSFODNN7EXAMPLE"), "pdf")
-    clean_pdf = document_event("r:b.pdf", _pdf("quarterly report"), "pdf")
+    clean_pdf = document_event("r:b.pdf", _pdf("quarterly report", "", "appendix"), "pdf")
     split_docx = document_event("r:c.docx", _docx("<w:p><w:r><w:t>AKIAIOSF</w:t></w:r><w:r><w:t>ODNN7EXAMPLE</w:t></w:r></w:p>"), "docx")
     image = document_event("r:d.png", b"\x89PNG", "image")
+    scanned_pdf = document_event("r:e.pdf", _pdf("quarterly report", None), "pdf")
     assert s.reason(secret_pdf.key, secret_pdf.payload, "pdf") is not None
     assert s.reason(clean_pdf.key, clean_pdf.payload, "pdf") is None
     assert s.reason(split_docx.key, split_docx.payload, "docx") is not None
     assert s.reason(image.key, image.payload, "image") is not None  # no text to scan
-
-
-def test_pdf_with_a_scanned_page_is_unscannable():
-    s = SecretScanner()
-    mixed = document_event("r:a.pdf", _pdf("quarterly report", ""), "pdf")
-    assert s.reason(mixed.key, mixed.payload, "pdf") is not None
+    assert s.reason(scanned_pdf.key, scanned_pdf.payload, "pdf") is not None
 
 
 def test_reason_names_pattern_not_value():

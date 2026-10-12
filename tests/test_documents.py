@@ -7,6 +7,7 @@ import shutil
 import pypdfium2
 import pytest
 from docx import Document
+from docx.text.paragraph import Paragraph
 from PIL import Image
 
 from src.core import node_parsers
@@ -61,12 +62,12 @@ def _docx() -> bytes:
     return out.getvalue()
 
 
-async def _publish_and_query(db, data: bytes, data_format: str) -> list:
+async def _publish_and_query(db, data: bytes, data_key: str, data_format: str | None = None) -> list:
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
     await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
-        {"data_key": f"report.{data_format}", "data": base64.b64encode(data).decode(), "data_format": data_format},
+        {"data_key": data_key, "data": base64.b64encode(data).decode(), "data_format": data_format},
     ]})
     result = await server.call_tool("contex_query", {
         "project_id": "docs", "query": "Atlantis revenue forecast", "top_k": 5, "threshold": 0.0,
@@ -75,34 +76,37 @@ async def _publish_and_query(db, data: bytes, data_format: str) -> list:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("make,data_format", [(_pdf, "pdf"), (_docx, "docx")])
-async def test_base64_document_is_extracted(db, make, data_format):
-    matches = await _publish_and_query(db, make(), data_format)
+@pytest.mark.parametrize("make,data_key", [(_pdf, "report.pdf"), (_docx, "report.docx")])
+async def test_base64_document_is_extracted(db, make, data_key):
+    matches = await _publish_and_query(db, make(), data_key)
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 
 @pytest.mark.asyncio
-async def test_non_base64_document_is_rejected(db):
+async def test_bad_batch_items_are_listed_in_failed(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
-    with pytest.raises(Exception, match="base64"):
-        await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
-            {"data_key": "r.pdf", "data": "not base64!", "data_format": "pdf"},
-        ]})
+    out = await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
+        {"data_key": "r.pdf", "data": "not base64!"},
+        {"data_key": "no-data"},
+        {"data_key": "b.py", "data": f"def {'x' * 300}():\n    return 1\n"},
+    ]})
+    result = json.loads(out.content[0].text)
+    assert result["published"] == 1 and [f["data_key"] for f in result["failed"]] == ["r.pdf", "no-data"]
 
 
 @pytest.mark.asyncio
 async def test_scanned_pages_are_skipped_without_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", False)
-    assert await _publish_and_query(db, _scanned_pdf(), "pdf") == []
+    assert await _publish_and_query(db, _scanned_pdf(), "scan.pdf") == []
 
 
 @needs_tesseract
 @pytest.mark.asyncio
 async def test_scanned_pages_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
-    matches = await _publish_and_query(db, _scanned_pdf(), "pdf")
+    matches = await _publish_and_query(db, _scanned_pdf(), "scan.pdf")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 
@@ -110,7 +114,7 @@ async def test_scanned_pages_are_read_with_ocr(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_images_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
-    matches = await _publish_and_query(db, _image(), "image")
+    matches = await _publish_and_query(db, _image(), "scan.pgm", "image")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 
@@ -123,6 +127,11 @@ def test_oversized_documents_are_refused(monkeypatch):
         PDFNodeParser().parse(_pdf())
 
 
+def test_docx_paragraph_styles_are_not_resolved(monkeypatch):
+    monkeypatch.setattr(Paragraph, "style", property(lambda self: 1 / 0))
+    assert DOCXNodeParser().parse(_docx()).nodes[0].content == PHRASE
+
+
 def test_oversized_images_are_refused_before_ocr(monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
     monkeypatch.setattr(node_parsers, "_ocr", None)
@@ -130,3 +139,7 @@ def test_oversized_images_are_refused_before_ocr(monkeypatch):
     Image.new("1", (node_parsers.MAX_OCR_PIXELS_PER_SIDE + 1, 1)).save(png, "PNG")
     with pytest.raises(DocumentRejected, match="pixels"):
         ImageNodeParser().parse(png.getvalue())
+    tiff = io.BytesIO()
+    Image.new("1", (1, 1)).save(tiff, "TIFF", save_all=True, append_images=[Image.new("1", (1, 1))])
+    with pytest.raises(DocumentRejected, match="one frame"):
+        ImageNodeParser().parse(tiff.getvalue())

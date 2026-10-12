@@ -72,6 +72,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method,path,form", [
+    ("GET", "/", None),
     ("GET", "/sandbox/", None),
     ("POST", "/sandbox/query", {"project_id": "p", "query": "secrets"}),
     ("GET", "/sandbox/projects/p/stats", None),

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel
@@ -94,64 +94,20 @@ async def bootstrap_admin(db: DatabaseManager) -> None:
         )
 
 
-async def revoke_api_key(
-    db: DatabaseManager, key_id: str, tenant_id: Optional[str] = None
-) -> bool:
-    """
-    Revoke an API key by ID.
-
-    Args:
-        db: Database manager
-        key_id: Key ID to revoke
-        tenant_id: When provided, only revokes the key if it belongs to this tenant
-
-    Returns:
-        True if key was revoked, False if not found or tenant mismatch
-    """
-    from sqlalchemy import delete
-
+async def revoke_api_key(db: DatabaseManager, key_id: str) -> bool:
+    """Revoke an API key by ID; False if it does not exist."""
     async with db.session() as session:
-        if tenant_id is not None:
-            result = await session.execute(
-                delete(APIKeyModel).where(
-                    APIKeyModel.key_id == key_id,
-                    APIKeyModel.tenant_id == tenant_id,
-                )
-            )
-            if result.rowcount > 0:
-                logger.info("API key revoked", key_id=key_id)
-                return True
-            return False
-
-        result = await session.execute(
-            delete(APIKeyModel).where(APIKeyModel.key_id == key_id)
-        )
-
-        if result.rowcount > 0:
-            logger.info("API key revoked", key_id=key_id)
-            return True
-
+        result = await session.execute(delete(APIKeyModel).where(APIKeyModel.key_id == key_id))
+    if result.rowcount > 0:
+        logger.info("API key revoked", key_id=key_id)
+        return True
     return False
 
 
-async def list_api_keys(db: DatabaseManager, tenant_id: Optional[str] = None) -> List[APIKey]:
-    """
-    List all API keys.
-
-    Args:
-        db: Database manager
-        tenant_id: Optional tenant ID to filter by
-
-    Returns:
-        List of API keys
-    """
+async def list_api_keys(db: DatabaseManager) -> List[APIKey]:
+    """List all API keys."""
     async with db.session() as session:
-        query = select(APIKeyModel)
-        if tenant_id:
-            query = query.where(APIKeyModel.tenant_id == tenant_id)
-
-        result = await session.execute(query)
-        keys = result.scalars().all()
+        keys = (await session.execute(select(APIKeyModel))).scalars().all()
 
         return [
             APIKey(

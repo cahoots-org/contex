@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import weakref
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -121,22 +122,23 @@ class SubscriptionService:
         await self._check_capacity(project_id)
 
         since = _since_from_scope(scope)
-        bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
-        bundle = await self._link_bundle(project_id, bundle)
-        now = datetime.now(timezone.utc)
-        fresh = dict(
-            bundle=bundle, documents=_bundle_documents(bundle),
-            bundle_updated_at=now, expires_at=now + self.ttl,
-        )
-        async with self.db.session() as session:
-            # Conflict: a concurrent create won the race, or an expired row awaits the purge.
-            await session.execute(
-                insert(Subscription).values(
-                    subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
-                    needs=needs, scope=scope, top_k=top_k, threshold=threshold, **fresh,
-                ).on_conflict_do_update(index_elements=[Subscription.subscription_id], set_=fresh)
+        async with self._project_lock(project_id):
+            bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
+            bundle = await self._link_bundle(project_id, bundle)
+            now = datetime.now(timezone.utc)
+            fresh = dict(
+                bundle=bundle, documents=_bundle_documents(bundle),
+                bundle_updated_at=now, expires_at=now + self.ttl,
             )
-            await session.commit()
+            async with self.db.session() as session:
+                # Conflict: a concurrent create won the race, or an expired row awaits the purge.
+                await session.execute(
+                    insert(Subscription).values(
+                        subscription_id=sub_id, project_id=project_id, tenant_id=tenant_id,
+                        needs=needs, scope=scope, top_k=top_k, threshold=threshold, **fresh,
+                    ).on_conflict_do_update(index_elements=[Subscription.subscription_id], set_=fresh)
+                )
+                await session.commit()
         return sub_id
 
     async def _check_capacity(self, project_id) -> None:
@@ -208,9 +210,14 @@ class SubscriptionService:
         the list of subscription ids that changed. `changed_keys` names the documents
         just published; `None` reconciles every subscription.
         """
-        # One reconcile per project at a time, across replicas, so a slow one can't
-        # commit a bundle older than one a later reconcile already committed. The
-        # in-process lock keeps same-project waiters from each holding a connection.
+        async with self._project_lock(project_id):
+            return await self._reconcile_locked(project_id, changed_keys)
+
+    @asynccontextmanager
+    async def _project_lock(self, project_id):
+        """One bundle writer per project at a time, across replicas, so a slow one
+        can't commit a bundle older than one a later writer already committed."""
+        # The in-process lock keeps same-project waiters from each holding a connection.
         # ponytail: the lock holder needs a second pooled connection to match; many
         # distinct projects reconciling at once can exhaust the pool until its timeout.
         lock = self._project_locks.setdefault(project_id, asyncio.Lock())
@@ -219,7 +226,7 @@ class SubscriptionService:
                 text("SELECT pg_advisory_xact_lock(:ns, hashtext(:project_id))"),
                 {"ns": _RECONCILE_LOCK_NS, "project_id": project_id},
             )
-            return await self._reconcile_locked(project_id, changed_keys)
+            yield
 
     async def _reconcile_locked(self, project_id, changed_keys) -> list[str]:
         affected = None

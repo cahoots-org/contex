@@ -1,7 +1,10 @@
 import json
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from sqlalchemy import text
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
-from src.core import mcp_adapter
+from src.core import limits, mcp_adapter
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 from src.core.mcp_adapter import build_mcp_server
@@ -69,7 +72,6 @@ async def test_contex_publish_batch_publishes_all_items(db):
 
 @pytest.mark.asyncio
 async def test_contex_publish_batch_rejects_oversized_batch(db, monkeypatch):
-    import src.core.limits as limits
     monkeypatch.setattr(limits, "MAX_BATCH_SIZE", 2)
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.initialize()
@@ -81,7 +83,6 @@ async def test_contex_publish_batch_rejects_oversized_batch(db, monkeypatch):
 
 
 async def _age_row(db, data_key, *, created_at):
-    from sqlalchemy import text
     async with db.session() as session:
         await session.execute(
             text("UPDATE embeddings SET created_at = :c, updated_at = NULL WHERE data_key = :k"),
@@ -92,8 +93,6 @@ async def _age_row(db, data_key, *, created_at):
 
 @pytest.mark.asyncio
 async def test_contex_query_since_filters_old_data(db):
-    from datetime import datetime, timedelta, timezone
-
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     await engine.publish_data(DataPublishEvent(
@@ -128,8 +127,6 @@ async def test_contex_query_rejects_bad_since(db):
 
 @pytest.mark.asyncio
 async def test_subscription_scope_since_filters_bundle(db):
-    from datetime import datetime, timedelta, timezone
-
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     await engine.publish_data(DataPublishEvent(

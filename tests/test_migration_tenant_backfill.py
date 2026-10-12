@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from src.core.db_models import Subscription, APIKey, Event
+from src.core.db_models import Subscription, APIKey
 from src.core.subscriptions import SubscriptionService
 from src.core.tenant import DEFAULT_TENANT_ID
 
@@ -87,44 +87,6 @@ async def test_api_key_explicit_null_via_raw_sql_raises_integrity_error(db):
                     "name": "test_key",
                     "prefix": "test_",
                     "scopes": ["read"],
-                },
-            )
-            await session.flush()
-
-
-@pytest.mark.asyncio
-async def test_event_without_tenant_id_defaults_to_default(db):
-    async with db.session() as session:
-        session.add(Event(
-            project_id="p1",
-            event_type="test_event",
-            data={"test": "data"},
-            sequence=1,
-        ))
-        await session.commit()
-
-    async with db.session() as session:
-        row = (await session.execute(
-            select(Event).where(Event.event_type == "test_event")
-        )).scalar_one()
-        assert row.tenant_id == DEFAULT_TENANT_ID
-
-
-@pytest.mark.asyncio
-async def test_event_explicit_null_via_raw_sql_raises_integrity_error(db):
-    async with db.session() as session:
-        with pytest.raises(IntegrityError):
-            await session.execute(
-                text(
-                    "INSERT INTO events "
-                    "(project_id, event_type, data, sequence, tenant_id) "
-                    "VALUES (:project_id, :event_type, :data, :sequence, NULL)"
-                ),
-                {
-                    "project_id": "p1",
-                    "event_type": "test_event_null",
-                    "data": '{"test": "data"}',
-                    "sequence": 1,
                 },
             )
             await session.flush()

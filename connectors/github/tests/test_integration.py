@@ -1,7 +1,6 @@
 """Integration tests for GitHub readers against a mocked GitHub API.
 
 Uses ``pytest-httpx`` to intercept httpx requests and return fixture responses.
-If ``pytest_httpx`` is not installed the whole module is skipped gracefully.
 """
 from __future__ import annotations
 
@@ -9,20 +8,7 @@ import base64
 import re
 
 import pytest
-
-try:
-    import pytest_httpx  # noqa: F401
-    _HAVE_PYTEST_HTTPX = True
-except ImportError:
-    _HAVE_PYTEST_HTTPX = False
-
-pytestmark = pytest.mark.skipif(
-    not _HAVE_PYTEST_HTTPX,
-    reason="pytest-httpx not installed; skipping integration tests",
-)
-
-if _HAVE_PYTEST_HTTPX:
-    from pytest_httpx import HTTPXMock
+from pytest_httpx import HTTPXMock
 
 from connectors.github.client import GitHubClient
 from connectors.github.readers import read_commits, read_files, read_issues, read_pulls
