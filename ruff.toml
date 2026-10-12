@@ -3,5 +3,3 @@ target-version = "py312"
 [lint]
 select = ["F", "E9", "E402", "PLC0415"]
 
-[lint.per-file-ignores]
-"src/core/node_parsers.py" = ["PLC0415"]
