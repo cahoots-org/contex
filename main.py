@@ -75,7 +75,8 @@ async def lifespan(app: FastAPI):
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
                 log_level=LOG_LEVEL,
-                log_json=LOG_JSON)
+                log_json=LOG_JSON,
+                auth_enabled=auth_enabled())
 
     # Initialize Sentry for error tracking (if configured)
     if init_sentry(release=f"contex@{VERSION}"):
