@@ -1,6 +1,7 @@
 """Tests for semantic data matching with PostgreSQL/pgvector"""
 
 import asyncio
+import contextlib
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -444,6 +445,35 @@ class TestSemanticMatcherConcurrency:
             stored = str((await session.execute(
                 select(Embedding.data).where(Embedding.project_id == "race"))).scalars().all())
         assert "new" in stored and "old" not in stored
+
+    @pytest.mark.asyncio
+    async def test_delete_during_publish_removes_the_whole_document(self, matcher):
+        await matcher.register_data_batch("race", [("doc.md", "# Doc\n\n## A\n\nalpha\n", "markdown")])
+        plan = await matcher._plan_registration(
+            "race", "doc.md", "# Doc\n\n## A\n\nbeta\n\n## B\n\ngamma\n", "markdown")
+        db, written, release = matcher.db, asyncio.Event(), asyncio.Event()
+
+        class HeldCommit:
+            @contextlib.asynccontextmanager
+            async def session(self):
+                async with db.session() as session:
+                    yield session
+                    await session.flush()
+                    written.set()
+                    await release.wait()
+
+        matcher.db = HeldCommit()
+        write = asyncio.create_task(matcher._write_registration(
+            "race", plan, np.random.rand(len(plan["changed"]), 768).astype(np.float32)))
+        await written.wait()
+        matcher.db = db
+        delete = asyncio.create_task(matcher.delete_data_keys("race", ["doc.md"]))
+        await asyncio.sleep(0.5)
+        release.set()
+        await write
+
+        assert await delete == ["doc.md"]
+        assert await _data_keys(matcher, "race") == []
 
 
 class TestSemanticMatcherTimeWindow:
