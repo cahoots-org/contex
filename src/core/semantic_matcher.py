@@ -480,11 +480,11 @@ class SemanticDataMatcher:
             return []
         async with self.db.session() as session:
             result = await session.execute(
-                select(Embedding)
+                select(Embedding.node_key, Embedding.data_key, Embedding.data)
                 .where(Embedding.project_id == project_id)
                 .where(Embedding.node_key.in_([key for key, _ in ranked]))
             )
-            rows = {row.node_key: row for row in result.scalars()}
+            rows = {row.node_key: row for row in result}
         return [
             {
                 "data_key": key,
