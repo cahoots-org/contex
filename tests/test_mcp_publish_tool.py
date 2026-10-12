@@ -97,3 +97,23 @@ async def test_batch_reports_unreadable_items_and_empty_content_clears_old_nodes
     assert [f["data_key"] for f in res["failed"]] == ["bad.pdf"]
     async with db.session() as session:
         assert (await session.execute(select(Embedding.node_key))).all() == []
+
+
+@pytest.mark.asyncio
+async def test_publish_reports_an_invalid_data_key(db):
+    server, _ = build_mcp_server(ContextEngine(db=db))
+
+    with pytest.raises(ToolError, match="invalid item"):
+        await _publish_once(server, "bad\nkey")
+
+
+@pytest.mark.asyncio
+async def test_batch_repeated_key_keeps_its_last_copy_even_when_invalid(db):
+    server, _ = build_mcp_server(ContextEngine(db=db))
+
+    res = json.loads((await server.call_tool("contex_publish_batch", {"project_id": "p", "items": [
+        {"data_key": "k", "data": {"v": 1}},
+        {"data_key": "k", "data": {"v": 2}, "published_at": "not a time"},
+    ]})).content[0].text)
+
+    assert (res["published"], [f["data_key"] for f in res["failed"]]) == (0, ["k"])
