@@ -1,4 +1,5 @@
 import threading
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -12,6 +13,14 @@ def test_length_sorted_batches_keep_input_order():
     batched = model.encode(texts, batch_size=2)
     singles = np.vstack([model.encode(t) for t in texts])
     assert np.allclose(batched, singles, atol=1e-5)
+
+
+def test_long_text_is_cut_before_tokenizing():
+    model = OnnxEmbedder("thenlper/gte-base")
+    tokenizer, seen = model.tokenizer, []
+    model.tokenizer = SimpleNamespace(encode_batch=lambda texts: seen.extend(texts) or tokenizer.encode_batch(texts))
+    model.encode("invoice " * 100_000)
+    assert len(seen[0]) <= 512 * 16
 
 
 class _ThreadRecorder:
