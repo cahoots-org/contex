@@ -57,6 +57,33 @@ refresh story.
     content: []          # secret-content regexes, e.g. "ACME_[A-Z0-9]{32}"
   ```
 
+## Upgrading from v1.1.0
+
+v1.1.0 connectors published without an origin, and the S3, Postgres and
+Atlassian keys have since changed. Pruning only lists keys by origin, so it
+never removes the old copies; each stays next to its replacement until you
+delete it.
+
+| Connector  | v1.1.0 key              | Current key                  |
+| ---------- | ----------------------- | ---------------------------- |
+| S3         | `{key}`                 | `{bucket}/{key}`             |
+| Postgres   | `{schema}.{table}.{pk}` | `{db}.{schema}.{table}.{pk}` |
+| Jira       | `jira:{KEY}`            | `{site}:jira:{KEY}`          |
+| Confluence | `confluence:{id}`       | `{site}:confluence:{id}`     |
+
+GitHub keys are unchanged. Run each connector once on the new version, then
+list the project's keys that still have no origin:
+
+```sql
+SELECT DISTINCT data_key FROM embeddings
+WHERE project_id = '<project>' AND origin IS NULL ORDER BY data_key;
+```
+
+This also lists anything published with `contex_publish`, which never sets an
+origin, so keep only keys in the v1.1.0 formats above. Delete them with
+`contex_delete` (up to 1000 keys per call). If the project holds only connector
+data, re-running the connectors into a new project is simpler.
+
 ## Writing a connector
 
 A connector supplies a reader that yields `ChangeEvent`s and hands the stream to
