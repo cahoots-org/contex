@@ -55,6 +55,18 @@ MAX_PDF_PAGES = 2000
 MAX_OCR_PAGES = 50
 MAX_OCR_PIXELS_PER_SIDE = 6000
 MAX_DOCX_UNZIPPED_BYTES = 200 * 2**20
+MAX_NODES = 10_000
+
+
+class DocumentRejected(ValueError):
+    """A document this server won't ingest; its message is safe to show the publisher."""
+
+
+def _add(nodes: List[Node], node: Node) -> None:
+    """Append ``node``, refusing a document once it exceeds MAX_NODES parts."""
+    if len(nodes) >= MAX_NODES:
+        raise DocumentRejected(f"document has more than {MAX_NODES} parts; split it into smaller documents")
+    nodes.append(node)
 
 
 def _extension(data_key: Optional[str]) -> str:
@@ -152,7 +164,7 @@ class JSONNodeParser(BaseNodeParser):
         if isinstance(data, str):
             data = json.loads(data)
 
-        nodes = self._extract_nodes(data, "")
+        nodes = self._extract_nodes(data, "", [])
         return ParseResult(
             nodes=nodes,
             format_name="json",
@@ -160,17 +172,15 @@ class JSONNodeParser(BaseNodeParser):
             metadata={"node_count": len(nodes)}
         )
 
-    def _extract_nodes(self, data: Any, path: str) -> List[Node]:
-        """Recursively extract nodes from JSON structure"""
-        nodes = []
-
+    def _extract_nodes(self, data: Any, path: str, nodes: List[Node]) -> List[Node]:
+        """Recursively append the JSON structure's nodes to ``nodes`` and return it."""
         if isinstance(data, dict):
             # Primitive fields (and lists of primitives) stay with this object;
             # nested objects and arrays of objects become their own nodes.
             own = {k: v for k, v in data.items() if not _is_complex(v)}
             # An empty dict still gets a node so it isn't silently dropped.
             if own or not data:
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=path or "root",
                     content=own,
                     node_type=NodeType.OBJECT,
@@ -182,19 +192,19 @@ class JSONNodeParser(BaseNodeParser):
                 child_path = f"{path}.{segment}" if path else segment
                 if isinstance(value, list) and _is_complex(value):
                     for idx, item in enumerate(value):
-                        nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
+                        self._extract_nodes(item, f"{child_path}[{idx}]", nodes)
                 elif isinstance(value, dict):
-                    nodes.extend(self._extract_nodes(value, child_path))
+                    self._extract_nodes(value, child_path, nodes)
 
         elif isinstance(data, list):
             # Top-level array
             for idx, item in enumerate(data):
                 item_path = f"{path}[{idx}]" if path else f"[{idx}]"
-                nodes.extend(self._extract_nodes(item, item_path))
+                self._extract_nodes(item, item_path, nodes)
 
         else:
             # Primitive value
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=path or "value",
                 content=data,
                 node_type=NodeType.PRIMITIVE,
@@ -237,7 +247,7 @@ class YAMLNodeParser(JSONNodeParser):
         if isinstance(data, str):
             data = yaml.load(data, Loader=_NoAliasLoader)
 
-        nodes = self._extract_nodes(data, "")
+        nodes = self._extract_nodes(data, "", [])
         return ParseResult(
             nodes=nodes,
             format_name="yaml",
@@ -284,7 +294,7 @@ class PlainTextNodeParser(BaseNodeParser):
             # Single paragraph - split into sentences
             sentences = self._split_sentences(paragraphs[0])
             for i, sentence in enumerate(sentences):
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"sentence_{i}",
                     content=sentence,
                     node_type=NodeType.SENTENCE,
@@ -293,7 +303,7 @@ class PlainTextNodeParser(BaseNodeParser):
         else:
             # Multiple paragraphs
             for i, para in enumerate(paragraphs):
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"paragraph_{i}",
                     content=para,
                     node_type=NodeType.PARAGRAPH,
@@ -361,7 +371,7 @@ class MarkdownNodeParser(BaseNodeParser):
                 level = len(heading_match.group(1))
                 title = heading_match.group(2)
                 current_heading = title
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"heading_{section_idx}",
                     content=title,
                     node_type=NodeType.HEADING,
@@ -377,7 +387,7 @@ class MarkdownNodeParser(BaseNodeParser):
                     for cb in code_blocks:
                         language = cb.group(1) or "text"
                         code = cb.group(2).strip()
-                        nodes.append(Node(
+                        _add(nodes, Node(
                             path=f"code_block_{len(nodes)}",
                             content=code,
                             node_type=NodeType.CODE_BLOCK,
@@ -389,7 +399,7 @@ class MarkdownNodeParser(BaseNodeParser):
                 if remaining:
                     paragraphs = [p.strip() for p in remaining.split('\n\n') if p.strip()]
                     for para in paragraphs:
-                        nodes.append(Node(
+                        _add(nodes, Node(
                             path=f"paragraph_{len(nodes)}",
                             content=para,
                             node_type=NodeType.PARAGRAPH,
@@ -449,7 +459,7 @@ class CSVNodeParser(BaseNodeParser):
 
         nodes = []
         for i, row in enumerate(reader):
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=f"row_{i}",
                 content=dict(row),
                 node_type=NodeType.ROW,
@@ -537,7 +547,7 @@ class PDFNodeParser(BaseNodeParser):
 
             if len(paragraphs) <= 1:
                 # Single block of text for this page — one section node
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"page_{page_num + 1}",
                     content=text,
                     node_type=NodeType.SECTION,
@@ -550,7 +560,7 @@ class PDFNodeParser(BaseNodeParser):
             else:
                 # Multiple paragraphs — create individual nodes
                 for i, para in enumerate(paragraphs):
-                    nodes.append(Node(
+                    _add(nodes, Node(
                         path=f"page_{page_num + 1}.paragraph_{i}",
                         content=para,
                         node_type=NodeType.PARAGRAPH,
@@ -645,7 +655,7 @@ class DOCXNodeParser(BaseNodeParser):
                 except (ValueError, IndexError):
                     level = 1
                 current_heading = text
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"heading_{len(nodes)}",
                     content=text,
                     node_type=NodeType.HEADING,
@@ -656,7 +666,7 @@ class DOCXNodeParser(BaseNodeParser):
                     }
                 ))
             elif style_name.startswith("List"):
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"list_item_{len(nodes)}",
                     content=text,
                     node_type=NodeType.LIST_ITEM,
@@ -667,7 +677,7 @@ class DOCXNodeParser(BaseNodeParser):
                     }
                 ))
             else:
-                nodes.append(Node(
+                _add(nodes, Node(
                     path=f"paragraph_{para_idx}",
                     content=text,
                     node_type=NodeType.PARAGRAPH,
@@ -692,7 +702,7 @@ class DOCXNodeParser(BaseNodeParser):
                     key = headers[c_idx] if c_idx < len(headers) else f"col_{c_idx}"
                     row_data[key] = cell.text.strip()
                 if any(v for v in row_data.values()):
-                    nodes.append(Node(
+                    _add(nodes, Node(
                         path=f"table_{t_idx}.row_{r_idx}",
                         content=row_data,
                         node_type=NodeType.ROW,
@@ -930,10 +940,11 @@ class CodeNodeParser(BaseNodeParser):
         summary = "defines: " + ", ".join(r["path"] for r in records)
         if module_refs:
             summary += "\nreferences: " + ", ".join(module_refs)
-        nodes = [Node(
+        nodes: List[Node] = []
+        _add(nodes, Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
             metadata={"language": lang, "defs": [], "refs": module_refs},
-        )]
+        ))
         # Module-level code (constants, route registrations, scripts) is
         # everything outside the top-level definitions.
         outside, pos = [], 0
@@ -944,12 +955,12 @@ class CodeNodeParser(BaseNodeParser):
         outside.append(src[pos:])
         module_code = b"".join(outside).decode("utf-8", errors="replace")
         for i, chunk in enumerate(_chunk_blocks(module_code)):
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=f"module_{i}", content=chunk, node_type=NodeType.CODE_BLOCK,
                 metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
-            nodes.append(Node(
+            _add(nodes, Node(
                 path=r["path"], content=r["content"],
                 node_type=_KIND_TO_NODETYPE[r["kind"]],
                 metadata={

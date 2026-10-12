@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
-from sqlalchemy import delete, func, select, text, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import Text, all_, any_, delete, func, literal, select, text, update
+from sqlalchemy.dialects.postgresql import ARRAY, insert as pg_insert
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
@@ -299,7 +299,7 @@ class SemanticDataMatcher:
             prior = await session.execute(
                 select(Embedding.node_key, Embedding.content_hash)
                 .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_(node_keys))
+                .where(Embedding.node_key == any_(literal(node_keys, ARRAY(Text))))
             )
             prior_hashes = dict(prior.all())
 
@@ -362,7 +362,7 @@ class SemanticDataMatcher:
                 delete(Embedding)
                 .where(Embedding.project_id == project_id)
                 .where(Embedding.data_key == data_key)
-                .where(Embedding.node_key.not_in(node_keys))
+                .where(Embedding.node_key != all_(literal(node_keys, ARRAY(Text))))
             )
             # Symbols are the defs/refs the parser recorded per node, rewritten
             # whenever the nodes change. Unchanged documents keep theirs as is.

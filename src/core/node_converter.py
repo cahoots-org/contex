@@ -14,6 +14,7 @@ from .node_parsers import (
     ImageNodeParser,
     DOCXNodeParser,
     CodeNodeParser,
+    DocumentRejected,
 )
 
 
@@ -56,6 +57,8 @@ class NodeConverter:
                     if parser.needs_data_key
                     else parser.parse(data)
                 )
+            except DocumentRejected:
+                raise
             except Exception as e:  # a failed parser falls through to the next one
                 result = ParseResult(nodes=[], format_name=parser.format_name, success=False, error=str(e))
             if result.success:
