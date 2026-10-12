@@ -7,7 +7,7 @@ from src.core.models import DataPublishEvent
 @pytest.mark.asyncio
 async def test_query_matches_subscription_bundle(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(
         project_id="proj", data_key="db_cfg",
         data={"purpose": "database connection settings", "port": 5432}, data_format="json",
@@ -26,7 +26,7 @@ async def test_query_matches_subscription_bundle(db):
 @pytest.mark.asyncio
 async def test_delete_removes_subscription(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     sub_id = await engine.subscriptions.create("proj", ["anything"])
     await engine.subscriptions.delete(sub_id)
     with pytest.raises(KeyError):

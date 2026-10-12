@@ -22,7 +22,7 @@ def _payload(frame: str) -> dict:
 @pytest.mark.asyncio
 async def test_stream_yields_initial_then_updates_then_cleans_up(db, notifier):
     engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
 
     agen = stream_subscription_updates(
         engine, "p", "database connection settings", top_k=10, threshold=0.1
@@ -63,7 +63,7 @@ async def test_stream_cleans_up_subscription_when_setup_fails(db, notifier, monk
     """If reading the first bundle raises after the subscription is created, the
     subscription is still deleted and the listener released."""
     engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     monkeypatch.setattr(engine.subscriptions, "get_bundle", AsyncMock(side_effect=RuntimeError("boom")))
 
     agen = stream_subscription_updates(engine, "q", "auth token secret", top_k=10, threshold=0.1)
@@ -81,7 +81,7 @@ async def test_stream_cleans_up_subscription_when_setup_fails(db, notifier, monk
 @pytest.mark.asyncio
 async def test_client_disconnect_deletes_subscription(db, notifier):
     engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     response = StreamingResponse(stream_subscription_updates(engine, "p", "payments"))
     first_frame = asyncio.Event()
 
@@ -104,7 +104,7 @@ async def test_client_disconnect_deletes_subscription(db, notifier):
 async def test_stream_outlives_subscription_ttl(db, notifier):
     """A quiet stream keeps its subscription alive past the TTL."""
     engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     engine.subscriptions.ttl = timedelta(seconds=1)
     agen = stream_subscription_updates(engine, "p", "database connection settings", top_k=10, threshold=0.1)
     await agen.__anext__()

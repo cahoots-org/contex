@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", message="resources/(un)?subscribe is removed")
 
 async def _setup(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     return build_mcp_server(engine)
 
 

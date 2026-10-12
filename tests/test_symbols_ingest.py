@@ -59,7 +59,7 @@ async def _symbols(db, project_id):
 
 @pytest.mark.asyncio
 async def test_code_ingest_writes_defs_and_refs(matcher, db):
-    await matcher.register_data("p", "repo:app.py", PY, "code")
+    await matcher.register_data_batch("p", [("repo:app.py", PY, "code")])
     syms = await _symbols(db, "p")
     # defs: every function/class/method the parser found
     assert ("top_level", "def") in syms
@@ -73,8 +73,8 @@ async def test_code_ingest_writes_defs_and_refs(matcher, db):
 
 @pytest.mark.asyncio
 async def test_reingest_replaces_symbols(matcher, db):
-    await matcher.register_data("p", "repo:app.py", PY, "code")
-    await matcher.register_data("p", "repo:app.py", PY_V2, "code")
+    await matcher.register_data_batch("p", [("repo:app.py", PY, "code")])
+    await matcher.register_data_batch("p", [("repo:app.py", PY_V2, "code")])
     syms = await _symbols(db, "p")
     assert ("only_this", "def") in syms
     # old names from v1 are gone
@@ -84,7 +84,7 @@ async def test_reingest_replaces_symbols(matcher, db):
 
 @pytest.mark.asyncio
 async def test_non_code_writes_no_symbols(matcher, db):
-    await matcher.register_data("p", "config", {"backend": "FastAPI"}, "json")
+    await matcher.register_data_batch("p", [("config", {"backend": "FastAPI"}, "json")])
     assert await _symbols(db, "p") == set()
 
 
@@ -92,11 +92,9 @@ async def test_non_code_writes_no_symbols(matcher, db):
 async def test_long_keys_store(matcher, db):
     # Deep paths under long file paths overflowed varchar(255) node/data keys.
     long_dir = "/".join(["snapshots"] * 30)
-    await matcher.register_data("p_long", f"repo:{long_dir}/app.py", PY_V2, "code")
-    await matcher.register_data(
-        "p_long", f"repo:{long_dir}/stack.json",
-        {"Resources": {"Sg" * 40: {"Properties": {"Egress": [{"Cidr": "0.0.0.0/0"}]}}}},
-        "json",
+    await matcher.register_data_batch("p_long", [(f"repo:{long_dir}/app.py", PY_V2, "code")])
+    await matcher.register_data_batch(
+        "p_long", [(f"repo:{long_dir}/stack.json", {"Resources": {"Sg" * 40: {"Properties": {"Egress": [{"Cidr": "0.0.0.0/0"}]}}}}, "json")],
     )
     async with db.session() as session:
         keys = (await session.execute(

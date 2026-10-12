@@ -7,7 +7,7 @@ from src.core.models import DataPublishEvent
 @pytest.mark.asyncio
 async def test_publish_reconciles_matching_subscription(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
 
     # A subscription whose need should match the doc we publish.
     sub_id = await engine.subscriptions.create("proj", ["database connection settings"])
@@ -28,7 +28,7 @@ async def test_publish_reconciles_matching_subscription(db):
 async def test_publish_does_not_affect_other_project(db):
     """Publishing to projA must not alter subscriptions that belong to projB."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
 
     # Create a subscription in projB.
     sub_b = await engine.subscriptions.create("projB", ["database connection settings"])

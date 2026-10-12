@@ -12,7 +12,7 @@ from src.core.mcp_bridge import resource_uri_for, run_bridge
 @pytest.mark.asyncio
 async def test_publish_pushes_resource_updated_and_bundle_refreshes(db, notifier):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, bus = build_mcp_server(engine)
 
     sub_id = await engine.subscriptions.create("p", ["database connection settings"], top_k=10, threshold=0.1)

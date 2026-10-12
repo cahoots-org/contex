@@ -192,32 +192,6 @@ class SemanticDataMatcher:
                     f"column to vector({self.embedding_dim}) and re-embed."
                 )
 
-    async def register_data(
-        self,
-        project_id: str,
-        data_key: str,
-        data: Any,
-        format_hint: Optional[str] = None,
-    ):
-        """
-        Register new project data for matching (supports any format).
-
-        Data is automatically parsed into Nodes for granular matching:
-        - JSON/YAML: Each object in arrays becomes a node
-        - Markdown: Headings, paragraphs, code blocks become nodes
-        - CSV: Each row becomes a node
-        - Plain text: Sentences or paragraphs become nodes
-
-        Args:
-            project_id: Project identifier
-            data_key: Data identifier (e.g., "tech_stack", "event_model")
-            data: The actual data in any format (dict, YAML string, text, etc.)
-            format_hint: Optional format hint ("json", "yaml", "markdown", "text")
-        """
-        [error] = await self.register_data_batch(project_id, [(data_key, data, format_hint)])
-        if error:
-            raise DocumentRejected(error)
-
     async def register_data_batch(
         self,
         project_id: str,
@@ -238,23 +212,26 @@ class SemanticDataMatcher:
         if origin is not None:
             # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
-        plans, errors = [], []
-        for data_key, data, format_hint in items:
+        plans, errors = [], [None] * len(items)
+        for index, (data_key, data, format_hint) in enumerate(items):
             try:
-                plans.append(await self._plan_registration(project_id, data_key, data, format_hint))
-                errors.append(None)
+                plans.append((index, await self._plan_registration(project_id, data_key, data, format_hint)))
             except DocumentRejected as e:
                 logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
-                errors.append(str(e))
-        texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
+                errors[index] = str(e)
+        texts = [plan["texts"][i] for _, plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
         offset = 0
-        for plan in plans:
+        for index, plan in plans:
             n = len(plan["changed"])
-            await self._write_registration(
-                project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
-            )
+            try:
+                await self._write_registration(
+                    project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
+                )
+            except Exception:
+                logger.exception("Failed to store data", project_id=project_id, data_key=plan["data_key"])
+                errors[index] = "could not store the document"
             offset += n
         return errors
 
@@ -538,16 +515,6 @@ class SemanticDataMatcher:
             matched = {result["data_key"], *(r["data_key"] for r in result["related"])}
             if result["document"] in roots and result["document"] not in matched:
                 result["document_data"] = roots[result["document"]]
-
-    async def get_registered_data(self, project_id: str) -> List[str]:
-        """Get all registered data keys for a project (unique data_key values)."""
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(Embedding.data_key)
-                .where(Embedding.project_id == project_id)
-                .distinct()
-            )
-            return sorted([row[0] for row in result])
 
     async def _tag_origin(self, project_id: str, data_keys: List[str], origin: str) -> None:
         async with self.db.session() as session:
