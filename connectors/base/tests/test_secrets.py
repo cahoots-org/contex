@@ -79,16 +79,12 @@ def test_scans_document_text_not_base64():
     clean_pdf = document_event("r:b.pdf", _pdf("quarterly report", "", "appendix"), "pdf")
     split_docx = document_event("r:c.docx", _docx("<w:p><w:r><w:t>AKIAIOSF</w:t></w:r><w:r><w:t>ODNN7EXAMPLE</w:t></w:r></w:p>"), "docx")
     image = document_event("r:d.png", b"\x89PNG", "image")
+    scanned_pdf = document_event("r:e.pdf", _pdf("quarterly report", None), "pdf")
     assert s.reason(secret_pdf.key, secret_pdf.payload, "pdf") is not None
     assert s.reason(clean_pdf.key, clean_pdf.payload, "pdf") is None
     assert s.reason(split_docx.key, split_docx.payload, "docx") is not None
     assert s.reason(image.key, image.payload, "image") is not None  # no text to scan
-
-
-def test_pdf_with_a_scanned_page_is_unscannable():
-    s = SecretScanner()
-    mixed = document_event("r:a.pdf", _pdf("quarterly report", None), "pdf")
-    assert s.reason(mixed.key, mixed.payload, "pdf") is not None
+    assert s.reason(scanned_pdf.key, scanned_pdf.payload, "pdf") is not None
 
 
 def test_reason_names_pattern_not_value():
