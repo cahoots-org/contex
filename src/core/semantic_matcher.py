@@ -238,23 +238,26 @@ class SemanticDataMatcher:
         if origin is not None:
             # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
-        plans, errors = [], []
-        for data_key, data, format_hint in items:
+        plans, errors = [], [None] * len(items)
+        for index, (data_key, data, format_hint) in enumerate(items):
             try:
-                plans.append(await self._plan_registration(project_id, data_key, data, format_hint))
-                errors.append(None)
+                plans.append((index, await self._plan_registration(project_id, data_key, data, format_hint)))
             except DocumentRejected as e:
                 logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
-                errors.append(str(e))
-        texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
+                errors[index] = str(e)
+        texts = [plan["texts"][i] for _, plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
         offset = 0
-        for plan in plans:
+        for index, plan in plans:
             n = len(plan["changed"])
-            await self._write_registration(
-                project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
-            )
+            try:
+                await self._write_registration(
+                    project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
+                )
+            except Exception:
+                logger.exception("Failed to store data", project_id=project_id, data_key=plan["data_key"])
+                errors[index] = "could not store the document"
             offset += n
         return errors
 

@@ -51,6 +51,15 @@ class TestSemanticDataMatcher:
         assert matcher.model is not None
 
     @pytest.mark.asyncio
+    async def test_store_failure_fails_only_its_item(self, matcher):
+        items = [("a", {"v": 1}, None), ("b", {"v": float("nan")}, None), ("c", {"v": 2}, None)]
+        errors = await matcher.register_data_batch("proj1", items)
+        assert errors[0] is None and errors[1] and errors[2] is None
+        async with matcher.db.session() as session:
+            keys = set((await session.execute(select(Embedding.data_key))).scalars())
+        assert keys == {"a", "c"}
+
+    @pytest.mark.asyncio
     async def test_register_single_data(self, matcher):
         """Test registering a single piece of data"""
         await matcher.register_data(
