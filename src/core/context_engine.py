@@ -51,7 +51,6 @@ class ContextEngine:
         db: DatabaseManager,
         similarity_threshold: float = 0.5,
         max_matches: int = 10,
-        max_context_size: int = 51200,  # ~40% of 128k token context window
         embed_model: str = "thenlper/gte-base",
         notifier: Optional[Notifier] = None,
     ):
@@ -70,7 +69,6 @@ class ContextEngine:
             default_top_k=self.semantic_matcher.max_matches,
         )
         self.event_store = EventStore(db)
-        self.max_context_size = max_context_size
 
         # Initialize tokenizer for context size estimation (cl100k_base is GPT-4 tokenizer)
         try:
@@ -81,8 +79,6 @@ class ContextEngine:
             logger.warning("Tiktoken unavailable, context size limits disabled")
 
         logger.info("Initialized")
-        if self.max_context_size:
-            logger.debug("Max context size: %s tokens", self.max_context_size)
 
     async def initialize(self):
         """Initialize pgvector index for vector similarity search"""
@@ -132,7 +128,7 @@ class ContextEngine:
         Returns:
             Truncated matches dictionary
         """
-        if not self.max_context_size or not matches:
+        if not matches:
             return matches
 
         # Calculate token cost for each match

@@ -276,7 +276,6 @@ class TestContextSizeLimits:
                 db=db,
                 similarity_threshold=0.5,
                 max_matches=10,
-                max_context_size=1000
             )
 
             # Even if tokenizer is None, should still work with fallback

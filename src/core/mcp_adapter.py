@@ -16,7 +16,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
 
 from src.core.authz import auth_enabled
@@ -285,7 +285,13 @@ def build_mcp_server(engine, db_accessor=None):
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
         await _enforce_subscription_project(e, id, tid)
-        return json.dumps(await e.subscriptions.get_bundle(id, tenant_id=tid))
+        try:
+            bundle = await e.subscriptions.get_bundle(id, tenant_id=tid)
+        except KeyError:
+            raise ResourceError(
+                "Subscription expired. Call contex_create_subscription with the same arguments to resume it."
+            ) from None
+        return json.dumps(bundle)
 
     @server.tool(name="contex_publish",
                  description="Publish/update context data for a project. "

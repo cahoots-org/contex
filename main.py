@@ -36,7 +36,6 @@ from src.core.notifier import Notifier, listen_connect_kwargs
 # Environment variables
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
 MAX_MATCHES = int(os.getenv("MAX_MATCHES", "10"))
-MAX_CONTEXT_SIZE = int(os.getenv("MAX_CONTEXT_SIZE", "51200"))  # ~40% of 128k tokens
 EMBED_MODEL = os.getenv("EMBED_MODEL", "thenlper/gte-base")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_JSON = os.getenv("LOG_JSON", "true").lower() == "true"
@@ -77,7 +76,6 @@ async def lifespan(app: FastAPI):
     logger.info("Configuration loaded",
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
-                max_context_size=MAX_CONTEXT_SIZE,
                 log_level=LOG_LEVEL,
                 log_json=LOG_JSON)
 
@@ -131,7 +129,6 @@ async def lifespan(app: FastAPI):
             db=db,
             similarity_threshold=SIMILARITY_THRESHOLD,
             max_matches=MAX_MATCHES,
-            max_context_size=MAX_CONTEXT_SIZE,
             embed_model=EMBED_MODEL,
             notifier=notifier,
         )
