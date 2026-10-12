@@ -23,7 +23,7 @@ def _strip_nul_bytes(value: Any) -> Any:
     if isinstance(value, str):
         return value.replace("\x00", "")
     if isinstance(value, dict):
-        return {k: _strip_nul_bytes(v) for k, v in value.items()}
+        return {_strip_nul_bytes(k): _strip_nul_bytes(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_strip_nul_bytes(v) for v in value]
     return value
