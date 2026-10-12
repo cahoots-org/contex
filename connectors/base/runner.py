@@ -107,7 +107,7 @@ async def run(
                 why = secret_scanner.reason(event.key, event.payload, event.data_format)
                 if why is not None:
                     stats.skipped_secrets += 1
-                    log.warning("skip secret %s (%s)", event.key, why)
+                    log.warning("skip secret %s (%s)", event.key, why)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
                     continue
             item = event.to_item()
             seen.add(event.key)

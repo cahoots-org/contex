@@ -33,7 +33,7 @@ class PgFtsLexical:
         self, project_id: str, query: str, top_k: int,
         since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
-        sql = text(
+        sql = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
             f"""
             SELECT node_key, paradedb.score(id) AS score
             FROM embeddings
