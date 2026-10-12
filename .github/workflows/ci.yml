@@ -68,7 +68,7 @@ jobs:
 
     - name: Run pytest
       env:
-        DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
+        TEST_DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
       run: |
         pytest tests/ -v --tb=short
 
