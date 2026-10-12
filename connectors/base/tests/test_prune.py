@@ -77,8 +77,14 @@ def test_failed_run_never_prunes():
     assert not pub.listed
 
 
+def test_a_run_that_reads_nothing_never_prunes():
+    pub = _Publisher(["a", "b"])
+    asyncio.run(run([], pub, prune=True))
+    assert pub.deleted == []
+
+
 def test_prune_deletes_in_batches():
-    pub = _Publisher(["k1", "k2", "k3"])
+    pub = _Publisher(["k0", "k1", "k2", "k3"])
     calls: list[int] = []
     delete = pub.delete_batch
 
@@ -87,7 +93,7 @@ def test_prune_deletes_in_batches():
         return await delete(keys)
 
     pub.delete_batch = recording_delete
-    asyncio.run(run([], pub, batch_size=2, prune=True))
+    asyncio.run(run([_upsert("k0")], pub, batch_size=2, prune=True))
     assert calls == [2, 1]
 
 
