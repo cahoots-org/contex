@@ -180,3 +180,11 @@ def test_nested_definitions_are_stored_once():
     by = {n.path: n.content for n in nc.parse(
         "def outer():\n    def inner():\n        return 'deep'\n    return inner\n", "code", data_key="m.py").nodes}
     assert "deep" in by["outer.inner"] and "deep" not in by["outer"] and "return inner" in by["outer"]
+
+
+def test_definitions_start_at_their_wrapper_and_doc_comment():
+    def content(src, key, path):
+        return _by_path(nc.parse(src, "code", data_key=key).nodes)[path].content
+    assert content("// Run starts it.\ntype Run struct{}\n", "m.go", "Run").startswith("// Run starts it.\ntype Run")
+    assert content("# Index.\n@app.get('/')\ndef index():\n    pass\n", "m.py", "index").startswith("# Index.\n@app.get")
+    assert content("/** Base. */\nexport abstract class Base {}\n", "m.ts", "Base").startswith("/** Base. */\nexport abstract")

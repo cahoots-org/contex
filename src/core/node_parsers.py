@@ -651,8 +651,11 @@ _JS_CONFIG = {
     "defs": {
         "function_declaration": "function",
         "class_declaration": "class",
+        "abstract_class_declaration": "class",
+        "generator_function_declaration": "function",
         "method_definition": "method",
     },
+    "wrappers": {"export_statement", "lexical_declaration"},
     "call_type": "call_expression",
     "call_field": "function",
     "member_type": "member_expression",
@@ -665,6 +668,7 @@ _JS_CONFIG = {
 _LANGUAGE_CONFIG = {
     "python": {
         "defs": {"function_definition": "function", "class_definition": "class"},
+        "wrappers": {"decorated_definition"},
         "call_type": "call",
         "call_field": "function",
         "member_type": "attribute",
@@ -682,6 +686,7 @@ _LANGUAGE_CONFIG = {
             "method_declaration": "method",
             "type_spec": "class",
         },
+        "wrappers": {"type_declaration"},
         "call_type": "call_expression",
         "call_field": "function",
         "member_type": "selector_expression",
@@ -820,7 +825,7 @@ class CodeNodeParser(BaseNodeParser):
                     kind = "method"
                 name = self._name_of(node, src)
                 if name:
-                    rec = self._record(node, kind, name, stack)
+                    rec = self._record(node, kind, name, stack, cfg)
                     records.append(rec)
                     scope["holes"].append(rec)
                     for c in node.children:
@@ -835,7 +840,7 @@ class CodeNodeParser(BaseNodeParser):
                     name = self._name_of(node, src)
                     if name:
                         kind = "method" if any(k == "class" for k, _ in stack) else "function"
-                        rec = self._record(node, kind, name, stack)
+                        rec = self._record(node, kind, name, stack, cfg)
                         records.append(rec)
                         scope["holes"].append(rec)
                         for c in node.children:
@@ -881,10 +886,16 @@ class CodeNodeParser(BaseNodeParser):
             ))
         return nodes
 
-    def _record(self, node, kind: str, name: str, stack) -> dict:
+    def _record(self, node, kind: str, name: str, stack, cfg) -> dict:
+        """A definition spans its sole wrapper (decorators, export, Go ``type``) and the comments directly above."""
+        start = node
+        while start.parent.type in cfg["wrappers"] and [c.type for c in start.parent.named_children].count(start.type) == 1:
+            start = start.parent
+        while (prev := start.prev_named_sibling) is not None and prev.type == "comment" and prev.end_point.row + 1 >= start.start_point.row:
+            start = prev
         return {
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
-            "start_byte": node.start_byte, "end_byte": node.end_byte,
+            "start_byte": start.start_byte, "end_byte": node.end_byte,
             "defs": [name], "refs": [], "holes": [],
         }
