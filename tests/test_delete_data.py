@@ -35,7 +35,7 @@ async def test_delete_removes_nodes_and_symbols(engine, db):
     ))
     assert await _count(db, Symbol, "db.py") > 0
 
-    result = await engine.delete_data("p", ["db.py", "nope"], source="mcp")
+    result = await engine.delete_data("p", ["db.py", "nope"])
 
     assert result == {"deleted": ["db.py"], "missing": ["nope"]}
     assert await _count(db, Embedding, "db.py") == 0

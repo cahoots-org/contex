@@ -201,18 +201,9 @@ class ContextEngine:
 
         return result
 
-    async def publish_data(
-        self,
-        event: DataPublishEvent,
-        *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
-    ) -> None:
+    async def publish_data(self, event: DataPublishEvent) -> None:
         """Publish one document (any format); raises ValueError if it can't be read."""
-        _, failed = await self.publish_data_batch(
-            [event], source=source, actor=actor, tenant_id=tenant_id,
-        )
+        _, failed = await self.publish_data_batch([event])
         if failed:
             raise ValueError(failed[0]["error"])
 
@@ -220,9 +211,6 @@ class ContextEngine:
         self,
         events: List[DataPublishEvent],
         *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
         origin: Optional[str] = None,
     ) -> Tuple[List[str], List[Dict[str, str]]]:
         """Publish many events for one project, embedding them in a single pass.
@@ -271,15 +259,7 @@ class ContextEngine:
         """Document keys last published by ``origin``, in order, after ``after``."""
         return await self.semantic_matcher.list_keys(project_id, origin, after, limit)
 
-    async def delete_data(
-        self,
-        project_id: str,
-        data_keys: List[str],
-        *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, List[str]]:
+    async def delete_data(self, project_id: str, data_keys: List[str]) -> Dict[str, List[str]]:
         """Delete documents by key and reconcile once.
 
         Returns the requested keys split into ``deleted`` and ``missing``.

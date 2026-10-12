@@ -305,7 +305,7 @@ def build_mcp_server(engine, db_accessor=None):
         await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
             published_at=_parse_timestamp(published_at, "published_at"),
-        ), source='mcp')
+        ))
         return json.dumps({"published": data_key})
 
     @server.tool(name="contex_publish_batch",
@@ -329,7 +329,7 @@ def build_mcp_server(engine, db_accessor=None):
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items
-        ], source='mcp', origin=origin)
+        ], origin=origin)
         return json.dumps({"published": len(sequences), "failed": failed})
 
     @server.tool(name="contex_list_keys",
@@ -351,7 +351,7 @@ def build_mcp_server(engine, db_accessor=None):
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id)
         check_batch_size(data_keys, "data_keys")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
-        return json.dumps(await e.delete_data(project_id, data_keys, source="mcp"))
+        return json.dumps(await e.delete_data(project_id, data_keys))
 
     legacy = LegacyResourceSubscriptions(bus)
 
