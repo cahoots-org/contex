@@ -52,17 +52,20 @@ docker compose exec postgres psql -U contex -d contex -c "VACUUM ANALYZE embeddi
 The `contex` service is built from the checkout, and it migrates the database
 to the newest schema at boot.
 
+Take a [backup](#backup-and-restore) first, then:
+
 ```bash
 git pull
 docker compose up -d --build contex
 docker compose logs contex --tail=100 -f
 ```
 
-To roll back, check out the previous release and rebuild. Migrations don't run
-backwards on their own, so take a backup before an upgrade that adds one
-(`alembic/versions/`).
+Older code won't start on a database migrated past it, so rolling back means
+restoring the pre-upgrade backup before rebuilding:
 
 ```bash
+docker compose stop contex
+docker compose exec -T postgres pg_restore -U contex -d contex --clean --if-exists < contex-YYYYMMDD.dump
 git checkout <previous-tag>
 docker compose up -d --build contex
 ```
