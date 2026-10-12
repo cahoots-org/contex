@@ -267,6 +267,21 @@ _mcp_starlette_app = _mcp_server.streamable_http_app(
 )
 app.mount("/mcp", _mcp_starlette_app)
 
+# Open MCP sessions allowed per API key; the SDK only caps all sessions together.
+# It forgets a session's owner once the session closes or expires, freeing the slot.
+_MAX_SESSIONS_PER_KEY = 32
+_admit_session = _mcp_server.session_manager._admit_session
+
+
+def _admit_session_per_key(requestor):
+    owners = _mcp_server.session_manager._session_owners.values()
+    if requestor is not None and sum(owner == requestor for owner in owners) >= _MAX_SESSIONS_PER_KEY:
+        return None
+    return _admit_session(requestor)
+
+
+_mcp_server.session_manager._admit_session = _admit_session_per_key
+
 
 class McpPathMiddleware:
     """Serve /mcp as /mcp/: a redirect would point clients behind a TLS proxy at http://."""
