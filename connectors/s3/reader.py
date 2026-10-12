@@ -95,8 +95,8 @@ def _client_kwargs(source: dict) -> dict:
         kwargs["region_name"] = source["region"]
     if source.get("endpoint_url"):
         kwargs["endpoint_url"] = source["endpoint_url"]
-    access_key = source.get("aws_access_key_id") or os.environ.get("AWS_ACCESS_KEY_ID")
-    secret_key = source.get("aws_secret_access_key") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    access_key = source.get("aws_access_key_id")
+    secret_key = source.get("aws_secret_access_key")
     if access_key and secret_key:
         kwargs["aws_access_key_id"] = access_key
         kwargs["aws_secret_access_key"] = secret_key

@@ -13,8 +13,5 @@ source:
   region: ${AWS_REGION}
   # Optional; set for S3-compatible stores (MinIO, R2, LocalStack).
   endpoint_url: ${S3_ENDPOINT_URL}
-  # Optional explicit credentials; prefer the standard AWS chain / instance role.
-  aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 
 batch_size: ${CONTEX_BATCH_SIZE}

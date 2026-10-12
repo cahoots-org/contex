@@ -14,6 +14,10 @@ v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
 upserts every item by a stable key, so re-running (e.g. on a cron) is the
 refresh story.
 
+To run a connector image against Contex in another container, put both on one
+Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
+`CONTEX_ALLOWED_HOSTS`; otherwise the server answers 421.
+
 ## The shared framework (`connectors/base/`)
 
 - **`ChangeEvent`** — the seam every reader emits: `{op, key, payload,
@@ -33,7 +37,8 @@ refresh story.
 - **Deletes** — each run tags what it publishes with an origin (e.g.
   `s3:bucket/prefix`). After a full run completes, the runner lists that
   origin's keys with `contex_list_keys` and deletes the ones the source no
-  longer has. Runs filtered by a since-date never delete. Set `prune: false` in
+  longer has. Runs filtered by a since-date, and runs that read nothing (usually
+  bad credentials), never delete. Set `prune: false` in
   `connector.yaml` to turn this off. The origin names the source, not your
   filters, so two configs reading one source (say, Jira projects A and B)
   would delete each other's items: give each a distinct top-level `origin:`

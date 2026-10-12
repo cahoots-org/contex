@@ -355,8 +355,8 @@ class MarkdownNodeParser(BaseNodeParser):
         text = str(data).replace("\r\n", "\n").strip()
         nodes = []
 
-        # Split out line-anchored fences whole, then headings, so a `#` inside a fence stays code.
-        sections = re.split(r'((?s:^[ \t]*(?:```|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$)|^#{1,6}\s+.+$)', text, flags=re.MULTILINE)
+        # Split out line-anchored fences whole (a backtick opener carries no more backticks), then headings.
+        sections = re.split(r'((?s:^[ \t]*(?:```(?=[^`\n]*$)|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$)|^#{1,6}\s+.+$)', text, flags=re.MULTILINE)
 
         section_idx = 0
 

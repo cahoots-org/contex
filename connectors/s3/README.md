@@ -49,7 +49,7 @@ max_object_bytes: 5242880                   # 5 MB; oversized objects are skippe
 
 keys:
   include: []                               # glob allow-list over object key (empty = all)
-  exclude: ["*.tmp", "archive/*"]
+  exclude: ["*.tmp", "*/archive/*"]
 
 content_types: [".md", ".txt", ".json", ".csv", ".yaml", ".html"]
 ```

@@ -16,36 +16,6 @@ groups:
           summary: "High error rate detected in Contex"
           description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
 
-      # Latency alerts count POST only: GET /mcp and /sandbox/subscribe are
-      # long-lived streams.
-      # High latency
-      - alert: HighLatency
-        expr: |
-          histogram_quantile(0.95,
-            sum by (le) (rate(contex_http_request_duration_seconds_bucket{method="POST"}[5m])))
-          > 1.0
-        for: 5m
-        labels:
-          severity: warning
-          service: contex
-        annotations:
-          summary: "High latency detected in Contex"
-          description: "P95 latency is {{ $value }}s (threshold: 1s)"
-
-      # Critical latency
-      - alert: CriticalLatency
-        expr: |
-          histogram_quantile(0.95,
-            sum by (le) (rate(contex_http_request_duration_seconds_bucket{method="POST"}[5m])))
-          > 5.0
-        for: 2m
-        labels:
-          severity: critical
-          service: contex
-        annotations:
-          summary: "Critical latency detected in Contex"
-          description: "P95 latency is {{ $value }}s (threshold: 5s)"
-
       # Service down
       - alert: ContexDown
         expr: up{job="contex"} == 0
