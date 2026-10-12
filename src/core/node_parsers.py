@@ -1,10 +1,7 @@
 """
 Format parsers that convert various data formats into Nodes.
 
-Each parser:
-1. Detects if it can handle the input
-2. Parses input into a list of Nodes
-3. Can reconstruct from Nodes back to the format
+Each parser detects whether it can handle the input and parses it into Nodes.
 """
 
 from typing import Any, List, Optional
@@ -179,8 +176,7 @@ class JSONNodeParser(BaseNodeParser):
             # Primitive fields (and lists of primitives) stay with this object;
             # nested objects and arrays of objects become their own nodes.
             own = {k: v for k, v in data.items() if not _is_complex(v)}
-            # Emitted before children so reconstruct merges them in order. An
-            # empty dict still gets a node so it isn't silently dropped.
+            # An empty dict still gets a node so it isn't silently dropped.
             if own or not data:
                 nodes.append(Node(
                     path=path or "root",

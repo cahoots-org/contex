@@ -5,9 +5,6 @@ from .core import (
     SemanticDataMatcher,
     EventStore,
     DataPublishEvent,
-    MatchedDataSource,
-    QueryRequest,
-    QueryResponse,
 )
 
 __all__ = [
@@ -15,7 +12,4 @@ __all__ = [
     "SemanticDataMatcher",
     "EventStore",
     "DataPublishEvent",
-    "MatchedDataSource",
-    "QueryRequest",
-    "QueryResponse",
 ]
