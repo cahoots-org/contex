@@ -7,11 +7,6 @@ updates:
       interval: "monthly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "python"
-    reviewers:
-      - "contex/maintainers"
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -23,11 +18,6 @@ updates:
       interval: "monthly"
       day: "monday"
     open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "docker"
-    reviewers:
-      - "contex/maintainers"
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -39,11 +29,6 @@ updates:
       interval: "monthly"
       day: "monday"
     open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "github-actions"
-    reviewers:
-      - "contex/maintainers"
     commit-message:
       prefix: "deps"
       include: "scope"
