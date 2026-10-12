@@ -6,7 +6,6 @@ Defines all database tables and their relationships.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -22,7 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, relationship
 
 
@@ -275,44 +274,6 @@ class Symbol(Base):
         Index("idx_symbols_project_node_key", "project_id", "node_key"),
         # delete-by-source on re-ingest.
         Index("idx_symbols_project_data_key", "project_id", "data_key"),
-    )
-
-
-class AuditEvent(Base):
-    """Audit Event model."""
-
-    __tablename__ = "audit_events"
-
-    event_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
-    )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="info")
-    actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    actor_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    actor_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    actor_user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    tenant_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    project_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    resource_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    resource_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    action: Mapped[str] = mapped_column(Text, nullable=False)
-    details: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    result: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
-    request_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    endpoint: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    method: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    before_state: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-    after_state: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
-
-    __table_args__ = (
-        Index("idx_audit_tenant", "tenant_id"),
-        Index("idx_audit_actor", "actor_id"),
-        Index("idx_audit_type", "event_type"),
-        Index("idx_audit_timestamp", "timestamp"),
     )
 
 

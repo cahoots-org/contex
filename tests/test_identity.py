@@ -23,8 +23,9 @@ async def _make_key(db, raw_key: str, *, scopes=None, tenant_id=None) -> str:
 
 
 @pytest.mark.asyncio
-async def test_unknown_key_denies(db):
+async def test_unknown_key_denies(db, caplog):
     assert await resolve_identity(db, "ck_does_not_exist") is None
+    assert "Rejected API key" in caplog.text
 
 
 @pytest.mark.asyncio

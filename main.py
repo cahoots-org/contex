@@ -146,13 +146,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Vector index initialization failed", error=str(e))
 
-    # Initialize audit logging
-    from src.core.audit import init_audit_logger
-    audit_retention_days = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
-    audit_logger = init_audit_logger(db, retention_days=audit_retention_days)
-    app.state.audit_logger = audit_logger
-    logger.info("Audit logging initialized", retention_days=audit_retention_days)
-
     app.state.tracing_manager = get_tracing_manager()
 
     logger.info("Contex is ready!")
