@@ -2,14 +2,12 @@
 
 import os
 from typing import Optional
-from contextlib import contextmanager
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from .logging import get_logger
 from .version import VERSION
@@ -22,11 +20,9 @@ class TracingManager:
     Manages distributed tracing with OpenTelemetry.
 
     Features:
-    - Automatic instrumentation of FastAPI
     - Trace ID injection into logs
     - OTLP export to Jaeger/Tempo
     - Console export for development
-    - Custom span utilities
     """
 
     def __init__(
@@ -96,23 +92,6 @@ class TracingManager:
                    service_name=self.service_name,
                    version=self.service_version)
 
-    def instrument_fastapi(self, app):
-        """
-        Instrument FastAPI application.
-
-        Args:
-            app: FastAPI application instance
-        """
-        try:
-            FastAPIInstrumentor.instrument_app(
-                app,
-                tracer_provider=self.tracer_provider,
-                excluded_urls="health,ready,metrics"  # Don't trace health checks
-            )
-            logger.info("Tracing: FastAPI instrumented")
-        except Exception as e:
-            logger.error("Tracing: Failed to instrument FastAPI", error=str(e))
-
     def get_current_trace_id(self) -> Optional[str]:
         """
         Get current trace ID from context.
@@ -136,61 +115,6 @@ class TracingManager:
         if span and span.get_span_context().is_valid:
             return format(span.get_span_context().span_id, '016x')
         return None
-
-    @contextmanager
-    def start_span(self, name: str, **attributes):
-        """
-        Context manager for creating custom spans.
-
-        Args:
-            name: Span name
-            **attributes: Span attributes
-
-        Example:
-            >>> with tracing_manager.start_span("process_data", data_key="config"):
-            ...     # Process data
-            ...     pass
-        """
-        if not self.tracer:
-            # Tracing not initialized, just yield
-            yield None
-            return
-
-        with self.tracer.start_as_current_span(name) as span:
-            # Add attributes
-            for key, value in attributes.items():
-                span.set_attribute(key, str(value))
-
-            try:
-                yield span
-            except Exception as e:
-                span.record_exception(e)
-                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
-                raise
-
-    def add_span_attributes(self, **attributes):
-        """
-        Add attributes to current span.
-
-        Args:
-            **attributes: Attributes to add
-        """
-        span = trace.get_current_span()
-        if span and span.is_recording():
-            for key, value in attributes.items():
-                span.set_attribute(key, str(value))
-
-    def add_span_event(self, name: str, **attributes):
-        """
-        Add an event to current span.
-
-        Args:
-            name: Event name
-            **attributes: Event attributes
-        """
-        span = trace.get_current_span()
-        if span and span.is_recording():
-            span.add_event(name, attributes)
 
     def shutdown(self):
         """Shutdown tracing and flush remaining spans"""

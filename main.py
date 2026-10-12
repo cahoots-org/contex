@@ -24,7 +24,7 @@ from src.core.auth import bootstrap_admin
 from src.core.logging import setup_logging, get_logger
 from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
-from src.core.tracing import get_tracing_manager, initialize_tracing
+from src.core.tracing import initialize_tracing
 from src.core.database import init_database
 from src.core.sentry_integration import init_sentry
 from src.core.mcp_adapter import build_mcp_server
@@ -151,8 +151,6 @@ async def lifespan(app: FastAPI):
     audit_logger = init_audit_logger(db, retention_days=audit_retention_days)
     app.state.audit_logger = audit_logger
     logger.info("Audit logging initialized", retention_days=audit_retention_days)
-
-    app.state.tracing_manager = get_tracing_manager()
 
     logger.info("Contex is ready!")
     print("=" * 60)
@@ -429,7 +427,7 @@ async def root():
 # Initialize tracing at module level so the TracerProvider is set globally
 # BEFORE FastAPI instrumentation picks it up
 try:
-    _tracing_mgr = initialize_tracing(
+    initialize_tracing(
         service_name="contex",
         service_version="0.2.0"
     )
