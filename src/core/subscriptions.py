@@ -110,7 +110,7 @@ class SubscriptionService:
         tenant_id = tenant_id or DEFAULT_TENANT_ID
         top_k = clamp_top_k(top_k)
         sub_id = subscription_id or _content_id(tenant_id, project_id, needs, top_k, threshold, scope)
-        if await self._renew(sub_id):
+        if await self.renew(sub_id):
             return sub_id
         await self._check_capacity(project_id)
 
@@ -146,7 +146,7 @@ class SubscriptionService:
         if live >= MAX_SUBSCRIPTIONS_PER_PROJECT:
             raise ValueError(f"Too many subscriptions in this project (max {MAX_SUBSCRIPTIONS_PER_PROJECT})")
 
-    async def _renew(self, subscription_id) -> bool:
+    async def renew(self, subscription_id) -> bool:
         """Extend a live subscription's lease; False if it is missing or expired."""
         async with self.db.session() as session:
             renewed = (await session.execute(

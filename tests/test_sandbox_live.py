@@ -1,6 +1,7 @@
 # tests/test_sandbox_live.py
 import asyncio
 import json
+from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -97,3 +98,21 @@ async def test_client_disconnect_deletes_subscription(db, notifier):
 
     async with db.session() as session:
         assert await session.scalar(select(func.count()).select_from(Subscription)) == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_outlives_subscription_ttl(db, notifier):
+    """A quiet stream keeps its subscription alive past the TTL."""
+    engine = ContextEngine(db=db, notifier=notifier, similarity_threshold=0.1, max_matches=10)
+    await engine.initialize()
+    engine.subscriptions.ttl = timedelta(seconds=1)
+    agen = stream_subscription_updates(engine, "p", "database connection settings", top_k=10, threshold=0.1)
+    await agen.__anext__()
+
+    pending = asyncio.ensure_future(agen.__anext__())
+    await asyncio.sleep(1.5)
+    await engine.publish_data(DataPublishEvent(
+        project_id="p", data_key="db", data={"purpose": "database connection settings"}, data_format="json",
+    ))
+    assert _payload(await asyncio.wait_for(pending, timeout=5))["type"] == "bundle"
+    await agen.aclose()
