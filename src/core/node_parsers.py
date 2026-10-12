@@ -16,6 +16,7 @@ import zipfile
 import pypdfium2
 import yaml
 from docx import Document
+from PIL import Image
 
 from .node import Node, NodeType, ParseResult
 
@@ -54,6 +55,7 @@ OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes
 MAX_PDF_PAGES = 2000
 MAX_OCR_PAGES = 50
 MAX_OCR_PIXELS_PER_SIDE = 6000
+OCR_TIMEOUT_SECONDS = 120
 MAX_DOCX_UNZIPPED_BYTES = 200 * 2**20
 MAX_NODES = 10_000
 
@@ -481,7 +483,9 @@ class CSVNodeParser(BaseNodeParser):
 
 def _ocr(image: bytes) -> str:
     """The text Tesseract reads from an image file's bytes."""
-    result = subprocess.run(["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True)
+    result = subprocess.run(
+        ["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True, timeout=OCR_TIMEOUT_SECONDS,
+    )
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
@@ -598,6 +602,9 @@ class ImageNodeParser(PDFNodeParser):
     def _page_texts(self, data: bytes) -> List[str]:
         if not OCR_ENABLED:
             raise DocumentRejected("reading text from images is not enabled on this server")
+        with Image.open(io.BytesIO(data)) as image:
+            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE:
+                raise DocumentRejected(f"image is over {MAX_OCR_PIXELS_PER_SIDE} pixels on a side")
         return [_ocr(data)]
 
 
