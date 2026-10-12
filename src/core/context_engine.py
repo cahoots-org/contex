@@ -91,11 +91,11 @@ class ContextEngine:
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")
 
-        # Connectors (GitHub/S3) emit the generic "text"; infer "code" from the
-        # key extension here so code reaches CodeNodeParser instead of the
-        # plain-text splitter. Explicit non-generic formats pass through.
+        # A generic or absent format is inferred from the key's extension, but
+        # only for documents; structured data keeps its implicit format.
         prepared = [
-            (e, _strip_nul_bytes(e.data), resolve_format(e.data_format, e.data_key))
+            (e, _strip_nul_bytes(e.data),
+             resolve_format(e.data_format, e.data_key if isinstance(e.data, (str, bytes)) else None))
             for e in events
         ]
 

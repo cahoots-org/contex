@@ -31,6 +31,17 @@ async def test_publish_survives_reconcile_failure():
     await engine.publish_data(DataPublishEvent(project_id="p1", data_key="k1", data={"a": 1}))
 
 
+@pytest.mark.asyncio
+async def test_dict_under_a_file_key_keeps_its_implicit_format():
+    engine = ContextEngine.__new__(ContextEngine)
+    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
+    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
+
+    await engine.publish_data(DataPublishEvent(project_id="p1", data_key="users.csv", data={"host": "db"}))
+
+    assert engine.semantic_matcher.register_data_batch.await_args.args[1] == [("users.csv", {"host": "db"}, None)]
+
+
 class TestContextEngine:
     """Test ContextEngine functionality"""
 

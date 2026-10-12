@@ -71,7 +71,7 @@ def _publish_event(project_id: str, item: dict) -> DataPublishEvent:
             project_id=project_id, data_key=item["data_key"], data=item["data"], data_format=item.get("data_format"),
             published_at=_parse_timestamp(item.get("published_at"), "published_at"),
         )
-        if resolve_format(event.data_format, event.data_key) in _BINARY_FORMATS:
+        if resolve_format(event.data_format, event.data_key if isinstance(event.data, str) else None) in _BINARY_FORMATS:
             event.data = base64.b64decode(event.data, validate=True)
     except (KeyError, TypeError, ValueError):
         raise ValueError(_INVALID_ITEM) from None
