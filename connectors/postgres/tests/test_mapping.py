@@ -15,30 +15,11 @@ from connectors.postgres.mapping import (
 )
 
 
-class TestIsBinary:
-    def test_bytea(self):
-        assert is_binary("bytea") is True
-
-    def test_bit(self):
-        assert is_binary("bit") is True
-
-    def test_varbit(self):
-        assert is_binary("varbit") is True
-
-    def test_bit_varying(self):
-        assert is_binary("bit varying") is True
-
-    def test_uppercase(self):
-        assert is_binary("BYTEA") is True
-
-    def test_text_is_not_binary(self):
-        assert is_binary("text") is False
-
-    def test_integer_is_not_binary(self):
-        assert is_binary("integer") is False
-
-    def test_jsonb_is_not_binary(self):
-        assert is_binary("jsonb") is False
+def test_is_binary():
+    for pg_type in ("bytea", "BYTEA", "bytea[]", "bit", "bit(1)", "bit varying(4)", "bit varying[]"):
+        assert is_binary(pg_type), pg_type
+    for pg_type in ("text", "integer", "jsonb", "character varying(20)", "text[]"):
+        assert not is_binary(pg_type), pg_type
 
 
 class TestResolvePk:
@@ -119,8 +100,8 @@ class TestSelectColumns:
         )
         assert result == ["id", "name"]
 
-    def test_varbit_excluded(self):
-        cols = self._cols(("id", "integer"), ("flags", "varbit"))
+    def test_sized_bit_excluded(self):
+        cols = self._cols(("id", "integer"), ("flags", "bit varying(4)"))
         result = select_columns(cols, include_binary=False, col_include=None, col_exclude=None)
         assert result == ["id"]
 
