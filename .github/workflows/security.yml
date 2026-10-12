@@ -195,10 +195,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Report-only: findings go to the Security tab until the open ones are triaged.
       - name: Run Semgrep
         run: semgrep ci --sarif --output=semgrep-results.sarif
-        continue-on-error: true
         env:
           SEMGREP_RULES: >-
             p/python
