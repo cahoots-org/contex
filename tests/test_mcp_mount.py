@@ -3,14 +3,21 @@ import inspect
 from starlette.testclient import TestClient
 
 import main
+from src.core.metrics import http_requests_total
 
 
 def test_mcp_answers_at_both_paths_without_redirect():
     client = TestClient(main.app, base_url="http://localhost:8000", raise_server_exceptions=False,
                         follow_redirects=False)
     # Without the lifespan the transport isn't running, so reaching it errors; a 307 or 404 never got there.
+    def mcp_posts():
+        return sum(s.value for s in http_requests_total.collect()[0].samples
+                   if s.name.endswith("_total") and s.labels["endpoint"] == "/mcp" and s.labels["method"] == "POST")
+
+    before = mcp_posts()
     for path in ("/mcp", "/mcp/"):
         assert client.post(path).status_code not in (307, 404)
+    assert mcp_posts() == before + 2
 
 
 def test_build_mcp_server_is_wired_in_main():

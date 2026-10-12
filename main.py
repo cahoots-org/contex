@@ -276,7 +276,7 @@ class McpPathMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope["path"] == "/mcp":
-            scope = {**scope, "path": "/mcp/"}
+            scope["path"] = "/mcp/"
         await self.app(scope, receive, send)
 
 
