@@ -95,6 +95,7 @@ USER appuser
 # you override it at runtime.
 ARG EMBED_MODEL=thenlper/gte-base
 RUN python -c "from src.core.embedder import OnnxEmbedder; OnnxEmbedder('$EMBED_MODEL')"
+ENV HF_HUB_OFFLINE=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
