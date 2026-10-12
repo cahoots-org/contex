@@ -352,53 +352,36 @@ class MarkdownNodeParser(BaseNodeParser):
 
     def parse(self, data: Any) -> ParseResult:
         """Parse markdown into nodes"""
-        text = str(data).strip()
+        text = str(data).replace("\r\n", "\n").strip()
         nodes = []
 
-        # Split out fenced blocks whole, then headings, so a `#` inside a fence stays code.
-        sections = re.split(r'((?s:```.*?```)|^#{1,6}\s+.+$)', text, flags=re.MULTILINE)
+        # Split out line-anchored fences whole, then headings, so a `#` inside a fence stays code.
+        sections = re.split(r'((?s:^[ \t]*(?:```|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$)|^#{1,6}\s+.+$)', text, flags=re.MULTILINE)
 
         section_idx = 0
 
-        for i, part in enumerate(sections):
-            part = part.strip()
+        for part in sections:
+            part = (part or "").strip()
             if not part:
                 continue
 
-            # Check if it's a heading
+            lines = part.split("\n")
             heading_match = re.match(r'^(#{1,6})\s+(.+)$', part)
             if heading_match:
-                title = heading_match.group(2)
                 _add(nodes, Node(
                     path=f"heading_{section_idx}",
-                    content=title,
+                    content=heading_match.group(2),
                     node_type=NodeType.HEADING
                 ))
                 section_idx += 1
+            elif len(lines) > 1 and lines[0].startswith(("```", "~~~")) and lines[-1].strip() in ("```", "~~~"):
+                code = "\n".join(lines[1:-1]).strip()
+                if code:
+                    _add(nodes, Node(path=f"code_block_{len(nodes)}", content=code, node_type=NodeType.CODE_BLOCK))
             else:
-                # Content section
-                # Check for code blocks
-                code_blocks = list(re.finditer(r'```(\w*)\n(.*?)```', part, re.DOTALL))
-
-                if code_blocks:
-                    for cb in code_blocks:
-                        code = cb.group(2).strip()
-                        _add(nodes, Node(
-                            path=f"code_block_{len(nodes)}",
-                            content=code,
-                            node_type=NodeType.CODE_BLOCK
-                        ))
-
-                # Remove code blocks and parse remaining as paragraphs
-                remaining = re.sub(r'```.*?```', '', part, flags=re.DOTALL).strip()
-                if remaining:
-                    paragraphs = [p.strip() for p in remaining.split('\n\n') if p.strip()]
-                    for para in paragraphs:
-                        _add(nodes, Node(
-                            path=f"paragraph_{len(nodes)}",
-                            content=para,
-                            node_type=NodeType.PARAGRAPH
-                        ))
+                for para in (p.strip() for p in part.split('\n\n')):
+                    if para:
+                        _add(nodes, Node(path=f"paragraph_{len(nodes)}", content=para, node_type=NodeType.PARAGRAPH))
 
         return ParseResult(
             nodes=nodes,
