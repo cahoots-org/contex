@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select, text
 
@@ -37,9 +36,8 @@ async def sweep_once(db, subscriptions, reconcile: bool = True) -> bool:
             .returning(Subscription.subscription_id)
         )).scalars().all()
         # Listeners re-read, find it gone, and can re-create it.
-        now = datetime.now(timezone.utc)
         for subscription_id in purged:
-            await notify_updated(lock_session, subscription_id, now)
+            await notify_updated(lock_session, subscription_id)
         await lock_session.commit()
     return True
 

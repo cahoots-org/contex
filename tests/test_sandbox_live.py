@@ -31,7 +31,6 @@ async def test_stream_yields_initial_then_updates_then_cleans_up(db, notifier):
     # First frame is the initial bundle.
     first = _payload(await agen.__anext__())
     assert first["type"] == "bundle"
-    assert first["updated_at"] is None
 
     # Publishing matching data reconciles -> emits subscription:{id}:updated -> next frame.
     await engine.publish_data(DataPublishEvent(
@@ -41,7 +40,6 @@ async def test_stream_yields_initial_then_updates_then_cleans_up(db, notifier):
 
     second = _payload(await asyncio.wait_for(agen.__anext__(), timeout=5))
     assert second["type"] == "bundle"
-    assert second["updated_at"] is not None
     # The freshly-published item appears in the streamed bundle.
     assert any(
         m["data_key"].startswith("db")

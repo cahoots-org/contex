@@ -347,7 +347,7 @@ class MarkdownNodeParser(BaseNodeParser):
             # Check for markdown patterns
             return bool(re.search(r'^#{1,6}\s', data, re.MULTILINE) or
                        re.search(r'```', data) or
-                       re.search(r'^\*|\d+\.', data, re.MULTILINE))
+                       re.search(r'^(\*|\d+\.)', data, re.MULTILINE))
         return False
 
     def parse(self, data: Any) -> ParseResult:
@@ -355,8 +355,8 @@ class MarkdownNodeParser(BaseNodeParser):
         text = str(data).strip()
         nodes = []
 
-        # Split by headings
-        sections = re.split(r'^(#{1,6}\s+.+)$', text, flags=re.MULTILINE)
+        # Split out fenced blocks whole, then headings, so a `#` inside a fence stays code.
+        sections = re.split(r'((?s:```.*?```)|^#{1,6}\s+.+$)', text, flags=re.MULTILINE)
 
         section_idx = 0
 

@@ -110,9 +110,6 @@ async def execute_query(
         threshold=threshold,
     )
 
-    # Defensive cap (the matcher already limits to top_k)
-    matches = matches[:top_k]
-
     # Enhance matches with metadata
     enhanced_matches = []
     for match in matches:
@@ -134,7 +131,6 @@ async def execute_query(
             "matches": enhanced_matches,
             "total_matches": len(enhanced_matches),
             "threshold": threshold,
-            "top_k": top_k
         }
     )
 

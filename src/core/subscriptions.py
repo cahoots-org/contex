@@ -65,12 +65,12 @@ def _content_id(tenant_id, project_id, needs, top_k, threshold, scope) -> str:
     return f"sub_{hashlib.sha256(key.encode()).hexdigest()[:32]}"
 
 
-async def notify_updated(session, subscription_id, at: datetime) -> None:
+async def notify_updated(session, subscription_id) -> None:
     """Queue a `subscription updated` event; Postgres delivers it only on commit."""
     await session.execute(
         text("SELECT pg_notify(:channel, :payload)"),
         {"channel": SUBSCRIPTION_UPDATED,
-         "payload": json.dumps({"subscription_id": subscription_id, "updated_at": at.isoformat()})},
+         "payload": json.dumps({"subscription_id": subscription_id})},
     )
 
 
@@ -128,7 +128,7 @@ class SubscriptionService:
             now = datetime.now(timezone.utc)
             fresh = dict(
                 bundle=bundle, documents=_bundle_documents(bundle),
-                bundle_updated_at=now, expires_at=now + self.ttl,
+                expires_at=now + self.ttl,
             )
             async with self.db.session() as session:
                 # Conflict: a concurrent create won the race, or an expired row awaits the purge.
@@ -254,7 +254,6 @@ class SubscriptionService:
                 new_bundle = await self._link_bundle(project_id, new_bundle)
                 if new_bundle == sub.bundle:
                     continue
-                now = datetime.now(timezone.utc)  # single timestamp for both DB + event
                 async with self.db.session() as session:  # buffer-until-complete: one atomic swap
                     row = (await session.execute(
                         select(Subscription).where(Subscription.subscription_id == sub.subscription_id)
@@ -263,9 +262,8 @@ class SubscriptionService:
                         continue
                     row.bundle = new_bundle
                     row.documents = _bundle_documents(new_bundle)
-                    row.bundle_updated_at = now
                     # Delivered only on commit, so listeners never see an unreadable bundle.
-                    await notify_updated(session, sub.subscription_id, now)
+                    await notify_updated(session, sub.subscription_id)
                     await session.commit()
                 changed_ids.append(sub.subscription_id)
             except Exception:

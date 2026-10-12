@@ -132,10 +132,11 @@ def read_tables(
     with a warning.
     """
     # A named (server-side) cursor issues DECLARE CURSOR, which requires a
-    # transaction — so we stay out of autocommit. read_only marks the whole
-    # session read-only and gives every table a single consistent snapshot.
+    # transaction — so we stay out of autocommit. The run is one read-only
+    # transaction, and REPEATABLE READ gives every table the same snapshot.
     with psycopg.connect(dsn) as conn:
         conn.read_only = True
+        conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
         tables = _discover_tables(conn, tbl_include, tbl_exclude)
         logger.info("discovered %d table(s) after filtering", len(tables))
 

@@ -93,3 +93,15 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
     print("ok")
+
+
+def test_comment_inside_a_fenced_block_is_not_a_heading():
+    result = NodeConverter().parse("# Install\n\n```bash\n# install deps\npip install x\n```", "markdown")
+    assert [(n.node_type.value, n.content) for n in result.nodes] == [
+        ("heading", "Install"), ("code_block", "# install deps\npip install x"),
+    ]
+
+
+def test_a_version_number_does_not_make_prose_markdown():
+    result = NodeConverter().parse("We shipped version 2.5 today. It is faster. Try it now!")
+    assert result.format_name == "text"
