@@ -45,13 +45,17 @@ def document_format(key: str, document_types: frozenset[str]) -> str | None:
 
 
 def document_text(payload: str, data_format: str) -> str:
-    """The text layer of a base64 document; "" for images, scans, and unreadable files."""
+    """The text layer of a base64 document; "" for images, unreadable files, and PDFs with any scanned page.
+
+    The server OCRs pages without text, so a PDF is only scannable here when every page has text.
+    """
     body = base64.b64decode(payload)
     try:
         if data_format == "pdf":
             pdf = pypdfium2.PdfDocument(body)
             try:
-                return "\n".join(page.get_textpage().get_text_bounded() for page in pdf).strip()
+                texts = [page.get_textpage().get_text_bounded().strip() for page in pdf]
+                return "\n".join(texts) if all(texts) else ""
             finally:
                 pdf.close()
         if data_format == "docx":

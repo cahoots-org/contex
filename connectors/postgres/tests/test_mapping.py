@@ -67,16 +67,16 @@ class TestResolvePk:
 class TestBuildDataKey:
     def test_simple_pk(self):
         row = {"id": 42, "name": "Alice"}
-        assert build_data_key("public", "users", row, ["id"]) == "public.users.42"
+        assert build_data_key("app", "public", "users", row, ["id"]) == "app.public.users.42"
 
     def test_composite_pk(self):
         row = {"order_id": 1, "item_id": 7, "qty": 3}
-        key = build_data_key("public", "order_items", row, ["order_id", "item_id"])
-        assert key == "public.order_items.1:7"
+        key = build_data_key("app", "public", "order_items", row, ["order_id", "item_id"])
+        assert key == "app.public.order_items.1:7"
 
     def test_colons_in_values_do_not_collide(self):
-        a = build_data_key("public", "t", {"x": "a:b", "y": "c"}, ["x", "y"])
-        b = build_data_key("public", "t", {"x": "a", "y": "b:c"}, ["x", "y"])
+        a = build_data_key("app", "public", "t", {"x": "a:b", "y": "c"}, ["x", "y"])
+        b = build_data_key("app", "public", "t", {"x": "a", "y": "b:c"}, ["x", "y"])
         assert a != b
 
 
@@ -141,40 +141,45 @@ class TestSelectColumns:
 class TestRowToEvent:
     def test_basic(self):
         row = {"id": 1, "name": "Alice", "score": 9.5}
-        event = row_to_event("public", "users", row, ["id"], ["id", "name", "score"])
+        event = row_to_event("app", "public", "users", row, ["id"], ["id", "name", "score"])
         assert event.op == "upsert"
-        assert event.key == "public.users.1"
+        assert event.key == "app.public.users.1"
         assert event.payload == {"id": 1, "name": "Alice", "score": 9.5}
         assert event.data_format == "json"
         assert event.source_meta == {"source": "postgres", "schema": "public", "table": "users"}
 
     def test_selected_columns_filter_payload(self):
         row = {"id": 1, "name": "Alice", "password": "secret"}
-        event = row_to_event("public", "users", row, ["id"], ["id", "name"])
+        event = row_to_event("app", "public", "users", row, ["id"], ["id", "name"])
         assert "password" not in event.payload
 
     def test_composite_pk(self):
         row = {"order_id": 10, "item_id": 3, "qty": 2}
-        event = row_to_event("public", "order_items", row, ["order_id", "item_id"], ["order_id", "item_id", "qty"])
-        assert event.key == "public.order_items.10:3"
+        event = row_to_event("app", "public", "order_items", row, ["order_id", "item_id"], ["order_id", "item_id", "qty"])
+        assert event.key == "app.public.order_items.10:3"
 
     def test_null_key_column_skips_row(self):
-        assert row_to_event("public", "events", {"event_id": None}, ["event_id"], ["event_id"]) is None
+        assert row_to_event("app", "public", "events", {"event_id": None}, ["event_id"], ["event_id"]) is None
 
     def test_none_payload_value(self):
         row = {"id": 5, "description": None}
-        event = row_to_event("public", "items", row, ["id"], ["id", "description"])
+        event = row_to_event("app", "public", "items", row, ["id"], ["id", "description"])
         assert event.payload["description"] is None
 
     def test_non_json_value_serialized_as_string(self):
         import decimal
         row = {"id": 1, "price": decimal.Decimal("9.99")}
-        event = row_to_event("public", "products", row, ["id"], ["id", "price"])
+        event = row_to_event("app", "public", "products", row, ["id"], ["id", "price"])
         assert event.payload["price"] == "9.99"
+
+    def test_jsonb_and_arrays_stay_structured(self):
+        row = {"id": 1, "meta": {"active": True, "note": None}, "tags": ["a", "b"]}
+        event = row_to_event("app", "public", "t", row, ["id"], ["meta", "tags"])
+        assert event.payload == {"meta": {"active": True, "note": None}, "tags": ["a", "b"]}
 
     def test_boolean_preserved(self):
         row = {"id": 1, "active": True}
-        event = row_to_event("public", "users", row, ["id"], ["id", "active"])
+        event = row_to_event("app", "public", "users", row, ["id"], ["id", "active"])
         assert event.payload["active"] is True
 
 
