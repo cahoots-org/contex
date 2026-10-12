@@ -114,9 +114,8 @@
     {% if not projects %}
     <div class="empty-state">
         <h3>No Projects Yet</h3>
-        <p>Publish some data first using the API:</p>
-        <pre><code>POST /data/publish
-{
+        <p>Publish some data first with the <code>contex_publish</code> MCP tool:</p>
+        <pre><code>{
   "project_id": "my-project",
   "data_key": "example",
   "data": {"your": "data"}

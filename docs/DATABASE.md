@@ -150,7 +150,7 @@ CREATE TABLE api_keys (
 ```sql
 CREATE TABLE api_key_roles (
     key_id VARCHAR(255) PRIMARY KEY REFERENCES api_keys(key_id) ON DELETE CASCADE,
-    role VARCHAR(50) NOT NULL DEFAULT 'readonly',
+    role VARCHAR(50) NOT NULL DEFAULT 'consumer',
     projects TEXT[] NOT NULL DEFAULT '{}'
 );
 ```
@@ -162,8 +162,6 @@ CREATE TABLE api_key_roles (
 CREATE TABLE tenants (
     tenant_id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    plan VARCHAR(50) NOT NULL DEFAULT 'free',
-    quotas JSONB NOT NULL DEFAULT '{}',
     settings JSONB NOT NULL DEFAULT '{}',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
