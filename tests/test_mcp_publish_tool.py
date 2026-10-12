@@ -7,11 +7,12 @@ from sqlalchemy import select
 from src.core.db_models import Embedding
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
+from src.core.tenant import TenantManager
 
 
-async def _publish_once(server, key):
+async def _publish_once(server, key, project_id="p"):
     return await server.call_tool("contex_publish", {
-        "project_id": "p", "data_key": key, "data": {"purpose": "x"},
+        "project_id": project_id, "data_key": key, "data": {"purpose": "x"},
     })
 
 
@@ -27,7 +28,8 @@ async def test_direct_publish_throttled_at_configured_limit(db, monkeypatch):
     # Over the wire this surfaces as is_error with the message; the in-process
     # call_tool re-raises the ToolError carrying the retry hint the publisher reads.
     with pytest.raises(ToolError, match="rate_limit_exceeded retry_after="):
-        await _publish_once(server, "c")
+        await _publish_once(server, "c", project_id="unclaimed")
+    assert await TenantManager(db).get_project_tenant("unclaimed") is None
 
 
 @pytest.mark.asyncio

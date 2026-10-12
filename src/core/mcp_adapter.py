@@ -299,8 +299,8 @@ def build_mcp_server(engine, db_accessor=None):
     async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json",
                              published_at: str | None = None) -> str:
         e = _get_engine()
-        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         _throttle(limiter, "publish", "RATE_LIMIT_PUBLISH", 60)
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         await e.publish_data(DataPublishEvent(
             project_id=project_id, data_key=data_key, data=data, data_format=data_format,
             published_at=_parse_timestamp(published_at, "published_at"),
@@ -316,9 +316,9 @@ def build_mcp_server(engine, db_accessor=None):
                              "failed with the reason.")
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
         e = _get_engine()
-        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
+        await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
         events, failed = [], []
         for item in items:
             try:
