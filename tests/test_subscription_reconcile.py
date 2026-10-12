@@ -9,7 +9,7 @@ class _MutableMatcher:
     def __init__(self, bundle):
         self._bundle = bundle
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         return {n: self._bundle for n in needs}
 
 
@@ -18,7 +18,7 @@ class _KeyedMatcher:
     def __init__(self, bundles):  # bundles: dict[need -> list]
         self.bundles = bundles
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         return {n: list(self.bundles.get(n, [])) for n in needs}
 
 
@@ -90,7 +90,7 @@ async def test_reconcile_scoped_to_project(db):
             self._call_count = 0
             self.bundles = {"need_o": list(other_initial)}
 
-        async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+        async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
             self._call_count += 1
             # Always return a "different" bundle so any cross-project reconcile would be detected
             return {n: [{"data_key": "ok", "similarity": 0.5, "data": {"v": self._call_count}, "description": None}] for n in needs}
@@ -151,7 +151,7 @@ async def test_slow_reconcile_does_not_overwrite_newer_bundle(db):
     class Matcher:
         calls = 0
 
-        async def match(self, project_id, needs, **kw):
+        async def match_agent_needs(self, project_id, needs, **kw):
             Matcher.calls += 1
             if Matcher.calls == 1:
                 return {needs[0]: []}
@@ -182,7 +182,7 @@ async def test_slow_create_does_not_overwrite_newer_bundle(db):
     class Matcher:
         calls = 0
 
-        async def match(self, project_id, needs, **kw):
+        async def match_agent_needs(self, project_id, needs, **kw):
             Matcher.calls += 1
             snapshot = list(data)
             if Matcher.calls == 1:

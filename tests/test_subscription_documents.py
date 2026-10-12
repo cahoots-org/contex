@@ -18,7 +18,7 @@ class _KeyedMatcher:
     def __init__(self, bundles):
         self.bundles = bundles
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         return {n: list(self.bundles.get(n, [])) for n in needs}
 
 

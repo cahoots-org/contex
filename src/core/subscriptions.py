@@ -123,7 +123,7 @@ class SubscriptionService:
 
         since = _since_from_scope(scope)
         async with self._project_lock(project_id):
-            bundle = await self.matcher.match(project_id, needs, top_k=top_k, threshold=threshold, since=since)
+            bundle = await self.matcher.match_agent_needs(project_id, needs, top_k=top_k, threshold=threshold, since=since)
             bundle = await self._link_bundle(project_id, bundle)
             now = datetime.now(timezone.utc)
             fresh = dict(
@@ -250,7 +250,7 @@ class SubscriptionService:
         for sub in subs:
             try:
                 since = _since_from_scope(sub.scope)
-                new_bundle = await self.matcher.match(project_id, sub.needs, top_k=sub.top_k, threshold=sub.threshold, since=since)  # computed fully first
+                new_bundle = await self.matcher.match_agent_needs(project_id, sub.needs, top_k=sub.top_k, threshold=sub.threshold, since=since)  # computed fully first
                 new_bundle = await self._link_bundle(project_id, new_bundle)
                 if new_bundle == sub.bundle:
                     continue

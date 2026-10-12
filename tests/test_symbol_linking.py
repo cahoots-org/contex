@@ -27,7 +27,7 @@ class _StubMatcher:
     def __init__(self, bundle):
         self._bundle = bundle
 
-    async def match(self, *args, **kwargs):
+    async def match_agent_needs(self, *args, **kwargs):
         return copy.deepcopy(self._bundle)
 
 

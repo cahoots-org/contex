@@ -35,7 +35,7 @@ class _RecordingMatcher:
         self.bundles = bundles
         self.calls = []
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         self.calls.append(tuple(needs))
         return {n: [dict(m) for m in self.bundles.get(n, [])] for n in needs}
 

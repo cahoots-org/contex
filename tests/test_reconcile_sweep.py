@@ -14,7 +14,7 @@ class _Matcher:
         self.value = 1
         self.gate = None
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         if self.gate is not None:
             await self.gate.wait()
         return {n: [{"data_key": "k", "document": "k", "similarity": 0.9, "data": {"v": self.value}}] for n in needs}

@@ -9,7 +9,7 @@ from src.core.tenant import DEFAULT_TENANT_ID
 
 
 class _StubMatcher:
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         return {n: [{"data_key": "cfg", "similarity": 0.9, "data": {"x": 1}, "description": "auth"}] for n in needs}
 
 
@@ -95,9 +95,9 @@ class _CountingMatcher(_StubMatcher):
     def __init__(self):
         self.calls = 0
 
-    async def match(self, *args, **kwargs):
+    async def match_agent_needs(self, *args, **kwargs):
         self.calls += 1
-        return await super().match(*args, **kwargs)
+        return await super().match_agent_needs(*args, **kwargs)
 
 
 @pytest.mark.asyncio
