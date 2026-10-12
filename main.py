@@ -6,11 +6,11 @@ import re
 import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
-from src.core.authz import public, auth_enabled
+from src.core.authz import auth_enabled
 from src.core.metrics import get_metrics
 from src.core.bm25_index import Bm25Settings, ensure_bm25_index
 from src.core.protected_mode import check_protected_mode
@@ -350,7 +350,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(web_router, prefix="/sandbox", tags=["Web UI"])
 
 # Root-level health endpoint (for Docker health checks)
-@app.get("/health", dependencies=[Depends(public)])
+@app.get("/health")
 async def root_health():
     """Liveness probe for Docker and platform health checks.
 
@@ -369,7 +369,7 @@ async def root_health():
 METRICS_TOKEN = os.getenv("METRICS_TOKEN")
 
 
-@app.get("/metrics", dependencies=[Depends(public)])
+@app.get("/metrics")
 async def metrics(request: Request):
     if not METRICS_TOKEN:
         raise HTTPException(status_code=404)
@@ -380,7 +380,7 @@ async def metrics(request: Request):
 
 
 # Root redirect to sandbox
-@app.get("/", dependencies=[Depends(public)])
+@app.get("/")
 async def root():
     """Redirect to the query sandbox, which is served only with auth off."""
     if auth_enabled():

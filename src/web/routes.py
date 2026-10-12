@@ -3,7 +3,7 @@
 import json
 import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
-from src.core.authz import auth_enabled, public
+from src.core.authz import auth_enabled
 from src.core.rate_limiter import RateLimiter
 from src.core.version import VERSION
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -60,7 +60,7 @@ templates = Jinja2Templates(directory=str(templates_dir))
 templates.env.globals["version"] = VERSION
 
 
-@router.get("/", response_class=HTMLResponse, dependencies=[Depends(public)])
+@router.get("/", response_class=HTMLResponse)
 async def sandbox_home(request: Request):
     """Query sandbox home page"""
     engine = request.app.state.context_engine
@@ -90,7 +90,7 @@ async def sandbox_home(request: Request):
     )
 
 
-@router.post("/query", response_class=HTMLResponse, dependencies=[Depends(public)])
+@router.post("/query", response_class=HTMLResponse)
 async def execute_query(
     request: Request,
     project_id: str = Form(...),
@@ -159,7 +159,7 @@ async def execute_query(
     )
 
 
-@router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(public)])
+@router.get("/projects/{project_id}/stats", response_class=HTMLResponse)
 async def project_stats(
     request: Request,
     project_id: str,
@@ -210,7 +210,7 @@ async def project_stats(
     )
 
 
-@router.get("/projects/{project_id}/data", dependencies=[Depends(public)])
+@router.get("/projects/{project_id}/data")
 async def get_project_data(
     request: Request,
     project_id: str,
@@ -228,7 +228,7 @@ async def get_project_data(
     return {"data": data_items}
 
 
-@router.get("/subscribe", dependencies=[Depends(public)])
+@router.get("/subscribe")
 async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),
