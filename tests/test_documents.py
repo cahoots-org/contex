@@ -62,12 +62,12 @@ def _docx() -> bytes:
     return out.getvalue()
 
 
-async def _publish_and_query(db, data: bytes, data_format: str) -> list:
+async def _publish_and_query(db, data: bytes, data_key: str, data_format: str | None = None) -> list:
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.initialize()
     server, _ = build_mcp_server(engine)
     await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
-        {"data_key": f"report.{data_format}", "data": base64.b64encode(data).decode(), "data_format": data_format},
+        {"data_key": data_key, "data": base64.b64encode(data).decode(), "data_format": data_format},
     ]})
     result = await server.call_tool("contex_query", {
         "project_id": "docs", "query": "Atlantis revenue forecast", "top_k": 5, "threshold": 0.0,
@@ -76,9 +76,9 @@ async def _publish_and_query(db, data: bytes, data_format: str) -> list:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("make,data_format", [(_pdf, "pdf"), (_docx, "docx")])
-async def test_base64_document_is_extracted(db, make, data_format):
-    matches = await _publish_and_query(db, make(), data_format)
+@pytest.mark.parametrize("make,data_key", [(_pdf, "report.pdf"), (_docx, "report.docx")])
+async def test_base64_document_is_extracted(db, make, data_key):
+    matches = await _publish_and_query(db, make(), data_key)
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 
@@ -96,14 +96,14 @@ async def test_non_base64_document_is_rejected(db):
 @pytest.mark.asyncio
 async def test_scanned_pages_are_skipped_without_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", False)
-    assert await _publish_and_query(db, _scanned_pdf(), "pdf") == []
+    assert await _publish_and_query(db, _scanned_pdf(), "scan.pdf") == []
 
 
 @needs_tesseract
 @pytest.mark.asyncio
 async def test_scanned_pages_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
-    matches = await _publish_and_query(db, _scanned_pdf(), "pdf")
+    matches = await _publish_and_query(db, _scanned_pdf(), "scan.pdf")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 
@@ -111,7 +111,7 @@ async def test_scanned_pages_are_read_with_ocr(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_images_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
-    matches = await _publish_and_query(db, _image(), "image")
+    matches = await _publish_and_query(db, _image(), "scan.pgm", "image")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
 
 

@@ -25,6 +25,7 @@ from src.core.identity import ANONYMOUS_IDENTITY, Identity, resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
+from src.core.node_parsers import resolve_format
 from src.core.ownership import ensure_project_access
 from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
@@ -324,7 +325,7 @@ def build_mcp_server(engine, db_accessor=None):
             DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
-                data=_item_data(item["data"], item.get("data_format")),
+                data=_item_data(item["data"], resolve_format(item.get("data_format"), item["data_key"])),
                 data_format=item.get("data_format"),
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )

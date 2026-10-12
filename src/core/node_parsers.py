@@ -44,6 +44,9 @@ _EXTENSION_FORMATS = {
     ".yaml": "yaml",
     ".yml": "yaml",
     ".csv": "csv",
+    ".pdf": "pdf",
+    ".docx": "docx",
+    **dict.fromkeys((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"), "image"),
 }
 
 # data_format values that carry no real signal, so the key's extension or
