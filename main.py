@@ -209,8 +209,7 @@ _mcp_server, _mcp_bus = build_mcp_server(
 )
 # Mount the MCP streamable-HTTP app under /mcp. The sub-app serves at its own root
 # ("/"), so the endpoint is /mcp — passing streamable_http_path="/mcp" here would
-# compose with the mount prefix to /mcp/mcp. Starlette 307-redirects /mcp -> /mcp/,
-# which MCP clients follow. The session-manager lifecycle is run in lifespan.
+# compose with the mount prefix to /mcp/mcp. The session-manager lifecycle is run in lifespan.
 # The transport is unauthenticated, so the idle timeout is tightened from the SDK
 # default of 1800s to 600s to limit accumulation of orphaned sessions.
 # max_request_body_size: raise the SDK's 4 MiB cap (it 413s before parsing) to our
@@ -274,6 +273,21 @@ _mcp_starlette_app = _mcp_server.streamable_http_app(
     transport_security=_transport_security,
 )
 app.mount("/mcp", _mcp_starlette_app)
+
+
+class McpPathMiddleware:
+    """Serve /mcp as /mcp/: a redirect would point clients behind a TLS proxy at http://."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"] == "/mcp":
+            scope = {**scope, "path": "/mcp/"}
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(McpPathMiddleware)
 
 # CORS: no cross-origin access unless CORS_ORIGINS lists the origins.
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
