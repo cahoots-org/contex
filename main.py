@@ -391,10 +391,7 @@ async def root():
 # Initialize tracing at module level so the TracerProvider is set globally
 # BEFORE FastAPI instrumentation picks it up
 try:
-    initialize_tracing(
-        service_name="contex",
-        service_version=VERSION
-    )
+    initialize_tracing()
     logger.info("Tracing: TracerProvider initialized")
 except Exception as e:
     logger.warning("Tracing: Failed to initialize TracerProvider", error=str(e))

@@ -1,4 +1,4 @@
-"""Middleware to add trace IDs to responses and integrate with logging"""
+"""Middleware that adds trace IDs to response headers"""
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
