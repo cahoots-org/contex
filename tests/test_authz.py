@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI
 from httpx import AsyncClient
 
 from src.core import authz
-from src.core.authz import require, public, get_identity
+from src.core.authz import _Public, require, public, get_identity
 from src.core.identity import Identity
 from src.core.rbac import Permission
 
@@ -28,7 +28,6 @@ def test_require_and_public_contract():
     assert require(Permission.PUBLISH_DATA).permissions == frozenset({Permission.PUBLISH_DATA})
     assert require().permissions == frozenset()
     assert callable(public)
-    from src.core.authz import _Public
     assert isinstance(public, _Public)
 
 

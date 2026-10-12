@@ -1,27 +1,13 @@
 """Integration tests for the readers against a mocked Atlassian API.
 
-Uses ``pytest-httpx`` to intercept httpx requests. If it is not installed the
-whole module is skipped gracefully.
+Uses ``pytest-httpx`` to intercept httpx requests.
 """
 from __future__ import annotations
 
 import re
 
 import pytest
-
-try:
-    import pytest_httpx  # noqa: F401
-    _HAVE_PYTEST_HTTPX = True
-except ImportError:
-    _HAVE_PYTEST_HTTPX = False
-
-pytestmark = pytest.mark.skipif(
-    not _HAVE_PYTEST_HTTPX,
-    reason="pytest-httpx not installed; skipping integration tests",
-)
-
-if _HAVE_PYTEST_HTTPX:
-    from pytest_httpx import HTTPXMock
+from pytest_httpx import HTTPXMock
 
 from connectors.atlassian.client import AtlassianClient
 from connectors.atlassian.readers import read_confluence_pages, read_jira_issues

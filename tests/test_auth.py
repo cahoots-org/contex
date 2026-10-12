@@ -1,8 +1,11 @@
 """Tests for authentication with PostgreSQL"""
 
+import hashlib
+
 import pytest
+from sqlalchemy import select
 from src.core.auth import bootstrap_admin, create_api_key, list_api_keys, revoke_api_key
-from src.core.db_models import Tenant as TenantModel
+from src.core.db_models import APIKey, Tenant as TenantModel
 from src.core.identity import resolve_identity
 from src.core.rbac import Role
 
@@ -15,10 +18,6 @@ async def test_key_management(db):
     assert api_key.name == "test-mgmt"
 
     # Verify existence in database
-    from sqlalchemy import select
-    from src.core.db_models import APIKey
-    import hashlib
-
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     async with db.session() as session:
         result = await session.execute(
@@ -56,7 +55,6 @@ async def test_create_key_with_scopes(db):
 async def test_create_key_with_tenant(db):
     """Test creating API key with tenant association"""
     # First create a tenant
-    from src.core.db_models import Tenant as TenantModel
     async with db.session() as session:
         tenant = TenantModel(
             tenant_id="test_tenant",
@@ -81,7 +79,6 @@ async def test_revoke_nonexistent_key(db):
 
 async def _ensure_tenant(db, tenant_id: str) -> None:
     async with db.session() as session:
-        from sqlalchemy import select
         result = await session.execute(
             select(TenantModel).where(TenantModel.tenant_id == tenant_id)
         )
@@ -116,8 +113,6 @@ async def test_revoke_api_key_tenant_mismatch(db):
     assert result is False
 
     # Key must still exist
-    from sqlalchemy import select
-    from src.core.db_models import APIKey
     async with db.session() as session:
         row = await session.execute(
             select(APIKey).where(APIKey.key_id == key_t2.key_id)
@@ -135,8 +130,6 @@ async def test_revoke_api_key_tenant_match(db):
     result = await revoke_api_key(db, key_t1.key_id, tenant_id="t1")
     assert result is True
 
-    from sqlalchemy import select
-    from src.core.db_models import APIKey
     async with db.session() as session:
         row = await session.execute(
             select(APIKey).where(APIKey.key_id == key_t1.key_id)

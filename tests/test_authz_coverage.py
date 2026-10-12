@@ -1,5 +1,8 @@
 import pytest
 from fastapi import Depends, FastAPI
+from starlette.applications import Starlette
+
+import main
 
 from src.core.authz import require, public
 from src.core.authz_coverage import find_uncovered_routes, assert_authz_coverage
@@ -15,7 +18,7 @@ def test_covered_app_passes():
     @app.get("/b", dependencies=[Depends(public)])
     async def b(): ...
 
-    assert find_uncovered_routes(app) == []
+    assert find_uncovered_routes(main.app) == []
     assert_authz_coverage(app)  # no raise
 
 
@@ -57,7 +60,7 @@ def test_nested_marked_dependency_is_covered():
     @app.get("/nested-marked", dependencies=[Depends(marked_parent)])
     async def nested_marked(): ...
 
-    assert find_uncovered_routes(app) == []
+    assert find_uncovered_routes(main.app) == []
     assert_authz_coverage(app)  # no raise
 
 
@@ -82,7 +85,6 @@ def test_nested_unmarked_dependency_is_flagged():
 
 
 def test_unknown_mount_is_flagged():
-    from starlette.applications import Starlette
     app = FastAPI()
     app.mount("/rogue", Starlette())
     with pytest.raises(RuntimeError, match="/rogue"):
@@ -90,5 +92,4 @@ def test_unknown_mount_is_flagged():
 
 
 def test_real_app_is_fully_covered():
-    from main import app
-    assert find_uncovered_routes(app) == []
+    assert find_uncovered_routes(main.app) == []

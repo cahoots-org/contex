@@ -10,6 +10,7 @@ import numpy as np
 from sqlalchemy import select, text
 from unittest.mock import Mock, AsyncMock, patch
 from src.core.db_models import Embedding, Symbol
+from src.core.hybrid_search_service import HybridSearchService
 from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
 
@@ -649,8 +650,6 @@ class TestSemanticMatcherHybridSearch:
     @pytest.mark.integration
     async def test_hybrid_uses_pgvector_fts_service(self, hybrid_matcher):
         """HYBRID_SEARCH_ENABLED=true wires HybridSearchService, not OpenSearch."""
-        from src.core.hybrid_search_service import HybridSearchService
-
         assert isinstance(hybrid_matcher.hybrid_search, HybridSearchService)
 
     @pytest.mark.asyncio

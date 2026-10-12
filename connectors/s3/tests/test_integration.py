@@ -3,24 +3,16 @@
 Seeded with several objects covering text, binary, oversized, and JSON types.
 Asserts that only eligible objects are yielded, and that re-running upserts
 (idempotent key — no duplication) rather than inserting duplicates.
-
-Skipped gracefully when moto is not installed.
 """
 from __future__ import annotations
 
 import json
 
-import pytest
+import boto3
+from botocore.exceptions import ClientError
+from moto import mock_aws
 
-try:
-    import boto3
-    from moto import mock_aws
-
-    MOTO_AVAILABLE = True
-except ImportError:
-    MOTO_AVAILABLE = False
-
-pytestmark = pytest.mark.skipif(not MOTO_AVAILABLE, reason="moto not installed")
+from connectors.s3.reader import read_objects
 
 BUCKET = "test-bucket"
 # us-east-1 is the default region; bucket creation there requires no
@@ -68,8 +60,6 @@ def _seed_bucket(s3_client) -> None:
 
 @mock_aws
 def test_eligible_objects_yielded():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -87,8 +77,6 @@ def test_eligible_objects_yielded():
 
 @mock_aws
 def test_binary_objects_skipped():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -101,8 +89,6 @@ def test_binary_objects_skipped():
 
 @mock_aws
 def test_oversized_objects_skipped():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -115,8 +101,6 @@ def test_oversized_objects_skipped():
 
 @mock_aws
 def test_excluded_objects_skipped():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -129,8 +113,6 @@ def test_excluded_objects_skipped():
 
 @mock_aws
 def test_json_object_mapped_correctly():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -144,8 +126,6 @@ def test_json_object_mapped_correctly():
 
 @mock_aws
 def test_text_object_mapped_correctly():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -160,8 +140,6 @@ def test_text_object_mapped_correctly():
 @mock_aws
 def test_rerun_yields_same_keys_upsert_semantics():
     """Re-running produces the same keys — callers deduplicate via key upsert."""
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -175,8 +153,6 @@ def test_rerun_yields_same_keys_upsert_semantics():
 
 @mock_aws
 def test_prefix_filters_objects():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -189,8 +165,6 @@ def test_prefix_filters_objects():
 
 @mock_aws
 def test_content_types_override():
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
 
@@ -210,10 +184,6 @@ def test_content_types_override():
 
 @mock_aws
 def test_unreadable_object_is_retained_not_fatal(monkeypatch):
-    from botocore.exceptions import ClientError
-
-    from connectors.s3.reader import read_objects
-
     s3 = boto3.client("s3", region_name=REGION)
     _seed_bucket(s3)
     get_object = s3.get_object

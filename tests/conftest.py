@@ -14,17 +14,17 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 
-# Tests truncate every table, so they only run against TEST_DATABASE_URL. App code
-# under test reads DATABASE_URL; point it at the same database.
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
-if TEST_DATABASE_URL:
-    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-
 from src.core.database import DatabaseManager, run_migrations_to_head
 from src.core.embedder import OnnxEmbedder
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
 from src.core.tenant import ensure_default_tenant
+
+# Tests truncate every table, so they only run against TEST_DATABASE_URL. App code
+# under test reads DATABASE_URL; point it at the same database.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+if TEST_DATABASE_URL:
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 
 class TestDatabaseManager(DatabaseManager):
