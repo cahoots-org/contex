@@ -14,6 +14,10 @@ v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
 upserts every item by a stable key, so re-running (e.g. on a cron) is the
 refresh story.
 
+To run a connector image against Contex in another container, put both on one
+Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
+`CONTEX_ALLOWED_HOSTS`; otherwise the server answers 421.
+
 ## The shared framework (`connectors/base/`)
 
 - **`ChangeEvent`** — the seam every reader emits: `{op, key, payload,

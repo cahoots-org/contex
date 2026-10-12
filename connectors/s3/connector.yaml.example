@@ -17,6 +17,6 @@ batch_size: 200
 max_object_bytes: 5242880
 
 keys:
-  exclude: ["*.tmp", "archive/*"]
+  exclude: ["*.tmp", "*/archive/*"]
 
 content_types: [".md", ".txt", ".json", ".csv", ".yaml", ".html"]
