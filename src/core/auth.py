@@ -1,6 +1,5 @@
 """Authentication module for Contex"""
 
-import asyncio
 import os
 import secrets
 import sys
@@ -17,46 +16,6 @@ from src.core.logging import get_logger
 from src.core.rbac import Role, assign_role
 
 logger = get_logger(__name__)
-
-
-def _record_auth_event(
-    event_type: str,
-    action: str,
-    actor_ip: str = None,
-    api_key_prefix: str = None,
-    key_id: str = None,
-    endpoint: str = None,
-    success: bool = True,
-):
-    """Record authentication event in audit log (async fire-and-forget)"""
-    try:
-        from src.core.audit import audit_log, AuditEventType, AuditEventSeverity
-
-        async def _log():
-            if event_type == "failure":
-                await audit_log(
-                    event_type=AuditEventType.AUTH_LOGIN_FAILURE,
-                    action=action,
-                    actor_ip=actor_ip,
-                    endpoint=endpoint,
-                    severity=AuditEventSeverity.WARNING,
-                    result="failure",
-                    details={"api_key_prefix": api_key_prefix},
-                )
-            elif event_type == "success":
-                await audit_log(
-                    event_type=AuditEventType.AUTH_API_KEY_USED,
-                    action=action,
-                    actor_id=key_id,
-                    actor_type="api_key",
-                    actor_ip=actor_ip,
-                    endpoint=endpoint,
-                    result="success",
-                )
-
-        asyncio.create_task(_log())
-    except Exception:
-        pass
 
 
 class APIKey(BaseModel):

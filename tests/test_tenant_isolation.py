@@ -15,11 +15,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from mcp import Client
+from mcp.server.auth.provider import AccessToken
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.shared.exceptions import MCPError
 from sqlalchemy import text
 
 from main import app
+from src.core import mcp_adapter
 from src.core.authz import get_identity
+from src.core.context_engine import ContextEngine
 from src.core.identity import Identity
+from src.core.mcp_adapter import build_mcp_server
+from src.core.mcp_bridge import resource_uri_for
 from src.core.rbac import Role, expand_role
 from src.core.subscriptions import SubscriptionService
 
@@ -119,7 +127,7 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
     app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
     try:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8001") as c:
             r = await c.get(
                 "/sandbox/subscribe",
                 params={"project_id": "proj-b-sub", "need": "auth tokens"},
@@ -127,3 +135,106 @@ async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
         assert r.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path,form", [
+    ("POST", "/sandbox/query", {"project_id": "proj-b-data", "query": "secrets"}),
+    ("GET", "/sandbox/projects/proj-b-data/stats", None),
+    ("GET", "/sandbox/projects/proj-b-data/data", None),
+])
+async def test_sandbox_project_routes_cross_tenant_is_403(db, monkeypatch, method, path, form):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    await _seed_tenant_project(db, "tenant-B", "proj-b-data")
+
+    app.state.db = db
+    app.state.context_engine = MagicMock()
+    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8001") as c:
+            r = await c.request(method, path, data=form)
+        assert r.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+# ── MCP project-scoped tools: cross-tenant → denied ────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool,args", [
+    ("contex_query", {"query": "secrets"}),
+    ("contex_create_subscription", {"needs": ["secrets"]}),
+    ("contex_publish", {"data_key": "k", "data": {"a": 1}}),
+    ("contex_publish_batch", {"items": [{"data_key": "k", "data": {"a": 1}}]}),
+    ("contex_list_keys", {"origin": "o"}),
+    ("contex_delete", {"data_keys": ["k"]}),
+])
+async def test_mcp_tool_cross_tenant_is_denied(db, monkeypatch, tool, args):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    await _seed_tenant_project(db, "tenant-B", "proj-b")
+
+    token = AccessToken(token="t", client_id="key-a", scopes=[p.value for p in expand_role(Role.ADMIN)],
+                        claims={"tenant_id": "tenant-A", "projects": []})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    with pytest.raises(ToolError) as denied:
+        await server.call_tool(tool, {"project_id": "proj-b", **args})
+    assert isinstance(denied.value.__cause__, PermissionError)
+
+
+@pytest.mark.asyncio
+async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkeypatch):
+    """Publishing binds new projects to the caller's tenant, with the default tenant as migrations leave it."""
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    async with db.session() as session:
+        await session.execute(text("UPDATE tenants SET quotas = '{}' WHERE tenant_id = 'default'"))
+        await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id = 'default'"))
+    token = AccessToken(token="t", client_id="key-d", scopes=[p.value for p in expand_role(Role.ADMIN)],
+                        claims={"tenant_id": "default", "projects": []})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    for i in range(5):
+        await server.call_tool("contex_publish", {"project_id": f"p{i}", "data_key": "k", "data": {"a": 1}})
+    await server.call_tool("contex_query", {"project_id": "p4", "query": "a"})
+
+
+def _admin_token(tenant_id: str, key_id: str = "key-a") -> AccessToken:
+    return AccessToken(token="t", client_id=key_id, scopes=[p.value for p in expand_role(Role.ADMIN)],
+                       claims={"tenant_id": tenant_id, "projects": []})
+
+
+@pytest.mark.asyncio
+async def test_mcp_listen_on_other_tenants_subscription_is_denied(db, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "tenant-A")
+    await _ensure_tenant(db, "tenant-B")
+    engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
+    sub_id = await engine.subscriptions.create("proj-b", ["secrets"], tenant_id="tenant-B")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("tenant-A"))
+    server, _ = build_mcp_server(engine)
+
+    async with Client(server) as client:
+        with pytest.raises(MCPError):
+            async with client.listen(resource_subscriptions=[resource_uri_for(sub_id)]):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_mcp_listen_streams_are_capped_per_key(db, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setattr(mcp_adapter, "_MAX_LISTEN_STREAMS_PER_KEY", 1)
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("default"))
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+
+    async with Client(server) as client:
+        async with client.listen(tools_list_changed=True):
+            with pytest.raises(MCPError):
+                async with client.listen(tools_list_changed=True):
+                    pass

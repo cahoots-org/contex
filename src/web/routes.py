@@ -1,17 +1,16 @@
 """Web UI routes for Contex Query Sandbox"""
 
 import json
-import asyncio
 import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
 from src.core.authz import require, public, get_identity
 from src.core.identity import Identity
 from src.core.ownership import ensure_project_access
+from src.core.rate_limiter import RateLimiter
 from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-import toon_format as toon
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.exc import SQLAlchemyError
@@ -39,6 +38,16 @@ async def _documents(engine, project_id: str) -> list:
             .order_by(Embedding.data_key)
         )
         return result.all()
+
+
+_limiter = RateLimiter()
+
+
+def _throttle_query(identity: Identity) -> None:
+    """Apply RATE_LIMIT_QUERY per key, as the MCP query tools do; these routes embed and search too."""
+    wait = _limiter.retry_after(f"{identity.key_id}:query", "RATE_LIMIT_QUERY", 120)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail="Too many requests", headers={"Retry-After": str(wait)})
 
 
 def get_tenant_manager(request: Request) -> TenantManager:
@@ -87,9 +96,13 @@ async def execute_query(
     query: str = Form(...),
     top_k: int = Form(10),
     threshold: float = Form(0.5),
-    max_tokens: int = Form(51200)
+    max_tokens: int = Form(51200),
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Execute a semantic query and return results"""
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
+    _throttle_query(identity)
     engine = request.app.state.context_engine
 
     # Pass the per-request threshold through instead of mutating the shared
@@ -113,7 +126,7 @@ async def execute_query(
     # Calculate token counts
     try:
         enc = tiktoken.get_encoding("cl100k_base")
-    except:
+    except Exception:
         enc = None
 
     # Enhance matches with metadata
@@ -121,53 +134,24 @@ async def execute_query(
     total_tokens = 0
 
     for match in matches:
-        # Generate both JSON and TOON formats
         data_json = json.dumps(match["data"], indent=2)
-        data_toon = toon.encode(match["data"])
-
-        # Calculate token counts for both formats
-        json_tokens = 0
-        toon_tokens = 0
-        if enc:
-            try:
-                json_tokens = len(enc.encode(data_json))
-                toon_tokens = len(enc.encode(data_toon))
-                total_tokens += toon_tokens  # Use TOON tokens for total
-            except:
-                pass
-
-        # Calculate token savings
-        token_savings = 0
-        savings_percent = 0
-        if json_tokens > 0 and toon_tokens > 0:
-            token_savings = json_tokens - toon_tokens
-            savings_percent = round((token_savings / json_tokens) * 100, 1)
-
-        # No preview truncation - will be handled by CSS scrolling
-        preview = data_toon
-
+        token_count = len(enc.encode(data_json)) if enc else 0
+        total_tokens += token_count
         enhanced_matches.append({
             "data_key": match["data_key"],
             "similarity": match["similarity"],
             "similarity_percent": round(match["similarity"] * 100, 1),
             "data": match["data"],
             "data_json": data_json,
-            "data_toon": data_toon,
             "description": match.get("description", ""),
-            "token_count": toon_tokens,
-            "json_tokens": json_tokens,
-            "toon_tokens": toon_tokens,
-            "token_savings": token_savings,
-            "savings_percent": savings_percent,
-            "preview": preview
+            "token_count": token_count,
         })
 
     return templates.TemplateResponse(
+        request,
         "query_results.html",
         {
-            "request": request,
             "query": query,
-            "project_id": project_id,
             "matches": enhanced_matches,
             "total_matches": len(enhanced_matches),
             "total_tokens": total_tokens,
@@ -178,16 +162,21 @@ async def execute_query(
 
 
 @router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
-async def project_stats(request: Request, project_id: str):
+async def project_stats(
+    request: Request,
+    project_id: str,
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
+):
     """Get statistics about a project's data.
 
     Reads from the `embeddings` table (Postgres/pgvector) — the store where
     published data actually lands — mirroring the sibling `/data` handler.
     """
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     rows = await _documents(request.app.state.context_engine, project_id)
 
     # Calculate stats
-    import tiktoken
     try:
         enc = tiktoken.get_encoding("cl100k_base")
     except Exception:
@@ -227,8 +216,14 @@ async def project_stats(request: Request, project_id: str):
 
 
 @router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
-async def get_project_data(request: Request, project_id: str):
+async def get_project_data(
+    request: Request,
+    project_id: str,
+    identity: Identity = Depends(get_identity),
+    tenant_mgr=Depends(get_tenant_manager),
+):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
+    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     data_items = [
         {
             "data_key": data_key,
@@ -255,6 +250,7 @@ async def subscribe_to_updates(
     same reconcile pipeline the MCP bridge uses.
     """
     await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
+    _throttle_query(identity)
     engine = request.app.state.context_engine
     return StreamingResponse(
         stream_subscription_updates(engine, project_id, need),

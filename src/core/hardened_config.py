@@ -36,7 +36,7 @@ def check_hardened_config() -> None:
             "(acceptable for high-entropy keys; set a pepper for defense in depth)"
         )
 
-    cors = os.getenv("CORS_ORIGINS", "*")
+    cors = os.getenv("CORS_ORIGINS", "")
     if "*" in cors:
         logger.warning(
             "CORS_ORIGINS allows a wildcard origin; credentials are disabled under wildcard"

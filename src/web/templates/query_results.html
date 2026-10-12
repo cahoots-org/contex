@@ -42,47 +42,22 @@
                 <span class="similarity-score" :class="{ 'high': {{ match.similarity }} >= 0.8, 'medium': {{ match.similarity }} >= 0.6 }">
                     Score: {{ match.similarity_percent }}%
                 </span>
-                {% if match.toon_tokens %}
-                <span class="token-count">{{ "{:,}".format(match.toon_tokens) }} tokens</span>
-                {% endif %}
-                {% if match.savings_percent > 0 %}
-                <span class="token-savings">-{{ match.savings_percent }}% vs JSON</span>
+                {% if match.token_count %}
+                <span class="token-count">{{ "{:,}".format(match.token_count) }} tokens</span>
                 {% endif %}
                 <span class="expand-icon" x-text="expandedItems[id] ? '▲' : '▼'">▼</span>
             </div>
         </div>
 
         <div class="result-preview" x-show="!expandedItems[id]">
-            <pre class="scrollable-preview"><code>{{ match.data_toon }}</code></pre>
+            <pre class="scrollable-preview"><code>{{ match.data_json }}</code></pre>
         </div>
 
-        <script type="application/json" id="toon-data-{{ loop.index }}">{{ match.data_toon }}</script>
-        <script type="application/json" id="json-data-{{ loop.index }}">{{ match.data_json }}</script>
-        <div class="result-content" x-show="expandedItems[id]" x-cloak x-data="{
-            viewMode: 'toon',
-            toonData: document.getElementById('toon-data-{{ loop.index }}').textContent,
-            jsonData: document.getElementById('json-data-{{ loop.index }}').textContent
-        }">
+        <div class="result-content" x-show="expandedItems[id]" x-cloak>
             <div class="content-header">
-                <div class="view-toggle">
-                    <button
-                        class="btn-small"
-                        :class="{ 'active': viewMode === 'toon' }"
-                        @click="viewMode = 'toon'"
-                    >
-                        🎯 TOON <span class="token-badge">{{ match.toon_tokens }}</span>
-                    </button>
-                    <button
-                        class="btn-small"
-                        :class="{ 'active': viewMode === 'json' }"
-                        @click="viewMode = 'json'"
-                    >
-                        JSON <span class="token-badge">{{ match.json_tokens }}</span>
-                    </button>
-                </div>
                 <button
                     class="btn-small"
-                    @click.stop="navigator.clipboard.writeText(viewMode === 'toon' ? toonData : jsonData).then(() => {
+                    @click.stop="navigator.clipboard.writeText($el.closest('.result-content').querySelector('code').textContent).then(() => {
                         $event.target.textContent = '✓ Copied!';
                         setTimeout(() => $event.target.textContent = 'Copy', 2000);
                     })"
@@ -91,31 +66,10 @@
                 </button>
             </div>
 
-            <!-- Token Savings Banner -->
-            {% if match.savings_percent > 0 %}
-            <div class="token-savings-banner">
-                💰 <strong>{{ match.token_savings }} tokens saved</strong> ({{ match.savings_percent }}% reduction) with TOON format
-            </div>
-            {% endif %}
-
-            <!-- TOON View -->
-            <div x-show="viewMode === 'toon'" class="scrollable-content">
-                <pre><code class="toon">{{ match.data_toon }}</code></pre>
-            </div>
-
-            <!-- JSON View -->
-            <div x-show="viewMode === 'json'" class="scrollable-content">
+            <div class="scrollable-content">
                 <pre><code class="json">{{ match.data_json }}</code></pre>
             </div>
 
-            <div class="result-actions">
-                <button class="btn-small" @click="window.open('/api/projects/{{ project_id }}/query', '_blank')">
-                    Query API
-                </button>
-                <button class="btn-small" @click="alert('Agent integration coming soon!')">
-                    Add to Agent Context
-                </button>
-            </div>
         </div>
     </div>
     {% endfor %}
@@ -137,20 +91,8 @@
 
     <script type="application/json" id="all-matches-data">{{ matches|tojson }}</script>
     <div class="export-actions" x-data="{
-        exportData: JSON.parse(document.getElementById('all-matches-data').textContent),
-        getToonExport() {
-            return this.exportData.map(m => m.data_key + ':\n' + m.data_toon).join('\n\n');
-        }
+        exportData: JSON.parse(document.getElementById('all-matches-data').textContent)
     }">
-        <button
-            class="btn-secondary"
-            @click="navigator.clipboard.writeText(getToonExport()).then(() => {
-                $event.target.innerHTML = '✓ Copied!';
-                setTimeout(() => $event.target.innerHTML = '📋 Export All as TOON', 2000);
-            })"
-        >
-            📋 Export All as TOON
-        </button>
         <button
             class="btn-secondary"
             @click="navigator.clipboard.writeText(JSON.stringify(exportData, null, 2)).then(() => {

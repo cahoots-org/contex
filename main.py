@@ -6,7 +6,7 @@ import secrets
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
@@ -18,6 +18,7 @@ from src.core.hardened_config import check_hardened_config
 from src.core.upload_limits import get_max_upload_size
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from src.core import ContextEngine
 from src.core.auth import bootstrap_admin
 from src.core.logging import setup_logging, get_logger
@@ -25,12 +26,11 @@ from src.core.error_handlers import register_exception_handlers
 from src.core.graceful_shutdown import shutdown_cleanup
 from src.core.tracing import get_tracing_manager, initialize_tracing
 from src.core.database import init_database
-from src.core.sentry_integration import init_sentry, flush as sentry_flush
+from src.core.sentry_integration import init_sentry
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import run_bridge
 from src.core.reconcile_sweep import run_sweep
 from src.core.notifier import Notifier, listen_connect_kwargs
-from src.core.rate_limiter import RateLimitMiddleware
 
 # Environment variables
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))
@@ -81,11 +81,7 @@ async def lifespan(app: FastAPI):
                 log_json=LOG_JSON)
 
     # Initialize Sentry for error tracking (if configured)
-    sentry_enabled = init_sentry(
-        release="contex@0.2.0",
-        enable_tracing=os.getenv("SENTRY_ENABLE_TRACING", "true").lower() == "true"
-    )
-    if sentry_enabled:
+    if init_sentry(release="contex@0.2.0"):
         logger.info("Sentry error tracking enabled")
 
     # Connect to PostgreSQL
@@ -169,7 +165,7 @@ async def lifespan(app: FastAPI):
     print(f"MCP endpoint: http://localhost:{port}/mcp")
 
     if auth_enabled():
-        print("Security: API Key Auth + RBAC + Rate Limiting ENABLED")
+        print("Security: API Key Auth + RBAC ENABLED")
     else:
         print("Security: Authentication DISABLED (set AUTH_ENABLED=true for production)")
     print()
@@ -258,7 +254,7 @@ _LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 
 
 def mcp_transport_security() -> TransportSecuritySettings:
-    """DNS-rebinding protection for /mcp, driven by CONTEX_ALLOWED_HOSTS.
+    """DNS-rebinding protection for the whole app, driven by CONTEX_ALLOWED_HOSTS.
 
     Unset: localhost only (the SDK default). Comma-separated hosts: those plus
     localhost. "*": protection off, for proxies that rewrite or vary the Host.
@@ -274,16 +270,46 @@ def mcp_transport_security() -> TransportSecuritySettings:
     )
 
 
+# Probed by infrastructure that may not use an allowed hostname; neither
+# returns data a rebinding page could use (/metrics needs its token).
+_HOST_CHECK_EXEMPT = {"/health", "/metrics"}
+
+
+class AllowedHostMiddleware:
+    """Reject requests whose Host header isn't allowed, as the MCP transport does for /mcp."""
+
+    def __init__(self, app, allowed_hosts: list[str]):
+        self.app = app
+        self.allowed_hosts = allowed_hosts
+
+    def _allowed(self, host: str) -> bool:
+        return any(
+            host == allowed or (allowed.endswith(":*") and host.startswith(allowed[:-1]))
+            for allowed in self.allowed_hosts
+        )
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope["path"] not in _HOST_CHECK_EXEMPT
+            and not self._allowed(Headers(scope=scope).get("host", ""))
+        ):
+            await PlainTextResponse("Invalid Host header", status_code=421)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+_transport_security = mcp_transport_security()
 _mcp_starlette_app = _mcp_server.streamable_http_app(
     streamable_http_path="/",
     session_idle_timeout=600,
     max_request_body_size=get_max_upload_size(),
-    transport_security=mcp_transport_security(),
+    transport_security=_transport_security,
 )
 app.mount("/mcp", _mcp_starlette_app)
 
-# CORS Configuration
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
+# CORS: no cross-origin access unless CORS_ORIGINS lists the origins.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
 
 # Security warning for CORS wildcard
@@ -343,16 +369,14 @@ if AUTH_ENABLED:
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
 
-# Rate limiting always runs, independent of AUTH_ENABLED. It is added before the
-# tenant middleware so that it executes after tenant/tracing have populated
-# request.state and the X-API-Key header is available for key derivation.
-app.add_middleware(RateLimitMiddleware)
-logger.info("Rate limiting middleware enabled")
-
 # Tenant middleware always runs: it sets the default-tenant context in demo mode
 # and enforces the identity-derived tenant when auth is on.
 app.add_middleware(TenantMiddleware)
 logger.info("Tenant middleware enabled")
+
+# Outermost, so a disallowed Host is turned away before any other work.
+if _transport_security.enable_dns_rebinding_protection:
+    app.add_middleware(AllowedHostMiddleware, allowed_hosts=_transport_security.allowed_hosts)
 
 # Mount static files
 static_dir = Path(__file__).parent / "src" / "web" / "static"
