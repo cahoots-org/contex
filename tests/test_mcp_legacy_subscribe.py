@@ -73,6 +73,18 @@ async def test_unknown_subscription_cannot_be_subscribed(db):
                 pass
 
 
+@pytest.mark.asyncio
+async def test_bad_uris_get_generic_errors(db):
+    server, _ = await _setup(db)
+    async with Client(server, mode="legacy") as client:
+        with pytest.raises(MCPError, match="^Internal error$"):
+            await client.subscribe_resource("contex://subscriptions/a\x00b")
+    async with Client(server) as client:
+        with pytest.raises(MCPError, match="Too many subscriptions"):
+            async with client.listen(resource_subscriptions=["contex://subscriptions/s"] * 1001):
+                pass
+
+
 def test_closed_connections_leave_no_watcher_entries():
     class Bus:
         def subscribe(self, handler):

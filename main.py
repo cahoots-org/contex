@@ -75,7 +75,8 @@ async def lifespan(app: FastAPI):
                 similarity_threshold=SIMILARITY_THRESHOLD,
                 max_matches=MAX_MATCHES,
                 log_level=LOG_LEVEL,
-                log_json=LOG_JSON)
+                log_json=LOG_JSON,
+                auth_enabled=auth_enabled())
 
     # Initialize Sentry for error tracking (if configured)
     if init_sentry(release=f"contex@{VERSION}"):
@@ -135,12 +136,7 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize context engine", error=str(e))
         raise
 
-    # Initialize vector storage index
-    try:
-        await context_engine.semantic_matcher.initialize_index()
-    except Exception as e:
-        logger.warning("Vector index initialization failed", error=str(e))
-
+    await context_engine.semantic_matcher.initialize_index()
 
     logger.info("Contex is ready!")
 

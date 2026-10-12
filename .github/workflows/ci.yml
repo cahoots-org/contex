@@ -63,12 +63,6 @@ jobs:
         done
         echo "PostgreSQL is ready!"
 
-    - name: Setup extensions
-      env:
-        PGPASSWORD: contex_password
-      run: |
-        psql -h localhost -U contex -d contex_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_search;"
-
     - name: Run pytest
       env:
         TEST_DATABASE_URL: postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test
@@ -132,7 +126,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     services:
       postgres:

@@ -63,6 +63,11 @@ class TestSemanticDataMatcher:
         assert sorted(await _data_keys(matcher, "proj1")) == ["a", "c"]
 
     @pytest.mark.asyncio
+    async def test_unreadable_item_fails_only_itself(self, matcher):
+        errors = await matcher.register_data_batch("proj1", [("a", {"v": 1}, None), ("b", '{"x\\u0000": {"y": 1}}', "json")])
+        assert errors[0] is None and errors[1]
+
+    @pytest.mark.asyncio
     async def test_register_single_data(self, matcher):
         """Test registering a single piece of data"""
         await matcher.register_data_batch(

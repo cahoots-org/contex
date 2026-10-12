@@ -51,7 +51,6 @@ async def test_api_key_legacy_dual_verify(db, monkeypatch):
             key_hash=legacy_hash,
             name="legacy-sha-key",
             prefix=raw_key[:7],
-            scopes=[],
             tenant_id=DEFAULT_TENANT_ID,
             created_at=datetime.now(timezone.utc),
         ))

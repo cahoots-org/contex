@@ -3,8 +3,6 @@
 from enum import Enum
 from typing import List, Optional, Set
 
-from sqlalchemy import select
-
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKeyRole as APIKeyRoleModel
 from src.core.logging import get_logger
@@ -38,17 +36,9 @@ async def assign_role(
     role: Role,
     projects: Optional[List[str]] = None
 ) -> None:
-    """Assign `role` to an API key, limited to `projects` (empty or None = all projects)."""
+    """Assign `role` to a new API key, limited to `projects` (empty or None = all projects)."""
     async with db.session() as session:
-        existing = (await session.execute(
-            select(APIKeyRoleModel).where(APIKeyRoleModel.key_id == key_id)
-        )).scalar_one_or_none()
-
-        if existing:
-            existing.role = role.value
-            existing.projects = projects or []
-        else:
-            session.add(APIKeyRoleModel(key_id=key_id, role=role.value, projects=projects or []))
+        session.add(APIKeyRoleModel(key_id=key_id, role=role.value, projects=projects or []))
 
     logger.info("Role assigned", key_id=key_id, role=role.value)
 

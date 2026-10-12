@@ -160,25 +160,8 @@ class SemanticDataMatcher:
         )
 
     async def initialize_index(self):
-        """
-        Ensure vector storage backend is ready.
-
-        This is called at startup to verify the database is ready for vector search.
-        """
+        """Fail startup when EMBED_MODEL's dimension doesn't match the embeddings column."""
         async with self.db.session() as session:
-            try:
-                # Verify pgvector extension exists
-                await session.execute(text("SELECT 'vector'::regtype"))
-                logger.info("pgvector extension verified")
-            except Exception as e:
-                logger.error("pgvector extension not available", error=str(e))
-                raise RuntimeError(
-                    "pgvector extension is required but not installed."
-                ) from e
-
-            # The pgvector column is a fixed dimension; a model whose output
-            # dimension differs would fail every insert. Fail fast at startup
-            # with an actionable message instead.
             column_dim = await session.scalar(
                 text(
                     "SELECT atttypmod FROM pg_attribute "
@@ -219,6 +202,9 @@ class SemanticDataMatcher:
             except DocumentRejected as e:
                 logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
                 errors[index] = str(e)
+            except Exception:
+                logger.exception("Failed to read data", project_id=project_id, data_key=data_key)
+                errors[index] = "could not read the document"
         texts = [plan["texts"][i] for _, plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 

@@ -8,7 +8,6 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
-from .matcher import HybridMatcher
 from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
@@ -62,7 +61,7 @@ class ContextEngine:
             max_matches=max_matches
         )
         self.subscriptions = SubscriptionService(
-            db, HybridMatcher(self.semantic_matcher),
+            db, self.semantic_matcher,
             encoder=self.semantic_matcher.model,
             default_threshold=self.semantic_matcher.threshold,
             default_top_k=self.semantic_matcher.max_matches,
@@ -217,6 +216,8 @@ class ContextEngine:
         """
         if not events:
             return [], []
+        # A key repeated in one batch keeps only its last version.
+        events = list({e.data_key: e for e in events}.values())
         project_id = events[0].project_id
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")

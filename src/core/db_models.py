@@ -90,7 +90,6 @@ class APIKey(TenantScopedMixin, Base):
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     prefix: Mapped[str] = mapped_column(String(10), nullable=False)
-    scopes: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

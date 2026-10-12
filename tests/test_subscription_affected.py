@@ -10,7 +10,7 @@ class _RecordingMatcher:
         self.bundles = bundles
         self.calls = []
 
-    async def match(self, project_id, needs, metadata=None, top_k=None, threshold=None, since=None):
+    async def match_agent_needs(self, project_id, needs, top_k=None, threshold=None, since=None):
         self.calls.append(tuple(needs))
         return {n: [dict(m) for m in self.bundles.get(n, [])] for n in needs}
 
@@ -85,14 +85,14 @@ async def test_reconcile_skips_subscription_deleted_mid_pass(db, caplog):
     svc, sub_a, sub_b = await _service(db)
     svc.matcher.bundles["a"] = [_m("a.py.f", "a.py", sim=0.1)]
     svc.matcher.bundles["b"] = [_m("b.py.g", "b.py", sim=0.1)]
-    real_match = svc.matcher.match
+    real_match = svc.matcher.match_agent_needs
 
     async def match_then_delete(project_id, needs, **kw):
         result = await real_match(project_id, needs, **kw)
         if needs == ["a"]:
             await svc.delete(sub_a)
         return result
-    svc.matcher.match = match_then_delete
+    svc.matcher.match_agent_needs = match_then_delete
 
     changed = await svc.reconcile_project("p1")
 
