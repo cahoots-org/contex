@@ -87,8 +87,6 @@ class ContextEngine:
         """
         if not events:
             return [], []
-        # A key repeated in one batch keeps only its last version.
-        events = list({e.data_key: e for e in events}.values())
         project_id = events[0].project_id
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")

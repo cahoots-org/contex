@@ -56,6 +56,7 @@ def _parse_timestamp(value: Optional[str], field: str = "since") -> Optional[dat
 
 # Formats published as base64 strings, since MCP arguments are JSON.
 _BINARY_FORMATS = frozenset({"pdf", "docx", "image"})
+_INVALID_ITEM = "invalid item: check its data_key, data_format and published_at, and that document data is base64"
 
 
 def _check_max_age(max_age_seconds: Optional[int]) -> None:
@@ -297,10 +298,14 @@ def build_mcp_server(engine, db_accessor=None):
         e = _get_engine()
         _throttle(limiter, "publish", "RATE_LIMIT_PUBLISH", 60)
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
-        await e.publish_data(DataPublishEvent(
-            project_id=project_id, data_key=data_key, data=data, data_format=data_format,
-            published_at=_parse_timestamp(published_at, "published_at"),
-        ))
+        try:
+            event = DataPublishEvent(
+                project_id=project_id, data_key=data_key, data=data, data_format=data_format,
+                published_at=_parse_timestamp(published_at, "published_at"),
+            )
+        except ValueError:
+            raise ValueError(_INVALID_ITEM) from None
+        await e.publish_data(event)
         return json.dumps({"published": data_key})
 
     @server.tool(name="contex_publish_batch",
@@ -315,6 +320,9 @@ def build_mcp_server(engine, db_accessor=None):
         check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
+        # A key repeated in one batch keeps only its last copy, valid or not.
+        # Keyed by its JSON form, since an invalid data_key may be unhashable.
+        items = list({json.dumps(item.get("data_key")): item for item in items}.values())
         events, failed = [], []
         for item in items:
             try:
@@ -329,8 +337,7 @@ def build_mcp_server(engine, db_accessor=None):
                     event.data = base64.b64decode(event.data, validate=True)
                 events.append(event)
             except (KeyError, TypeError, ValueError):
-                failed.append({"data_key": item.get("data_key"), "error": "invalid item: check its data_key, "
-                               "data_format and published_at, and that document data is base64"})
+                failed.append({"data_key": item.get("data_key"), "error": _INVALID_ITEM})
         published, rejected = await e.publish_data_batch(events, origin=origin)
         return json.dumps({"published": len(published), "failed": failed + rejected})
 

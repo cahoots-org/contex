@@ -23,17 +23,6 @@ async def test_publish_batch_reconciles_once_with_all_keys():
 
 
 @pytest.mark.asyncio
-async def test_publish_batch_keeps_last_version_of_repeated_key():
-    engine = ContextEngine.__new__(ContextEngine)
-    engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
-    engine.subscriptions = MagicMock(reconcile_project=AsyncMock())
-
-    await engine.publish_data_batch([DataPublishEvent(project_id="p1", data_key="k", data={"v": v}) for v in (1, 2)])
-
-    assert engine.semantic_matcher.register_data_batch.await_args.args[1] == [("k", {"v": 2}, None)]
-
-
-@pytest.mark.asyncio
 async def test_publish_survives_reconcile_failure():
     engine = ContextEngine.__new__(ContextEngine)
     engine.semantic_matcher = MagicMock(register_data_batch=AsyncMock(return_value=[None]))
