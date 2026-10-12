@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel
@@ -108,8 +108,6 @@ async def revoke_api_key(
     Returns:
         True if key was revoked, False if not found or tenant mismatch
     """
-    from sqlalchemy import delete
-
     async with db.session() as session:
         if tenant_id is not None:
             result = await session.execute(
