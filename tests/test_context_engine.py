@@ -74,9 +74,7 @@ class TestContextEngine:
 
         await context_engine.publish_data(event)
 
-        # Check semantic matcher has the data (now using PostgreSQL)
-        registered_keys = await context_engine.semantic_matcher.get_registered_data("proj1")
-        assert "api_docs" in registered_keys
+        assert (await context_engine.delete_data("proj1", ["api_docs"]))["deleted"] == ["api_docs"]
 
     @pytest.mark.asyncio
     async def test_query_project_data(self, context_engine):

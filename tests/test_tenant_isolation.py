@@ -20,17 +20,10 @@ from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import resource_uri_for
 from src.core.rbac import Role, expand_role
 from src.core.subscriptions import SubscriptionService
+from src.core.tenant import TenantManager
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
-
-
-async def _ensure_tenant(db, tenant_id: str) -> None:
-    async with db.session() as session:
-        await session.execute(
-            text("INSERT INTO tenants (tenant_id, name) VALUES (:tid, :tid) ON CONFLICT DO NOTHING"),
-            {"tid": tenant_id},
-        )
 
 
 async def _seed_tenant_project(db, tenant_id: str, project_id: str) -> None:
@@ -53,8 +46,8 @@ async def test_subscription_cross_tenant_denied_at_service(db, monkeypatch):
     """SubscriptionService.get_bundle raises PermissionError for cross-tenant access."""
     monkeypatch.setenv("AUTH_ENABLED", "true")
 
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
+    await TenantManager(db).ensure_tenant("tenant-A")
+    await TenantManager(db).ensure_tenant("tenant-B")
 
     class _StubMatcher:
         async def match(self, project_id, needs, top_k=None, threshold=None, since=None):
@@ -101,8 +94,8 @@ async def test_sandbox_is_not_served_with_auth_on(monkeypatch, method, path, for
 ])
 async def test_mcp_tool_cross_tenant_is_denied(db, monkeypatch, tool, args):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
+    await TenantManager(db).ensure_tenant("tenant-A")
+    await TenantManager(db).ensure_tenant("tenant-B")
     await _seed_tenant_project(db, "tenant-B", "proj-b")
 
     token = AccessToken(token="t", client_id="key-a", scopes=[p.value for p in expand_role(Role.ADMIN)],
@@ -135,7 +128,7 @@ async def test_projects_published_with_auth_off_stay_with_the_default_tenant(db,
     await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "k", "data": {"a": 1}})
 
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "acme")
+    await TenantManager(db).ensure_tenant("acme")
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("acme"))
     with pytest.raises(ToolError, match="Permission denied"):
         await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "x", "data": {"a": 1}})
@@ -151,15 +144,15 @@ def _admin_token(tenant_id: str, key_id: str = "key-a") -> AccessToken:
 @pytest.mark.asyncio
 async def test_mcp_listen_on_other_tenants_subscription_is_denied(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
+    await TenantManager(db).ensure_tenant("tenant-A")
+    await TenantManager(db).ensure_tenant("tenant-B")
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     sub_id = await engine.subscriptions.create("proj-b", ["secrets"], tenant_id="tenant-B")
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("tenant-A"))
     server, _ = build_mcp_server(engine)
 
     async with Client(server) as client:
-        with pytest.raises(MCPError):
+        with pytest.raises(MCPError, match="^Permission denied$"):
             async with client.listen(resource_subscriptions=[resource_uri_for(sub_id)]):
                 pass
 
@@ -173,6 +166,6 @@ async def test_mcp_listen_streams_are_capped_per_key(db, monkeypatch):
 
     async with Client(server) as client:
         async with client.listen(tools_list_changed=True):
-            with pytest.raises(MCPError):
+            with pytest.raises(MCPError, match="Too many open subscription streams"):
                 async with client.listen(tools_list_changed=True):
                     pass

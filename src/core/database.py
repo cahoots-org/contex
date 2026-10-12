@@ -155,25 +155,16 @@ class DatabaseManager:
         )
         self._database_url = url
 
-        # For testing with SQLite, use NullPool
-        if "sqlite" in url:
-            self.engine = create_async_engine(
-                url,
-                echo=echo,
-                poolclass=NullPool,
-                json_serializer=lambda o: json.dumps(o, default=json_safe_default),
-            )
-        else:
-            self.engine = create_async_engine(
-                url,
-                echo=echo,
-                pool_size=pool_size,
-                max_overflow=max_overflow,
-                pool_timeout=pool_timeout,
-                pool_recycle=pool_recycle,
-                pool_pre_ping=True,  # Verify connections before use
-                json_serializer=lambda o: json.dumps(o, default=json_safe_default),
-            )
+        self.engine = create_async_engine(
+            url,
+            echo=echo,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=True,  # Verify connections before use
+            json_serializer=lambda o: json.dumps(o, default=json_safe_default),
+        )
 
         self.session_factory = async_sessionmaker(
             bind=self.engine,
@@ -251,29 +242,8 @@ class DatabaseManager:
         return self._is_connected
 
 
-# Global database manager instance
-_db_manager: Optional[DatabaseManager] = None
-
-
-async def get_database() -> DatabaseManager:
-    """Get the global database manager instance."""
-    global _db_manager
-    if _db_manager is None:
-        _db_manager = DatabaseManager()
-    return _db_manager
-
-
 async def init_database(database_url: Optional[str] = None, **kwargs) -> DatabaseManager:
-    """Initialize and connect the global database manager."""
-    global _db_manager
-    _db_manager = DatabaseManager()
-    await _db_manager.connect(database_url=database_url, **kwargs)
-    return _db_manager
-
-
-async def close_database() -> None:
-    """Close the global database connection."""
-    global _db_manager
-    if _db_manager:
-        await _db_manager.disconnect()
-        _db_manager = None
+    """Create and connect a database manager."""
+    db = DatabaseManager()
+    await db.connect(database_url=database_url, **kwargs)
+    return db

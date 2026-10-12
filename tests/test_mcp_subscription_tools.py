@@ -12,7 +12,7 @@ from mcp.server.mcpserver.exceptions import ResourceError
 @pytest.mark.asyncio
 async def test_create_subscription_tool(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     created = json.loads((await server.call_tool("contex_create_subscription", {
@@ -27,7 +27,7 @@ async def test_create_subscription_tool(db):
 async def test_create_with_empty_needs(db):
     """Creating a subscription with no needs should succeed and produce an empty bundle."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     result = await server.call_tool("contex_create_subscription", {
@@ -72,7 +72,7 @@ async def test_multitenant_create_read_lifecycle(db, monkeypatch):
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: fake_token)
 
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     created = json.loads((await server.call_tool("contex_create_subscription", {
@@ -89,7 +89,7 @@ async def test_project_scoped_key_cannot_touch_other_projects_subscription(db, m
     """A key scoped to one project must not read another project's
     subscription in the same tenant (#73)."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("proj-b", ["auth config"])
 

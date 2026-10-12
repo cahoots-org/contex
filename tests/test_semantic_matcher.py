@@ -15,6 +15,11 @@ from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
 
 
+async def _data_keys(matcher, project_id):
+    async with matcher.db.session() as session:
+        return list((await session.execute(select(Embedding.data_key).where(Embedding.project_id == project_id))).scalars())
+
+
 class TestSemanticDataMatcher:
     """Test SemanticDataMatcher functionality with PostgreSQL"""
 
@@ -51,27 +56,31 @@ class TestSemanticDataMatcher:
         assert matcher.model is not None
 
     @pytest.mark.asyncio
+    async def test_store_failure_fails_only_its_item(self, matcher):
+        items = [("a", {"v": 1}, None), ("b", {"v": float("nan")}, None), ("c", {"v": 2}, None)]
+        errors = await matcher.register_data_batch("proj1", items)
+        assert errors[0] is None and errors[1] and errors[2] is None
+        assert sorted(await _data_keys(matcher, "proj1")) == ["a", "c"]
+
+    @pytest.mark.asyncio
     async def test_register_single_data(self, matcher):
         """Test registering a single piece of data"""
-        await matcher.register_data(
-            project_id="proj1",
-            data_key="tech_stack",
-            data={"backend": "FastAPI", "frontend": "React"},
+        await matcher.register_data_batch(
+            "proj1", [("tech_stack", {"backend": "FastAPI", "frontend": "React"}, None)],
         )
 
         # Verify data is in PostgreSQL
-        keys = await matcher.get_registered_data("proj1")
-        assert "tech_stack" in keys
+        assert await _data_keys(matcher, "proj1") == ["tech_stack"]
 
     @pytest.mark.asyncio
     async def test_match_registered_data(self, matcher):
         """Test matching registered data with needs"""
         # Register some data
-        await matcher.register_data(
-            "proj1", "api_authentication", {"method": "OAuth2", "provider": "Google"}
+        await matcher.register_data_batch(
+            "proj1", [("api_authentication", {"method": "OAuth2", "provider": "Google"}, None)],
         )
-        await matcher.register_data(
-            "proj1", "database_config", {"host": "localhost", "port": 5432}
+        await matcher.register_data_batch(
+            "proj1", [("database_config", {"host": "localhost", "port": 5432}, None)],
         )
 
         # Match with similar need
@@ -85,8 +94,8 @@ class TestSemanticDataMatcher:
     @pytest.mark.asyncio
     async def test_matches_collapse_to_one_result_per_document(self, matcher):
         """A document with many matching nodes takes one slot, not all of them."""
-        await matcher.register_data(
-            "proj1", "ticket", [{"comment": f"note {i}"} for i in range(6)], format_hint="json"
+        await matcher.register_data_batch(
+            "proj1", [("ticket", [{"comment": f"note {i}"} for i in range(6)], "json")],
         )
 
         results = (await matcher.match_agent_needs("proj1", ["notes"], threshold=0.0))["notes"]
@@ -97,11 +106,10 @@ class TestSemanticDataMatcher:
     @pytest.mark.asyncio
     async def test_matched_child_carries_its_document_root(self, matcher):
         """A comment match comes back with its ticket's own fields."""
-        await matcher.register_data(
-            "proj1", "jira:DEV-1",
-            {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
+        await matcher.register_data_batch(
+            "proj1", [("jira:DEV-1", {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]}, None)],
         )
-        await matcher.register_data("proj1", "notes", {"body": "unrelated"})
+        await matcher.register_data_batch("proj1", [("notes", {"body": "unrelated"}, None)])
         matcher._rank_nodes = AsyncMock(return_value=[
             ("jira:DEV-1\x1fcomments[0]", 0.9), ("notes", 0.8),
         ])
@@ -114,9 +122,8 @@ class TestSemanticDataMatcher:
 
     @pytest.mark.asyncio
     async def test_root_already_in_result_is_not_repeated(self, matcher):
-        await matcher.register_data(
-            "proj1", "jira:DEV-1",
-            {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
+        await matcher.register_data_batch(
+            "proj1", [("jira:DEV-1", {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]}, None)],
         )
         matcher._rank_nodes = AsyncMock(return_value=[
             ("jira:DEV-1\x1fcomments[0]", 0.9), ("jira:DEV-1", 0.8),
@@ -141,7 +148,7 @@ class TestSemanticDataMatcher:
     async def test_reranker_applies_only_when_requested(self, matcher):
         """The opt-in reranker runs for rerank=True (ad-hoc query), not reconcile."""
         for key in ("alpha", "beta", "gamma"):
-            await matcher.register_data("proj1", key, {"name": key})
+            await matcher.register_data_batch("proj1", [(key, {"name": key}, None)])
 
         calls = []
 
@@ -161,12 +168,10 @@ class TestSemanticDataMatcher:
     async def test_match_multiple_data_sources(self, matcher):
         """Test matching returns relevant sources based on embedding similarity"""
         # Register multiple data sources
-        await matcher.register_data(
-            "proj1", "api_docs", {"endpoints": ["/api/v1/users", "/api/v1/posts"]}
+        await matcher.register_data_batch(
+            "proj1", [("api_docs", {"endpoints": ["/api/v1/users", "/api/v1/posts"]}, None)],
         )
-        await matcher.register_data(
-            "proj1", "api_auth", {"method": "Bearer token"}
-        )
+        await matcher.register_data_batch("proj1", [("api_auth", {"method": "Bearer token"}, None)])
 
         # Match API-related needs
         matches = await matcher.match_agent_needs(
@@ -181,12 +186,8 @@ class TestSemanticDataMatcher:
     async def test_match_respects_project_isolation(self, matcher):
         """Test that matches are project-specific"""
         # Register data for different projects
-        await matcher.register_data(
-            "proj1", "config", {"setting": "value1"}
-        )
-        await matcher.register_data(
-            "proj2", "config", {"setting": "value2"}
-        )
+        await matcher.register_data_batch("proj1", [("config", {"setting": "value1"}, None)])
+        await matcher.register_data_batch("proj2", [("config", {"setting": "value2"}, None)])
 
         # Match in proj1
         matches = await matcher.match_agent_needs("proj1", ["configuration"])
@@ -196,19 +197,6 @@ class TestSemanticDataMatcher:
             for match in matches["configuration"]:
                 # Verify no proj2 data leaked in
                 assert "value2" not in str(match.get("data", {}))
-
-    @pytest.mark.asyncio
-    async def test_get_registered_data(self, matcher):
-        """Test retrieving all data keys for a project"""
-        # Register some data
-        await matcher.register_data("proj1", "data1", {"key": "value1"})
-        await matcher.register_data("proj1", "data2", {"key": "value2"})
-
-        proj1_keys = await matcher.get_registered_data("proj1")
-
-        assert len(proj1_keys) >= 2
-        assert "data1" in proj1_keys
-        assert "data2" in proj1_keys
 
     @pytest.mark.asyncio
     async def test_empty_data_needs(self, matcher):
@@ -228,20 +216,15 @@ class TestSemanticDataMatcher:
     async def test_update_existing_data(self, matcher):
         """Test updating existing data"""
         # Register initial data
-        await matcher.register_data(
-            "proj1", "config", {"version": "1.0"}
-        )
+        await matcher.register_data_batch("proj1", [("config", {"version": "1.0"}, None)])
 
         # Update with new data
-        await matcher.register_data(
-            "proj1", "config", {"version": "2.0", "new_field": "value"}
+        await matcher.register_data_batch(
+            "proj1", [("config", {"version": "2.0", "new_field": "value"}, None)],
         )
 
         # Verify update
-        keys = await matcher.get_registered_data("proj1")
-        # Should still have one entry (updated, not duplicated)
-        config_count = keys.count("config")
-        assert config_count == 1
+        assert await _data_keys(matcher, "proj1") == ["config"]
 
 
 class TestSemanticMatcherContentHashDedup:
@@ -269,16 +252,16 @@ class TestSemanticMatcherContentHashDedup:
 
     @pytest.mark.asyncio
     async def test_unchanged_reingest_skips_encode(self, matcher):
-        await matcher.register_data("projd", "config", {"version": "1.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "1.0"}, None)])
 
         matcher.model.encode.reset_mock()
-        await matcher.register_data("projd", "config", {"version": "1.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "1.0"}, None)])
 
         assert matcher.model.encode.call_count == 0
 
     @pytest.mark.asyncio
     async def test_batch_embeds_all_items_in_one_encode(self, matcher):
-        await matcher.register_data("projd", "kept", {"v": 1})
+        await matcher.register_data_batch("projd", [("kept", {"v": 1}, None)])
         matcher.model.encode.reset_mock()
 
         await matcher.register_data_batch("projd", [
@@ -295,43 +278,43 @@ class TestSemanticMatcherContentHashDedup:
 
     @pytest.mark.asyncio
     async def test_changed_reingest_re_embeds(self, matcher):
-        await matcher.register_data("projd", "config", {"version": "1.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "1.0"}, None)])
 
         matcher.model.encode.reset_mock()
-        await matcher.register_data("projd", "config", {"version": "2.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "2.0"}, None)])
 
         assert matcher.model.encode.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_model_change_re_embeds(self, matcher):
-        await matcher.register_data("projd", "config", {"version": "1.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "1.0"}, None)])
 
         matcher.model.encode.reset_mock()
         matcher.model_name = "other/model-768"
-        await matcher.register_data("projd", "config", {"version": "1.0"})
+        await matcher.register_data_batch("projd", [("config", {"version": "1.0"}, None)])
 
         assert matcher.model.encode.call_count == 1
 
     @pytest.mark.asyncio
     async def test_removed_text_stops_matching_lexically(self, matcher):
-        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nZanzibarquux in v1.", "text")
-        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nGamma in v2.", "text")
+        await matcher.register_data_batch("projd", [("doc.txt", "Alpha stays.\n\nBeta stays.\n\nZanzibarquux in v1.", "text")])
+        await matcher.register_data_batch("projd", [("doc.txt", "Alpha stays.\n\nBeta stays.\n\nGamma in v2.", "text")])
 
         assert await PgFtsLexical(matcher.db).search("projd", "Zanzibarquux", top_k=10) == []
 
     @pytest.mark.asyncio
     async def test_concurrent_first_publishes_of_one_key_all_succeed(self, matcher):
         results = await asyncio.gather(*[
-            matcher.register_data("projd", f"race{n}.txt", f"Alpha one.\n\nBeta {i}.", "text")
+            matcher.register_data_batch("projd", [(f"race{n}.txt", f"Alpha one.\n\nBeta {i}.", "text")])
             for n in range(10) for i in range(4)
-        ], return_exceptions=True)
-        assert not [r for r in results if isinstance(r, Exception)]
+        ])
+        assert results == [[None]] * 40
 
     @pytest.mark.asyncio
     async def test_republish_drops_nodes_and_symbols_it_no_longer_has(self, matcher):
-        await matcher.register_data("projd", "lib/util.py", "def helper():\n    return compute()\n", "code")
-        await matcher.register_data("projd", "lib/util.py", "First note.\n\nSecond note.", "text")
-        await matcher.register_data("projd", "lib/util.py", "First note.", "text")
+        await matcher.register_data_batch("projd", [("lib/util.py", "def helper():\n    return compute()\n", "code")])
+        await matcher.register_data_batch("projd", [("lib/util.py", "First note.\n\nSecond note.", "text")])
+        await matcher.register_data_batch("projd", [("lib/util.py", "First note.", "text")])
 
         async with matcher.db.session() as session:
             nodes = (await session.execute(select(Embedding.node_key))).scalars().all()
@@ -341,8 +324,8 @@ class TestSemanticMatcherContentHashDedup:
 
     @pytest.mark.asyncio
     async def test_dotted_keys_do_not_share_nodes(self, matcher):
-        await matcher.register_data("projd", "config", {"name": "app", "prod": {"host": "prod-db"}})
-        await matcher.register_data("projd", "config.prod", {"owner": "ops"})
+        await matcher.register_data_batch("projd", [("config", {"name": "app", "prod": {"host": "prod-db"}}, None)])
+        await matcher.register_data_batch("projd", [("config.prod", {"owner": "ops"}, None)])
 
         async with matcher.db.session() as session:
             keys = (await session.execute(select(Embedding.data_key))).scalars().all()
@@ -357,7 +340,7 @@ class TestSemanticMatcherContentHashDedup:
             return parse(*args, **kwargs)
 
         monkeypatch.setattr(matcher.node_converter, "parse", spy)
-        await matcher.register_data("projd", "notes", "hello")
+        await matcher.register_data_batch("projd", [("notes", "hello", None)])
         assert threads and threads[0] is not threading.main_thread()
 
 
@@ -407,7 +390,7 @@ class TestSemanticMatcherConcurrency:
         """Interleaved calls with different top_k each get their own count."""
         n_items = 8
         for i in range(n_items):
-            await matcher.register_data("projc", f"item_{i}", {"idx": i})
+            await matcher.register_data_batch("projc", [(f"item_{i}", {"idx": i}, None)])
 
         need = "anything"
 
@@ -482,8 +465,8 @@ class TestSemanticMatcherTimeWindow:
     @pytest.mark.asyncio
     async def test_since_excludes_older_rows(self, matcher, db):
         now = datetime.now(timezone.utc)
-        await matcher.register_data("projt", "fresh", {"v": 1})
-        await matcher.register_data("projt", "stale", {"v": 2})
+        await matcher.register_data_batch("projt", [("fresh", {"v": 1}, None)])
+        await matcher.register_data_batch("projt", [("stale", {"v": 2}, None)])
         await self._set_timestamps(
             db, "stale", created_at=now - timedelta(days=800)
         )
@@ -500,8 +483,8 @@ class TestSemanticMatcherTimeWindow:
     @pytest.mark.asyncio
     async def test_since_none_returns_everything(self, matcher, db):
         now = datetime.now(timezone.utc)
-        await matcher.register_data("projt", "fresh", {"v": 1})
-        await matcher.register_data("projt", "stale", {"v": 2})
+        await matcher.register_data_batch("projt", [("fresh", {"v": 1}, None)])
+        await matcher.register_data_batch("projt", [("stale", {"v": 2}, None)])
         await self._set_timestamps(
             db, "stale", created_at=now - timedelta(days=800)
         )
@@ -517,7 +500,7 @@ class TestSemanticMatcherTimeWindow:
     async def test_since_uses_updated_at_when_present(self, matcher, db):
         """A row created long ago but recently updated is within the window."""
         now = datetime.now(timezone.utc)
-        await matcher.register_data("projt", "revived", {"v": 1})
+        await matcher.register_data_batch("projt", [("revived", {"v": 1}, None)])
         # Created 800 days ago, but re-published 10 days ago.
         await self._set_timestamps(
             db,
@@ -543,7 +526,7 @@ class TestSemanticMatcherTimeWindow:
         everything. Interleaving the two must keep the strict call at zero.
         """
         for i in range(5):
-            await matcher.register_data("projt", f"item_{i}", {"idx": i})
+            await matcher.register_data_batch("projt", [(f"item_{i}", {"idx": i}, None)])
 
         need = "anything"
 
@@ -577,7 +560,7 @@ class TestSemanticMatcherTimeWindow:
     @pytest.mark.asyncio
     async def test_match_agent_needs_does_not_mutate_instance_state(self, matcher):
         """Passing per-call top_k/threshold must leave the instance defaults intact."""
-        await matcher.register_data("projm", "item", {"idx": 0})
+        await matcher.register_data_batch("projm", [("item", {"idx": 0}, None)])
 
         await matcher.match_agent_needs("projm", ["x"], top_k=1, threshold=0.99)
 
@@ -608,14 +591,14 @@ class TestSemanticMatcherWithRealEmbeddings:
     async def test_semantic_similarity_ranking(self, real_matcher):
         """Test that semantically similar data ranks higher"""
         # Register varied data
-        await real_matcher.register_data(
-            "proj1", "user_auth", {"method": "JWT", "flow": "OAuth2"}
+        await real_matcher.register_data_batch(
+            "proj1", [("user_auth", {"method": "JWT", "flow": "OAuth2"}, None)],
         )
-        await real_matcher.register_data(
-            "proj1", "database", {"type": "PostgreSQL", "host": "localhost"}
+        await real_matcher.register_data_batch(
+            "proj1", [("database", {"type": "PostgreSQL", "host": "localhost"}, None)],
         )
-        await real_matcher.register_data(
-            "proj1", "weather", {"temperature": 72, "condition": "sunny"}
+        await real_matcher.register_data_batch(
+            "proj1", [("weather", {"temperature": 72, "condition": "sunny"}, None)],
         )
 
         # Match authentication-related need
@@ -665,11 +648,11 @@ class TestSemanticMatcherHybridSearch:
     @pytest.mark.integration
     async def test_hybrid_matches_end_to_end(self, hybrid_matcher):
         """End-to-end hybrid search returns data via pgvector + FTS fusion."""
-        await hybrid_matcher.register_data(
-            "projhy", "user_auth", {"method": "JWT", "flow": "OAuth2"}
+        await hybrid_matcher.register_data_batch(
+            "projhy", [("user_auth", {"method": "JWT", "flow": "OAuth2"}, None)],
         )
-        await hybrid_matcher.register_data(
-            "projhy", "database", {"type": "PostgreSQL", "host": "localhost"}
+        await hybrid_matcher.register_data_batch(
+            "projhy", [("database", {"type": "PostgreSQL", "host": "localhost"}, None)],
         )
 
         matches = await hybrid_matcher.match_agent_needs(
@@ -684,11 +667,11 @@ class TestSemanticMatcherHybridSearch:
     @pytest.mark.integration
     async def test_hybrid_since_filters_old_data(self, hybrid_matcher, db):
         """`since` must apply in hybrid mode (both vector and lexical rankers)."""
-        await hybrid_matcher.register_data(
-            "projhyt", "fresh_auth", {"method": "JWT", "flow": "OAuth2"}
+        await hybrid_matcher.register_data_batch(
+            "projhyt", [("fresh_auth", {"method": "JWT", "flow": "OAuth2"}, None)],
         )
-        await hybrid_matcher.register_data(
-            "projhyt", "stale_auth", {"method": "JWT", "flow": "OAuth2"}
+        await hybrid_matcher.register_data_batch(
+            "projhyt", [("stale_auth", {"method": "JWT", "flow": "OAuth2"}, None)],
         )
         now = datetime.now(timezone.utc)
         async with db.session() as session:

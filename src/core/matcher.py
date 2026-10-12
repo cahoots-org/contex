@@ -1,28 +1,8 @@
-"""The Matcher seam: relevance matching behind a stable interface.
-
-HybridMatcher delegates to SemanticDataMatcher.match_agent_needs, which routes
-through HybridSearchService (pgvector + pg_search BM25, fused with RRF) when hybrid search is
-enabled, and pgvector cosine similarity otherwise. `metadata` (item format/type/
-length) is accepted so a future LLM or tiered-model matcher can route on it
-without changing callers.
-"""
+"""Relevance matching for subscriptions, delegating to SemanticDataMatcher."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional, Protocol
-
-
-class Matcher(Protocol):
-    async def match(
-        self,
-        project_id: str,
-        needs: list[str],
-        metadata: dict | None = None,
-        top_k: int | None = None,
-        threshold: float | None = None,
-        since: Optional[datetime] = None,
-    ) -> dict[str, list[dict[str, Any]]]:
-        ...
+from typing import Any, Optional
 
 
 class HybridMatcher:
@@ -33,12 +13,10 @@ class HybridMatcher:
         self,
         project_id: str,
         needs: list[str],
-        metadata: dict | None = None,
         top_k: int | None = None,
         threshold: float | None = None,
         since: Optional[datetime] = None,
     ) -> dict[str, list[dict[str, Any]]]:
-        # Pass per-request params straight through; nothing is mutated on the matcher (#105).
         return await self.semantic_matcher.match_agent_needs(
             project_id, needs, top_k=top_k, threshold=threshold, since=since
         )

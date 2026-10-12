@@ -293,5 +293,4 @@ def downgrade() -> None:
     op.drop_table('tenant_projects')
     op.drop_table('tenant_usage')
     op.drop_table('tenants')
-    op.execute('DROP EXTENSION IF EXISTS "vector"')
     op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')

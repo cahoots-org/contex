@@ -24,7 +24,7 @@ def _request_with(engine, db=None):
 @pytest.mark.asyncio
 async def test_sandbox_home_renders(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     resp = await sandbox_home(_request_with(engine, db))
     assert resp.template.name == "sandbox.html"
 
@@ -33,7 +33,7 @@ async def test_sandbox_home_renders(db):
 async def test_sandbox_home_passes_project_id_to_script_as_a_string(db):
     project_id = "!',x:alert(document.domain),y:'"
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(project_id=project_id, data_key="k", data={"a": 1}))
 
     resp = await sandbox_home(_request_with(engine, db))
@@ -45,7 +45,7 @@ async def test_sandbox_home_passes_project_id_to_script_as_a_string(db):
 @pytest.mark.asyncio
 async def test_subscribe_returns_event_stream(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     resp = await subscribe_to_updates(
         _request_with(engine, db),
         project_id="p",
@@ -60,7 +60,7 @@ async def test_project_stats_renders_from_embeddings(db):
     """Regression for #107: the stats handler must read from the embeddings
     table (Postgres), not dead RediSearch attrs, and return 200-worthy stats."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
 
     await engine.publish_data(DataPublishEvent(
         project_id="stats-proj", data_key="db",
@@ -95,7 +95,7 @@ async def test_project_stats_renders_from_embeddings(db):
 @pytest.mark.asyncio
 async def test_query_renders_matches_as_json(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     await engine.publish_data(DataPublishEvent(
         project_id="q-proj", data_key="db", data={"purpose": "database connection settings"},
     ))
@@ -131,7 +131,7 @@ async def test_query_is_rate_limited(db, monkeypatch):
 async def test_project_stats_empty_project(db):
     """An unknown project should render cleanly with zeroed stats, not 500."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
 
     resp = await project_stats(_request_with(engine), project_id="no-such-project")
 

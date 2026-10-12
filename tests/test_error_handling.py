@@ -21,8 +21,7 @@ def _build_app() -> FastAPI:
     app = FastAPI()
     register_exception_handlers(app)
 
-    manager = initialize_tracing(service_name="test", service_version="0.0.0")
-    FastAPIInstrumentor.instrument_app(app, tracer_provider=manager.tracer_provider)
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=initialize_tracing())
     app.add_middleware(TracingMiddleware)
 
     @app.get("/boom")

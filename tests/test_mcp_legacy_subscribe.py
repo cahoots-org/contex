@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", message="resources/(un)?subscribe is removed")
 
 async def _setup(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     return build_mcp_server(engine)
 
 
@@ -65,8 +65,12 @@ async def test_unsubscribed_client_is_not_pushed(db):
 async def test_unknown_subscription_cannot_be_subscribed(db):
     server, _ = await _setup(db)
     async with Client(server, mode="legacy") as client:
-        with pytest.raises(MCPError):
+        with pytest.raises(MCPError, match="contex_create_subscription"):
             await client.subscribe_resource("contex://subscriptions/sub_missing")
+    async with Client(server) as client:
+        with pytest.raises(MCPError, match="contex_create_subscription"):
+            async with client.listen(resource_subscriptions=["contex://subscriptions/sub_missing"]):
+                pass
 
 
 def test_closed_connections_leave_no_watcher_entries():

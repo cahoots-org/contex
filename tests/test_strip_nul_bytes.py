@@ -7,7 +7,7 @@ def test_strips_nul_from_plain_string():
 
 
 def test_strips_nul_nested_in_dict_and_list():
-    value = {"k": "x\x00y", "nested": [{"z": "1\x002"}, "keep\x00"]}
+    value = {"k\x00": "x\x00y", "nested": [{"z": "1\x002"}, "keep\x00"]}
     assert _strip_nul_bytes(value) == {"k": "xy", "nested": [{"z": "12"}, "keep"]}
 
 

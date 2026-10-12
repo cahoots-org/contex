@@ -1,8 +1,8 @@
 """Subscription tenant ownership enforcement tests (#42, #73)."""
 import pytest
-from sqlalchemy import text
 
 from src.core.subscriptions import SubscriptionService
+from src.core.tenant import TenantManager
 
 
 class _StubMatcher:
@@ -10,25 +10,11 @@ class _StubMatcher:
         return {n: [{"data_key": "k", "similarity": 0.9, "data": {}, "description": "d"}] for n in needs}
 
 
-async def _ensure_tenant(db, tenant_id):
-    async with db.session() as session:
-        exists = (await session.execute(
-            text("SELECT 1 FROM tenants WHERE tenant_id = :tid"),
-            {"tid": tenant_id},
-        )).scalar_one_or_none()
-        if not exists:
-            await session.execute(
-                text("INSERT INTO tenants (tenant_id, name, is_active) VALUES (:tid, :name, true)"),
-                {"tid": tenant_id, "name": tenant_id},
-            )
-            await session.commit()
-
-
 @pytest.mark.asyncio
 async def test_get_bundle_cross_tenant_raises(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "t1")
-    await _ensure_tenant(db, "t2")
+    await TenantManager(db).ensure_tenant("t1")
+    await TenantManager(db).ensure_tenant("t2")
 
     svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t2")
@@ -40,7 +26,7 @@ async def test_get_bundle_cross_tenant_raises(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_get_bundle_same_tenant_returns_bundle(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "t1")
+    await TenantManager(db).ensure_tenant("t1")
 
     svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t1")
@@ -52,8 +38,8 @@ async def test_get_bundle_same_tenant_returns_bundle(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_multi_tenant_disabled_cross_tenant_is_noop(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "false")
-    await _ensure_tenant(db, "t1")
-    await _ensure_tenant(db, "t2")
+    await TenantManager(db).ensure_tenant("t1")
+    await TenantManager(db).ensure_tenant("t2")
 
     svc = SubscriptionService(db, _StubMatcher())
     sub_id = await svc.create("p1", ["need1"], tenant_id="t2")

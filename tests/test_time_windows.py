@@ -13,7 +13,7 @@ from src.core.reconcile_sweep import sweep_once
 
 async def _engine(db):
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     return engine
 
 

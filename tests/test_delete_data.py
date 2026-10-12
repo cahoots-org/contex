@@ -13,7 +13,7 @@ CODE = "def connect_database(url):\n    return open_pool(url)\n\n\ndef open_pool
 @pytest_asyncio.fixture
 async def engine(db):
     e = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await e.initialize()
+    await e.semantic_matcher.initialize_index()
     return e
 
 

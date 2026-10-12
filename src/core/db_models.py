@@ -30,15 +30,13 @@ class Base(DeclarativeBase):
 
 
 class TenantScopedMixin:
-    """Standard tenant_id column for tables that reference a tenant.
-    Subclasses may override _tenant_ondelete (default RESTRICT)."""
-    _tenant_ondelete = "RESTRICT"
+    """Standard tenant_id column for tables that reference a tenant."""
 
     @declared_attr
     def tenant_id(cls) -> Mapped[str]:
         return mapped_column(
             String(255),
-            ForeignKey("tenants.tenant_id", ondelete=cls._tenant_ondelete),
+            ForeignKey("tenants.tenant_id", ondelete="RESTRICT"),
             nullable=False,
             server_default="default",
         )

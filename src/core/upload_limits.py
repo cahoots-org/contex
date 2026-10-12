@@ -1,24 +1,12 @@
-"""Streaming body-size limits for uploads and imports (issue #61).
-
-Request bodies must never be fully buffered before the size cap is enforced.
-These helpers read a body in bounded chunks with a running total and abort as
-soon as the limit is exceeded. A global ASGI middleware bounds any request as
-defense-in-depth, since a spoofed ``Content-Length`` cannot be trusted.
-"""
+"""Request body size cap, enforced while the body streams in."""
 
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-if TYPE_CHECKING:
-    from fastapi import Request, UploadFile
-
 DEFAULT_MAX_UPLOAD_SIZE = 50 * 1024 * 1024
-
-UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 class RequestBodyTooLarge(Exception):
@@ -40,46 +28,6 @@ def get_max_upload_size() -> int:
     except (TypeError, ValueError):
         return DEFAULT_MAX_UPLOAD_SIZE
     return value if value > 0 else DEFAULT_MAX_UPLOAD_SIZE
-
-
-async def stream_upload_file(file: "UploadFile", max_size: int) -> bytes:
-    """Read an ``UploadFile`` in bounded chunks, aborting once ``max_size`` is
-    exceeded. Never buffers more than the running body plus one chunk."""
-    chunks: list[bytes] = []
-    total = 0
-    while True:
-        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_size:
-            raise RequestBodyTooLarge(max_size)
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-async def stream_request_body(request: "Request", max_size: int) -> bytes:
-    """Read a raw request body in bounded chunks, aborting once ``max_size`` is
-    exceeded. Rejects an over-limit ``Content-Length`` before consuming the
-    stream; the streamed running total remains the real guard."""
-    declared = request.headers.get("content-length")
-    if declared is not None:
-        try:
-            if int(declared) > max_size:
-                raise RequestBodyTooLarge(max_size)
-        except ValueError:
-            pass
-
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in request.stream():
-        if not chunk:
-            continue
-        total += len(chunk)
-        if total > max_size:
-            raise RequestBodyTooLarge(max_size)
-        chunks.append(chunk)
-    return b"".join(chunks)
 
 
 class BodyLimitMiddleware:

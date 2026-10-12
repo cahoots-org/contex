@@ -9,7 +9,7 @@ from src.core.mcp_adapter import build_mcp_server
 @pytest.mark.asyncio
 async def test_read_subscription_resource_returns_bundle(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
     sub_id = await engine.subscriptions.create("p", ["auth config"], top_k=10, threshold=0.1)
 
@@ -24,7 +24,7 @@ async def test_read_subscription_resource_returns_bundle(db):
 async def test_read_unknown_subscription_says_how_to_resume(db):
     """Reading a gone subscription tells the client to re-create it."""
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.initialize()
+    await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
 
     with pytest.raises(ResourceError, match="contex_create_subscription"):

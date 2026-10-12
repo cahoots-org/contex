@@ -155,7 +155,7 @@ class JSONNodeParser(BaseNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         if format_hint == "json":
             return True
-        if isinstance(data, dict):
+        if isinstance(data, (dict, list)):
             return True
         if isinstance(data, str):
             try:
@@ -175,8 +175,7 @@ class JSONNodeParser(BaseNodeParser):
         return ParseResult(
             nodes=nodes,
             format_name="json",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
     def _extract_nodes(self, data: Any, path: str, nodes: List[Node]) -> List[Node]:
@@ -191,8 +190,7 @@ class JSONNodeParser(BaseNodeParser):
                 _add(nodes, Node(
                     path=path,
                     content=own,
-                    node_type=NodeType.OBJECT,
-                    metadata={"format": "json"}
+                    node_type=NodeType.OBJECT
                 ))
             for key, value in data.items():
                 # Escaped so {"a.b": ...} and {"a": {"b": ...}} get distinct paths.
@@ -215,8 +213,7 @@ class JSONNodeParser(BaseNodeParser):
             _add(nodes, Node(
                 path=path or "value",
                 content=data,
-                node_type=NodeType.PRIMITIVE,
-                metadata={"format": "json"}
+                node_type=NodeType.PRIMITIVE
             ))
 
         return nodes
@@ -259,8 +256,7 @@ class YAMLNodeParser(JSONNodeParser):
         return ParseResult(
             nodes=nodes,
             format_name="yaml",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
 
@@ -305,8 +301,7 @@ class PlainTextNodeParser(BaseNodeParser):
                 _add(nodes, Node(
                     path=f"sentence_{i}",
                     content=sentence,
-                    node_type=NodeType.SENTENCE,
-                    metadata={"format": "text"}
+                    node_type=NodeType.SENTENCE
                 ))
         else:
             # Multiple paragraphs
@@ -314,15 +309,13 @@ class PlainTextNodeParser(BaseNodeParser):
                 _add(nodes, Node(
                     path=f"paragraph_{i}",
                     content=para,
-                    node_type=NodeType.PARAGRAPH,
-                    metadata={"format": "text"}
+                    node_type=NodeType.PARAGRAPH
                 ))
 
         return ParseResult(
             nodes=nodes,
             format_name="text",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
     def _split_sentences(self, text: str) -> List[str]:
@@ -365,7 +358,6 @@ class MarkdownNodeParser(BaseNodeParser):
         # Split by headings
         sections = re.split(r'^(#{1,6}\s+.+)$', text, flags=re.MULTILINE)
 
-        current_heading = None
         section_idx = 0
 
         for i, part in enumerate(sections):
@@ -376,14 +368,11 @@ class MarkdownNodeParser(BaseNodeParser):
             # Check if it's a heading
             heading_match = re.match(r'^(#{1,6})\s+(.+)$', part)
             if heading_match:
-                level = len(heading_match.group(1))
                 title = heading_match.group(2)
-                current_heading = title
                 _add(nodes, Node(
                     path=f"heading_{section_idx}",
                     content=title,
-                    node_type=NodeType.HEADING,
-                    metadata={"format": "markdown", "level": level}
+                    node_type=NodeType.HEADING
                 ))
                 section_idx += 1
             else:
@@ -393,13 +382,11 @@ class MarkdownNodeParser(BaseNodeParser):
 
                 if code_blocks:
                     for cb in code_blocks:
-                        language = cb.group(1) or "text"
                         code = cb.group(2).strip()
                         _add(nodes, Node(
                             path=f"code_block_{len(nodes)}",
                             content=code,
-                            node_type=NodeType.CODE_BLOCK,
-                            metadata={"format": "markdown", "language": language}
+                            node_type=NodeType.CODE_BLOCK
                         ))
 
                 # Remove code blocks and parse remaining as paragraphs
@@ -410,15 +397,13 @@ class MarkdownNodeParser(BaseNodeParser):
                         _add(nodes, Node(
                             path=f"paragraph_{len(nodes)}",
                             content=para,
-                            node_type=NodeType.PARAGRAPH,
-                            metadata={"format": "markdown", "heading": current_heading}
+                            node_type=NodeType.PARAGRAPH
                         ))
 
         return ParseResult(
             nodes=nodes,
             format_name="markdown",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
 
@@ -467,15 +452,13 @@ class CSVNodeParser(BaseNodeParser):
             _add(nodes, Node(
                 path=f"row_{i}",
                 content=dict(row),
-                node_type=NodeType.ROW,
-                metadata={"format": "csv"}
+                node_type=NodeType.ROW
             ))
 
         return ParseResult(
             nodes=nodes,
             format_name="csv",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
 
@@ -543,7 +526,6 @@ class PDFNodeParser(BaseNodeParser):
             return ParseResult(nodes=[], format_name=fmt, success=False, error=f"{fmt} parser requires bytes input")
         texts = self._page_texts(data)
         nodes = []
-        total_pages = len(texts)
 
         for page_num, text in enumerate(texts):
             if not text:
@@ -557,12 +539,7 @@ class PDFNodeParser(BaseNodeParser):
                 _add(nodes, Node(
                     path=f"page_{page_num + 1}",
                     content=text,
-                    node_type=NodeType.SECTION,
-                    metadata={
-                        "format": fmt,
-                        "page": page_num + 1,
-                        "total_pages": total_pages,
-                    }
+                    node_type=NodeType.SECTION
                 ))
             else:
                 # Multiple paragraphs — create individual nodes
@@ -570,12 +547,7 @@ class PDFNodeParser(BaseNodeParser):
                     _add(nodes, Node(
                         path=f"page_{page_num + 1}.paragraph_{i}",
                         content=para,
-                        node_type=NodeType.PARAGRAPH,
-                        metadata={
-                            "format": fmt,
-                            "page": page_num + 1,
-                            "total_pages": total_pages,
-                        }
+                        node_type=NodeType.PARAGRAPH
                     ))
 
         if not nodes:
@@ -583,11 +555,7 @@ class PDFNodeParser(BaseNodeParser):
         return ParseResult(
             nodes=nodes,
             format_name=fmt,
-            success=True,
-            metadata={
-                "node_count": len(nodes),
-                "total_pages": total_pages,
-            }
+            success=True
         )
 
 
@@ -653,8 +621,7 @@ class DOCXNodeParser(BaseNodeParser):
         nodes = []
         texts = [p.text.strip() for p in doc.paragraphs]
         for i, text in enumerate(t for t in texts if t):
-            _add(nodes, Node(path=f"paragraph_{i}", content=text, node_type=NodeType.PARAGRAPH,
-                             metadata={"format": "docx"}))
+            _add(nodes, Node(path=f"paragraph_{i}", content=text, node_type=NodeType.PARAGRAPH))
 
         # Extract tables
         for t_idx, table in enumerate(doc.tables):
@@ -672,18 +639,13 @@ class DOCXNodeParser(BaseNodeParser):
                     _add(nodes, Node(
                         path=f"table_{t_idx}.row_{r_idx}",
                         content=row_data,
-                        node_type=NodeType.ROW,
-                        metadata={
-                            "format": "docx",
-                            "table_index": t_idx,
-                        }
+                        node_type=NodeType.ROW
                     ))
 
         return ParseResult(
             nodes=nodes,
             format_name="docx",
-            success=True,
-            metadata={"node_count": len(nodes)}
+            success=True
         )
 
 
@@ -806,7 +768,6 @@ class CodeNodeParser(BaseNodeParser):
         nodes = self._walk(tree.root_node, src, lang, cfg)
         return ParseResult(
             nodes=nodes, format_name="code", success=True,
-            metadata={"language": lang, "node_count": len(nodes)},
         )
 
     @staticmethod
@@ -834,7 +795,7 @@ class CodeNodeParser(BaseNodeParser):
             # from pkg.mod import a, b as c  -> [a, b]; skip the module itself.
             module = node.child_by_field_name("module_name")
             for child in node.named_children:
-                if child is module:
+                if child == module:
                     continue
                 if child.type == "dotted_name":
                     names.append(self._txt(child, src).split(".")[-1])
@@ -920,23 +881,19 @@ class CodeNodeParser(BaseNodeParser):
         nodes: List[Node] = []
         _add(nodes, Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
-            metadata={"language": lang, "defs": [], "refs": module["refs"]},
+            metadata={"refs": module["refs"]},
         ))
         # Module-level code (constants, route registrations, scripts) is
         # everything outside the top-level definitions.
         for i, chunk in enumerate(_chunk_blocks(_own_text(src, 0, len(src), module["holes"]))):
             _add(nodes, Node(
                 path=f"<module>[{i}]", content=chunk, node_type=NodeType.CODE_BLOCK,
-                metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
             _add(nodes, Node(
                 path=r["path"], content=_own_text(src, r["start_byte"], r["end_byte"], r["holes"]),
                 node_type=_KIND_TO_NODETYPE[r["kind"]],
-                metadata={
-                    "language": lang, "defs": r["defs"], "refs": r["refs"],
-                    "start_line": r["start"], "end_line": r["end"],
-                },
+                metadata={"defs": r["defs"], "refs": r["refs"]},
             ))
         return nodes
 
@@ -944,7 +901,6 @@ class CodeNodeParser(BaseNodeParser):
         return {
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
-            "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
             "start_byte": node.start_byte, "end_byte": node.end_byte,
             "defs": [name], "refs": [], "holes": [],
         }
