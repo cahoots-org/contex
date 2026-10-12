@@ -399,7 +399,7 @@ class SemanticDataMatcher:
             {
                 "need description": [
                     {"data_key": "<node key>", "document": "<document key>",
-                     "similarity": 0.85, "data": {...}, "description": "...",
+                     "similarity": 0.85, "data": {...},
                      "related": [{"data_key": ..., "similarity": ..., ...}],
                      "document_data": {...}},
                     ...
@@ -491,7 +491,6 @@ class SemanticDataMatcher:
                 "document": rows[key].data_key,
                 "similarity": float(similarity),
                 "data": rows[key].data,
-                "description": rows[key].description,
             }
             for key, similarity in ranked
             if key in rows

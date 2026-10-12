@@ -64,6 +64,7 @@ async def test_matched_node_links_to_cross_file_def(ingest, db):
     assert [l["data_key"] for l in links] == ["repo:a.py\x1fhelper"]
     assert links[0]["name"] == "helper"
     assert links[0]["document"] == "repo:a.py"
+    assert "description" not in links[0]
 
 
 @pytest.mark.asyncio

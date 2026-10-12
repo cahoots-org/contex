@@ -413,10 +413,7 @@ class SubscriptionService:
                             continue
                         seen.add(dk)
                         e = emb_by_key[dk]
-                        links.append({
-                            "data_key": dk, "document": e.data_key, "name": name,
-                            "data": e.data, "description": e.description,
-                        })
+                        links.append({"data_key": dk, "document": e.data_key, "name": name, "data": e.data})
                 if links:
                     m["links"] = links[:MAX_LINKS_PER_NODE]
         return bundle
