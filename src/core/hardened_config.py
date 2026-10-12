@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 
 def check_hardened_config() -> None:
-    """Raise on a config that can't work; warn on soft gaps (pepper, CORS, default DB password)."""
+    """Raise on a config that can't work; warn on soft gaps (pepper, default DB password)."""
     if os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL) == DEFAULT_DATABASE_URL:
         logger.warning(
             "Using built-in default database credentials - set DATABASE_URL "
@@ -34,10 +34,4 @@ def check_hardened_config() -> None:
         logger.warning(
             "API_KEY_PEPPER not set - API keys hashed with plain SHA-256 "
             "(acceptable for high-entropy keys; set a pepper for defense in depth)"
-        )
-
-    cors = os.getenv("CORS_ORIGINS", "")
-    if "*" in cors:
-        logger.warning(
-            "CORS_ORIGINS allows a wildcard origin; credentials are disabled under wildcard"
         )
