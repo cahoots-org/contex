@@ -111,11 +111,14 @@ async def _enforce_resource(engine, uri):
         tok = get_access_token()
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         project_id = await engine.subscriptions.project_of(subscription_id_for(uri), tenant_id=tid)
-        if project_id is None:
-            raise MCPError(types.INVALID_PARAMS, _EXPIRED)
         _enforce(Permission.QUERY_DATA, project_id=project_id)
     except PermissionError:
         raise MCPError(types.INVALID_REQUEST, "Permission denied") from None
+    except Exception:
+        logger.exception("Subscription check failed")
+        raise MCPError(types.INTERNAL_ERROR, "Internal error") from None
+    if project_id is None:
+        raise MCPError(types.INVALID_PARAMS, _EXPIRED)
 
 
 class LegacyResourceSubscriptions:
@@ -365,23 +368,25 @@ def build_mcp_server(engine, db_accessor=None):
         return types.EmptyResult()
 
     listen = ListenHandler(bus)
-    open_listens: Counter[str] = Counter()
+    open_listens: Counter[str | None] = Counter()
 
     async def listen_subscriptions(ctx, params: types.SubscriptionsListenRequestParams):
-        for uri in params.notifications.resource_subscriptions or ():
-            await _enforce_resource(_get_engine(), uri)
+        uris = params.notifications.resource_subscriptions or ()
+        if len(uris) > MAX_BATCH_SIZE:
+            raise MCPError(types.INVALID_PARAMS, f"Too many subscriptions (max {MAX_BATCH_SIZE})")
         tok = get_access_token()
-        if tok is None:
-            return await listen(ctx, params)
-        if open_listens[tok.client_id] >= _MAX_LISTEN_STREAMS_PER_KEY:
+        key = tok.client_id if tok else None
+        if key is not None and open_listens[key] >= _MAX_LISTEN_STREAMS_PER_KEY:
             raise MCPError(types.INVALID_REQUEST, "Too many open subscription streams")
-        open_listens[tok.client_id] += 1
+        open_listens[key] += 1
         try:
+            for uri in uris:
+                await _enforce_resource(_get_engine(), uri)
             return await listen(ctx, params)
         finally:
-            open_listens[tok.client_id] -= 1
-            if not open_listens[tok.client_id]:
-                del open_listens[tok.client_id]
+            open_listens[key] -= 1
+            if not open_listens[key]:
+                del open_listens[key]
 
     # The SDK exposes neither a public hook for these legacy methods nor the
     # connection behind a per-request session, so both reach into its internals.
