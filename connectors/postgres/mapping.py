@@ -107,9 +107,11 @@ def row_to_event(
 
 
 def _serialize(value: Any) -> Any:
-    """Coerce non-JSON-serialisable Postgres values to strings."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, str)):
+    """Coerce non-JSON-serialisable Postgres values to strings, keeping jsonb and arrays structured."""
+    if value is None or isinstance(value, (bool, int, float, str)):
         return value
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize(v) for v in value]
     return str(value)

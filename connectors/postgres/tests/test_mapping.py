@@ -172,6 +172,11 @@ class TestRowToEvent:
         event = row_to_event("public", "products", row, ["id"], ["id", "price"])
         assert event.payload["price"] == "9.99"
 
+    def test_jsonb_and_arrays_stay_structured(self):
+        row = {"id": 1, "meta": {"active": True, "note": None}, "tags": ["a", "b"]}
+        event = row_to_event("public", "t", row, ["id"], ["meta", "tags"])
+        assert event.payload == {"meta": {"active": True, "note": None}, "tags": ["a", "b"]}
+
     def test_boolean_preserved(self):
         row = {"id": 1, "active": True}
         event = row_to_event("public", "users", row, ["id"], ["id", "active"])
