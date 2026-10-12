@@ -1,8 +1,8 @@
 """Postgres reader: discover tables, introspect schema, page rows.
 
-Connects read-only via ``source.dsn``, discovers base tables in accessible
-schemas, applies table and column allow/deny lists, and yields a
-:class:`~connectors.base.ChangeEvent` per row using a server-side cursor.
+Connects read-only via ``source.dsn``, discovers permanent base tables
+outside the system schemas, applies table and column allow/deny lists, and
+yields a :class:`~connectors.base.ChangeEvent` per row using a server-side cursor.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'p')
   AND NOT c.relispartition
   AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-  AND has_schema_privilege(n.nspname, 'USAGE')
+  AND c.relpersistence <> 't'
 ORDER BY n.nspname, c.relname;
 """
 
@@ -69,7 +69,7 @@ def origin_for(dsn: str) -> str:
 
 
 def _discover_tables(conn: psycopg.Connection, tbl_include, tbl_exclude) -> list[tuple[str, str]]:
-    """Return the selected (schema, table) pairs in schemas the role can use."""
+    """Return the selected (schema, table) pairs, skipping temp tables."""
     with conn.cursor() as cur:
         cur.execute(_DISCOVER_SQL)
         rows = cur.fetchall()
