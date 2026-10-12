@@ -155,7 +155,7 @@ class JSONNodeParser(BaseNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         if format_hint == "json":
             return True
-        if isinstance(data, dict):
+        if isinstance(data, (dict, list)):
             return True
         if isinstance(data, str):
             try:

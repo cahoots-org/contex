@@ -45,6 +45,10 @@ def test_explicit_hint_picks_the_parser():
     assert result.format_name == "markdown"
 
 
+def test_unhinted_list_is_json():
+    assert NodeConverter().parse([{"a": 1}]).format_name == "json"
+
+
 def test_key_value_prose_is_not_sniffed_as_yaml():
     notes = "Attendees: ana, bo\n\nDecision: ship it\n\nRisk: none"
     result = NodeConverter().parse(notes, "text")
