@@ -1,7 +1,5 @@
 """Tests for data models"""
 
-import pytest
-from pydantic import ValidationError
 from src.core.models import (
     DataPublishEvent,
     MatchedDataSource,

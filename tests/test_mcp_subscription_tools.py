@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 from src.core import mcp_adapter
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
-from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.mcpserver.exceptions import ResourceError
 
 

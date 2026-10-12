@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Event, EventSequenceCounter

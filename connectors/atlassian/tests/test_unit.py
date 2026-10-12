@@ -5,7 +5,6 @@ All tests here run without network access or external services.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from connectors.atlassian.client import _retry_after
 from connectors.atlassian.convert import adf_to_text, storage_html_to_text

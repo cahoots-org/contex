@@ -7,7 +7,6 @@ import pytest_asyncio
 from sqlalchemy import select
 from src.core.event_store import EventStore
 from src.core.db_models import Event, EventSequenceCounter, Tenant
-from src.core.models import DataPublishEvent
 
 
 class TestEventStore:
@@ -113,7 +112,7 @@ class TestEventStore:
         assert latest is None
 
         # Add events
-        seq1 = await event_store.append_event("proj1", "event1", {"data": 1})
+        await event_store.append_event("proj1", "event1", {"data": 1})
         seq2 = await event_store.append_event("proj1", "event2", {"data": 2})
 
         # Latest should be seq2

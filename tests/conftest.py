@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -25,7 +24,7 @@ from src.core.database import DatabaseManager, run_migrations_to_head
 from src.core.embedder import OnnxEmbedder
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
-from src.core.tenant import DEFAULT_TENANT_ID, ensure_default_tenant
+from src.core.tenant import ensure_default_tenant
 
 
 class TestDatabaseManager(DatabaseManager):

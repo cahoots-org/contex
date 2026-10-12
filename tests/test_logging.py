@@ -1,6 +1,5 @@
 """Tests for structured logging"""
 
-import pytest
 import json
 import logging
 from datetime import datetime

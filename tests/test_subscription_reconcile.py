@@ -40,7 +40,7 @@ async def test_reconcile_updates_changed_bundle(db):
 async def test_reconcile_no_change_returns_empty(db):
     m = _MutableMatcher([{"data_key": "cfg", "similarity": 0.9, "data": {"v": 1}, "description": "d"}])
     svc = SubscriptionService(db, m)
-    sub_id = await svc.create("p1", ["auth"])
+    await svc.create("p1", ["auth"])
 
     # matcher returns the same bundle -> no change
     changed = await svc.reconcile_project("p1")
@@ -84,7 +84,6 @@ async def test_reconcile_scoped_to_project(db):
     # "other" project matcher always returns a different bundle so that, if reconcile
     # mistakenly crosses project boundaries, the bundle WOULD change.
     other_initial = [{"data_key": "ok", "similarity": 0.5, "data": {"v": 0}, "description": None}]
-    other_new = [{"data_key": "ok", "similarity": 0.5, "data": {"v": 999}, "description": None}]
 
     class _DifferentPerCall:
         def __init__(self):

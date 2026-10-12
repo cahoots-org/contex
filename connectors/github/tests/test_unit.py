@@ -87,7 +87,7 @@ def test_allowed_include_and_no_exclude():
 
 
 def test_file_key():
-    key = f"cahoots-org/contex:src/main.py"
+    key = "cahoots-org/contex:src/main.py"
     assert key == "cahoots-org/contex:src/main.py"
 
 

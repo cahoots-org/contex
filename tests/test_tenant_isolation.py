@@ -11,7 +11,7 @@ no lifespan runs; app.state.db is wired in each test that needs real DB access.
 The ownership check runs before any handler body that needs the engine, so a 403
 is delivered without requiring context engine init.
 """
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import httpx
 import pytest

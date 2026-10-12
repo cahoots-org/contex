@@ -1,8 +1,5 @@
 """Tests for distributed tracing functionality"""
 
-import pytest
-import pytest_asyncio
-from unittest.mock import Mock, patch, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
