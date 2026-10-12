@@ -1,5 +1,7 @@
 import inspect
 
+import pytest
+from mcp.server.auth.middleware.bearer_auth import AuthorizationContext
 from starlette.testclient import TestClient
 
 import main
@@ -11,6 +13,35 @@ def test_mcp_answers_at_both_paths_without_redirect():
     # Without the lifespan the transport isn't running, so reaching it errors; a 307 or 404 never got there.
     for path in ("/mcp", "/mcp/"):
         assert client.post(path).status_code not in (307, 404)
+
+
+@pytest.mark.asyncio
+async def test_mcp_path_is_rewritten_in_the_scope_metrics_read():
+    seen = []
+
+    async def inner(scope, receive, send):
+        seen.append(scope)
+
+    scope = {"type": "http", "path": "/mcp"}
+    await main.McpPathMiddleware(inner)(scope, None, None)
+    assert seen[0] is scope and scope["path"] == "/mcp/"
+
+
+@pytest.mark.asyncio
+async def test_sessions_are_capped_per_key_and_freed_when_they_end():
+    manager = main._mcp_server.session_manager
+    alice, bob = (AuthorizationContext(client_id=k, issuer=None, subject=None) for k in ("alice", "bob"))
+    opened = [manager._admit_session(alice) for _ in range(main._MAX_SESSIONS_PER_KEY)]
+    try:
+        assert manager._admit_session(alice) is None
+        opened.append(manager._admit_session(bob))
+        assert opened[-1] is not None
+        await manager._discard_session(opened[0].mcp_session_id, opened[0])
+        opened[0] = manager._admit_session(alice)
+        assert opened[0] is not None
+    finally:
+        for transport in opened:
+            await manager._discard_session(transport.mcp_session_id, transport)
 
 
 def test_build_mcp_server_is_wired_in_main():

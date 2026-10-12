@@ -1,4 +1,6 @@
 """Deleting documents by data_key."""
+import asyncio
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
@@ -53,6 +55,7 @@ async def test_delete_drops_the_document_from_subscription_bundles(engine):
     assert any(m["document"] == "cfg" for ms in before.values() for m in ms)
 
     await engine.delete_data("p", ["cfg"])
+    await asyncio.gather(*engine._reconcile_tasks.values())
 
     after = await engine.subscriptions.get_bundle(sub_id)
     assert not any(m["document"] == "cfg" for ms in after.values() for m in ms)

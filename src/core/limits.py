@@ -27,6 +27,9 @@ MAX_TOP_K = positive_int_env("MAX_TOP_K", 100)
 MAX_NEEDS = positive_int_env("MAX_NEEDS", 50)
 # Max live subscriptions per project (every publish may re-check each one).
 MAX_SUBSCRIPTIONS_PER_PROJECT = positive_int_env("MAX_SUBSCRIPTIONS_PER_PROJECT", 1000)
+# Tokens the embedder reads per text, and the characters it keeps (well past that many tokens).
+MAX_SEQ_LENGTH = 512
+MAX_EMBED_CHARS = MAX_SEQ_LENGTH * 16
 # Max items in one batch publish / register request.
 MAX_BATCH_SIZE = positive_int_env("MAX_BATCH_SIZE", 1000)
 
@@ -40,9 +43,11 @@ def clamp_top_k(top_k: int | None) -> int | None:
 
 
 def check_needs(needs) -> None:
-    """Reject a subscription that declares more than MAX_NEEDS needs."""
+    """Reject a subscription with more than MAX_NEEDS needs, or a need the embedder would cut."""
     if len(needs) > MAX_NEEDS:
         raise ValueError(f"Too many needs: {len(needs)} (max {MAX_NEEDS})")
+    if any(len(need) > MAX_EMBED_CHARS for need in needs):
+        raise ValueError(f"Need too long (max {MAX_EMBED_CHARS} characters)")
 
 
 def check_batch_size(items, kind: str = "items") -> None:

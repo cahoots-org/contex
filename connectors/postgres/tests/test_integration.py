@@ -191,12 +191,20 @@ class TestReaderIntegration:
         keys = {e.key for e in self._collect(tbl_include=["contex_test.events*"])}
         assert keys == {f"{_DB}.contex_test.events.1:eu", f"{_DB}.contex_test.events.2:us"}
 
-    def test_unreadable_table_fails_the_run(self):
+    def test_other_sessions_temp_tables_skipped(self):
+        with psycopg.connect(_dsn(), autocommit=True) as other:
+            other.execute("CREATE TEMP TABLE scratch (id INT PRIMARY KEY)")
+            assert self._collect(tbl_include=["pg_temp*.*"]) == []
+
+    @pytest.mark.parametrize("grant", [
+        "GRANT USAGE ON SCHEMA contex_test TO contex_test_reader",
+        "GRANT SELECT ON contex_test.order_items TO contex_test_reader",
+    ])
+    def test_unreadable_table_fails_the_run(self, grant):
         with psycopg.connect(_dsn(), autocommit=True) as conn:
             conn.execute("DROP ROLE IF EXISTS contex_test_reader")
             conn.execute("CREATE ROLE contex_test_reader LOGIN PASSWORD 'pw'")
-            conn.execute("GRANT USAGE ON SCHEMA contex_test TO contex_test_reader")
-            conn.execute("GRANT SELECT ON contex_test.products TO contex_test_reader")
+            conn.execute(grant)
         reader_dsn = make_conninfo(_dsn(), user="contex_test_reader", password="pw")
         try:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

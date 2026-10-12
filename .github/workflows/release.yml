@@ -208,35 +208,13 @@ jobs:
         git tag -f ${{ needs.determine-version.outputs.tag }} -m "Release ${{ needs.determine-version.outputs.version }}"
         git push -f origin ${{ needs.determine-version.outputs.tag }}
 
-    - name: Generate release notes
-      run: |
-        cat > release_notes.md << 'EOF'
-        ## Contex ${{ needs.determine-version.outputs.version }}
-
-        ### 🐳 Docker Images
-
-        Pull from GitHub Container Registry:
-        ```bash
-        docker pull ghcr.io/${{ github.repository }}:${{ needs.determine-version.outputs.version }}
-        ```
-
-        Or use the latest tag:
-        ```bash
-        docker pull ghcr.io/${{ github.repository }}:latest
-        ```
-
-        ### 📝 Changes
-
-        EOF
-
     - name: Create GitHub Release
       uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
       with:
         tag_name: ${{ needs.determine-version.outputs.tag }}
         name: v${{ needs.determine-version.outputs.version }}
-        body_path: release_notes.md
+        body_path: CHANGELOG.md
         draft: false
         prerelease: false
-        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

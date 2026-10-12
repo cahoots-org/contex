@@ -45,7 +45,12 @@ Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
   name (e.g. `origin: team-a`). Postgres keys don't name the host, nor S3
   keys the endpoint, so two servers with a same-named database, or two
   endpoints with a same-named bucket, overwrite each other: publish each to
-  its own project.
+  its own project. Don't overlap runs of one config, or each prunes the
+  other's fresh items; on a cron, wrap the run in `flock -n`, e.g.
+  `flock -n /tmp/pg.lock python -m connectors.postgres --config connector.yaml`.
+  Removing or renaming a source leaves its old origin's keys behind: list
+  them with `contex_list_keys` (passing the old `origin`) and remove them
+  with `contex_delete`.
 - **`load_config` / `ContexConfig` / `resolve_batch_size`** — read a
   `connector.yaml`, expanding `${VAR}` from the environment.
 - **`allowed` / `matches_any`** — include/exclude glob selection.
