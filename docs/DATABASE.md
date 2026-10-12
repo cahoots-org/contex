@@ -1,6 +1,6 @@
 # Database Setup Guide
 
-Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persistent storage, including event sourcing, semantic search embeddings, and application data.
+Contex uses ParadeDB (PostgreSQL 18 with `pg_search` + `pgvector`) for all persistent storage, including semantic search embeddings and application data.
 
 ## Overview
 

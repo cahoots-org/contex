@@ -8,7 +8,6 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
-from .event_store import EventStore
 from .matcher import HybridMatcher
 from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
@@ -68,7 +67,6 @@ class ContextEngine:
             default_threshold=self.semantic_matcher.threshold,
             default_top_k=self.semantic_matcher.max_matches,
         )
-        self.event_store = EventStore(db)
 
         # Initialize tokenizer for context size estimation (cl100k_base is GPT-4 tokenizer)
         try:
@@ -203,46 +201,22 @@ class ContextEngine:
 
         return result
 
-    async def publish_data(
-        self,
-        event: DataPublishEvent,
-        *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
-    ) -> str:
-        """
-        Main app publishes data change (supports any format).
-
-        Args:
-            event: Data publish event
-            source: Source of the publication (default: "api")
-            actor: Actor performing the publication
-            tenant_id: Tenant ID for multi-tenant scenarios
-
-        Returns:
-            Event sequence number
-        """
-        sequences, failed = await self.publish_data_batch(
-            [event], source=source, actor=actor, tenant_id=tenant_id,
-        )
+    async def publish_data(self, event: DataPublishEvent) -> None:
+        """Publish one document (any format); raises ValueError if it can't be read."""
+        _, failed = await self.publish_data_batch([event])
         if failed:
             raise ValueError(failed[0]["error"])
-        return sequences[0]
 
     async def publish_data_batch(
         self,
         events: List[DataPublishEvent],
         *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
         origin: Optional[str] = None,
     ) -> Tuple[List[str], List[Dict[str, str]]]:
         """Publish many events for one project, embedding them in a single pass.
 
         ``origin`` tags the documents with the source stream that published them.
-        Returns the published events' sequence numbers in input order, and a
+        Returns the published data_keys in input order, and a
         ``{data_key, error}`` for each event that could not be published.
         """
         if not events:
@@ -266,22 +240,18 @@ class ContextEngine:
             origin=origin,
         )
 
-        sequences = [
-            await self._record_publish(e, data, fmt, source=source, actor=actor, tenant_id=tenant_id)
-            for (e, data, fmt), error in zip(prepared, errors) if error is None
-        ]
+        published = [e.data_key for e, error in zip(events, errors) if error is None]
         failed = [{"data_key": e.data_key, "error": error} for e, error in zip(events, errors) if error]
 
-        # Reconcile once for the whole batch. The events are already appended,
-        # so a reconcile failure must not fail the publish.
-        published = {e.data_key for e, error in zip(events, errors) if error is None}
+        # Reconcile once for the whole batch. The data is already stored, so a
+        # reconcile failure must not fail the publish.
         if published:
             try:
-                await self.subscriptions.reconcile_project(project_id, published)
+                await self.subscriptions.reconcile_project(project_id, set(published))
             except Exception:
                 logger.exception("subscription reconcile failed for %s", project_id)
 
-        return sequences, failed
+        return published, failed
 
     async def list_keys(
         self, project_id: str, origin: str, after: Optional[str] = None, limit: int = 1000,
@@ -289,27 +259,13 @@ class ContextEngine:
         """Document keys last published by ``origin``, in order, after ``after``."""
         return await self.semantic_matcher.list_keys(project_id, origin, after, limit)
 
-    async def delete_data(
-        self,
-        project_id: str,
-        data_keys: List[str],
-        *,
-        source: str = "api",
-        actor: Optional[Dict[str, Any]] = None,
-        tenant_id: Optional[str] = None,
-    ) -> Dict[str, List[str]]:
-        """Delete documents by key, record a delete event for each, and reconcile once.
+    async def delete_data(self, project_id: str, data_keys: List[str]) -> Dict[str, List[str]]:
+        """Delete documents by key and reconcile once.
 
         Returns the requested keys split into ``deleted`` and ``missing``.
         """
         keys = list(dict.fromkeys(data_keys))
         deleted = set(await self.semantic_matcher.delete_data_keys(project_id, keys))
-        for data_key in keys:
-            if data_key in deleted:
-                await self.event_store.append_event(
-                    project_id, f"{data_key}_deleted", {data_key: None},
-                    tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
-                )
         if deleted:
             try:
                 await self.subscriptions.reconcile_project(project_id, deleted)
@@ -319,41 +275,6 @@ class ContextEngine:
             "deleted": [k for k in keys if k in deleted],
             "missing": [k for k in keys if k not in deleted],
         }
-
-    async def _record_publish(
-        self,
-        event: DataPublishEvent,
-        data: Any,
-        format_hint: str,
-        *,
-        source: str,
-        actor: Optional[Dict[str, Any]],
-        tenant_id: Optional[str],
-    ) -> str:
-        """Append one published item to the event store."""
-        project_id, data_key = event.project_id, event.data_key
-        logger.debug("Publishing data: %s:%s", project_id, data_key)
-
-        # 2. Append to event store
-        # For binary formats (PDF, DOCX), store metadata instead of raw bytes
-        # since the event store uses JSON serialization
-        if isinstance(data, (bytes, bytearray)):
-            event_data = {
-                data_key: {
-                    "_binary": True,
-                    "_format": format_hint,
-                    "_size_bytes": len(data),
-                }
-            }
-        else:
-            event_data = {data_key: data}
-        event_type = event.event_type or f"{data_key}_updated"
-        sequence = await self.event_store.append_event(
-            project_id, event_type, event_data,
-            tenant_id=tenant_id, data_key=data_key, source=source, actor=actor,
-        )
-
-        return sequence
 
     async def query_project_data(
         self, project_id: str, query: str, top_k: int = 5,

@@ -44,7 +44,7 @@ docker compose exec postgres psql -U contex -d contex -c "
   SELECT pid, now() - query_start AS duration, left(query, 120)
   FROM pg_stat_activity WHERE state = 'active' ORDER BY duration DESC"
 
-docker compose exec postgres psql -U contex -d contex -c "VACUUM ANALYZE embeddings; VACUUM ANALYZE events;"
+docker compose exec postgres psql -U contex -d contex -c "VACUUM ANALYZE embeddings;"
 ```
 
 ## Upgrade and rollback

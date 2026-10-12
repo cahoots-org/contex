@@ -20,9 +20,6 @@ class DataPublishEvent(BaseModel):
         default=None,
         description="Optional format hint: 'json', 'yaml', 'csv', 'text', 'markdown', 'code', 'pdf', 'docx', 'image' (auto-detected if not provided)"
     )
-    event_type: Optional[str] = Field(
-        default=None, description="Optional event type (auto-generated if not provided)"
-    )
     published_at: Optional[datetime] = Field(
         default=None, description="When the source changed this content; defaults to ingest time"
     )

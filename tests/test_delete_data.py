@@ -4,7 +4,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from src.core.context_engine import ContextEngine
-from src.core.db_models import Embedding, Event, Symbol
+from src.core.db_models import Embedding, Symbol
 from src.core.models import DataPublishEvent
 
 CODE = "def connect_database(url):\n    return open_pool(url)\n\n\ndef open_pool(url):\n    return url\n"
@@ -26,7 +26,7 @@ async def _count(db, model, data_key):
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_nodes_symbols_and_records_events(engine, db):
+async def test_delete_removes_nodes_and_symbols(engine, db):
     await engine.publish_data(DataPublishEvent(
         project_id="p", data_key="db.py", data=CODE, data_format="code",
     ))
@@ -35,18 +35,12 @@ async def test_delete_removes_nodes_symbols_and_records_events(engine, db):
     ))
     assert await _count(db, Symbol, "db.py") > 0
 
-    result = await engine.delete_data("p", ["db.py", "nope"], source="mcp")
+    result = await engine.delete_data("p", ["db.py", "nope"])
 
     assert result == {"deleted": ["db.py"], "missing": ["nope"]}
     assert await _count(db, Embedding, "db.py") == 0
     assert await _count(db, Symbol, "db.py") == 0
     assert await _count(db, Embedding, "cfg") > 0
-    async with db.session() as session:
-        events = (await session.execute(
-            select(Event.data_key, Event.event_type).where(Event.project_id == "p").order_by(Event.sequence.desc())
-        )).all()
-    assert events[0] == ("db.py", "db.py_deleted")
-    assert "nope" not in {key for key, _ in events}
 
 
 @pytest.mark.asyncio
