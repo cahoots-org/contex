@@ -116,5 +116,7 @@ async def test_images_are_read_with_ocr(db, monkeypatch):
 def test_oversized_documents_are_refused(monkeypatch):
     monkeypatch.setattr(node_parsers, "MAX_DOCX_UNZIPPED_BYTES", 1000)
     monkeypatch.setattr(node_parsers, "MAX_PDF_PAGES", 0)
-    assert not DOCXNodeParser().parse(_docx()).success
-    assert not PDFNodeParser().parse(_pdf()).success
+    with pytest.raises(ValueError, match="size limit"):
+        DOCXNodeParser().parse(_docx())
+    with pytest.raises(ValueError, match="pages"):
+        PDFNodeParser().parse(_pdf())

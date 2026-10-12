@@ -2,6 +2,9 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+import yaml
+
 from src.core.node_parsers import JSONNodeParser, YAMLNodeParser
 
 parser = JSONNodeParser()
@@ -46,4 +49,5 @@ def test_dotted_keys_do_not_collide_with_nesting():
 
 def test_yaml_aliases_are_rejected():
     bomb = "a: &a {x: 1}\nb: &b [*a, *a, *a]\nc: [*b, *b, *b]"
-    assert not YAMLNodeParser().parse(bomb).success
+    with pytest.raises(yaml.YAMLError):
+        YAMLNodeParser().parse(bomb)
