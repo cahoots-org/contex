@@ -26,7 +26,6 @@ async def test_verifier_accepts_and_carries_claims(db):
             key_hash=hashlib.sha256(raw.encode()).hexdigest(),
             name="t",
             prefix=raw[:7],
-            scopes=[],
             tenant_id="tenant-y",
         ))
     await assign_role(db, "dddd4444", Role.PUBLISHER, projects=["p1"])

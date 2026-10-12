@@ -1,5 +1,5 @@
 # src/core/identity.py
-"""Single source of truth for caller identity. Scopes are authoritative."""
+"""Single source of truth for caller identity."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,14 +45,8 @@ async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None
         role = Role(role_row.role) if role_row else None
         projects = tuple(role_row.projects or ()) if role_row else ()
 
-        # Scopes are authoritative: explicit key.scopes win; else expand the role.
-        explicit = _parse_scopes(key.scopes)
-        if explicit:
-            scopes = explicit
-        elif role is not None:
-            scopes = expand_role(role)
-        else:
-            scopes = frozenset()  # a key with neither is valid but powerless
+        # A key with no role is valid but powerless.
+        scopes = expand_role(role) if role is not None else frozenset()
 
         return Identity(
             key_id=key.key_id,
@@ -61,13 +55,3 @@ async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None
             projects=projects,
         )
 
-
-def _parse_scopes(raw: list[str] | None) -> frozenset[Permission]:
-    """Parse stored scope strings into Permissions, ignoring unrecognized values."""
-    out = set()
-    for s in raw or []:
-        try:
-            out.add(Permission(s))
-        except ValueError:
-            continue
-    return frozenset(out)

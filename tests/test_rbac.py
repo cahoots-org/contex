@@ -21,7 +21,6 @@ async def create_api_key(db, key_id: str) -> None:
             key_hash=f"hash_{key_id}",
             name=f"Test Key {key_id}",
             prefix="ctx_",
-            scopes=["read", "write"],
         )
         session.add(api_key)
 

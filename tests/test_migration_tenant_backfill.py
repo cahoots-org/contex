@@ -60,7 +60,6 @@ async def test_api_key_without_tenant_id_defaults_to_default(db):
             key_hash="testhash1",
             name="test_key",
             prefix="test_",
-            scopes=[],
         ))
         await session.commit()
 
@@ -78,15 +77,14 @@ async def test_api_key_explicit_null_via_raw_sql_raises_integrity_error(db):
             await session.execute(
                 text(
                     "INSERT INTO api_keys "
-                    "(key_id, key_hash, name, prefix, scopes, tenant_id) "
-                    "VALUES (:key_id, :key_hash, :name, :prefix, :scopes, NULL)"
+                    "(key_id, key_hash, name, prefix, tenant_id) "
+                    "VALUES (:key_id, :key_hash, :name, :prefix, NULL)"
                 ),
                 {
                     "key_id": "test_key_2_raw",
                     "key_hash": "testhash2_raw",
                     "name": "test_key",
                     "prefix": "test_",
-                    "scopes": ["read"],
                 },
             )
             await session.flush()
