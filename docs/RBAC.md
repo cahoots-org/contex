@@ -35,6 +35,9 @@ means "all projects". A permission check for a specific project passes only when
 the project is in the key's allowed list; global checks (no project) pass when
 the role holds the permission.
 
+A project belongs to the tenant whose key first publishes to it. Until then,
+querying or subscribing to it is denied, so publish before agents read.
+
 ## Creating keys
 
 The bootstrap admin key is created at the first boot with auth on. Create the
