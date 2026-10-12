@@ -44,7 +44,7 @@ async def test_explicit_scopes_are_authoritative(db):
     # explicit scopes on the key override role expansion
     key_id = await _make_key(db, "ck_custom_scopes_bbbb2222",
                              scopes=[Permission.PUBLISH_DATA.value, Permission.QUERY_DATA.value])
-    await assign_role(db, key_id, Role.READONLY)  # readonly would NOT include PUBLISH_DATA
+    await assign_role(db, key_id, Role.CONSUMER)  # consumer would NOT include PUBLISH_DATA
     ident = await resolve_identity(db, "ck_custom_scopes_bbbb2222")
     assert ident.scopes == frozenset({Permission.PUBLISH_DATA, Permission.QUERY_DATA})
 

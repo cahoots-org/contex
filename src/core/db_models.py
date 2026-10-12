@@ -115,7 +115,7 @@ class APIKeyRole(Base):
     key_id: Mapped[str] = mapped_column(
         String(255), ForeignKey("api_keys.key_id", ondelete="CASCADE"), primary_key=True
     )
-    role: Mapped[str] = mapped_column(String(50), nullable=False, default="readonly")
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="consumer")
     projects: Mapped[List[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
 
     # Relationships
