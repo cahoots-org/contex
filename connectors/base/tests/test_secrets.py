@@ -5,6 +5,8 @@ import asyncio
 import io
 import zipfile
 
+import pypdfium2
+
 from connectors.base import ChangeEvent, document_event, resolve_secret_scanner
 from connectors.base.runner import run
 from connectors.base.secrets import SecretScanner
@@ -85,6 +87,16 @@ def test_scans_document_text_not_base64():
     assert s.reason(split_docx.key, split_docx.payload, "docx") is not None
     assert s.reason(image.key, image.payload, "image") is not None  # no text to scan
     assert s.reason(drawn_pdf.key, drawn_pdf.payload, "pdf") is not None
+
+
+def test_annotation_only_page_is_not_scannable():
+    pdf = pypdfium2.PdfDocument(_pdf("quarterly report", ""))
+    page = pdf[1]
+    pypdfium2.raw.FPDFPage_CloseAnnot(pypdfium2.raw.FPDFPage_CreateAnnot(page.raw, pypdfium2.raw.FPDF_ANNOT_FREETEXT))
+    buf = io.BytesIO()
+    pdf.save(buf)
+    event = document_event("r:f.pdf", buf.getvalue(), "pdf")
+    assert SecretScanner().reason(event.key, event.payload, "pdf") is not None
 
 
 def test_reason_names_pattern_not_value():
