@@ -52,7 +52,7 @@
                 <button
                     class="btn-small"
                     @click.stop="navigator.clipboard.writeText($el.closest('.result-content').querySelector('code').textContent).then(() => {
-                        $event.target.textContent = '✓ Copied!';
+                        $event.target.textContent = 'Copied';
                         setTimeout(() => $event.target.textContent = 'Copy', 2000);
                     })"
                 >
@@ -77,11 +77,11 @@
         <button
             class="btn-secondary"
             @click="navigator.clipboard.writeText(JSON.stringify(exportData, null, 2)).then(() => {
-                $event.target.innerHTML = '✓ Copied!';
-                setTimeout(() => $event.target.innerHTML = '📋 Export All as JSON', 2000);
+                $event.target.innerHTML = 'Copied';
+                setTimeout(() => $event.target.innerHTML = 'Copy all as JSON', 2000);
             })"
         >
-            📋 Export All as JSON
+            Copy all as JSON
         </button>
     </div>
 </div>

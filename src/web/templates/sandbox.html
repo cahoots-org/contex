@@ -70,12 +70,12 @@
     }
 }">
     <div class="sandbox-header">
-        <h2>Search Sandbox</h2>
+        <h2>Search sandbox</h2>
     </div>
 
     {% if not projects %}
     <div class="empty-state">
-        <h3>No Projects Yet</h3>
+        <h3>No projects yet</h3>
         <p>Publish some data first with the <code>contex_publish</code> MCP tool:</p>
         <pre><code>{
   "project_id": "my-project",
@@ -87,7 +87,7 @@
 
     <!-- Project Selection -->
     <div class="project-selector">
-        <label for="project_select">Project:</label>
+        <label for="project_select">Project</label>
         <select id="project_select" x-model="selectedProject" @change="stopWatch(); loadProjectData()">
             {% for project in projects %}
             <option value="{{ project }}">{{ project }}</option>
@@ -111,7 +111,7 @@
 
         <div class="form-group">
             <p>Enter search terms to find matching project data</p>
-            <label for="query">Search Terms</label>
+            <label for="query">Search terms</label>
             <textarea
                 name="query"
                 id="query"
@@ -126,7 +126,7 @@
 
         <div class="query-controls">
             <div class="form-group inline">
-                <label for="top_k">Max Results</label>
+                <label for="top_k">Max results</label>
                 <input
                     type="number"
                     name="top_k"
@@ -140,7 +140,7 @@
             </div>
 
             <div class="form-group inline">
-                <label for="threshold">Post-Filter Threshold</label>
+                <label for="threshold">Post-filter threshold</label>
                 <input
                     type="range"
                     name="threshold"
@@ -158,7 +158,7 @@
 
             <button type="submit" class="btn-primary">
                 <span class="htmx-indicator" id="loading">Searching...</span>
-                <span>Find Matches</span>
+                <span>Find matches</span>
             </button>
             <button type="button" class="btn-secondary" @click="watching ? stopWatch() : startWatch()">
                 <span x-show="!watching">Watch</span>
@@ -169,7 +169,7 @@
         <div id="results" class="results-container">
             <div class="placeholder">
                 <div class="example-queries">
-                    <h4>Example Searches:</h4>
+                    <h4>Example searches</h4>
                     <ul>
                         <li>technologies stack frameworks libraries</li>
                         <li>system architecture components</li>
@@ -185,33 +185,12 @@
 
         <!-- Data Panel: Project Data -->
         <div class="data-panel">
-            <div class="data-panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: nowrap;">
-                <h3 style="margin: 0; white-space: nowrap;">Project Data</h3>
-                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: nowrap; flex-shrink: 0;">
-                    <button
-                        @click="loadProjectData()"
-                        title="Refresh data"
-                        style="background: transparent; color: var(--accent); width: 32px; height: 32px; border: 1px solid var(--hairline); border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
-                        @mouseenter="$el.style.background='var(--surface-2)'; $el.style.borderColor='var(--accent)'"
-                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='var(--hairline)'">
-                        ↻
-                    </button>
-                    <button
-                        @click="expandAll()"
-                        title="Expand all items"
-                        style="background: transparent; color: var(--success); width: 32px; height: 32px; border: 1px solid var(--hairline); border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
-                        @mouseenter="$el.style.background='var(--surface-2)'; $el.style.borderColor='var(--success)'"
-                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='var(--hairline)'">
-                        ⊕
-                    </button>
-                    <button
-                        @click="collapseAll()"
-                        title="Collapse all items"
-                        style="background: transparent; color: var(--warning); width: 32px; height: 32px; border: 1px solid var(--hairline); border-radius: 0.375rem; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
-                        @mouseenter="$el.style.background='var(--surface-2)'; $el.style.borderColor='var(--warning)'"
-                        @mouseleave="$el.style.background='transparent'; $el.style.borderColor='var(--hairline)'">
-                        ⊖
-                    </button>
+            <div class="data-panel-header">
+                <h3>Project data</h3>
+                <div>
+                    <button class="icon-btn" @click="loadProjectData()" title="Refresh data">↻</button>
+                    <button class="icon-btn" @click="expandAll()" title="Expand all items">⊕</button>
+                    <button class="icon-btn" @click="collapseAll()" title="Collapse all items">⊖</button>
                 </div>
             </div>
             <div class="data-panel-content">
