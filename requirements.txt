@@ -47,7 +47,7 @@ PyJWT==2.15.0
 setuptools>=83.0.0
 
 # Error tracking
-sentry-sdk[fastapi]==2.69.1
+sentry-sdk[fastapi]==2.71.0
 
 # Distributed Tracing (OpenTelemetry) — versions are coupled: stable 1.45.x
 # pairs with instrumentation 0.66b0; bump them together or pip won't resolve.
