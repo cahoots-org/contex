@@ -15,6 +15,7 @@ import os
 
 import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from connectors.postgres.reader import read_tables
 
@@ -192,3 +193,18 @@ class TestReaderIntegration:
         first = [e.key for e in read_tables(**kwargs)]
         second = [e.key for e in read_tables(**kwargs)]
         assert sorted(first) == sorted(second)
+
+    def test_unreadable_table_fails_the_run(self):
+        with psycopg.connect(_dsn(), autocommit=True) as conn:
+            conn.execute("DROP ROLE IF EXISTS contex_test_reader")
+            conn.execute("CREATE ROLE contex_test_reader LOGIN PASSWORD 'pw'")
+            conn.execute("GRANT USAGE ON SCHEMA contex_test TO contex_test_reader")
+            conn.execute("GRANT SELECT ON contex_test.products TO contex_test_reader")
+        reader_dsn = make_conninfo(_dsn(), user="contex_test_reader", password="pw")
+        try:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                self._collect(dsn=reader_dsn, tbl_include=["contex_test.products", "contex_test.order_items"])
+        finally:
+            with psycopg.connect(_dsn(), autocommit=True) as conn:
+                conn.execute("DROP OWNED BY contex_test_reader")
+                conn.execute("DROP ROLE contex_test_reader")
