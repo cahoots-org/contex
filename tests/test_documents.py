@@ -4,13 +4,14 @@ import io
 import json
 import shutil
 
-import pymupdf
+import pypdfium2
 import pytest
 from docx import Document
 
 from src.core import node_parsers
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
+from src.core.node_parsers import DOCXNodeParser, PDFNodeParser
 
 needs_tesseract = pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract not installed")
 
@@ -18,22 +19,37 @@ PHRASE = "Quarterly revenue forecast for Atlantis"
 
 
 def _pdf() -> bytes:
-    doc = pymupdf.open()
-    doc.new_page().insert_text((72, 100), PHRASE, fontsize=14)
-    return doc.tobytes()
+    stream = b"BT /F1 14 Tf 72 700 Td (%s) Tj ET" % PHRASE.encode()
+    return (
+        b"%%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R"
+        b"/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>>>endobj\n"
+        b"4 0 obj<</Length %d>>stream\n%s\nendstream endobj\n"
+        b"trailer<</Root 1 0 R>>\n%%%%EOF" % (len(stream), stream)
+    )
 
 
-def _png() -> bytes:
-    page = pymupdf.open().new_page()
-    page.insert_text((72, 100), PHRASE, fontsize=20)
-    return page.get_pixmap(dpi=200).tobytes("png")
+def _render() -> pypdfium2.PdfBitmap:
+    return pypdfium2.PdfDocument(_pdf())[0].render(scale=200 / 72, grayscale=True)
+
+
+def _image() -> bytes:
+    pixels = _render().to_numpy()
+    return b"P5 %d %d 255\n" % (pixels.shape[1], pixels.shape[0]) + pixels.tobytes()
 
 
 def _scanned_pdf() -> bytes:
-    doc = pymupdf.open()
-    page = doc.new_page()
-    page.insert_image(page.rect, stream=_png())
-    return doc.tobytes()
+    pdf = pypdfium2.PdfDocument.new()
+    page = pdf.new_page(612, 792)
+    image = pypdfium2.PdfImage.new(pdf)
+    image.set_bitmap(_render())
+    image.set_matrix(pypdfium2.PdfMatrix().scale(612, 792))
+    page.insert_obj(image)
+    page.gen_content()
+    out = io.BytesIO()
+    pdf.save(out)
+    return out.getvalue()
 
 
 def _docx() -> bytes:
@@ -93,5 +109,12 @@ async def test_scanned_pages_are_read_with_ocr(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_images_are_read_with_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
-    matches = await _publish_and_query(db, _png(), "image")
+    matches = await _publish_and_query(db, _image(), "image")
     assert matches and "Atlantis" in json.dumps(matches[0]["data"])
+
+
+def test_oversized_documents_are_refused(monkeypatch):
+    monkeypatch.setattr(node_parsers, "MAX_DOCX_UNZIPPED_BYTES", 1000)
+    monkeypatch.setattr(node_parsers, "MAX_PDF_PAGES", 0)
+    assert not DOCXNodeParser().parse(_docx()).success
+    assert not PDFNodeParser().parse(_pdf()).success

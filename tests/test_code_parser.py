@@ -160,3 +160,11 @@ class ArticleModel:
     by = _by_path(res.nodes)
     assert by["ArticleModel.version"].metadata["defs"] == ["version"]
     assert by["ArticleModel.version#2"].metadata["defs"] == ["version"]
+
+
+def test_module_level_code_is_kept_outside_definitions():
+    src = 'RETRY_LIMIT = 7\n\ndef helper():\n    return 1\n\napp.post("/login", lambda req: check(req))\n'
+    nodes = nc.parse(src, "code", data_key="srv/routes.py").nodes
+    module = "\n".join(n.content for n in nodes if n.path.startswith("module_"))
+    assert "RETRY_LIMIT" in module and "/login" in module
+    assert "helper" not in module

@@ -2,7 +2,7 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.core.node_parsers import JSONNodeParser
+from src.core.node_parsers import JSONNodeParser, YAMLNodeParser
 
 parser = JSONNodeParser()
 
@@ -38,5 +38,12 @@ def test_no_parent_node_when_only_nested_children():
     assert "root" not in _by_path({"a": {"x": 1}, "b": [{"y": 2}]})
 
 
-def test_reconstruct_round_trips():
-    assert parser.reconstruct(parser.parse(ISSUE).nodes) == ISSUE
+
+def test_dotted_keys_do_not_collide_with_nesting():
+    paths = list(_by_path({"spring.datasource": {"url": "a"}, "spring": {"datasource": {"url": "b"}}}))
+    assert len(paths) == len(set(paths)) == 2
+
+
+def test_yaml_aliases_are_rejected():
+    bomb = "a: &a {x: 1}\nb: &b [*a, *a, *a]\nc: [*b, *b, *b]"
+    assert not YAMLNodeParser().parse(bomb).success

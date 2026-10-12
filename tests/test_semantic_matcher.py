@@ -1,6 +1,7 @@
 """Tests for semantic data matching with PostgreSQL/pgvector"""
 
 import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -8,7 +9,8 @@ import pytest_asyncio
 import numpy as np
 from sqlalchemy import select, text
 from unittest.mock import Mock, AsyncMock, patch
-from src.core.db_models import Embedding
+from src.core.db_models import Embedding, Symbol
+from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
 from src.core.models import DataPublishEvent
 
@@ -360,6 +362,55 @@ class TestSemanticMatcherContentHashDedup:
         await matcher.register_data("projd", "config", {"version": "2.0"})
 
         assert matcher.model.encode.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_model_change_re_embeds(self, matcher):
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        matcher.model.encode.reset_mock()
+        matcher.model_name = "other/model-768"
+        await matcher.register_data("projd", "config", {"version": "1.0"})
+
+        assert matcher.model.encode.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_removed_text_stops_matching_lexically(self, matcher):
+        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nZanzibarquux in v1.", "text")
+        await matcher.register_data("projd", "doc.txt", "Alpha stays.\n\nBeta stays.\n\nGamma in v2.", "text")
+
+        assert await PgFtsLexical(matcher.db).search("projd", "Zanzibarquux", top_k=10) == []
+
+    @pytest.mark.asyncio
+    async def test_concurrent_first_publishes_of_one_key_all_succeed(self, matcher):
+        results = await asyncio.gather(*[
+            matcher.register_data("projd", f"race{n}.txt", f"Alpha one.\n\nBeta {i}.", "text")
+            for n in range(10) for i in range(4)
+        ], return_exceptions=True)
+        assert not [r for r in results if isinstance(r, Exception)]
+
+    @pytest.mark.asyncio
+    async def test_republish_drops_nodes_and_symbols_it_no_longer_has(self, matcher):
+        await matcher.register_data("projd", "lib/util.py", "def helper():\n    return compute()\n", "code")
+        await matcher.register_data("projd", "lib/util.py", "First note.\n\nSecond note.", "text")
+        await matcher.register_data("projd", "lib/util.py", "First note.", "text")
+
+        async with matcher.db.session() as session:
+            nodes = (await session.execute(select(Embedding.node_key))).scalars().all()
+            symbols = (await session.execute(select(Symbol.name))).scalars().all()
+        assert nodes == ["lib/util.py.sentence_0"]
+        assert symbols == []
+
+    @pytest.mark.asyncio
+    async def test_parsing_runs_off_the_event_loop(self, matcher, monkeypatch):
+        parse, threads = matcher.node_converter.parse, []
+
+        def spy(*args, **kwargs):
+            threads.append(threading.current_thread())
+            return parse(*args, **kwargs)
+
+        monkeypatch.setattr(matcher.node_converter, "parse", spy)
+        await matcher.register_data("projd", "notes", "hello")
+        assert threads and threads[0] is not threading.main_thread()
 
 
 class TestSemanticMatcherConcurrency:

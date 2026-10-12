@@ -17,7 +17,7 @@ async def test_semantically_closest_ranks_first(db):
                            ("billing", "invoice and payment processing")]:
             vec = model.encode(descr).tolist()
             session.add(Embedding(project_id="p1", data_key=key, node_key=key,
-                                  description=descr, data={}, data_original=descr,
+                                  description=descr, data={},
                                   data_format="text", embedding=vec))
         await session.commit()
 

@@ -7,14 +7,18 @@ Each parser:
 3. Can reconstruct from Nodes back to the format
 """
 
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 from abc import ABC, abstractmethod
 import json
 import os
 import re
 import io
+import subprocess
+import zipfile
 
-import pymupdf
+import pypdfium2
+import yaml
+from docx import Document
 
 from .node import Node, NodeType, ParseResult
 
@@ -33,39 +37,53 @@ CODE_EXTENSIONS = {
     ".go": "go",
 }
 
-# data_format values that carry no real signal, so key-extension inference wins.
-_GENERIC_FORMATS = {None, "", "text"}
+# Other formats a file extension identifies.
+_EXTENSION_FORMATS = {
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".csv": "csv",
+}
+
+# data_format values that carry no real signal, so the key's extension or
+# content sniffing decides the format.
+GENERIC_FORMATS = {None, "", "text"}
 
 # OCR scanned PDF pages and images with Tesseract (must be installed).
 OCR_ENABLED = os.getenv("OCR_ENABLED", "").strip().lower() in ("1", "true", "yes")
 
+# Bounds on what one uploaded document may cost to parse.
+MAX_PDF_PAGES = 2000
+MAX_OCR_PAGES = 50
+MAX_OCR_PIXELS_PER_SIDE = 6000
+MAX_DOCX_UNZIPPED_BYTES = 200 * 2**20
+
+
+def _extension(data_key: Optional[str]) -> str:
+    """Lowercased suffix of a file-ish key ("owner/repo:src/app.py" -> ".py"), or ""."""
+    base = (data_key or "").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    dot = base.rfind(".")
+    return base[dot:].lower() if dot != -1 else ""
+
 
 def language_for_key(data_key: Optional[str]) -> Optional[str]:
-    """Grammar name for a data_key's file extension, or None.
-
-    Keys are file-ish: "owner/repo:src/app.py", "bucket/dir/foo.ts". Take the
-    basename after the last path or ":" separator, then the lowercased suffix.
-    """
-    if not data_key:
-        return None
-    base = data_key.rsplit("/", 1)[-1].rsplit(":", 1)[-1]
-    dot = base.rfind(".")
-    if dot == -1:
-        return None
-    return CODE_EXTENSIONS.get(base[dot:].lower())
+    """Grammar name for a data_key's file extension, or None."""
+    return CODE_EXTENSIONS.get(_extension(data_key))
 
 
 def resolve_format(data_format: Optional[str], data_key: Optional[str]) -> Optional[str]:
-    """Resolve the effective format for a publish, inferring code from the key.
+    """Resolve the effective format for a publish, inferring it from the key.
 
     An explicit, non-generic ``data_format`` always wins. A generic/absent one
     ("text" or None, as emitted by the GitHub/S3 connectors) falls back to the
-    key's extension: a known code extension yields "code", otherwise the format
-    is returned unchanged.
+    key's extension, or is returned unchanged when the extension says nothing.
     """
-    if data_format not in _GENERIC_FORMATS:
+    if data_format not in GENERIC_FORMATS:
         return data_format
-    return "code" if language_for_key(data_key) else data_format
+    if language_for_key(data_key):
+        return "code"
+    return _EXTENSION_FORMATS.get(_extension(data_key), data_format)
 
 
 class BaseNodeParser(ABC):
@@ -95,11 +113,6 @@ class BaseNodeParser(ABC):
     @abstractmethod
     def parse(self, data: Any) -> ParseResult:
         """Parse data into nodes"""
-        pass
-
-    @abstractmethod
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct data from nodes"""
         pass
 
 
@@ -176,7 +189,9 @@ class JSONNodeParser(BaseNodeParser):
                     metadata={"format": "json"}
                 ))
             for key, value in data.items():
-                child_path = f"{path}.{key}" if path else key
+                # Escaped so {"a.b": ...} and {"a": {"b": ...}} get distinct paths.
+                segment = str(key).replace("\\", "\\\\").replace(".", "\\.").replace("[", "\\[")
+                child_path = f"{path}.{segment}" if path else segment
                 if isinstance(value, list) and _is_complex(value):
                     for idx, item in enumerate(value):
                         nodes.extend(self._extract_nodes(item, f"{child_path}[{idx}]"))
@@ -200,99 +215,19 @@ class JSONNodeParser(BaseNodeParser):
 
         return nodes
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct JSON from nodes"""
-        if not nodes:
-            return {}
-
-        # Build nested structure from paths
-        result = {}
-
-        for node in nodes:
-            self._set_by_path(result, node.path, node.content)
-
-        # If target format is string, dump as JSON
-        if target_format == "string":
-            return json.dumps(result, indent=2, ensure_ascii=False)
-
-        return result
-
-    def _set_by_path(self, obj: dict, path: str, value: Any):
-        """Set value in nested dict by path"""
-        if not path or path == "root":
-            if isinstance(value, dict):
-                obj.update(value)
-            return
-
-        parts = []
-        current = ""
-        in_bracket = False
-
-        # Parse path like "a.b[0].c"
-        for char in path:
-            if char == '[':
-                if current:
-                    parts.append(current)
-                    current = ""
-                in_bracket = True
-            elif char == ']':
-                if current:
-                    parts.append(f"[{current}]")
-                    current = ""
-                in_bracket = False
-            elif char == '.' and not in_bracket:
-                if current:
-                    parts.append(current)
-                    current = ""
-            else:
-                current += char
-
-        if current:
-            parts.append(current)
-
-        # Navigate/create structure
-        current_obj = obj
-        for i, part in enumerate(parts[:-1]):
-            if part.startswith('['):
-                # Array index
-                idx = int(part[1:-1])
-                if not isinstance(current_obj, list):
-                    current_obj = []
-                while len(current_obj) <= idx:
-                    current_obj.append({})
-                current_obj = current_obj[idx]
-            else:
-                # Object key
-                if part not in current_obj:
-                    # Look ahead to see if next is array
-                    if i + 1 < len(parts) and parts[i + 1].startswith('['):
-                        current_obj[part] = []
-                    else:
-                        current_obj[part] = {}
-                current_obj = current_obj[part]
-
-        # Set final value
-        final_part = parts[-1] if parts else None
-        if final_part:
-            if final_part.startswith('['):
-                idx = int(final_part[1:-1])
-                if not isinstance(current_obj, list):
-                    current_obj = []
-                while len(current_obj) <= idx:
-                    current_obj.append(None)
-                current_obj[idx] = value
-            else:
-                if isinstance(value, dict):
-                    if final_part not in current_obj:
-                        current_obj[final_part] = {}
-                    current_obj[final_part].update(value)
-                else:
-                    current_obj[final_part] = value
-
 
 # ============================================================================
 # YAML Parser
 # ============================================================================
+
+class _NoAliasLoader(yaml.SafeLoader):
+    """Safe loader that rejects aliases, which can expand a few bytes into millions of nodes."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("YAML aliases are not supported")
+        return super().compose_node(parent, index)
+
 
 class YAMLNodeParser(JSONNodeParser):
     """Parse YAML data (reuses JSON logic since YAML → dict)"""
@@ -306,32 +241,14 @@ class YAMLNodeParser(JSONNodeParser):
         return 11
 
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
-        if format_hint == "yaml":
-            return True
-        if isinstance(data, str) and not data.strip().startswith('{'):
-            # YAML has specific patterns: key: value, lists with -, etc.
-            # Don't catch CSV (has commas) or plain text (no colons)
-            if ',' in data and '\n' in data:
-                # Likely CSV, not YAML
-                return False
-            if ':' not in data and '-' not in data:
-                # No YAML markers, probably plain text
-                return False
-            try:
-                import yaml
-                result = yaml.safe_load(data)
-                # Only accept if it parses to dict or list (not plain string)
-                return isinstance(result, (dict, list))
-            except:
-                return False
-        return False
+        # Too much prose ("Owner: x") is valid YAML to sniff for it.
+        return format_hint == "yaml"
 
     def parse(self, data: Any) -> ParseResult:
         """Parse YAML into nodes"""
         try:
             if isinstance(data, str):
-                import yaml
-                data = yaml.safe_load(data)
+                data = yaml.load(data, Loader=_NoAliasLoader)
 
             nodes = self._extract_nodes(data, "")
             return ParseResult(
@@ -347,16 +264,6 @@ class YAMLNodeParser(JSONNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> Any:
-        """Reconstruct as YAML string"""
-        result = super().reconstruct(nodes, target_format=None)
-
-        if target_format == "string":
-            import yaml
-            return yaml.dump(result, default_flow_style=False, allow_unicode=True)
-
-        return result
 
 
 # ============================================================================
@@ -433,39 +340,6 @@ class PlainTextNodeParser(BaseNodeParser):
         # Simple sentence splitting
         sentences = re.split(r'[.!?]+\s+', text)
         return [s.strip() for s in sentences if s.strip()]
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct text from nodes"""
-        if not nodes:
-            return ""
-
-        # Group by paragraph if available
-        paragraphs = {}
-        for node in nodes:
-            if node.node_type == NodeType.PARAGRAPH:
-                # Extract paragraph number
-                match = re.match(r'paragraph_(\d+)', node.path)
-                if match:
-                    idx = int(match.group(1))
-                    paragraphs[idx] = str(node.content)
-            elif node.node_type == NodeType.SENTENCE:
-                # Group sentences into paragraph 0
-                if 0 not in paragraphs:
-                    paragraphs[0] = []
-                if not isinstance(paragraphs[0], list):
-                    paragraphs[0] = [paragraphs[0]]
-                paragraphs[0].append(str(node.content))
-
-        # Reconstruct
-        result = []
-        for idx in sorted(paragraphs.keys()):
-            content = paragraphs[idx]
-            if isinstance(content, list):
-                result.append(' '.join(content))
-            else:
-                result.append(content)
-
-        return '\n\n'.join(result)
 
 
 # ============================================================================
@@ -565,24 +439,6 @@ class MarkdownNodeParser(BaseNodeParser):
                 error=str(e)
             )
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct markdown from nodes"""
-        if not nodes:
-            return ""
-
-        parts = []
-        for node in nodes:
-            if node.node_type == NodeType.HEADING:
-                level = node.metadata.get("level", 1)
-                parts.append(f"\n{'#' * level} {node.content}\n")
-            elif node.node_type == NodeType.CODE_BLOCK:
-                language = node.metadata.get("language", "")
-                parts.append(f"\n```{language}\n{node.content}\n```\n")
-            elif node.node_type == NodeType.PARAGRAPH:
-                parts.append(f"\n{node.content}\n")
-
-        return ''.join(parts).strip()
-
 
 # ============================================================================
 # CSV Parser
@@ -651,49 +507,30 @@ class CSVNodeParser(BaseNodeParser):
                 error=str(e)
             )
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct CSV from row nodes"""
-        if not nodes:
-            return ""
-
-        import csv
-        from io import StringIO
-
-        output = StringIO()
-
-        # Get all unique keys for headers
-        all_keys = set()
-        for node in nodes:
-            if isinstance(node.content, dict):
-                all_keys.update(node.content.keys())
-
-        headers = sorted(all_keys)
-        writer = csv.DictWriter(output, fieldnames=headers)
-        writer.writeheader()
-
-        for node in nodes:
-            if isinstance(node.content, dict):
-                writer.writerow(node.content)
-
-        return output.getvalue()
-
 
 # ============================================================================
 # PDF Parser
 # ============================================================================
 
-def _page_text(page: "pymupdf.Page") -> str:
-    """A page's text layer, or its OCR'd text when it has none and OCR is enabled."""
-    text = page.get_text("text").strip()
-    if text or not OCR_ENABLED:
-        return text
-    return page.get_text("text", textpage=page.get_textpage_ocr(full=True)).strip()
+def _ocr(image: bytes) -> str:
+    """The text Tesseract reads from an image file's bytes."""
+    result = subprocess.run(["tesseract", "stdin", "stdout"], input=image, capture_output=True, check=True)
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def _ocr_page(page: pypdfium2.PdfPage) -> str:
+    """OCR a page rendered at 300 dpi, or smaller if that would be huge."""
+    scale = min(300 / 72, MAX_OCR_PIXELS_PER_SIDE / max(page.get_size()))
+    pixels = page.render(scale=scale, grayscale=True).to_numpy()
+    height, width = pixels.shape
+    return _ocr(b"P5 %d %d 255\n" % (width, height) + pixels.tobytes())
 
 
 class PDFNodeParser(BaseNodeParser):
     """Parse PDF documents into nodes by extracting text per page/section.
 
-    Pages with no text layer (scans) are OCR'd when OCR_ENABLED is set.
+    Up to MAX_OCR_PAGES pages with no text layer (scans) are OCR'd when
+    OCR_ENABLED is set.
     """
 
     @property
@@ -712,8 +549,19 @@ class PDFNodeParser(BaseNodeParser):
             return data[:5] == b'%PDF-'
         return False
 
-    def _open(self, data: bytes) -> "pymupdf.Document":
-        return pymupdf.open(stream=data, filetype="pdf")
+    def _page_texts(self, data: bytes) -> List[str]:
+        pdf = pypdfium2.PdfDocument(data)
+        try:
+            if len(pdf) > MAX_PDF_PAGES:
+                raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
+            texts = [page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip() for page in pdf]
+            if OCR_ENABLED:
+                scanned = [i for i, text in enumerate(texts) if not text]
+                for i in scanned[:MAX_OCR_PAGES]:
+                    texts[i] = _ocr_page(pdf[i])
+            return texts
+        finally:
+            pdf.close()
 
     def parse(self, data: Any) -> ParseResult:
         """Parse document bytes into nodes"""
@@ -721,13 +569,11 @@ class PDFNodeParser(BaseNodeParser):
         if not isinstance(data, (bytes, bytearray)):
             return ParseResult(nodes=[], format_name=fmt, success=False, error=f"{fmt} parser requires bytes input")
         try:
-            doc = self._open(data)
+            texts = self._page_texts(data)
             nodes = []
-            total_pages = len(doc)
+            total_pages = len(texts)
 
-            for page_num in range(total_pages):
-                text = _page_text(doc[page_num])
-
+            for page_num, text in enumerate(texts):
                 if not text:
                     continue
 
@@ -760,8 +606,6 @@ class PDFNodeParser(BaseNodeParser):
                             }
                         ))
 
-            doc.close()
-
             return ParseResult(
                 nodes=nodes,
                 format_name=fmt,
@@ -779,25 +623,6 @@ class PDFNodeParser(BaseNodeParser):
                 error=str(e)
             )
 
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct PDF content as plain text (cannot recreate binary PDF)"""
-        if not nodes:
-            return ""
-
-        pages: dict[int, list[str]] = {}
-        for node in nodes:
-            page = node.metadata.get("page", 1)
-            if page not in pages:
-                pages[page] = []
-            pages[page].append(str(node.content))
-
-        parts = []
-        for page_num in sorted(pages.keys()):
-            parts.append(f"--- Page {page_num} ---")
-            parts.append("\n\n".join(pages[page_num]))
-
-        return "\n\n".join(parts)
-
 
 class ImageNodeParser(PDFNodeParser):
     """OCR an image (PNG, JPEG, TIFF, ...) into nodes; requires OCR_ENABLED."""
@@ -809,10 +634,10 @@ class ImageNodeParser(PDFNodeParser):
     def can_parse(self, data: Any, format_hint: Optional[str] = None) -> bool:
         return format_hint == "image"
 
-    def _open(self, data: bytes) -> "pymupdf.Document":
+    def _page_texts(self, data: bytes) -> List[str]:
         if not OCR_ENABLED:
             raise ValueError("images need OCR; set OCR_ENABLED=true")
-        return pymupdf.open(stream=data)
+        return [_ocr(data)]
 
 
 # ============================================================================
@@ -841,10 +666,11 @@ class DOCXNodeParser(BaseNodeParser):
     def parse(self, data: Any) -> ParseResult:
         """Parse DOCX bytes into nodes"""
         try:
-            from docx import Document
-            from docx.opc.exceptions import PackageNotFoundError
-
             if isinstance(data, (bytes, bytearray)):
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    unzipped = sum(info.file_size for info in archive.infolist())
+                if unzipped > MAX_DOCX_UNZIPPED_BYTES:
+                    raise ValueError("DOCX expands beyond the size limit")
                 doc = Document(io.BytesIO(data))
             else:
                 return ParseResult(
@@ -935,13 +761,6 @@ class DOCXNodeParser(BaseNodeParser):
                 success=True,
                 metadata={"node_count": len(nodes)}
             )
-        except ImportError:
-            return ParseResult(
-                nodes=[],
-                format_name="docx",
-                success=False,
-                error="python-docx is required for DOCX parsing: pip install python-docx"
-            )
         except Exception as e:
             return ParseResult(
                 nodes=[],
@@ -949,29 +768,6 @@ class DOCXNodeParser(BaseNodeParser):
                 success=False,
                 error=str(e)
             )
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        """Reconstruct DOCX content as plain text (cannot recreate binary DOCX)"""
-        if not nodes:
-            return ""
-
-        parts = []
-        for node in nodes:
-            if node.node_type == NodeType.HEADING:
-                level = node.metadata.get("level", 1)
-                parts.append(f"\n{'#' * level} {node.content}\n")
-            elif node.node_type == NodeType.LIST_ITEM:
-                parts.append(f"  - {node.content}")
-            elif node.node_type == NodeType.ROW:
-                if isinstance(node.content, dict):
-                    row_str = " | ".join(f"{k}: {v}" for k, v in node.content.items())
-                    parts.append(f"  [{row_str}]")
-                else:
-                    parts.append(f"  {node.content}")
-            else:
-                parts.append(str(node.content))
-
-        return "\n\n".join(parts)
 
 
 # ============================================================================
@@ -1032,6 +828,19 @@ _LANGUAGE_CONFIG = {
         "var_fn": False,
     },
 }
+
+
+def _chunk_blocks(text: str, limit: int = 1500) -> List[str]:
+    """Blank-line-separated blocks of ``text``, merged greedily up to ``limit`` characters."""
+    chunks: List[str] = []
+    for block in (b.strip() for b in text.split("\n\n")):
+        if not block:
+            continue
+        if chunks and len(chunks[-1]) + len(block) < limit:
+            chunks[-1] += "\n\n" + block
+        else:
+            chunks.append(block)
+    return chunks
 
 
 class CodeNodeParser(BaseNodeParser):
@@ -1183,11 +992,25 @@ class CodeNodeParser(BaseNodeParser):
 
         summary = "defines: " + ", ".join(r["path"] for r in records)
         if module_refs:
-            summary += "\nimports: " + ", ".join(module_refs)
+            summary += "\nreferences: " + ", ".join(module_refs)
         nodes = [Node(
             path="", content=summary, node_type=NodeType.DOCUMENT,
             metadata={"language": lang, "defs": [], "refs": module_refs},
         )]
+        # Module-level code (constants, route registrations, scripts) is
+        # everything outside the top-level definitions.
+        outside, pos = [], 0
+        for r in records:
+            if r["top_level"]:
+                outside.append(src[pos:r["start_byte"]])
+                pos = r["end_byte"]
+        outside.append(src[pos:])
+        module_code = b"".join(outside).decode("utf-8", errors="replace")
+        for i, chunk in enumerate(_chunk_blocks(module_code)):
+            nodes.append(Node(
+                path=f"module_{i}", content=chunk, node_type=NodeType.CODE_BLOCK,
+                metadata={"language": lang, "defs": [], "refs": []},
+            ))
         for r in records:
             nodes.append(Node(
                 path=r["path"], content=r["content"],
@@ -1204,11 +1027,6 @@ class CodeNodeParser(BaseNodeParser):
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
             "start": node.start_point[0] + 1, "end": node.end_point[0] + 1,
+            "start_byte": node.start_byte, "end_byte": node.end_byte, "top_level": not stack,
             "content": self._txt(node, src), "defs": [name], "refs": [],
         }
-
-    def reconstruct(self, nodes: List[Node], target_format: Optional[str] = None) -> str:
-        # Code isn't a reconstruct target in practice; concatenate node sources.
-        return "\n\n".join(
-            str(n.content) for n in nodes if n.node_type != NodeType.DOCUMENT
-        )

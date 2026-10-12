@@ -12,7 +12,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import toon_format as toon
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.exc import SQLAlchemyError
 from src.web.live import stream_subscription_updates
 from src.core.logging import get_logger
@@ -22,6 +23,22 @@ from src.core.tenant import TenantManager
 router = APIRouter()
 
 logger = get_logger(__name__)
+
+
+async def _documents(engine, project_id: str) -> list:
+    """Each document as (data_key, data_format, its nodes' data in order)."""
+    async with engine.semantic_matcher.db.session() as session:
+        result = await session.execute(
+            select(
+                Embedding.data_key,
+                func.min(Embedding.data_format),
+                func.jsonb_agg(aggregate_order_by(Embedding.data, Embedding.id)),
+            )
+            .where(Embedding.project_id == project_id)
+            .group_by(Embedding.data_key)
+            .order_by(Embedding.data_key)
+        )
+        return result.all()
 
 
 def get_tenant_manager(request: Request) -> TenantManager:
@@ -167,23 +184,7 @@ async def project_stats(request: Request, project_id: str):
     Reads from the `embeddings` table (Postgres/pgvector) — the store where
     published data actually lands — mirroring the sibling `/data` handler.
     """
-    engine = request.app.state.context_engine
-
-    # One representative row per data_key, straight from the embeddings store.
-    # DISTINCT ON collapses the per-node rows back to a single item per key.
-    async with engine.semantic_matcher.db.session() as session:
-        result = await session.execute(
-            select(
-                Embedding.data_key,
-                Embedding.description,
-                Embedding.data,
-                Embedding.data_original,
-            )
-            .where(Embedding.project_id == project_id)
-            .distinct(Embedding.data_key)
-            .order_by(Embedding.data_key, Embedding.id)
-        )
-        rows = result.all()
+    rows = await _documents(request.app.state.context_engine, project_id)
 
     # Calculate stats
     import tiktoken
@@ -195,10 +196,8 @@ async def project_stats(request: Request, project_id: str):
     total_tokens = 0
     data_items = []
 
-    for data_key, description, data, data_original in rows:
-        # Prefer the full original payload (pre node-splitting); fall back to the
-        # JSONB node data serialized as JSON.
-        data_str = data_original if data_original else json.dumps(data)
+    for data_key, data_format, nodes in rows:
+        data_str = json.dumps(nodes)
 
         # Calculate token count
         token_count = 0
@@ -211,7 +210,7 @@ async def project_stats(request: Request, project_id: str):
 
         data_items.append({
             "data_key": data_key,
-            "description": description or "",
+            "description": f"{data_key} ({data_format or 'unknown'})",
             "token_count": token_count,
         })
 
@@ -230,39 +229,14 @@ async def project_stats(request: Request, project_id: str):
 @router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
 async def get_project_data(request: Request, project_id: str):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
-    engine = request.app.state.context_engine
-
-    # One representative row per data_key, straight from the embeddings store.
-    # DISTINCT ON collapses the per-node rows back to a single item per key.
-    async with engine.semantic_matcher.db.session() as session:
-        result = await session.execute(
-            select(
-                Embedding.data_key,
-                Embedding.data,
-                Embedding.data_original,
-                Embedding.data_format,
-            )
-            .where(Embedding.project_id == project_id)
-            .distinct(Embedding.data_key)
-            .order_by(Embedding.data_key, Embedding.id)
-        )
-        rows = result.all()
-
-    data_items = []
-    for data_key, data, data_original, data_format in rows:
-        # Prefer the full original payload (pre node-splitting); fall back to the JSONB node data.
-        data_obj = data
-        if data_original:
-            try:
-                data_obj = json.loads(data_original)
-            except (json.JSONDecodeError, ValueError):
-                data_obj = data_original
-
-        data_items.append({
+    data_items = [
+        {
             "data_key": data_key,
             "description": f"{data_key} ({data_format or 'unknown'})",
-            "data": data_obj,
-        })
+            "data": nodes[0] if len(nodes) == 1 else nodes,
+        }
+        for data_key, data_format, nodes in await _documents(request.app.state.context_engine, project_id)
+    ]
 
     return {"data": data_items}
 

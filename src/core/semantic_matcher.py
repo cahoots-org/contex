@@ -1,13 +1,14 @@
 """Semantic data matching using embeddings for agent context discovery"""
 
+import asyncio
 import hashlib
-import json
 import os
 from datetime import datetime
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import numpy as np
 from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.core.database import DatabaseManager
 from src.core.db_models import Embedding, Symbol
@@ -42,6 +43,12 @@ def _load_model(model_name: str) -> OnnxEmbedder:
 
 
 _TITLE_FIELDS = ("title", "summary", "name")
+
+# Columns a republished node overwrites.
+_REWRITTEN_COLUMNS = (
+    "data_key", "node_path", "node_type", "description", "data",
+    "data_format", "content_hash", "embedding", "published_at",
+)
 
 
 def _document_title(nodes) -> str:
@@ -83,15 +90,6 @@ def collapse_by_document(
         elif len(doc["related"]) < per_document - 1:
             doc["related"].append({k: v for k, v in candidate.items() if k != "document"})
     return list(docs.values())
-
-
-def _original_text(data: Any, nodes) -> str:
-    """The published item as text: as is, JSON, or a document's extracted text."""
-    if isinstance(data, str):
-        return data
-    if isinstance(data, (bytes, bytearray)):
-        return "\n\n".join(str(node.content) for node in nodes)
-    return json.dumps(data)
 
 
 class SemanticDataMatcher:
@@ -148,7 +146,7 @@ class SemanticDataMatcher:
                 rrf_k = int(os.getenv("RRF_K", "60"))
                 self.hybrid_search = HybridSearchService(
                     vector_search=self.vector_search,
-                    lexical_search=PgFtsLexical.from_env(db),
+                    lexical_search=PgFtsLexical(db),
                     k=rrf_k,
                 )
                 logger.info("Hybrid search enabled (pgvector + pg_search BM25, RRF)")
@@ -236,16 +234,14 @@ class SemanticDataMatcher:
         """
         published_at = published_at or {}
         if origin is not None:
-            # Unchanged items skip the write below, so tag existing rows here.
+            # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
         plans = [
             plan for data_key, data, format_hint in items
             if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
         ]
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
-        if not texts:
-            return
-        embeddings = await encode_async(self.model, texts, batch_size=16)
+        embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
         offset = 0
         for plan in plans:
@@ -260,7 +256,10 @@ class SemanticDataMatcher:
     ) -> Optional[Dict[str, Any]]:
         """Parse one item and work out which of its nodes need (re-)embedding."""
         # data_key carries the file extension the code parser needs to pick a grammar.
-        parse_result = self.node_converter.parse(data, format_hint, data_key=data_key)
+        # Parsing is CPU-bound (PDF, OCR, DOCX), so it runs off the event loop.
+        parse_result = await asyncio.to_thread(
+            self.node_converter.parse, data, format_hint, data_key=data_key
+        )
 
         if not parse_result.success:
             logger.warning(
@@ -289,11 +288,12 @@ class SemanticDataMatcher:
         ]
         title = _document_title(nodes)
         embedding_texts = [_embedding_text(data_key, node, title) for node in nodes]
-        # Content-hash dedup (#223): skip encode + upsert for nodes whose embedded
-        # text is unchanged. The hash covers the exact string we encode and index,
-        # so it captures both content and the provenance prefix.
+        # Skip encode + upsert for nodes whose embedded text and model are
+        # unchanged. The hash covers the exact string we encode and index, so it
+        # captures both content and the provenance prefix.
         content_hashes = [
-            hashlib.sha256(t.encode("utf-8")).hexdigest() for t in embedding_texts
+            hashlib.sha256(f"{self.model_name}\n{t}".encode("utf-8")).hexdigest()
+            for t in embedding_texts
         ]
         async with self.db.session() as session:
             prior = await session.execute(
@@ -309,18 +309,8 @@ class SemanticDataMatcher:
             if prior_hashes.get(node_key) != content_hash
         ]
 
-        if not changed:
-            logger.info(
-                "Registered data (unchanged, skipped re-embed)",
-                project_id=project_id,
-                data_key=data_key,
-                node_count=len(nodes),
-            )
-            return None
-
         return {
             "data_key": data_key,
-            "data_original": _original_text(data, nodes),
             "parse_result": parse_result,
             "nodes": nodes,
             "node_keys": node_keys,
@@ -333,64 +323,50 @@ class SemanticDataMatcher:
         self, project_id: str, plan: Dict[str, Any], embeddings,
         published_at: Optional[datetime] = None, origin: Optional[str] = None,
     ) -> None:
-        """Upsert one item's changed nodes and rewrite its symbols."""
+        """Upsert one item's changed nodes, drop nodes it no longer has, and rewrite its symbols."""
         data_key, parse_result = plan["data_key"], plan["parse_result"]
         nodes, node_keys, changed = plan["nodes"], plan["node_keys"], plan["changed"]
 
-        # pg_search BM25 index is maintained automatically on insert/update via
-        # the embeddings_bm25 index.
+        rows = [
+            {
+                "project_id": project_id,
+                "data_key": data_key,
+                "node_key": node_keys[i],
+                "node_path": nodes[i].path,
+                "node_type": nodes[i].node_type.value,
+                "description": plan["texts"][i],
+                "data": nodes[i].content if isinstance(nodes[i].content, dict) else {"value": nodes[i].content},
+                "data_format": parse_result.format_name,
+                "content_hash": plan["hashes"][i],
+                "embedding": embedding.tolist(),
+                "published_at": published_at,
+                "origin": origin,
+            }
+            for i, embedding in zip(changed, embeddings)
+        ]
+        # An upsert, so concurrent first publishes of one key don't collide on
+        # the unique (project_id, node_key) index.
+        stmt = pg_insert(Embedding)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Embedding.project_id, Embedding.node_key],
+            set_={
+                **{column: stmt.excluded[column] for column in _REWRITTEN_COLUMNS},
+                "origin": func.coalesce(stmt.excluded.origin, Embedding.origin),
+                "updated_at": func.now(),
+            },
+        )
         async with self.db.session() as session:
-            existing_rows = await session.execute(
-                select(Embedding)
+            if rows:
+                await session.execute(stmt, rows)
+            removed = await session.execute(
+                delete(Embedding)
                 .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_([node_keys[i] for i in changed]))
+                .where(Embedding.data_key == data_key)
+                .where(Embedding.node_key.not_in(node_keys))
             )
-            existing_by_key = {row.node_key: row for row in existing_rows.scalars()}
-
-            for i, embedding in zip(changed, embeddings):
-                node, node_key = nodes[i], node_keys[i]
-                embedding_text, content_hash = plan["texts"][i], plan["hashes"][i]
-                node_data = node.content if isinstance(node.content, dict) else {"value": node.content}
-
-                existing = existing_by_key.get(node_key)
-                if existing:
-                    existing.data_key = data_key
-                    existing.node_path = node.path
-                    existing.node_type = node.node_type.value
-                    existing.description = embedding_text
-                    existing.data = node_data
-                    existing.data_original = plan["data_original"]
-                    existing.data_format = parse_result.format_name
-                    existing.content_hash = content_hash
-                    existing.embedding = embedding.tolist()
-                    existing.updated_at = datetime.utcnow()
-                    existing.published_at = published_at
-                    if origin is not None:
-                        existing.origin = origin
-                else:
-                    session.add(Embedding(
-                        project_id=project_id,
-                        data_key=data_key,
-                        node_key=node_key,
-                        node_path=node.path,
-                        node_type=node.node_type.value,
-                        description=embedding_text,
-                        data=node_data,
-                        data_original=plan["data_original"],
-                        data_format=parse_result.format_name,
-                        content_hash=content_hash,
-                        embedding=embedding.tolist(),
-                        published_at=published_at,
-                        origin=origin,
-                    ))
-
-            # Rewrite this source's symbols (defs/refs the parser recorded per
-            # node) in the same transaction as the embeddings. Delete-by-source
-            # first so renamed/removed symbols don't linger across re-ingests.
-            # Only code nodes carry defs/refs, so this is a no-op for other
-            # formats (no rows to delete, none to insert). Reached only when a
-            # node changed, so unchanged files don't churn identical symbol rows.
-            if parse_result.format_name == "code":
+            # Symbols are the defs/refs the parser recorded per node, rewritten
+            # whenever the nodes change. Unchanged documents keep theirs as is.
+            if rows or removed.rowcount:
                 await session.execute(
                     delete(Symbol)
                     .where(Symbol.project_id == project_id)

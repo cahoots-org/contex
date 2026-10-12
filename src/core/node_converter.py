@@ -1,12 +1,9 @@
-"""
-NodeConverter: Bidirectional conversion between formats and Nodes.
+"""NodeConverter: parse any supported format into Nodes."""
 
-Handles parsing any format into Nodes and reconstructing from Nodes back to any format.
-"""
-
-from typing import Any, List, Optional, Type
-from .node import Node, ParseResult
+from typing import Any, List, Optional
+from .node import ParseResult
 from .node_parsers import (
+    GENERIC_FORMATS,
     BaseNodeParser,
     JSONNodeParser,
     YAMLNodeParser,
@@ -21,21 +18,7 @@ from .node_parsers import (
 
 
 class NodeConverter:
-    """
-    Central converter for parsing data into Nodes and reconstructing back.
-
-    Usage:
-        converter = NodeConverter()
-
-        # Parse to nodes
-        result = converter.parse(data, format_hint="json")
-        nodes = result.nodes
-
-        # Convert nodes to different format
-        json_output = converter.to_json(nodes)
-        yaml_output = converter.to_yaml(nodes)
-        text_output = converter.to_text(nodes)
-    """
+    """Picks a parser for the data and parses it into Nodes."""
 
     def __init__(self):
         """Initialize with all available parsers"""
@@ -57,90 +40,25 @@ class NodeConverter:
     def parse(
         self, data: Any, format_hint: Optional[str] = None, data_key: Optional[str] = None
     ) -> ParseResult:
+        """Parse data with the hinted format's parser, else the first that fits.
+
+        A generic or unknown hint falls back to content sniffing. Text no parser
+        accepts is split as plain text; bytes no parser accepts fail.
         """
-        Parse data into nodes using appropriate parser.
-
-        Args:
-            data: Raw data to parse
-            format_hint: Optional hint about format ("json", "yaml", etc.)
-            data_key: Optional source key; parsers that need the file extension to
-                pick a language (CodeNodeParser) read it.
-
-        Returns:
-            ParseResult with nodes and metadata
-        """
-        # Try parsers in priority order
-        for parser in self.parsers:
-            if parser.can_parse(data, format_hint):
-                result = (
-                    parser.parse(data, data_key=data_key)
-                    if parser.needs_data_key
-                    else parser.parse(data)
-                )
-                if result.success:
-                    return result
-
-        # Fallback: treat as plain text
+        parsers = [p for p in self.parsers if p.format_name == format_hint]
+        if format_hint in GENERIC_FORMATS or not parsers:
+            parsers = [p for p in self.parsers if p.can_parse(data, format_hint)]
+        result = None
+        for parser in parsers:
+            result = (
+                parser.parse(data, data_key=data_key)
+                if parser.needs_data_key
+                else parser.parse(data)
+            )
+            if result.success:
+                return result
+        if isinstance(data, (bytes, bytearray)):
+            return result or ParseResult(
+                nodes=[], format_name="binary", success=False, error="unrecognised binary data"
+            )
         return PlainTextNodeParser().parse(str(data))
-
-    def to_json(self, nodes: List[Node]) -> dict:
-        """Convert nodes to JSON/dict"""
-        return JSONNodeParser().reconstruct(nodes, target_format=None)
-
-    def to_json_string(self, nodes: List[Node]) -> str:
-        """Convert nodes to JSON string"""
-        return JSONNodeParser().reconstruct(nodes, target_format="string")
-
-    def to_yaml(self, nodes: List[Node]) -> str:
-        """Convert nodes to YAML string"""
-        return YAMLNodeParser().reconstruct(nodes, target_format="string")
-
-    def to_text(self, nodes: List[Node]) -> str:
-        """Convert nodes to plain text"""
-        return PlainTextNodeParser().reconstruct(nodes, target_format=None)
-
-    def to_markdown(self, nodes: List[Node]) -> str:
-        """Convert nodes to Markdown"""
-        return MarkdownNodeParser().reconstruct(nodes, target_format=None)
-
-    def to_csv(self, nodes: List[Node]) -> str:
-        """Convert nodes to CSV"""
-        return CSVNodeParser().reconstruct(nodes, target_format=None)
-
-    def to_format(self, nodes: List[Node], format_name: str) -> Any:
-        """
-        Convert nodes to specified format.
-
-        Args:
-            nodes: List of nodes to convert
-            format_name: Target format ("json", "yaml", "text", "markdown", "csv")
-
-        Returns:
-            Converted data in target format
-        """
-        format_map = {
-            "json": self.to_json,
-            "json_string": self.to_json_string,
-            "yaml": self.to_yaml,
-            "text": self.to_text,
-            "markdown": self.to_markdown,
-            "csv": self.to_csv,
-        }
-
-        converter = format_map.get(format_name)
-        if not converter:
-            raise ValueError(f"Unknown format: {format_name}")
-
-        return converter(nodes)
-
-    def get_embedding_texts(self, nodes: List[Node]) -> List[str]:
-        """
-        Get text representations of nodes for embedding.
-
-        Args:
-            nodes: List of nodes
-
-        Returns:
-            List of text strings, one per node
-        """
-        return [node.get_text_content() for node in nodes]
