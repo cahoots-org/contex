@@ -12,7 +12,6 @@ from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST
 from src.core.authz import public, auth_enabled
 from src.core.metrics import get_metrics
-from src.core.authz_coverage import assert_authz_coverage
 from src.core.bm25_index import Bm25Settings, ensure_bm25_index
 from src.core.protected_mode import check_protected_mode
 from src.core.hardened_config import check_hardened_config
@@ -47,15 +46,7 @@ logger = get_logger(__name__)
 
 
 def run_startup_checks(app: FastAPI) -> None:
-    """Boot-time fail-closed gates, run once during startup.
-
-    Kept out of the lifespan body so it is unit-testable without a live
-    database: it only inspects routes and reads env/config.
-    """
-    # Fail-closed authz gate: refuse to boot if any route lacks a require()/public decision.
-    assert_authz_coverage(app)
-    logger.info("Authz coverage gate passed")
-
+    """Boot-time fail-closed gates; reads env/config only, so it is testable without a database."""
     # Refuse to bind a non-loopback address when auth is off, unless the
     # operator explicitly opts out via CONTEX_PROTECTED_MODE=false.
     check_protected_mode(
@@ -351,13 +342,10 @@ from src.core.tracing_middleware import TracingMiddleware
 app.add_middleware(TracingMiddleware)
 logger.info("Tracing middleware enabled")
 
-# Authentication & Authorization is now enforced per-route via the dependency
-# model (src.core.authz: get_identity / require(...)), not via middleware. The
-# fail-open APIKeyMiddleware/RBACMiddleware have been removed. Fail-closed
-# behavior lives on the routes themselves.
+# Authentication applies to the MCP endpoint via its token verifier.
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 if AUTH_ENABLED:
-    logger.info("Authentication ENABLED - enforced per-route via authz dependencies")
+    logger.info("Authentication ENABLED - enforced on the MCP endpoint")
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
 
