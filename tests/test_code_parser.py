@@ -1,12 +1,4 @@
-"""CodeNodeParser turns source into structural nodes + defs/refs via tree-sitter.
-
-Code was the only content type without a real parser: it got shredded into
-blank-line blobs, losing every function/class boundary and all cross-file
-structure (imports, call targets). This parser emits function/class/method nodes
-with proper nesting (node_path) and records, per node, the names it defines
-(defs) and the names it references (refs: imports + call targets) in node
-metadata — the raw material for the symbols table and cross-file linking.
-"""
+"""CodeNodeParser turns source into definition nodes with defs/refs via tree-sitter."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
