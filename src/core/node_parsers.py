@@ -834,7 +834,7 @@ class CodeNodeParser(BaseNodeParser):
             # from pkg.mod import a, b as c  -> [a, b]; skip the module itself.
             module = node.child_by_field_name("module_name")
             for child in node.named_children:
-                if child is module:
+                if child == module:
                     continue
                 if child.type == "dotted_name":
                     names.append(self._txt(child, src).split(".")[-1])
