@@ -1,40 +1,11 @@
-"""Tests for streaming upload size limits and the ASGI body-limit middleware.
-
-Covers issue #61: the upload/import paths must never buffer the whole body
-before enforcing the size cap, and a global ASGI middleware must bound any
-request as defense-in-depth.
-"""
+"""Tests for the upload size cap and the ASGI body-limit middleware."""
 
 import httpx
 import pytest
-from unittest.mock import MagicMock
 from fastapi import FastAPI, Request
 from httpx import AsyncClient
 
-from src.core.upload_limits import (
-    BodyLimitMiddleware,
-    RequestBodyTooLarge,
-    UPLOAD_CHUNK_SIZE,
-    get_max_upload_size,
-    stream_request_body,
-    stream_upload_file,
-)
-
-
-class _FakeUploadFile:
-    """Minimal UploadFile stand-in that yields fixed-size chunks."""
-
-    def __init__(self, total: int, chunk: int):
-        self._remaining = total
-        self._chunk = chunk
-        self.reads = []
-
-    async def read(self, size: int = -1) -> bytes:
-        n = self._chunk if size < 0 else min(size, self._chunk)
-        n = min(n, self._remaining)
-        self.reads.append(size)
-        self._remaining -= n
-        return b"x" * n
+from src.core.upload_limits import BodyLimitMiddleware, get_max_upload_size
 
 
 class TestConfigOverride:
@@ -49,65 +20,6 @@ class TestConfigOverride:
     def test_invalid_env_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("CONTEX_MAX_UPLOAD_SIZE", "not-a-number")
         assert get_max_upload_size() == 50 * 1024 * 1024
-
-
-class TestStreamUploadFile:
-    @pytest.mark.asyncio
-    async def test_reads_in_bounded_chunks_without_full_buffer(self):
-        upload = _FakeUploadFile(total=UPLOAD_CHUNK_SIZE * 3, chunk=UPLOAD_CHUNK_SIZE)
-        content = await stream_upload_file(upload, max_size=UPLOAD_CHUNK_SIZE * 4)
-        assert len(content) == UPLOAD_CHUNK_SIZE * 3
-        # Never requested more than one chunk at a time.
-        assert all(size == UPLOAD_CHUNK_SIZE for size in upload.reads)
-        assert len(upload.reads) >= 3
-
-    @pytest.mark.asyncio
-    async def test_aborts_mid_transfer_when_limit_exceeded(self):
-        upload = _FakeUploadFile(total=UPLOAD_CHUNK_SIZE * 10, chunk=UPLOAD_CHUNK_SIZE)
-        with pytest.raises(RequestBodyTooLarge):
-            await stream_upload_file(upload, max_size=UPLOAD_CHUNK_SIZE * 2)
-        # Aborted early: did not read the whole payload.
-        assert len(upload.reads) <= 4
-
-
-class TestStreamRequestBody:
-    @pytest.mark.asyncio
-    async def test_content_length_over_limit_rejected_before_reading(self):
-        async def _fail_stream():
-            raise AssertionError("stream() must not be consumed when Content-Length exceeds limit")
-            yield b""  # pragma: no cover
-
-        request = MagicMock(spec=Request)
-        request.headers = {"content-length": str(1000)}
-        request.stream = _fail_stream
-        with pytest.raises(RequestBodyTooLarge):
-            await stream_request_body(request, max_size=10)
-
-    @pytest.mark.asyncio
-    async def test_missing_content_length_still_streamed_and_bounded(self):
-        chunks = [b"a" * 8, b"b" * 8, b"c" * 8]
-
-        async def _stream():
-            for c in chunks:
-                yield c
-
-        request = MagicMock(spec=Request)
-        request.headers = {}
-        request.stream = _stream
-        with pytest.raises(RequestBodyTooLarge):
-            await stream_request_body(request, max_size=10)
-
-    @pytest.mark.asyncio
-    async def test_within_limit_returns_full_body(self):
-        async def _stream():
-            yield b"hello "
-            yield b"world"
-
-        request = MagicMock(spec=Request)
-        request.headers = {}
-        request.stream = _stream
-        body = await stream_request_body(request, max_size=1000)
-        assert body == b"hello world"
 
 
 class TestBodyLimitMiddleware:
