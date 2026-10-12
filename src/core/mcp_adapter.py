@@ -16,7 +16,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedToolError
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedResourceError, UnexpectedToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
 
 from src.core.authz import auth_enabled
@@ -175,6 +175,14 @@ class _ContexServer(MCPServer):
             # Only our own plain ValueErrors; library subclasses may carry internals.
             if type(cause) is ValueError:
                 raise ToolError(f"Error executing tool {name}: {cause}") from cause
+            raise
+
+    async def read_resource(self, uri, context=None):
+        try:
+            return await super().read_resource(uri, context)
+        except UnexpectedResourceError as exc:
+            if isinstance(exc.__cause__, PermissionError):
+                raise ResourceError("Permission denied") from exc.__cause__
             raise
 
 
