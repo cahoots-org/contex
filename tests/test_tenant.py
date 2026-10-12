@@ -1,94 +1,9 @@
-"""Tests for Multi-Tenant Management with PostgreSQL"""
+"""Tests for tenant management with PostgreSQL"""
 
-import httpx
 import pytest
 import pytest_asyncio
 
-from src.core.tenant import (
-    TenantManager,
-    Tenant,
-    TenantPlan,
-    TenantQuotas,
-    TenantUsage,
-    ensure_default_tenant,
-    DEFAULT_TENANT_ID,
-    get_tenant_project_key,
-    parse_tenant_project_key,
-)
-
-
-class TestTenantModels:
-    """Test tenant model validation"""
-
-    def test_tenant_plan_enum(self):
-        """Test TenantPlan enum values"""
-        assert TenantPlan.FREE == "free"
-        assert TenantPlan.STARTER == "starter"
-        assert TenantPlan.PRO == "pro"
-        assert TenantPlan.ENTERPRISE == "enterprise"
-
-    def test_tenant_quotas_model(self):
-        """Test TenantQuotas model"""
-        quota = TenantQuotas(
-            max_projects=10,
-            max_agents_per_project=100,
-            max_api_keys=50,
-            max_events_per_month=100000,
-            max_storage_mb=1024,
-            max_requests_per_minute=1000,
-        )
-        assert quota.max_projects == 10
-        assert quota.max_storage_mb == 1024
-
-    def test_tenant_quotas_for_plan(self):
-        """Test getting quotas for each plan"""
-        free = TenantQuotas.for_plan(TenantPlan.FREE)
-        pro = TenantQuotas.for_plan(TenantPlan.PRO)
-        enterprise = TenantQuotas.for_plan(TenantPlan.ENTERPRISE)
-
-        # Pro should have higher quotas than free
-        assert pro.max_projects > free.max_projects
-        assert pro.max_api_keys > free.max_api_keys
-
-        # Enterprise should have highest
-        assert enterprise.max_projects > pro.max_projects
-
-    def test_tenant_usage_model(self):
-        """Test TenantUsage model"""
-        usage = TenantUsage(
-            projects_count=5,
-            agents_count=20,
-            api_keys_count=3,
-            events_this_month=1000,
-            storage_used_mb=50.5,
-        )
-        assert usage.projects_count == 5
-        assert usage.storage_used_mb == 50.5
-
-    def test_tenant_model(self):
-        """Test Tenant model"""
-        tenant = Tenant(
-            tenant_id="tenant_123",
-            name="Test Organization",
-            plan=TenantPlan.PRO,
-        )
-        assert tenant.tenant_id == "tenant_123"
-        assert tenant.plan == TenantPlan.PRO
-        assert tenant.is_active is True
-
-    def test_tenant_with_custom_quota(self):
-        """Test Tenant with custom quota"""
-        quota = TenantQuotas(
-            max_projects=50,
-            max_api_keys=100,
-        )
-        tenant = Tenant(
-            tenant_id="tenant_456",
-            name="Enterprise Org",
-            plan=TenantPlan.ENTERPRISE,
-            quotas=quota,
-        )
-        assert tenant.quotas.max_projects == 50
+from src.core.tenant import DEFAULT_TENANT_ID, TenantManager, ensure_default_tenant
 
 
 class TestTenantManager:
@@ -101,42 +16,22 @@ class TestTenantManager:
 
     @pytest.mark.asyncio
     async def test_create_tenant(self, manager):
-        """Test creating a tenant"""
-        tenant = await manager.create_tenant(
-            tenant_id="new_org",
-            name="New Organization",
-            plan=TenantPlan.STARTER,
-        )
+        tenant = await manager.create_tenant(tenant_id="new_org", name="New Organization")
 
         assert tenant.tenant_id == "new_org"
         assert tenant.name == "New Organization"
-        assert tenant.plan == TenantPlan.STARTER
         assert tenant.is_active is True
 
     @pytest.mark.asyncio
     async def test_create_tenant_duplicate_fails(self, manager):
-        """Test creating duplicate tenant fails"""
-        await manager.create_tenant(
-            tenant_id="dup_org",
-            name="First Org",
-            plan=TenantPlan.FREE,
-        )
+        await manager.create_tenant(tenant_id="dup_org", name="First Org")
 
         with pytest.raises(ValueError, match="already exists"):
-            await manager.create_tenant(
-                tenant_id="dup_org",
-                name="Second Org",
-                plan=TenantPlan.FREE,
-            )
+            await manager.create_tenant(tenant_id="dup_org", name="Second Org")
 
     @pytest.mark.asyncio
     async def test_get_tenant(self, manager):
-        """Test retrieving a tenant"""
-        created = await manager.create_tenant(
-            tenant_id="get_org",
-            name="Test Org",
-            plan=TenantPlan.FREE,
-        )
+        created = await manager.create_tenant(tenant_id="get_org", name="Test Org")
 
         retrieved = await manager.get_tenant(created.tenant_id)
 
@@ -146,290 +41,30 @@ class TestTenantManager:
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_tenant(self, manager):
-        """Test getting tenant that doesn't exist"""
-        result = await manager.get_tenant("nonexistent")
-        assert result is None
-
-
-class TestTenantQuotasMgmt:
-    """Test tenant quota management"""
-
-    @pytest_asyncio.fixture
-    async def manager(self, db):
-        """Create a tenant manager"""
-        return TenantManager(db)
+        assert await manager.get_tenant("nonexistent") is None
 
     @pytest.mark.asyncio
-    async def test_default_quotas_by_plan(self, manager):
-        """Test default quotas are set by plan"""
-        free = await manager.create_tenant(
-            tenant_id="free_quota",
-            name="Free",
-            plan=TenantPlan.FREE
-        )
-        pro = await manager.create_tenant(
-            tenant_id="pro_quota",
-            name="Pro",
-            plan=TenantPlan.PRO
-        )
+    async def test_claim_project_keeps_the_first_owner(self, manager):
+        await manager.create_tenant(tenant_id="acme", name="acme")
 
-        # Pro should have higher quotas than free
-        assert pro.quotas.max_projects > free.quotas.max_projects
-        assert pro.quotas.max_api_keys > free.quotas.max_api_keys
-
-    @pytest.mark.asyncio
-    async def test_check_quota_allowed(self, manager):
-        """Test checking if operation is within quota"""
-        tenant = await manager.create_tenant(
-            tenant_id="quota_check",
-            name="Quota Test",
-            plan=TenantPlan.STARTER,
-        )
-
-        # Should be within quota initially
-        allowed, message = await manager.check_quota(
-            tenant.tenant_id,
-            "projects",
-            amount=1,
-        )
-        assert allowed is True
-        assert message == "OK"
-
-    @pytest.mark.asyncio
-    async def test_check_quota_exceeded(self, manager):
-        """Test quota exceeded check"""
-        # Create tenant with minimal quota
-        tenant = await manager.create_tenant(
-            tenant_id="limited_tenant",
-            name="Limited Tenant",
-            plan=TenantPlan.FREE,  # Has max 1 project
-        )
-
-        # Add a project to use quota
-        await manager.add_project(tenant.tenant_id, "project1")
-
-        # Try to add another
-        allowed, message = await manager.check_quota(
-            tenant.tenant_id,
-            "projects",
-            amount=1,
-        )
-        assert allowed is False
-        assert "exceeded" in message.lower()
-
-    @pytest.mark.asyncio
-    async def test_enforce_quota_raises(self, manager):
-        """Test enforce_quota raises when exceeded"""
-        tenant = await manager.create_tenant(
-            tenant_id="enforce_tenant",
-            name="Enforce Tenant",
-            plan=TenantPlan.FREE,
-        )
-
-        # Use up quota
-        await manager.add_project(tenant.tenant_id, "project1")
-
-        # Should raise
-        with pytest.raises(ValueError, match="exceeded"):
-            await manager.enforce_quota(tenant.tenant_id, "projects")
-
-
-class TestTenantUsageTracking:
-    """Test tenant usage tracking"""
-
-    @pytest_asyncio.fixture
-    async def manager(self, db):
-        """Create a tenant manager"""
-        return TenantManager(db)
-
-    @pytest.mark.asyncio
-    async def test_get_usage(self, manager):
-        """Test getting usage data"""
-        tenant = await manager.create_tenant(
-            tenant_id="usage_test",
-            name="Usage Test",
-            plan=TenantPlan.STARTER,
-        )
-
-        usage = await manager.get_usage(tenant.tenant_id)
-
-        assert usage is not None
-        assert usage.projects_count == 0
-        assert usage.api_keys_count == 0
-
-    @pytest.mark.asyncio
-    async def test_increment_usage(self, manager):
-        """Test incrementing usage counters"""
-        tenant = await manager.create_tenant(
-            tenant_id="incr_test",
-            name="Increment Test",
-            plan=TenantPlan.PRO,
-        )
-
-        new_value = await manager.increment_usage(
-            tenant.tenant_id,
-            "events_this_month",
-            100,
-        )
-
-        assert new_value == 100
-
-        usage = await manager.get_usage(tenant.tenant_id)
-        assert usage.events_this_month == 100
-
-
-class TestTenantProjectManagement:
-    """Test tenant project management"""
-
-    @pytest_asyncio.fixture
-    async def manager(self, db):
-        """Create a tenant manager"""
-        return TenantManager(db)
-
-    @pytest.mark.asyncio
-    async def test_add_project(self, manager):
-        """Test adding a project to tenant"""
-        tenant = await manager.create_tenant(
-            tenant_id="proj_tenant",
-            name="Project Tenant",
-            plan=TenantPlan.PRO,
-        )
-
-        key = await manager.add_project(tenant.tenant_id, "my_project")
-
-        assert key == f"{tenant.tenant_id}:project:my_project"
-
-        usage = await manager.get_usage(tenant.tenant_id)
-        assert usage.projects_count == 1
-
-
-class TestTenantUtilityFunctions:
-    """Test tenant utility functions"""
-
-    def test_get_tenant_project_key(self):
-        """Test getting tenant project key"""
-        key = get_tenant_project_key("tenant_abc", "project_xyz")
-        assert key == "tenant_abc:project:project_xyz"
-
-    def test_parse_tenant_project_key(self):
-        """Test parsing tenant project key"""
-        tenant_id, project_id = parse_tenant_project_key("tenant_abc:project:project_xyz")
-        assert tenant_id == "tenant_abc"
-        assert project_id == "project_xyz"
-
-    def test_parse_tenant_project_key_invalid(self):
-        """Test parsing invalid key"""
-        tenant_id, project_id = parse_tenant_project_key("invalid_key")
-        assert tenant_id is None
-        assert project_id is None
+        assert await manager.claim_project("acme", "p") == "acme"
+        assert await manager.claim_project(DEFAULT_TENANT_ID, "p") == "acme"
+        assert await manager.get_project_tenant("p") == "acme"
 
 
 class TestDefaultTenant:
-    """Test default tenant for backward compatibility"""
+    """Test default tenant functionality"""
 
     @pytest.mark.asyncio
     async def test_ensure_default_tenant_creates(self, db):
-        """Test default tenant is created if not exists"""
         tenant = await ensure_default_tenant(db)
 
-        assert tenant is not None
         assert tenant.tenant_id == DEFAULT_TENANT_ID
-        assert tenant.plan == TenantPlan.ENTERPRISE
+        assert tenant.name == "Default Tenant"
 
     @pytest.mark.asyncio
     async def test_ensure_default_tenant_returns_existing(self, db):
-        """Test default tenant returns existing if already created"""
         tenant1 = await ensure_default_tenant(db)
         tenant2 = await ensure_default_tenant(db)
 
         assert tenant1.tenant_id == tenant2.tenant_id
-
-
-@pytest.mark.asyncio
-async def test_demo_mode_forces_default_tenant(monkeypatch):
-    monkeypatch.setenv("AUTH_ENABLED", "false")
-    from starlette.requests import Request
-    from src.core import tenant_middleware as tm
-    mw = tm.TenantMiddleware(app=None)
-
-    captured = {}
-    async def call_next(request):
-        captured["tenant_id"] = request.state.tenant_id
-        from starlette.responses import Response
-        return Response("ok")
-
-    scope = {"type": "http", "method": "GET", "path": "/api/v1/projects/p/data",
-             "headers": [(b"x-tenant-id", b"spoofed")]}
-    req = Request(scope)
-    await mw.dispatch(req, call_next)
-    assert captured["tenant_id"] == tm.DEFAULT_TENANT_ID  # X-Tenant-ID ignored in demo
-
-
-class TestTenantMiddlewareIdentityDerivation:
-    """Tenant must be derived from identity (not X-Tenant-ID) when auth is on (#41)."""
-
-    @pytest_asyncio.fixture
-    async def app_and_key(self, db, monkeypatch):
-        """Build a minimal app with TenantMiddleware, auth+multitenancy forced on."""
-        from fastapi import FastAPI, Request
-        from src.core import authz
-        from src.core import tenant_middleware as tm
-        from src.core.auth import create_api_key
-        from src.core.db_models import Tenant as TenantModel
-
-        # Force auth on regardless of environment.
-        monkeypatch.setattr(authz, "auth_enabled", lambda: True)
-        monkeypatch.setenv("AUTH_ENABLED", "true")
-
-        # Pre-create tenant rows so FK / get_tenant checks pass.
-        async with db.session() as session:
-            session.add(TenantModel(tenant_id="tenant-a", name="Tenant A", plan="free"))
-            session.add(TenantModel(tenant_id="tenant-b", name="Tenant B", plan="free"))
-
-        # Create a key bound to tenant-a.
-        raw_key, _ = await create_api_key(db, "tenant-a-key", tenant_id="tenant-a")
-
-        app = FastAPI()
-        app.state.db = db
-        app.add_middleware(tm.TenantMiddleware)
-
-        @app.get("/whoami")
-        async def whoami(request: Request):
-            return {"tenant_id": getattr(request.state, "tenant_id", None)}
-
-        return app, raw_key
-
-    @pytest.mark.asyncio
-    async def test_mismatched_x_tenant_id_rejected_when_auth_on(self, app_and_key):
-        from httpx import AsyncClient
-
-        app, raw_key = app_and_key
-        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get(
-                "/whoami",
-                headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-b"},
-            )
-        assert resp.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_matching_x_tenant_id_accepted_when_auth_on(self, app_and_key):
-        from httpx import AsyncClient
-
-        app, raw_key = app_and_key
-        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get(
-                "/whoami",
-                headers={"X-API-Key": raw_key, "X-Tenant-ID": "tenant-a"},
-            )
-        assert resp.status_code == 200
-        assert resp.json()["tenant_id"] == "tenant-a"
-
-    @pytest.mark.asyncio
-    async def test_absent_x_tenant_id_accepted_when_auth_on(self, app_and_key):
-        from httpx import AsyncClient
-
-        app, raw_key = app_and_key
-        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/whoami", headers={"X-API-Key": raw_key})
-        assert resp.status_code == 200
-        assert resp.json()["tenant_id"] == "tenant-a"

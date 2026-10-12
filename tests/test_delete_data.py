@@ -4,7 +4,7 @@ import pytest_asyncio
 from sqlalchemy import func, select
 
 from src.core.context_engine import ContextEngine
-from src.core.db_models import Embedding, Symbol
+from src.core.db_models import Embedding, Event, Symbol
 from src.core.models import DataPublishEvent
 
 CODE = "def connect_database(url):\n    return open_pool(url)\n\n\ndef open_pool(url):\n    return url\n"
@@ -41,9 +41,12 @@ async def test_delete_removes_nodes_symbols_and_records_events(engine, db):
     assert await _count(db, Embedding, "db.py") == 0
     assert await _count(db, Symbol, "db.py") == 0
     assert await _count(db, Embedding, "cfg") > 0
-    events = await engine.event_store.get_events_for_key("p", "db.py")
-    assert events[0]["event_type"] == "db.py_deleted"
-    assert await engine.event_store.get_events_for_key("p", "nope") == []
+    async with db.session() as session:
+        events = (await session.execute(
+            select(Event.data_key, Event.event_type).where(Event.project_id == "p").order_by(Event.sequence.desc())
+        )).all()
+    assert events[0] == ("db.py", "db.py_deleted")
+    assert "nope" not in {key for key, _ in events}
 
 
 @pytest.mark.asyncio

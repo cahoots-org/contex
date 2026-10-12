@@ -1,17 +1,9 @@
 # tests/test_tenant_isolation.py
-"""Multi-tenant isolation on the surviving surfaces (service layer + sandbox).
+"""Multi-tenant isolation on the MCP surface and the subscription service.
 
-Proves that ownership checks isolate tenants at the SubscriptionService layer
-and on the /sandbox SSE route. The REST-route isolation cases were removed with
-the REST API teardown (#189); the durable guarantees live at the service layer
-(exercised by MCP) and the sandbox, both covered below.
-
-Transport: httpx.AsyncClient(transport=httpx.ASGITransport(app=app), ...) —
-no lifespan runs; app.state.db is wired in each test that needs real DB access.
-The ownership check runs before any handler body that needs the engine, so a 403
-is delivered without requiring context engine init.
+The sandbox is only served with auth off, so with auth on it must 404.
 """
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -23,9 +15,7 @@ from sqlalchemy import text
 
 from main import app
 from src.core import mcp_adapter
-from src.core.authz import get_identity
 from src.core.context_engine import ContextEngine
-from src.core.identity import Identity
 from src.core.mcp_adapter import build_mcp_server
 from src.core.mcp_bridge import resource_uri_for
 from src.core.rbac import Role, expand_role
@@ -35,41 +25,12 @@ from src.core.subscriptions import SubscriptionService
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
-def _admin_identity(tenant_id: str) -> Identity:
-    """Full-admin identity scoped to tenant_id (all permissions; projects=() = all)."""
-    return Identity(
-        key_id="k",
-        scopes=expand_role(Role.ADMIN),
-        tenant_id=tenant_id,
-        projects=(),
-        role=Role.ADMIN,
-    )
-
-
 async def _ensure_tenant(db, tenant_id: str) -> None:
     async with db.session() as session:
-        exists = (await session.execute(
-            text("SELECT 1 FROM tenants WHERE tenant_id = :tid"),
+        await session.execute(
+            text("INSERT INTO tenants (tenant_id, name) VALUES (:tid, :tid) ON CONFLICT DO NOTHING"),
             {"tid": tenant_id},
-        )).scalar_one_or_none()
-        if not exists:
-            await session.execute(
-                text(
-                    "INSERT INTO tenants (tenant_id, name, plan, quotas, settings, metadata, is_active)"
-                    " VALUES (:tid, :name, 'enterprise', '{}', '{}', '{}', true)"
-                ),
-                {"tid": tenant_id, "name": tenant_id},
-            )
-            await session.execute(
-                text(
-                    "INSERT INTO tenant_usage (tenant_id, projects_count, agents_count,"
-                    " api_keys_count, events_this_month, storage_used_mb)"
-                    " VALUES (:tid, 0, 0, 0, 0, 0.0)"
-                    " ON CONFLICT DO NOTHING"
-                ),
-                {"tid": tenant_id},
-            )
-            await session.commit()
+        )
 
 
 async def _seed_tenant_project(db, tenant_id: str, project_id: str) -> None:
@@ -106,58 +67,23 @@ async def test_subscription_cross_tenant_denied_at_service(db, monkeypatch):
         await svc.get_bundle(sub_id, tenant_id="tenant-A")
 
 
-# ── /sandbox/subscribe cross-tenant → 403 ──────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_sandbox_subscribe_cross_tenant_is_403(db, monkeypatch):
-    """/sandbox/subscribe returns 403 for cross-tenant project before SSE starts.
-
-    The ownership check (ensure_project_access) runs synchronously before the
-    StreamingResponse generator is entered, so a 403 is returned immediately
-    without hanging on SSE.
-    """
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
-    await _seed_tenant_project(db, "tenant-B", "proj-b-sub")
-
-    app.state.db = db
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8001") as c:
-            r = await c.get(
-                "/sandbox/subscribe",
-                params={"project_id": "proj-b-sub", "need": "auth tokens"},
-            )
-        assert r.status_code == 403
-    finally:
-        app.dependency_overrides.clear()
+# ── /sandbox is not served with auth on ─────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method,path,form", [
-    ("POST", "/sandbox/query", {"project_id": "proj-b-data", "query": "secrets"}),
-    ("GET", "/sandbox/projects/proj-b-data/stats", None),
-    ("GET", "/sandbox/projects/proj-b-data/data", None),
+    ("GET", "/sandbox/", None),
+    ("POST", "/sandbox/query", {"project_id": "p", "query": "secrets"}),
+    ("GET", "/sandbox/projects/p/stats", None),
+    ("GET", "/sandbox/projects/p/data", None),
+    ("GET", "/sandbox/subscribe?project_id=p&need=secrets", None),
 ])
-async def test_sandbox_project_routes_cross_tenant_is_403(db, monkeypatch, method, path, form):
+async def test_sandbox_is_not_served_with_auth_on(monkeypatch, method, path, form):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    await _ensure_tenant(db, "tenant-A")
-    await _ensure_tenant(db, "tenant-B")
-    await _seed_tenant_project(db, "tenant-B", "proj-b-data")
-
-    app.state.db = db
     app.state.context_engine = MagicMock()
-    app.dependency_overrides[get_identity] = lambda: _admin_identity("tenant-A")
-    try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8001") as c:
-            r = await c.request(method, path, data=form)
-        assert r.status_code == 403
-    finally:
-        app.dependency_overrides.clear()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8001") as c:
+        r = await c.request(method, path, data=form)
+    assert r.status_code == 404
 
 
 # ── MCP project-scoped tools: cross-tenant → denied ────────────────────────────
@@ -190,11 +116,8 @@ async def test_mcp_tool_cross_tenant_is_denied(db, monkeypatch, tool, args):
 
 @pytest.mark.asyncio
 async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkeypatch):
-    """Publishing binds new projects to the caller's tenant, with the default tenant as migrations leave it."""
+    """Publishing binds new projects to the caller's tenant."""
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    async with db.session() as session:
-        await session.execute(text("UPDATE tenants SET quotas = '{}' WHERE tenant_id = 'default'"))
-        await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id = 'default'"))
     token = AccessToken(token="t", client_id="key-d", scopes=[p.value for p in expand_role(Role.ADMIN)],
                         claims={"tenant_id": "default", "projects": []})
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)
@@ -203,6 +126,20 @@ async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkey
     for i in range(5):
         await server.call_tool("contex_publish", {"project_id": f"p{i}", "data_key": "k", "data": {"a": 1}})
     await server.call_tool("contex_query", {"project_id": "p4", "query": "a"})
+
+
+@pytest.mark.asyncio
+async def test_projects_published_with_auth_off_stay_with_the_default_tenant(db, monkeypatch):
+    server, _ = build_mcp_server(ContextEngine(db=db, similarity_threshold=0.0, max_matches=10))
+    await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "k", "data": {"a": 1}})
+
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    await _ensure_tenant(db, "acme")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("acme"))
+    with pytest.raises(ToolError, match="Permission denied"):
+        await server.call_tool("contex_publish", {"project_id": "my-app", "data_key": "x", "data": {"a": 1}})
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: _admin_token("default"))
+    await server.call_tool("contex_query", {"project_id": "my-app", "query": "a"})
 
 
 def _admin_token(tenant_id: str, key_id: str = "key-a") -> AccessToken:

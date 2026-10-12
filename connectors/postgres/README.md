@@ -8,7 +8,6 @@ re-runs are idempotent.
 
 ```
 pip install -r connectors/postgres/requirements.txt
-pip install -r requirements.txt   # installs the base connector framework
 ```
 
 ## Configure
@@ -92,7 +91,7 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 Each row becomes a `ChangeEvent` with:
 
-- `data_key`: `schema.table.pk` (composite PKs joined with `:`, and a `:` or
+- `data_key`: `database.schema.table.pk` (composite PKs joined with `:`, and a `:` or
   `\` inside a value escaped with `\`).
 - `payload`: the selected non-binary columns as a JSON dict.
 

@@ -87,7 +87,7 @@ To get pushed when it changes instead of re-reading, listen on the resource. [`e
 - **Time windows:** limit a query or subscription to recent data with `since` or `max_age_seconds`. On a sliding window, items drop out as they age. Connectors publish each item at the source's own update time, so backfilled history counts as old.
 - **Schema-free:** publish JSON, YAML, CSV, XML, or plain text.
 - **Documents:** publish PDFs and Word files as base64, and Contex extracts their text. With `OCR_ENABLED`, scanned pages and images are read too.
-- **Event sourcing:** stores every change as an immutable event, powering audit trails and version history.
+- **Event log:** records every publish and delete as an append-only event per project.
 - **Security:** API-key auth and RBAC, off by default for local dev.
 - **Multi-tenancy:** always-on tenant isolation. A default tenant when auth is off, full per-identity isolation when it's on.
 - **Observability:** structured logging, Prometheus metrics, and OpenTelemetry tracing.
@@ -147,7 +147,7 @@ docker compose exec contex python -m src.cli keys list
 docker compose exec contex python -m src.cli keys revoke <key_id>
 ```
 
-Clients send the key as `Authorization: Bearer <key>`. With auth on, Contex authenticates every MCP tool call, scopes each request to the key's tenant, and applies RBAC to who can publish, query, and subscribe. To reach Contex from other machines, change the `ports` mapping in `docker-compose.yml` after turning auth on.
+Clients send the key as `Authorization: Bearer <key>`. With auth on, Contex authenticates every MCP tool call, scopes each request to the key's tenant, and applies RBAC to who can publish, query, and subscribe. To reach Contex from other machines, change the `ports` mapping in `docker-compose.yml` after turning auth on, and set `CONTEX_ALLOWED_HOSTS` to the hostname clients use. The `/sandbox` page has no way to send a key, so it is only served with auth off.
 
 See the [RBAC Guide](docs/RBAC.md).
 

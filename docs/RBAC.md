@@ -16,9 +16,8 @@ are permitted — see the auth-posture note in the [README](../README.md).
 | Role | Intended for | Permissions |
 |------|--------------|-------------|
 | `admin` | Operators / bootstrap | Every permission |
-| `publisher` | Data sources that write context | `publish_data`, `view_project_data`, `view_project_events`, `view_version_history` |
-| `consumer` | Agents that read context | `query_data`, `view_project_data`, `view_project_events`, `view_version_history` |
-| `readonly` | Dashboards / auditors | `query_data`, `view_project_data`, `view_project_events`, `view_version_history` |
+| `publisher` | Data sources that write context | `publish_data` |
+| `consumer` | Agents that read context | `query_data` |
 
 A key with no role has no permissions.
 
@@ -26,11 +25,8 @@ A key with no role has no permissions.
 
 | Permission | Grants |
 |------------|--------|
-| `publish_data` | Publish / update context (`contex_publish`, `contex_publish_batch`) |
-| `query_data` | Query context and create subscriptions (`contex_query`, `contex_create_subscription`) |
-| `view_project_data` | Read a project's stored context |
-| `view_project_events` | Read a project's event stream |
-| `view_version_history` | Read a data key's version history |
+| `publish_data` | Publish, list and delete context (`contex_publish`, `contex_publish_batch`, `contex_list_keys`, `contex_delete`) |
+| `query_data` | Query context, create subscriptions and read or watch them (`contex_query`, `contex_create_subscription`, `contex://subscriptions/{id}`) |
 
 ## Project scoping
 
@@ -55,8 +51,8 @@ python -m src.cli keys revoke <key_id>
 
 ## Best practices
 
-- **Least privilege:** give data sources `publisher`, agents `consumer`, and
-  dashboards `readonly`. Reserve `admin` for operators.
+- **Least privilege:** give data sources `publisher` and agents `consumer`.
+  Reserve `admin` for operators.
 - **Separate keys per service** so a leak is contained and revocation is
   surgical.
 - **Scope keys to projects** they actually need rather than granting all-project

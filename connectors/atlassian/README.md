@@ -84,11 +84,11 @@ docker run --rm -v "$PWD/connector.yaml:/etc/contex/connector.yaml" \
 
 ## Resource mappings
 
-- **Jira issue**: key `jira:{ISSUE-KEY}` (e.g. `jira:DEV-2946`), format `json`.
+- **Jira issue**: key `{site}:jira:{ISSUE-KEY}` (e.g. `acme.atlassian.net:jira:DEV-2946`), format `json`.
   Payload: summary, description (ADF flattened to text), type, status, priority,
   resolution, labels, components, assignee, reporter, created, updated, parent,
   url, comments.
-- **Confluence page**: key `confluence:{pageId}`, format `json`. Payload: title,
+- **Confluence page**: key `{site}:confluence:{pageId}`, format `json`. Payload: title,
   space, body (storage HTML flattened to text), version, author, timestamps,
   labels, url, comments.
 

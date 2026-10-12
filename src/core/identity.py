@@ -9,7 +9,10 @@ from sqlalchemy import select
 from src.core.database import DatabaseManager
 from src.core.db_models import APIKey as APIKeyModel, APIKeyRole as APIKeyRoleModel
 from src.core.keyhash import candidate_hashes
+from src.core.logging import get_logger
 from src.core.rbac import Permission, Role, expand_role
+
+logger = get_logger(__name__)
 
 _KEY_PREFIX = "ck_"
 
@@ -43,12 +46,14 @@ ANONYMOUS_IDENTITY = Identity(
 async def resolve_identity(db: DatabaseManager, raw_key: str) -> Identity | None:
     """Resolve a raw bearer credential to an Identity, or None (deny)."""
     if not raw_key or not raw_key.startswith(_KEY_PREFIX):
+        logger.warning("Rejected API key", reason="malformed")
         return None
     async with db.session() as session:
         key = (await session.execute(
             select(APIKeyModel).where(APIKeyModel.key_hash.in_(candidate_hashes(raw_key)))
         )).scalar_one_or_none()
         if key is None:
+            logger.warning("Rejected API key", reason="unknown")
             return None
 
         role_row = (await session.execute(

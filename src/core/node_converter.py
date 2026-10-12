@@ -14,6 +14,7 @@ from .node_parsers import (
     ImageNodeParser,
     DOCXNodeParser,
     CodeNodeParser,
+    DocumentRejected,
 )
 
 
@@ -50,12 +51,19 @@ class NodeConverter:
             parsers = [p for p in self.parsers if p.can_parse(data, format_hint)]
         result = None
         for parser in parsers:
-            result = (
-                parser.parse(data, data_key=data_key)
-                if parser.needs_data_key
-                else parser.parse(data)
-            )
+            try:
+                result = (
+                    parser.parse(data, data_key=data_key)
+                    if parser.needs_data_key
+                    else parser.parse(data)
+                )
+            except DocumentRejected:
+                raise
+            except Exception as e:  # a failed parser falls through to the next one
+                result = ParseResult(nodes=[], format_name=parser.format_name, success=False, error=str(e))
             if result.success:
+                if len({node.path for node in result.nodes}) < len(result.nodes):
+                    raise DocumentRejected("document has two parts at the same path")
                 return result
         if isinstance(data, (bytes, bytearray)):
             return result or ParseResult(

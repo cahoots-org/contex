@@ -22,6 +22,9 @@ def _dsn() -> str:
     return os.environ.get("POSTGRES_TEST_DSN", _DEFAULT_DSN)
 
 
+_DB = _dsn().rsplit("/", 1)[-1]
+
+
 def _can_connect() -> bool:
     try:
         import psycopg
@@ -122,12 +125,12 @@ class TestReaderIntegration:
         events = self._collect(tbl_include=["contex_test.products"])
         assert len(events) == 2
         keys = {e.key for e in events}
-        assert "contex_test.products.1" in keys
-        assert "contex_test.products.2" in keys
+        assert f"{_DB}.contex_test.products.1" in keys
+        assert f"{_DB}.contex_test.products.2" in keys
 
     def test_event_shape(self):
         events = self._collect(tbl_include=["contex_test.products"])
-        e = next(e for e in events if e.key == "contex_test.products.1")
+        e = next(e for e in events if e.key == f"{_DB}.contex_test.products.1")
         assert e.op == "upsert"
         assert e.data_format == "json"
         assert e.source_meta == {"source": "postgres", "schema": "contex_test", "table": "products"}
@@ -136,8 +139,8 @@ class TestReaderIntegration:
     def test_composite_pk(self):
         events = self._collect(tbl_include=["contex_test.order_items"])
         keys = {e.key for e in events}
-        assert "contex_test.order_items.1:1" in keys
-        assert "contex_test.order_items.1:2" in keys
+        assert f"{_DB}.contex_test.order_items.1:1" in keys
+        assert f"{_DB}.contex_test.order_items.1:2" in keys
 
     def test_no_pk_table_skipped(self):
         events = self._collect(tbl_include=["contex_test.no_pk_table"])
@@ -149,7 +152,7 @@ class TestReaderIntegration:
             key_columns={"contex_test.no_pk_table": "val"},
         )
         assert len(events) == 1
-        assert events[0].key == "contex_test.no_pk_table.a"
+        assert events[0].key == f"{_DB}.contex_test.no_pk_table.a"
 
     def test_binary_column_excluded_by_default(self):
         events = self._collect(tbl_include=["contex_test.binary_table"])
@@ -177,7 +180,7 @@ class TestReaderIntegration:
             tbl_exclude=["contex_test.order_items", "contex_test.no_pk_table", "contex_test.binary_table"],
         )
         keys = {e.key for e in events}
-        assert all(k.startswith("contex_test.products.") for k in keys)
+        assert all(k.startswith(f"{_DB}.contex_test.products.") for k in keys)
 
     def test_upsert_idempotency(self):
         """Re-running produces the same keys (no duplication)."""

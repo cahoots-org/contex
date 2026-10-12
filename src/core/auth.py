@@ -163,32 +163,3 @@ async def list_api_keys(db: DatabaseManager, tenant_id: Optional[str] = None) ->
             )
             for k in keys
         ]
-
-
-async def get_api_key(db: DatabaseManager, key_id: str) -> Optional[APIKey]:
-    """
-    Get an API key by ID.
-
-    Args:
-        db: Database manager
-        key_id: Key ID to look up
-
-    Returns:
-        APIKey if found, None otherwise
-    """
-    async with db.session() as session:
-        result = await session.execute(
-            select(APIKeyModel).where(APIKeyModel.key_id == key_id)
-        )
-        k = result.scalar_one_or_none()
-
-        if k:
-            return APIKey(
-                key_id=k.key_id,
-                name=k.name,
-                prefix=k.prefix,
-                scopes=k.scopes or [],
-                created_at=k.created_at.isoformat() if k.created_at else "",
-            )
-
-    return None

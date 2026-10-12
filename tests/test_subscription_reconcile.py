@@ -40,7 +40,7 @@ async def test_reconcile_updates_changed_bundle(db):
 async def test_reconcile_no_change_returns_empty(db):
     m = _MutableMatcher([{"data_key": "cfg", "similarity": 0.9, "data": {"v": 1}, "description": "d"}])
     svc = SubscriptionService(db, m)
-    sub_id = await svc.create("p1", ["auth"])
+    await svc.create("p1", ["auth"])
 
     # matcher returns the same bundle -> no change
     changed = await svc.reconcile_project("p1")
@@ -84,7 +84,6 @@ async def test_reconcile_scoped_to_project(db):
     # "other" project matcher always returns a different bundle so that, if reconcile
     # mistakenly crosses project boundaries, the bundle WOULD change.
     other_initial = [{"data_key": "ok", "similarity": 0.5, "data": {"v": 0}, "description": None}]
-    other_new = [{"data_key": "ok", "similarity": 0.5, "data": {"v": 999}, "description": None}]
 
     class _DifferentPerCall:
         def __init__(self):
@@ -140,3 +139,35 @@ async def test_unchanged_reconcile_sends_no_postgres_notification(db, notifier):
 
     await asyncio.sleep(0.3)
     assert queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_slow_reconcile_does_not_overwrite_newer_bundle(db):
+    """A reconcile that started on older data must not commit over a later one."""
+    gate = asyncio.Event()
+    a = {"data_key": "A", "similarity": 0.9, "data": {}}
+    b = {"data_key": "B", "similarity": 0.8, "data": {}}
+
+    class Matcher:
+        calls = 0
+
+        async def match(self, project_id, needs, **kw):
+            Matcher.calls += 1
+            if Matcher.calls == 1:
+                return {needs[0]: []}
+            if Matcher.calls == 2:
+                await gate.wait()
+                return {needs[0]: [a]}
+            return {needs[0]: [a, b]}
+
+    svc = SubscriptionService(db, Matcher())
+    replica = SubscriptionService(db, Matcher())
+    sub = await svc.create("p", ["x"])
+    slow = asyncio.create_task(svc.reconcile_project("p"))
+    await asyncio.sleep(0.2)
+    fast = asyncio.create_task(replica.reconcile_project("p"))
+    await asyncio.sleep(0.2)
+    gate.set()
+    await asyncio.gather(slow, fast)
+
+    assert [m["data_key"] for m in (await svc.get_bundle(sub))["x"]] == ["A", "B"]

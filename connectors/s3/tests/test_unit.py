@@ -9,7 +9,6 @@ import base64
 import json
 from datetime import datetime, timezone
 
-import pytest
 
 from connectors.s3.reader import (
     DEFAULT_TEXT_EXTENSIONS,

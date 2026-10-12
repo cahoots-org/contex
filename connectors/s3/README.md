@@ -2,7 +2,7 @@
 
 Bulk-loads text objects from an S3 bucket (or prefix) into a Contex project.
 v1 is a **bulk snapshot**: a run lists and fetches every eligible object and
-upserts it by object key, so re-running (e.g. on a cron) is the refresh story.
+upserts it by `bucket/key`, so re-running (e.g. on a cron) is the refresh story.
 
 ## What gets ingested
 

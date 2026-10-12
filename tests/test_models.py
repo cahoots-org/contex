@@ -1,11 +1,6 @@
 """Tests for data models"""
 
-import pytest
-from pydantic import ValidationError
-from src.core.models import (
-    DataPublishEvent,
-    MatchedDataSource,
-)
+from src.core.models import DataPublishEvent
 
 
 class TestDataPublishEvent:
@@ -46,37 +41,3 @@ class TestDataPublishEvent:
         assert event.data["level1"]["level2"]["level3"] == "value"
         assert event.data["level1"]["array"] == [1, 2, 3]
 
-
-class TestMatchedDataSource:
-    """Test MatchedDataSource model"""
-
-    def test_create_matched_source(self):
-        """Test creating a matched data source"""
-        match = MatchedDataSource(
-            data_key="api_docs",
-            similarity=0.85,
-            data={"endpoints": ["/api/v1/v1/users"]},
-            description="API documentation with endpoints",
-        )
-
-        assert match.data_key == "api_docs"
-        assert match.similarity == 0.85
-        assert match.description == "API documentation with endpoints"
-
-    def test_matched_source_without_description(self):
-        """Test matched source without description"""
-        match = MatchedDataSource(
-            data_key="config", similarity=0.75, data={"key": "value"}
-        )
-
-        assert match.description is None
-
-    def test_similarity_bounds(self):
-        """Test that similarity accepts valid range"""
-        # Valid similarities
-        MatchedDataSource(data_key="test", similarity=0.0, data={})
-        MatchedDataSource(data_key="test", similarity=0.5, data={})
-        MatchedDataSource(data_key="test", similarity=1.0, data={})
-        MatchedDataSource(
-            data_key="test", similarity=1.5, data={}
-        )  # Should not validate bounds

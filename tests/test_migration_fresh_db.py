@@ -25,14 +25,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.core.database import run_migrations_to_head
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 def _base_url() -> str:
-    return os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://contex:contex_password@localhost:5432/contex_test",
-    )
+    return os.environ["TEST_DATABASE_URL"]
 
 
 def _swap_db(url: str, db_name: str) -> str:

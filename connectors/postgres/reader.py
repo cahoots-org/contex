@@ -160,7 +160,7 @@ def read_tables(
             fetch_cols = list(dict.fromkeys(key_cols + selected))
             row_count = null_keys = 0
             for row in _page_rows(conn, schema, table, fetch_cols, page_size):
-                event = row_to_event(schema, table, row, key_cols, selected)
+                event = row_to_event(conn.info.dbname, schema, table, row, key_cols, selected)
                 if event is None:
                     null_keys += 1
                     continue

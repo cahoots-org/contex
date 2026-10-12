@@ -40,8 +40,11 @@ To run the whole stack in Docker instead, use `docker compose up`.
 ## Tests
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://contex:contex_password@localhost:55432/contex_test pytest tests/
+TEST_DATABASE_URL=postgresql+asyncpg://contex:contex_password@localhost:55432/contex_test pytest tests/
 ```
+
+The tests wipe every table in `TEST_DATABASE_URL` and ignore `DATABASE_URL`, so
+point it at a throwaway database. Without it, the database tests are skipped.
 
 Each connector has its own dependencies and tests:
 
@@ -55,7 +58,7 @@ Docker image, and runs the security scans.
 
 ## Style
 
-Lint the files you touch with `ruff check`. Keep imports at the top of the
+CI runs `ruff check .`; run it before you push. Keep imports at the top of the
 module, docstrings short, and comments about what the code does rather than how
 it got there.
 

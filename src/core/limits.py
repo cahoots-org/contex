@@ -27,8 +27,6 @@ MAX_TOP_K = positive_int_env("MAX_TOP_K", 100)
 MAX_NEEDS = positive_int_env("MAX_NEEDS", 50)
 # Max live subscriptions per project (every publish may re-check each one).
 MAX_SUBSCRIPTIONS_PER_PROJECT = positive_int_env("MAX_SUBSCRIPTIONS_PER_PROJECT", 1000)
-# Max events one event-stream read may return.
-MAX_EVENT_COUNT = positive_int_env("MAX_EVENT_COUNT", 1000)
 # Max items in one batch publish / register request.
 MAX_BATCH_SIZE = positive_int_env("MAX_BATCH_SIZE", 1000)
 
@@ -39,14 +37,6 @@ def clamp_top_k(top_k: int | None) -> int | None:
     if top_k is None:
         return None
     return max(1, min(int(top_k), MAX_TOP_K))
-
-
-def clamp_count(count: int | None) -> int:
-    """Clamp an event-read count to [1, MAX_EVENT_COUNT]. None (unbounded)
-    becomes MAX_EVENT_COUNT, so a read is never unlimited."""
-    if count is None:
-        return MAX_EVENT_COUNT
-    return max(1, min(int(count), MAX_EVENT_COUNT))
 
 
 def check_needs(needs) -> None:

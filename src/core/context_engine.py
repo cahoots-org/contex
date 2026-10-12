@@ -4,7 +4,7 @@ import json
 import logging
 import tiktoken
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from .database import DatabaseManager
 from .semantic_matcher import SemanticDataMatcher
@@ -51,7 +51,6 @@ class ContextEngine:
         db: DatabaseManager,
         similarity_threshold: float = 0.5,
         max_matches: int = 10,
-        max_context_size: int = 51200,  # ~40% of 128k token context window
         embed_model: str = "thenlper/gte-base",
         notifier: Optional[Notifier] = None,
     ):
@@ -70,7 +69,6 @@ class ContextEngine:
             default_top_k=self.semantic_matcher.max_matches,
         )
         self.event_store = EventStore(db)
-        self.max_context_size = max_context_size
 
         # Initialize tokenizer for context size estimation (cl100k_base is GPT-4 tokenizer)
         try:
@@ -81,8 +79,6 @@ class ContextEngine:
             logger.warning("Tiktoken unavailable, context size limits disabled")
 
         logger.info("Initialized")
-        if self.max_context_size:
-            logger.debug("Max context size: %s tokens", self.max_context_size)
 
     async def initialize(self):
         """Initialize pgvector index for vector similarity search"""
@@ -132,7 +128,7 @@ class ContextEngine:
         Returns:
             Truncated matches dictionary
         """
-        if not self.max_context_size or not matches:
+        if not matches:
             return matches
 
         # Calculate token cost for each match
@@ -148,7 +144,7 @@ class ContextEngine:
         if total_tokens <= max_tokens:
             return matches  # No truncation needed
 
-        logger.warning(
+        logger.warning(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             "Context size (%s tokens) exceeds limit (%s tokens)", total_tokens, max_tokens
         )
         logger.warning("Truncating to fit budget...")
@@ -227,9 +223,12 @@ class ContextEngine:
         Returns:
             Event sequence number
         """
-        return (await self.publish_data_batch(
+        sequences, failed = await self.publish_data_batch(
             [event], source=source, actor=actor, tenant_id=tenant_id,
-        ))[0]
+        )
+        if failed:
+            raise ValueError(failed[0]["error"])
+        return sequences[0]
 
     async def publish_data_batch(
         self,
@@ -239,14 +238,15 @@ class ContextEngine:
         actor: Optional[Dict[str, Any]] = None,
         tenant_id: Optional[str] = None,
         origin: Optional[str] = None,
-    ) -> List[str]:
+    ) -> Tuple[List[str], List[Dict[str, str]]]:
         """Publish many events for one project, embedding them in a single pass.
 
         ``origin`` tags the documents with the source stream that published them.
-        Returns the event sequence numbers in input order.
+        Returns the published events' sequence numbers in input order, and a
+        ``{data_key, error}`` for each event that could not be published.
         """
         if not events:
-            return []
+            return [], []
         project_id = events[0].project_id
         if any(e.project_id != project_id for e in events):
             raise ValueError("publish_data_batch events must share one project_id")
@@ -260,7 +260,7 @@ class ContextEngine:
         ]
 
         # 1. Register data with semantic matcher (normalizes and stores)
-        await self.semantic_matcher.register_data_batch(
+        errors = await self.semantic_matcher.register_data_batch(
             project_id, [(e.data_key, data, fmt) for e, data, fmt in prepared],
             {e.data_key: e.published_at for e in events if e.published_at is not None},
             origin=origin,
@@ -268,17 +268,20 @@ class ContextEngine:
 
         sequences = [
             await self._record_publish(e, data, fmt, source=source, actor=actor, tenant_id=tenant_id)
-            for e, data, fmt in prepared
+            for (e, data, fmt), error in zip(prepared, errors) if error is None
         ]
+        failed = [{"data_key": e.data_key, "error": error} for e, error in zip(events, errors) if error]
 
         # Reconcile once for the whole batch. The events are already appended,
         # so a reconcile failure must not fail the publish.
-        try:
-            await self.subscriptions.reconcile_project(project_id, {e.data_key for e in events})
-        except Exception:
-            logger.exception("subscription reconcile failed for %s", project_id)
+        published = {e.data_key for e, error in zip(events, errors) if error is None}
+        if published:
+            try:
+                await self.subscriptions.reconcile_project(project_id, published)
+            except Exception:
+                logger.exception("subscription reconcile failed for %s", project_id)
 
-        return sequences
+        return sequences, failed
 
     async def list_keys(
         self, project_id: str, origin: str, after: Optional[str] = None, limit: int = 1000,

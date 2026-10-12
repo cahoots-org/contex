@@ -44,6 +44,15 @@ def test_mcp_allowed_hosts_extend_localhost(monkeypatch):
     assert "https://contex.example.com" in settings.allowed_origins
 
 
+def test_allowed_host_without_port_matches_any_port(monkeypatch):
+    monkeypatch.setenv("CONTEX_ALLOWED_HOSTS", "contex.example.com,10.0.0.5:8001")
+    allowed = main.AllowedHostMiddleware(None, main.mcp_transport_security().allowed_hosts)._allowed
+    assert allowed("contex.example.com:8001")
+    assert allowed("contex.example.com")
+    assert allowed("10.0.0.5:8001")
+    assert not allowed("10.0.0.5:9000")
+
+
 def test_mcp_allowed_hosts_wildcard_disables_protection(monkeypatch):
     monkeypatch.setenv("CONTEX_ALLOWED_HOSTS", "*")
     assert not main.mcp_transport_security().enable_dns_rebinding_protection

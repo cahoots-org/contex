@@ -3,7 +3,6 @@ import pytest
 from sqlalchemy import text
 
 from src.core.subscriptions import SubscriptionService
-from src.core.tenant import DEFAULT_TENANT_ID
 
 
 class _StubMatcher:

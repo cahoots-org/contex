@@ -12,7 +12,6 @@ from unittest.mock import Mock, AsyncMock, patch
 from src.core.db_models import Embedding, Symbol
 from src.core.lexical_search import PgFtsLexical
 from src.core.semantic_matcher import SemanticDataMatcher
-from src.core.models import DataPublishEvent
 
 
 class TestSemanticDataMatcher:
@@ -64,50 +63,6 @@ class TestSemanticDataMatcher:
         assert "tech_stack" in keys
 
     @pytest.mark.asyncio
-    async def test_auto_describe_simple_data(self, matcher):
-        """Test auto-description generates meaningful descriptions"""
-        description = matcher._auto_describe(
-            "tech_stack", {"backend": "Python", "frontend": "React"}
-        )
-
-        assert "tech_stack" in description
-
-    @pytest.mark.asyncio
-    async def test_auto_describe_nested_data(self, matcher):
-        """Test auto-description handles nested structures"""
-        description = matcher._auto_describe(
-            "config",
-            {
-                "server": {"host": "localhost", "port": 8000},
-                "database": {"url": "postgres://..."},
-            },
-        )
-
-        assert "config" in description
-
-    @pytest.mark.asyncio
-    async def test_flatten_dict_simple(self, matcher):
-        """Test dict flattening with simple structure"""
-        result = matcher._flatten_dict({"a": 1, "b": 2})
-        assert result == {"a": 1, "b": 2}
-
-    @pytest.mark.asyncio
-    async def test_flatten_dict_nested(self, matcher):
-        """Test dict flattening with nested structure"""
-        result = matcher._flatten_dict({"level1": {"level2": {"level3": "value"}}})
-
-        assert "level1.level2.level3" in result
-
-    @pytest.mark.asyncio
-    async def test_flatten_dict_with_arrays(self, matcher):
-        """Test dict flattening handles arrays"""
-        result = matcher._flatten_dict(
-            {"items": [{"id": 1, "name": "Item 1"}, {"id": 2, "name": "Item 2"}]}
-        )
-
-        assert "items[*]" in result
-
-    @pytest.mark.asyncio
     async def test_match_registered_data(self, matcher):
         """Test matching registered data with needs"""
         # Register some data
@@ -147,7 +102,7 @@ class TestSemanticDataMatcher:
         )
         await matcher.register_data("proj1", "notes", {"body": "unrelated"})
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("notes.root", 0.8),
+            ("jira:DEV-1.comments[0]", 0.9), ("notes", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
@@ -163,12 +118,12 @@ class TestSemanticDataMatcher:
             {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
         )
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1.root", 0.8),
+            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
 
-        assert [r["data_key"] for r in results[0]["related"]] == ["jira:DEV-1.root"]
+        assert [r["data_key"] for r in results[0]["related"]] == ["jira:DEV-1"]
         assert "document_data" not in results[0]
 
     @pytest.mark.asyncio
@@ -253,23 +208,6 @@ class TestSemanticDataMatcher:
         assert len(proj1_keys) >= 2
         assert "data1" in proj1_keys
         assert "data2" in proj1_keys
-
-    @pytest.mark.asyncio
-    async def test_clear_project(self, matcher):
-        """Test clearing all data for a project"""
-        # Register some data
-        await matcher.register_data("proj1", "data1", {"key": "value1"})
-        await matcher.register_data("proj1", "data2", {"key": "value2"})
-
-        # Verify data exists
-        keys = await matcher.get_registered_data("proj1")
-        assert len(keys) >= 2
-
-        await matcher.clear_project("proj1")
-
-        # Verify keys are gone
-        keys = await matcher.get_registered_data("proj1")
-        assert len(keys) == 0
 
     @pytest.mark.asyncio
     async def test_empty_data_needs(self, matcher):

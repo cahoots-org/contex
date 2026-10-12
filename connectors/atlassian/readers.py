@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Sequence
+from urllib.parse import urlsplit
 
 from connectors.base import ChangeEvent
 
@@ -17,6 +18,12 @@ from .client import AtlassianClient
 from .convert import adf_to_text, storage_html_to_text
 
 log = logging.getLogger(__name__)
+
+
+def _site(site_url: str) -> str:
+    """The site host (``acme.atlassian.net``) that prefixes every key."""
+    return urlsplit(site_url).netloc or site_url.rstrip("/")
+
 
 # Jira fields requested per issue. ``comment`` is included so small threads need
 # no follow-up call; large threads are paged separately (see read_jira_issues).
@@ -114,7 +121,7 @@ def issue_to_event(issue: dict, *, site_url: str, comments: list[dict]) -> Chang
     }
     return ChangeEvent(
         op="upsert",
-        key=f"jira:{key}",
+        key=f"{_site(site_url)}:jira:{key}",
         payload=payload,
         source_meta={
             "source": "jira",
@@ -200,7 +207,7 @@ def page_to_event(
     }
     return ChangeEvent(
         op="upsert",
-        key=f"confluence:{page_id}",
+        key=f"{_site(site_url)}:confluence:{page_id}",
         payload=payload,
         source_meta={
             "source": "confluence",

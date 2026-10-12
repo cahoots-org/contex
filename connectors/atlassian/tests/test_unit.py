@@ -5,7 +5,6 @@ All tests here run without network access or external services.
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from connectors.atlassian.client import _retry_after
 from connectors.atlassian.convert import adf_to_text, storage_html_to_text
@@ -160,7 +159,7 @@ def test_issue_to_event():
     }
     ev = issue_to_event(issue, site_url=SITE, comments=[{"author": "Bob", "body": "seen it", "created": "x"}])
     assert ev.op == "upsert"
-    assert ev.key == "jira:DEV-1"
+    assert ev.key == "acme.atlassian.net:jira:DEV-1"
     assert ev.data_format == "json"
     assert ev.payload["summary"] == "Crash on boot"
     assert ev.payload["description"] == "boom"
@@ -199,7 +198,7 @@ def test_page_to_event():
         labels=["runbook"],
         comments=[{"author": "acc2", "body": "nice"}],
     )
-    assert ev.key == "confluence:33046"
+    assert ev.key == "acme.atlassian.net:confluence:33046"
     assert ev.payload["title"] == "Runbook"
     assert ev.payload["space"] == "ENG"
     assert ev.payload["body"] == "do the thing"

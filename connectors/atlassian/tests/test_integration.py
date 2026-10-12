@@ -96,7 +96,7 @@ async def test_read_jira_issues_inline_comments(httpx_mock: "HTTPXMock") -> None
 
     assert len(events) == 1
     ev = events[0]
-    assert ev.key == "jira:DEV-42"
+    assert ev.key == "acme.atlassian.net:jira:DEV-42"
     assert ev.payload["summary"] == "Fix login"
     assert ev.payload["description"] == "broken"
     assert ev.payload["labels"] == ["auth"]
@@ -210,7 +210,7 @@ async def test_read_confluence_pages(httpx_mock: "HTTPXMock") -> None:
 
     assert len(events) == 1  # personal space skipped
     ev = events[0]
-    assert ev.key == "confluence:33046"
+    assert ev.key == "acme.atlassian.net:confluence:33046"
     assert ev.payload["title"] == "Runbook"
     assert ev.payload["space"] == "ENG"
     assert ev.payload["body"] == "do the thing"

@@ -7,11 +7,12 @@ import shutil
 import pypdfium2
 import pytest
 from docx import Document
+from PIL import Image
 
 from src.core import node_parsers
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import build_mcp_server
-from src.core.node_parsers import DOCXNodeParser, PDFNodeParser
+from src.core.node_parsers import DOCXNodeParser, DocumentRejected, ImageNodeParser, PDFNodeParser
 
 needs_tesseract = pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract not installed")
 
@@ -116,5 +117,16 @@ async def test_images_are_read_with_ocr(db, monkeypatch):
 def test_oversized_documents_are_refused(monkeypatch):
     monkeypatch.setattr(node_parsers, "MAX_DOCX_UNZIPPED_BYTES", 1000)
     monkeypatch.setattr(node_parsers, "MAX_PDF_PAGES", 0)
-    assert not DOCXNodeParser().parse(_docx()).success
-    assert not PDFNodeParser().parse(_pdf()).success
+    with pytest.raises(ValueError, match="size limit"):
+        DOCXNodeParser().parse(_docx())
+    with pytest.raises(ValueError, match="pages"):
+        PDFNodeParser().parse(_pdf())
+
+
+def test_oversized_images_are_refused_before_ocr(monkeypatch):
+    monkeypatch.setattr(node_parsers, "OCR_ENABLED", True)
+    monkeypatch.setattr(node_parsers, "_ocr", None)
+    png = io.BytesIO()
+    Image.new("1", (node_parsers.MAX_OCR_PIXELS_PER_SIDE + 1, 1)).save(png, "PNG")
+    with pytest.raises(DocumentRejected, match="pixels"):
+        ImageNodeParser().parse(png.getvalue())

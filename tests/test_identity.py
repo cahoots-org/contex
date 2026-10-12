@@ -23,8 +23,9 @@ async def _make_key(db, raw_key: str, *, scopes=None, tenant_id=None) -> str:
 
 
 @pytest.mark.asyncio
-async def test_unknown_key_denies(db):
+async def test_unknown_key_denies(db, caplog):
     assert await resolve_identity(db, "ck_does_not_exist") is None
+    assert "Rejected API key" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -43,7 +44,7 @@ async def test_explicit_scopes_are_authoritative(db):
     # explicit scopes on the key override role expansion
     key_id = await _make_key(db, "ck_custom_scopes_bbbb2222",
                              scopes=[Permission.PUBLISH_DATA.value, Permission.QUERY_DATA.value])
-    await assign_role(db, key_id, Role.READONLY)  # readonly would NOT include PUBLISH_DATA
+    await assign_role(db, key_id, Role.CONSUMER)  # consumer would NOT include PUBLISH_DATA
     ident = await resolve_identity(db, "ck_custom_scopes_bbbb2222")
     assert ident.scopes == frozenset({Permission.PUBLISH_DATA, Permission.QUERY_DATA})
 
@@ -70,7 +71,7 @@ def test_has_project():
 @pytest.mark.asyncio
 async def test_powerless_key_has_empty_scopes(db):
     """A key with no role and empty scopes is valid but grants nothing."""
-    key_id = await _make_key(db, "ck_powerless_dddd4444", scopes=[])
+    await _make_key(db, "ck_powerless_dddd4444", scopes=[])
     ident = await resolve_identity(db, "ck_powerless_dddd4444")
     assert ident is not None, "Key exists — must not be None"
     assert ident.scopes == frozenset(), "No role, no scopes — must be empty frozenset"
@@ -79,8 +80,8 @@ async def test_powerless_key_has_empty_scopes(db):
 @pytest.mark.asyncio
 async def test_parse_scopes_ignores_legacy_strings(db):
     """Unknown scope strings are silently dropped; valid Permission values are kept."""
-    key_id = await _make_key(db, "ck_legacy_scopes_eeee5555",
-                             scopes=["read", "write", Permission.QUERY_DATA.value])
+    await _make_key(db, "ck_legacy_scopes_eeee5555",
+                    scopes=["read", "write", Permission.QUERY_DATA.value])
     ident = await resolve_identity(db, "ck_legacy_scopes_eeee5555")
     assert ident is not None
     assert ident.scopes == frozenset({Permission.QUERY_DATA})

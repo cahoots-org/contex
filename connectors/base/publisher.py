@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from contextlib import AsyncExitStack
 
@@ -22,6 +23,8 @@ from .config import ContexConfig
 _MAX_RETRIES = 5
 _BACKOFF_CAP = 60.0  # seconds
 _RETRY_AFTER = re.compile(r"retry_after=(\d+(?:\.\d+)?)")
+
+log = logging.getLogger(__name__)
 
 
 def _backoff(error_text: str, attempt: int) -> float:
@@ -68,6 +71,8 @@ class ContexPublisher:
         if self._origin is not None:
             arguments["origin"] = self._origin
         result = await self._call("contex_publish_batch", arguments)
+        for failure in result.get("failed", []):
+            log.warning("contex rejected %s: %s", failure["data_key"], failure["error"])
         return int(result.get("published", 0))
 
     async def list_keys(self) -> list[str]:

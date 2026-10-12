@@ -40,8 +40,14 @@ async def stream_subscription_updates(
         bundle = await engine.subscriptions.get_bundle(sub_id)
         yield _sse({"type": "bundle", "bundle": bundle, "updated_at": None})
 
+        # A quiet stream never reads, so renew the lease well before it lapses.
+        renew_every = engine.subscriptions.ttl.total_seconds() / 2
         while True:
-            await queue.get()  # an update or RESYNC: either way, re-read
+            with anyio.move_on_after(renew_every) as wait:
+                await queue.get()  # an update or RESYNC: either way, re-read
+            if wait.cancelled_caught:
+                await engine.subscriptions.renew(sub_id)
+                continue
             bundle = await engine.subscriptions.get_bundle(sub_id)
             yield _sse({
                 "type": "bundle",

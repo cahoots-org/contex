@@ -10,6 +10,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.core.error_handlers import register_exception_handlers
 from src.core.tracing import initialize_tracing
@@ -21,7 +22,7 @@ def _build_app() -> FastAPI:
     register_exception_handlers(app)
 
     manager = initialize_tracing(service_name="test", service_version="0.0.0")
-    manager.instrument_fastapi(app)
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=manager.tracer_provider)
     app.add_middleware(TracingMiddleware)
 
     @app.get("/boom")

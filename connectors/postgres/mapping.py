@@ -47,14 +47,14 @@ def resolve_pk(
     return None
 
 
-def build_data_key(schema: str, table: str, row: dict, key_cols: list[str]) -> str:
-    """Build a stable ``data_key`` from the row's key column values.
+def build_data_key(database: str, schema: str, table: str, row: dict, key_cols: list[str]) -> str:
+    """Build a stable ``database.schema.table.pk`` data_key from the row's key column values.
 
     Composite keys are joined with ``:``; a ``:`` or ``\\`` inside a value is
     backslash-escaped so distinct keys never collide.
     """
     parts = [str(row[col]).replace("\\", "\\\\").replace(":", "\\:") for col in key_cols]
-    return f"{schema}.{table}.{':'.join(parts)}"
+    return f"{database}.{schema}.{table}.{':'.join(parts)}"
 
 
 def select_columns(
@@ -82,6 +82,7 @@ def select_columns(
 
 
 def row_to_event(
+    database: str,
     schema: str,
     table: str,
     row: dict,
@@ -96,7 +97,7 @@ def row_to_event(
     if any(row.get(col) is None for col in key_cols):
         return None
     payload = {col: _serialize(row[col]) for col in selected_columns if col in row}
-    key = build_data_key(schema, table, row, key_cols)
+    key = build_data_key(database, schema, table, row, key_cols)
     return ChangeEvent(
         op="upsert",
         key=key,
@@ -107,9 +108,11 @@ def row_to_event(
 
 
 def _serialize(value: Any) -> Any:
-    """Coerce non-JSON-serialisable Postgres values to strings."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, str)):
+    """Coerce non-JSON-serialisable Postgres values to strings, keeping jsonb and arrays structured."""
+    if value is None or isinstance(value, (bool, int, float, str)):
         return value
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize(v) for v in value]
     return str(value)

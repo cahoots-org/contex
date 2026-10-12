@@ -16,12 +16,12 @@ from mcp.server import MCPServer
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError, UnexpectedToolError
 from mcp.server.subscriptions import InMemorySubscriptionBus, ListenHandler, ResourceUpdated
 
 from src.core.authz import auth_enabled
 from src.core.context_engine import ContextEngine
-from src.core.identity import Identity, resolve_identity
+from src.core.identity import ANONYMOUS_IDENTITY, Identity, resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
 from src.core.models import DataPublishEvent
@@ -101,15 +101,16 @@ async def _enforce_project(engine, permission, project_id, *, create_if_absent=F
     _enforce(permission, project_id=project_id)
     tok = get_access_token()
     if tok is None:
-        return
-    claims = tok.claims or {}
-    identity = Identity(
-        key_id=tok.client_id,
-        scopes=frozenset(Permission(s) for s in tok.scopes),
-        tenant_id=claims.get("tenant_id"),
-        projects=tuple(claims.get("projects") or ()),
-        role=None,
-    )
+        identity = ANONYMOUS_IDENTITY
+    else:
+        claims = tok.claims or {}
+        identity = Identity(
+            key_id=tok.client_id,
+            scopes=frozenset(Permission(s) for s in tok.scopes),
+            tenant_id=claims.get("tenant_id"),
+            projects=tuple(claims.get("projects") or ()),
+            role=None,
+        )
     await ensure_project_access(identity, project_id, TenantManager(engine.db), create_if_absent=create_if_absent)
 
 
@@ -159,6 +160,22 @@ class LegacyResourceSubscriptions:
             task = asyncio.get_running_loop().create_task(connection.send_resource_updated(event.uri))
             self._sends.add(task)
             task.add_done_callback(self._sends.discard)
+
+
+class _ContexServer(MCPServer):
+    """MCPServer that reports permission and validation failures to the caller."""
+
+    async def call_tool(self, name, arguments, context=None):
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            cause = exc.__cause__
+            if isinstance(cause, PermissionError):
+                raise ToolError(f"Error executing tool {name}: Permission denied") from cause
+            # Only our own plain ValueErrors; library subclasses may carry internals.
+            if type(cause) is ValueError:
+                raise ToolError(f"Error executing tool {name}: {cause}") from cause
+            raise
 
 
 class ApiKeyVerifier(TokenVerifier):
@@ -211,7 +228,7 @@ def build_mcp_server(engine, db_accessor=None):
                 required_scopes=None,               # per-tool checks live in handlers
             ),
         )
-    server = MCPServer(name="contex", version=VERSION, subscriptions=bus, **auth_kwargs)
+    server = _ContexServer(name="contex", version=VERSION, subscriptions=bus, **auth_kwargs)
 
     def _get_engine():
         """Resolve the engine, supporting both concrete instances and lazy callables."""
@@ -268,7 +285,13 @@ def build_mcp_server(engine, db_accessor=None):
         tid = (tok.claims or {}).get("tenant_id") if tok else None
         e = _get_engine()
         await _enforce_subscription_project(e, id, tid)
-        return json.dumps(await e.subscriptions.get_bundle(id, tenant_id=tid))
+        try:
+            bundle = await e.subscriptions.get_bundle(id, tenant_id=tid)
+        except KeyError:
+            raise ResourceError(
+                "Subscription expired. Call contex_create_subscription with the same arguments to resume it."
+            ) from None
+        return json.dumps(bundle)
 
     @server.tool(name="contex_publish",
                  description="Publish/update context data for a project. "
@@ -290,26 +313,24 @@ def build_mcp_server(engine, db_accessor=None):
                              "items is a list of {data_key, data, data_format?, published_at?}; for data_format "
                              "pdf, docx or image, data is the file as a base64 string. "
                              "origin names the source stream (e.g. s3:bucket/prefix) so contex_list_keys can "
-                             "list what it published.")
+                             "list what it published. Items that can't be read are skipped and listed in "
+                             "failed with the reason.")
     async def contex_publish_batch(project_id: str, items: list[dict], origin: str | None = None) -> str:
         e = _get_engine()
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
-        try:
-            check_batch_size(items, "items")
-        except ValueError as exc:
-            raise ValueError(str(exc))
+        check_batch_size(items, "items")
         _throttle(limiter, "ingest", "RATE_LIMIT_INGEST", 0)
-        sequences = await e.publish_data_batch([
+        sequences, failed = await e.publish_data_batch([
             DataPublishEvent(
                 project_id=project_id,
                 data_key=item["data_key"],
-                data=_item_data(item["data"], item.get("data_format", "json")),
-                data_format=item.get("data_format", "json"),
+                data=_item_data(item["data"], item.get("data_format")),
+                data_format=item.get("data_format"),
                 published_at=_parse_timestamp(item.get("published_at"), "published_at"),
             )
             for item in items
         ], source='mcp', origin=origin)
-        return json.dumps({"published": len(sequences)})
+        return json.dumps({"published": len(sequences), "failed": failed})
 
     @server.tool(name="contex_list_keys",
                  description="List the data_keys an origin last published, in order, up to limit per page. "
