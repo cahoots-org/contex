@@ -58,10 +58,10 @@ async def test_matched_node_links_to_cross_file_def(ingest, db):
     await ingest.register_data("p", "repo:b.py", B_PY, "code")
 
     svc = SubscriptionService(db, _StubMatcher({}))
-    linked = await svc._link_bundle("p", _bundle_for("repo:b.py.caller"))
+    linked = await svc._link_bundle("p", _bundle_for("repo:b.py\x1fcaller"))
 
     links = linked["need"][0]["links"]
-    assert [l["data_key"] for l in links] == ["repo:a.py.helper"]
+    assert [l["data_key"] for l in links] == ["repo:a.py\x1fhelper"]
     assert links[0]["name"] == "helper"
     assert links[0]["document"] == "repo:a.py"
 
@@ -71,13 +71,13 @@ async def test_link_is_ordering_free(ingest, db):
     # Ref file ingested first: the def doesn't exist yet, so nothing resolves.
     await ingest.register_data("p", "repo:b.py", B_PY, "code")
     svc = SubscriptionService(db, _StubMatcher({}))
-    before = await svc._link_bundle("p", _bundle_for("repo:b.py.caller"))
+    before = await svc._link_bundle("p", _bundle_for("repo:b.py\x1fcaller"))
     assert "links" not in before["need"][0]
 
     # Def arrives later -> re-running the join now resolves it.
     await ingest.register_data("p", "repo:a.py", A_PY, "code")
-    after = await svc._link_bundle("p", _bundle_for("repo:b.py.caller"))
-    assert after["need"][0]["links"][0]["data_key"] == "repo:a.py.helper"
+    after = await svc._link_bundle("p", _bundle_for("repo:b.py\x1fcaller"))
+    assert after["need"][0]["links"][0]["data_key"] == "repo:a.py\x1fhelper"
 
 
 @pytest.mark.asyncio
@@ -85,10 +85,10 @@ async def test_create_persists_linked_bundle(ingest, db):
     await ingest.register_data("p", "repo:a.py", A_PY, "code")
     await ingest.register_data("p", "repo:b.py", B_PY, "code")
 
-    svc = SubscriptionService(db, _StubMatcher(_bundle_for("repo:b.py.caller")))
+    svc = SubscriptionService(db, _StubMatcher(_bundle_for("repo:b.py\x1fcaller")))
     sub_id = await svc.create("p", ["need"])
     bundle = await svc.get_bundle(sub_id)
-    assert bundle["need"][0]["links"][0]["data_key"] == "repo:a.py.helper"
+    assert bundle["need"][0]["links"][0]["data_key"] == "repo:a.py\x1fhelper"
 
 
 @pytest.mark.asyncio
@@ -100,12 +100,12 @@ async def test_links_resolve_when_def_is_also_matched(ingest, db):
 
     svc = SubscriptionService(db, _StubMatcher({}))
     bundle = {"need": [
-        {"data_key": "repo:b.py.caller", "similarity": 1.0, "data": {}, "description": "d"},
-        {"data_key": "repo:a.py.helper", "similarity": 0.9, "data": {}, "description": "d"},
+        {"data_key": "repo:b.py\x1fcaller", "similarity": 1.0, "data": {}, "description": "d"},
+        {"data_key": "repo:a.py\x1fhelper", "similarity": 0.9, "data": {}, "description": "d"},
     ]}
     linked = await svc._link_bundle("p", bundle)
-    caller = next(m for m in linked["need"] if m["data_key"] == "repo:b.py.caller")
-    assert caller["links"][0]["data_key"] == "repo:a.py.helper"
+    caller = next(m for m in linked["need"] if m["data_key"] == "repo:b.py\x1fcaller")
+    assert caller["links"][0]["data_key"] == "repo:a.py\x1fhelper"
 
 
 @pytest.mark.asyncio
@@ -113,5 +113,5 @@ async def test_no_refs_leaves_bundle_untouched(ingest, db):
     await ingest.register_data("p", "repo:a.py", A_PY, "code")
     svc = SubscriptionService(db, _StubMatcher({}))
     # a.py.helper has no refs -> no links key added.
-    linked = await svc._link_bundle("p", _bundle_for("repo:a.py.helper"))
+    linked = await svc._link_bundle("p", _bundle_for("repo:a.py\x1fhelper"))
     assert "links" not in linked["need"][0]

@@ -283,9 +283,9 @@ class SemanticDataMatcher:
             format=parse_result.format_name,
         )
 
-        node_keys = [
-            f"{data_key}.{node.path}" if node.path else data_key for node in nodes
-        ]
+        # Joined with a control character, which data_keys can't contain, so one
+        # document's key never equals another's key plus a node path.
+        node_keys = [f"{data_key}\x1f{node.path}" if node.path else data_key for node in nodes]
         title = _document_title(nodes)
         embedding_texts = [_embedding_text(data_key, node, title) for node in nodes]
         # Skip encode + upsert for nodes whose embedded text and model are
