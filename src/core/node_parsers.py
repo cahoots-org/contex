@@ -519,7 +519,7 @@ class PDFNodeParser(BaseNodeParser):
         pdf = pypdfium2.PdfDocument(data)
         try:
             if len(pdf) > MAX_PDF_PAGES:
-                raise ValueError(f"PDF has more than {MAX_PDF_PAGES} pages")
+                raise DocumentRejected(f"PDF has more than {MAX_PDF_PAGES} pages")
             texts = [page.get_textpage().get_text_bounded().replace("\r\n", "\n").strip() for page in pdf]
             if OCR_ENABLED:
                 scanned = [i for i, text in enumerate(texts) if not text]
@@ -571,6 +571,8 @@ class PDFNodeParser(BaseNodeParser):
                         }
                     ))
 
+        if not nodes:
+            raise DocumentRejected(f"no text found in the {fmt}")
         return ParseResult(
             nodes=nodes,
             format_name=fmt,
@@ -594,7 +596,7 @@ class ImageNodeParser(PDFNodeParser):
 
     def _page_texts(self, data: bytes) -> List[str]:
         if not OCR_ENABLED:
-            raise ValueError("images need OCR; set OCR_ENABLED=true")
+            raise DocumentRejected("reading text from images is not enabled on this server")
         return [_ocr(data)]
 
 
@@ -627,7 +629,7 @@ class DOCXNodeParser(BaseNodeParser):
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
                 unzipped = sum(info.file_size for info in archive.infolist())
             if unzipped > MAX_DOCX_UNZIPPED_BYTES:
-                raise ValueError("DOCX expands beyond the size limit")
+                raise DocumentRejected("DOCX expands beyond the size limit")
             doc = Document(io.BytesIO(data))
         else:
             return ParseResult(

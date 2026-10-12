@@ -18,6 +18,7 @@ from src.core.limits import positive_int_env
 from src.core.lexical_search import PgFtsLexical
 from src.core.logging import get_logger
 from src.core.node_converter import NodeConverter
+from src.core.node_parsers import DocumentRejected
 from src.core.recency import recency_filter
 from src.core.relevance import JevReranker
 from src.core.vector_search import PgVectorSearch
@@ -215,7 +216,9 @@ class SemanticDataMatcher:
             data: The actual data in any format (dict, YAML string, text, etc.)
             format_hint: Optional format hint ("json", "yaml", "markdown", "text")
         """
-        await self.register_data_batch(project_id, [(data_key, data, format_hint)])
+        [error] = await self.register_data_batch(project_id, [(data_key, data, format_hint)])
+        if error:
+            raise DocumentRejected(error)
 
     async def register_data_batch(
         self,
@@ -223,7 +226,7 @@ class SemanticDataMatcher:
         items: List[Tuple[str, Any, Optional[str]]],
         published_at: Optional[Dict[str, datetime]] = None,
         origin: Optional[str] = None,
-    ):
+    ) -> List[Optional[str]]:
         """Register many ``(data_key, data, format_hint)`` items with one encode call.
 
         Encoding is the expensive step and pads each batch to its longest text,
@@ -231,15 +234,20 @@ class SemanticDataMatcher:
         batching work across the whole set rather than one file at a time.
         ``published_at`` maps a data_key to when its source changed it.
         ``origin`` tags every item, including unchanged ones, with its source stream.
+        Returns, per item, None or why it was not registered.
         """
         published_at = published_at or {}
         if origin is not None:
             # Unchanged nodes skip the upsert below, so tag existing rows here.
             await self._tag_origin(project_id, [data_key for data_key, _, _ in items], origin)
-        plans = [
-            plan for data_key, data, format_hint in items
-            if (plan := await self._plan_registration(project_id, data_key, data, format_hint))
-        ]
+        plans, errors = [], []
+        for data_key, data, format_hint in items:
+            try:
+                plans.append(await self._plan_registration(project_id, data_key, data, format_hint))
+                errors.append(None)
+            except DocumentRejected as e:
+                logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
+                errors.append(str(e))
         texts = [plan["texts"][i] for plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
@@ -250,10 +258,11 @@ class SemanticDataMatcher:
                 project_id, plan, embeddings[offset:offset + n], published_at.get(plan["data_key"]), origin
             )
             offset += n
+        return errors
 
     async def _plan_registration(
         self, project_id: str, data_key: str, data: Any, format_hint: Optional[str],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Parse one item and work out which of its nodes need (re-)embedding."""
         # data_key carries the file extension the code parser needs to pick a grammar.
         # Parsing is CPU-bound (PDF, OCR, DOCX), so it runs off the event loop.
@@ -262,19 +271,12 @@ class SemanticDataMatcher:
         )
 
         if not parse_result.success:
-            logger.warning(
-                "Failed to parse data",
-                project_id=project_id,
-                data_key=data_key,
-                error=parse_result.error,
-            )
-            return None
+            logger.warning("Failed to parse data", project_id=project_id, data_key=data_key,
+                           error=parse_result.error)
+            raise DocumentRejected(f"could not read the document as {parse_result.format_name}")
 
+        # Empty content still gets a plan, so publishing it removes the old nodes.
         nodes = parse_result.nodes
-        if not nodes:
-            logger.warning("No nodes extracted from data", project_id=project_id, data_key=data_key)
-            return None
-
         logger.debug(
             "Parsed data into nodes",
             project_id=project_id,
