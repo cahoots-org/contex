@@ -147,7 +147,7 @@ docker compose exec contex python -m src.cli keys list
 docker compose exec contex python -m src.cli keys revoke <key_id>
 ```
 
-Clients send the key as `Authorization: Bearer <key>`. With auth on, Contex authenticates every MCP tool call, scopes each request to the key's tenant, and applies RBAC to who can publish, query, and subscribe. To reach Contex from other machines, change the `ports` mapping in `docker-compose.yml` after turning auth on.
+Clients send the key as `Authorization: Bearer <key>`. With auth on, Contex authenticates every MCP tool call, scopes each request to the key's tenant, and applies RBAC to who can publish, query, and subscribe. To reach Contex from other machines, change the `ports` mapping in `docker-compose.yml` after turning auth on, and set `CONTEX_ALLOWED_HOSTS` to the hostname clients use.
 
 See the [RBAC Guide](docs/RBAC.md).
 
