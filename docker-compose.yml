@@ -31,6 +31,7 @@ services:
       # so protected mode is off here. Enable AUTH_ENABLED=true before exposing
       # it beyond this machine (see README).
       - CONTEX_HOST=0.0.0.0
+      - CONTEX_PORT=8001
       - CONTEX_PROTECTED_MODE=false
       # Hybrid search runs entirely on Postgres (pgvector + pg_search BM25, fused with RRF).
       - HYBRID_SEARCH_ENABLED=true

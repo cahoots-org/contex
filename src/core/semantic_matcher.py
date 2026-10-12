@@ -81,6 +81,15 @@ async def _stored_hashes(session, project_id: str, node_keys: List[str]) -> Dict
     return dict(result.all())
 
 
+async def _lock_documents(session, project_id: str, data_keys: List[str]) -> None:
+    """Hold each document's write lock until the transaction ends, in sorted order."""
+    for data_key in sorted(set(data_keys)):
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:project_id || chr(31) || :data_key, 0))"),
+            {"project_id": project_id, "data_key": data_key},
+        )
+
+
 def collapse_by_document(
     candidates: List[Dict[str, Any]], top_k: int, per_document: int
 ) -> List[Dict[str, Any]]:
@@ -319,10 +328,7 @@ class SemanticDataMatcher:
         async with self.db.session() as session:
             # Serialize writers of one document, and refuse a plan whose skipped
             # nodes another writer has since replaced.
-            await session.execute(
-                text("SELECT pg_advisory_xact_lock(hashtextextended(:project_id || chr(31) || :data_key, 0))"),
-                {"project_id": project_id, "data_key": data_key},
-            )
+            await _lock_documents(session, project_id, [data_key])
             rewritten = set(changed)
             skipped = {k: h for i, (k, h) in enumerate(zip(node_keys, plan["hashes"])) if i not in rewritten}
             if await _stored_hashes(session, project_id, list(skipped)) != skipped:
@@ -539,6 +545,7 @@ class SemanticDataMatcher:
     async def delete_data_keys(self, project_id: str, data_keys: List[str]) -> List[str]:
         """Remove these documents' nodes and symbols; return the keys that existed."""
         async with self.db.session() as session:
+            await _lock_documents(session, project_id, data_keys)
             existing = list((await session.execute(
                 select(Embedding.data_key).distinct()
                 .where(Embedding.project_id == project_id)

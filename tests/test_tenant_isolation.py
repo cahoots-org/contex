@@ -68,8 +68,7 @@ async def test_subscription_cross_tenant_denied_at_service(db, monkeypatch):
     ("GET", "/", None),
     ("GET", "/sandbox/", None),
     ("POST", "/sandbox/query", {"project_id": "p", "query": "secrets"}),
-    ("GET", "/sandbox/projects/p/stats", None),
-    ("GET", "/sandbox/projects/p/data", None),
+    ("GET", "/sandbox/data?project_id=p", None),
     ("GET", "/sandbox/subscribe?project_id=p&need=secrets", None),
 ])
 async def test_sandbox_is_not_served_with_auth_on(monkeypatch, method, path, form):

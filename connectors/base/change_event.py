@@ -1,7 +1,7 @@
 """The seam every connector emits: a stream of ChangeEvents."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -21,7 +21,6 @@ class ChangeEvent:
     op: str
     key: str
     payload: object
-    source_meta: dict = field(default_factory=dict)
     data_format: str = "json"
     published_at: str | None = None
 

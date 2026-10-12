@@ -6,7 +6,6 @@ def test_to_item_maps_key_payload_and_format():
         op="upsert",
         key="public.users.42",
         payload={"name": "ada"},
-        source_meta={"source": "postgres", "table": "users"},
         data_format="json",
     )
     assert event.to_item() == {
@@ -19,7 +18,6 @@ def test_to_item_maps_key_payload_and_format():
 def test_data_format_defaults_to_json():
     event = ChangeEvent(op="upsert", key="k", payload={"a": 1})
     assert event.data_format == "json"
-    assert event.source_meta == {}
 
 
 def test_text_payload_carries_text_format():

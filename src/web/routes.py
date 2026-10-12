@@ -139,38 +139,10 @@ async def execute_query(
     )
 
 
-@router.get("/projects/{project_id}/stats", response_class=HTMLResponse)
-async def project_stats(
-    request: Request,
-    project_id: str,
-):
-    """Get statistics about a project's data.
-
-    Reads from the `embeddings` table (Postgres/pgvector) — the store where
-    published data actually lands — mirroring the sibling `/data` handler.
-    """
-    rows = await _documents(request.app.state.context_engine, project_id)
-
-    data_items = [
-        {"data_key": data_key, "description": f"{data_key} ({data_format or 'unknown'})"}
-        for data_key, data_format, _ in rows
-    ]
-
-    return templates.TemplateResponse(
-        request,
-        "project_stats.html",
-        {
-            "project_id": project_id,
-            "data_count": len(data_items),
-            "data_items": data_items,
-        },
-    )
-
-
-@router.get("/projects/{project_id}/data")
+@router.get("/data")
 async def get_project_data(
     request: Request,
-    project_id: str,
+    project_id: str = Query(...),
 ):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
     data_items = [

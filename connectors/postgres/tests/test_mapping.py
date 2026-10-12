@@ -127,7 +127,6 @@ class TestRowToEvent:
         assert event.key == "app.public.users.1"
         assert event.payload == {"id": 1, "name": "Alice", "score": 9.5}
         assert event.data_format == "json"
-        assert event.source_meta == {"source": "postgres", "schema": "public", "table": "users"}
 
     def test_selected_columns_filter_payload(self):
         row = {"id": 1, "name": "Alice", "password": "secret"}

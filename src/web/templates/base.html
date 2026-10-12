@@ -4,26 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Contex Query Sandbox{% endblock %}</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
-    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/design/icon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/design/icon-16.png">
+    <link rel="apple-touch-icon" href="/design/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/design/tokens.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="container">
         <header>
             <div class="logo">
-                <img src="/static/logo.png" alt="" class="logo-mark">
+                <img src="/design/icon-64.png" alt="" class="logo-mark">
                 <div>
                     <h1>Contex</h1>
                     <p class="tagline">Context comes to the agent.</p>
                 </div>
             </div>
-            <nav>
-                <a href="/docs" target="_blank">API Docs</a>
-            </nav>
         </header>
 
         <main>

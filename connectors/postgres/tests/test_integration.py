@@ -130,7 +130,6 @@ class TestReaderIntegration:
         e = next(e for e in events if e.key == f"{_DB}.contex_test.products.1")
         assert e.op == "upsert"
         assert e.data_format == "json"
-        assert e.source_meta == {"source": "postgres", "schema": "contex_test", "table": "products"}
         assert e.payload["name"] == "Widget"
 
     def test_composite_pk(self):

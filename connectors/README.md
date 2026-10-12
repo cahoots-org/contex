@@ -17,7 +17,7 @@ refresh story.
 ## The shared framework (`connectors/base/`)
 
 - **`ChangeEvent`** — the seam every reader emits: `{op, key, payload,
-  source_meta, data_format}`. `op` is `"upsert"`, `"delete"`, or `"retain"`
+  data_format}`. `op` is `"upsert"`, `"delete"`, or `"retain"`
   (keep an item that could not be fetched this run).
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. A batch holds up to `batch_size` items (default
@@ -101,7 +101,6 @@ def read_rows(source_config):
             op="upsert",
             key=f"{database}.{schema}.{table}.{pk}",
             payload=row_as_dict,
-            source_meta={"source": "postgres", "schema": schema, "table": table},
         )
 
 config = load_config("connector.yaml")

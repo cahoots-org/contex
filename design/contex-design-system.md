@@ -140,6 +140,33 @@ body on `--surface-0` below AA). Build these in silently; don't announce them.
 
 ---
 
+## Assets
+
+The mark is a white Poppins "C" whose open side dissolves into the particle
+stream, cyan at the letter running out to red‑orange at the edge, on
+`--brand-ink`. Every brand file lives in this folder.
+
+| File | Use |
+|---|---|
+| `icon.svg` | The mark's source. |
+| `icon-preview.png` | 512×512 render of the mark. The org and repo avatar. |
+| `icon-16.png`, `icon-32.png` | Favicons. |
+| `icon-64.png` | The sandbox header logo. |
+| `apple-touch-icon.png` | 180×180 iOS home‑screen icon. |
+| `social-card.png` | 1280×640 link‑share card and the README hero. |
+| `banner.svg`, `banner-2160.png` | The wordmark banner, vector and 2160×1080 raster. |
+| `banner-params.json` | The particle settings the banner was drawn with. |
+| `tokens.css` | The tokens. The sandbox loads this file directly. |
+| `preview.html` | Renders the system. |
+
+The icon PNGs are downscaled from `icon-preview.png`.
+
+Two steps happen outside the repo: upload `social-card.png` under the GitHub
+repo's Settings → General → Social preview, and set the org and repo avatar to
+`icon-preview.png`.
+
+---
+
 ## Using this with Claude
 
 Paste this file (and `tokens.css`) into the design brief. The rules that matter

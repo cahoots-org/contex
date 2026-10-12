@@ -85,7 +85,6 @@ async def test_read_files_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
     assert ev.data_format == "text"
     assert ev.payload == "print('hello')"
     assert ev.op == "upsert"
-    assert ev.source_meta["source"] == "github"
 
 
 @pytest.mark.anyio
