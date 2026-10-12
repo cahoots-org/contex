@@ -3,7 +3,7 @@
 import pytest
 import pytest_asyncio
 
-from src.core.tenant import DEFAULT_TENANT_ID, TenantManager, ensure_default_tenant
+from src.core.tenant import DEFAULT_TENANT_ID, TenantManager
 
 
 class TestTenantManager:
@@ -50,21 +50,3 @@ class TestTenantManager:
         assert await manager.claim_project("acme", "p") == "acme"
         assert await manager.claim_project(DEFAULT_TENANT_ID, "p") == "acme"
         assert await manager.get_project_tenant("p") == "acme"
-
-
-class TestDefaultTenant:
-    """Test default tenant functionality"""
-
-    @pytest.mark.asyncio
-    async def test_ensure_default_tenant_creates(self, db):
-        tenant = await ensure_default_tenant(db)
-
-        assert tenant.tenant_id == DEFAULT_TENANT_ID
-        assert tenant.name == "Default Tenant"
-
-    @pytest.mark.asyncio
-    async def test_ensure_default_tenant_returns_existing(self, db):
-        tenant1 = await ensure_default_tenant(db)
-        tenant2 = await ensure_default_tenant(db)
-
-        assert tenant1.tenant_id == tenant2.tenant_id

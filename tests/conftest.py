@@ -24,7 +24,7 @@ from src.core.database import DatabaseManager, run_migrations_to_head
 from src.core.embedder import OnnxEmbedder
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
-from src.core.tenant import ensure_default_tenant
+from src.core.tenant import DEFAULT_TENANT_ID, TenantManager
 
 
 class TestDatabaseManager(DatabaseManager):
@@ -135,7 +135,7 @@ async def _reset_database(manager: DatabaseManager) -> None:
             quoted = ", ".join(f'"{t}"' for t in tables)
             await session.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
-    await ensure_default_tenant(manager)
+    await TenantManager(manager).create_tenant(DEFAULT_TENANT_ID, "Default Tenant")
 
 
 @pytest.fixture
