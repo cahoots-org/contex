@@ -58,7 +58,7 @@ async def test_publish_binds_new_project(monkeypatch):
 async def test_concurrent_first_publishes_leave_one_owner(db, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     mgr = TenantManager(db)
-    await mgr.create_tenant(tenant_id="acme", name="acme")
+    await mgr.ensure_tenant("acme")
     results = await asyncio.gather(
         *(ensure_project_access(t, "racy", mgr, create_if_absent=True)
           for t in ("default", "default", "acme")),

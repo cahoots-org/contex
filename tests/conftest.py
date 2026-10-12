@@ -136,7 +136,7 @@ async def _reset_database(manager: DatabaseManager) -> None:
             quoted = ", ".join(f'"{t}"' for t in tables)
             await session.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
-    await TenantManager(manager).create_tenant(DEFAULT_TENANT_ID, "Default Tenant")
+    await TenantManager(manager).ensure_tenant(DEFAULT_TENANT_ID)
 
 
 @pytest.fixture
