@@ -5,21 +5,26 @@ from mcp.server.auth.middleware.bearer_auth import AuthorizationContext
 from starlette.testclient import TestClient
 
 import main
-from src.core.metrics import http_requests_total
 
 
 def test_mcp_answers_at_both_paths_without_redirect():
     client = TestClient(main.app, base_url="http://localhost:8000", raise_server_exceptions=False,
                         follow_redirects=False)
     # Without the lifespan the transport isn't running, so reaching it errors; a 307 or 404 never got there.
-    def mcp_posts():
-        return sum(s.value for s in http_requests_total.collect()[0].samples
-                   if s.name.endswith("_total") and s.labels["endpoint"] == "/mcp" and s.labels["method"] == "POST")
-
-    before = mcp_posts()
     for path in ("/mcp", "/mcp/"):
         assert client.post(path).status_code not in (307, 404)
-    assert mcp_posts() == before + 2
+
+
+@pytest.mark.asyncio
+async def test_mcp_path_is_rewritten_in_the_scope_metrics_read():
+    seen = []
+
+    async def inner(scope, receive, send):
+        seen.append(scope)
+
+    scope = {"type": "http", "path": "/mcp"}
+    await main.McpPathMiddleware(inner)(scope, None, None)
+    assert seen[0] is scope and scope["path"] == "/mcp/"
 
 
 @pytest.mark.asyncio
