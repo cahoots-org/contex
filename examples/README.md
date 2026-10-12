@@ -27,8 +27,7 @@ another server with `CONTEX_MCP_URL`, e.g.
 
 The full loop. A producer publishes a database DSN under an arbitrary key, an
 agent subscribes to `"how the service reaches its datastore"` (which shares no
-keywords with the data), reads the matched context, and reads it again after the
-data changes without issuing a second query.
+keywords with the data), and reads the matched context.
 
 ```bash
 python examples/mcp_quickstart.py

@@ -38,11 +38,18 @@
   - With auth on, `/sandbox` and `/` return 404. `readonly` keys become
     `consumer`. Issue keys with `python -m src.cli keys create`;
     `SERVICE_ACCOUNT_JWT_SECRET` is gone.
+  - `contex_query` and `contex_create_subscription` are limited to 120 calls a
+    minute per key (`RATE_LIMIT_QUERY`).
   - Removed: `MAX_CONTEXT_SIZE`, `RATE_LIMIT_DEFAULT`,
     `AUDIT_RETENTION_DAYS`, `RETENTION_*`.
   - Startup stops if `EMBED_MODEL`'s dimension doesn't match the database.
     Stored documents re-embed once, the next time each is published.
 - **Connectors:** keys and the credential setting changed
   (`service_account_token` is now `api_key`). See
-  [Upgrading from v1.1.0](connectors/README.md#upgrading-from-v110) to clean up
-  old keys.
+  [Upgrading from v1.1.0](https://github.com/cahoots-org/contex/blob/main/connectors/README.md#upgrading-from-v110)
+  to clean up old keys.
+  - Connectors now delete what the source no longer has. Two configs reading
+    one source into one project need distinct `origin:` names, or `prune: false`.
+  - The v1.1.0 Postgres example's excludes (`*.password`, `*.*_token`) never
+    matched, so those columns were ingested. Use `password` and `*_token`, and
+    delete the stored rows.
