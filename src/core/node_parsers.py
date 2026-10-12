@@ -250,7 +250,8 @@ class YAMLNodeParser(JSONNodeParser):
     def parse(self, data: Any) -> ParseResult:
         """Parse YAML into nodes"""
         if isinstance(data, str):
-            data = yaml.load(data, Loader=_NoAliasLoader)
+            docs = list(yaml.load_all(data, Loader=_NoAliasLoader))
+            data = docs[0] if len(docs) == 1 else docs
 
         nodes = self._extract_nodes(data, "", [])
         return ParseResult(
