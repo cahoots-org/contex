@@ -12,19 +12,12 @@ from connectors.base import ChangeEvent, allowed
 
 logger = logging.getLogger(__name__)
 
-BINARY_TYPES = frozenset(
-    {
-        "bytea",
-        "bit",
-        "bit varying",
-        "varbit",
-    }
-)
+BINARY_TYPES = frozenset({"bytea", "bit", "bit varying"})
 
 
 def is_binary(pg_type: str) -> bool:
-    """True if ``pg_type`` is a Postgres binary type."""
-    return pg_type.lower() in BINARY_TYPES
+    """True if ``pg_type``, as ``format_type`` prints it, is a binary type or an array of one."""
+    return pg_type.lower().split("(")[0].removesuffix("[]") in BINARY_TYPES
 
 
 def resolve_pk(
