@@ -27,28 +27,10 @@ from src.core.subscriptions import SubscriptionService
 
 async def _ensure_tenant(db, tenant_id: str) -> None:
     async with db.session() as session:
-        exists = (await session.execute(
-            text("SELECT 1 FROM tenants WHERE tenant_id = :tid"),
+        await session.execute(
+            text("INSERT INTO tenants (tenant_id, name) VALUES (:tid, :tid) ON CONFLICT DO NOTHING"),
             {"tid": tenant_id},
-        )).scalar_one_or_none()
-        if not exists:
-            await session.execute(
-                text(
-                    "INSERT INTO tenants (tenant_id, name, plan, quotas, settings, metadata, is_active)"
-                    " VALUES (:tid, :name, 'enterprise', '{}', '{}', '{}', true)"
-                ),
-                {"tid": tenant_id, "name": tenant_id},
-            )
-            await session.execute(
-                text(
-                    "INSERT INTO tenant_usage (tenant_id, projects_count, agents_count,"
-                    " api_keys_count, events_this_month, storage_used_mb)"
-                    " VALUES (:tid, 0, 0, 0, 0, 0.0)"
-                    " ON CONFLICT DO NOTHING"
-                ),
-                {"tid": tenant_id},
-            )
-            await session.commit()
+        )
 
 
 async def _seed_tenant_project(db, tenant_id: str, project_id: str) -> None:
@@ -134,11 +116,8 @@ async def test_mcp_tool_cross_tenant_is_denied(db, monkeypatch, tool, args):
 
 @pytest.mark.asyncio
 async def test_mcp_publish_claims_new_projects_for_the_callers_tenant(db, monkeypatch):
-    """Publishing binds new projects to the caller's tenant, with the default tenant as migrations leave it."""
+    """Publishing binds new projects to the caller's tenant."""
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    async with db.session() as session:
-        await session.execute(text("UPDATE tenants SET quotas = '{}' WHERE tenant_id = 'default'"))
-        await session.execute(text("DELETE FROM tenant_usage WHERE tenant_id = 'default'"))
     token = AccessToken(token="t", client_id="key-d", scopes=[p.value for p in expand_role(Role.ADMIN)],
                         claims={"tenant_id": "default", "projects": []})
     monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: token)

@@ -203,7 +203,7 @@ class TestEventStore:
 async def test_append_event_persists_provenance(db):
     # Create tenant required by FK constraint
     async with db.session() as session:
-        session.add(Tenant(tenant_id="tenant-1", name="Test Tenant", plan="free", quotas={}, settings={}, metadata_={}))
+        session.add(Tenant(tenant_id="tenant-1", name="Test Tenant", settings={}, metadata_={}))
         await session.flush()
 
     store = EventStore(db)

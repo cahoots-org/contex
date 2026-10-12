@@ -61,7 +61,6 @@ async def test_create_key_with_tenant(db):
         tenant = TenantModel(
             tenant_id="test_tenant",
             name="Test Tenant",
-            plan="free",
         )
         session.add(tenant)
 
@@ -87,7 +86,7 @@ async def _ensure_tenant(db, tenant_id: str) -> None:
             select(TenantModel).where(TenantModel.tenant_id == tenant_id)
         )
         if result.scalar_one_or_none() is None:
-            session.add(TenantModel(tenant_id=tenant_id, name=tenant_id, plan="free"))
+            session.add(TenantModel(tenant_id=tenant_id, name=tenant_id))
 
 
 @pytest.mark.asyncio

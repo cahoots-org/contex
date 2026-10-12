@@ -52,8 +52,6 @@ class Tenant(Base):
 
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    plan: Mapped[str] = mapped_column(String(50), nullable=False, default="free")
-    quotas: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     settings: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     metadata_: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     owner_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -65,30 +63,8 @@ class Tenant(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    usage: Mapped[Optional["TenantUsage"]] = relationship(back_populates="tenant", uselist=False)
     projects: Mapped[List["TenantProject"]] = relationship(back_populates="tenant")
     api_keys: Mapped[List["APIKey"]] = relationship(back_populates="tenant")
-
-
-class TenantUsage(Base):
-    """Tenant usage tracking."""
-
-    __tablename__ = "tenant_usage"
-
-    tenant_id: Mapped[str] = mapped_column(
-        String(255), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), primary_key=True
-    )
-    projects_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    agents_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    api_keys_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    events_this_month: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    storage_used_mb: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    last_updated: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    # Relationships
-    tenant: Mapped["Tenant"] = relationship(back_populates="usage")
 
 
 class TenantProject(Base):
