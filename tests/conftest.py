@@ -3,7 +3,6 @@
 import os
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -27,11 +26,7 @@ if TEST_DATABASE_URL:
 
 
 class TestDatabaseManager(DatabaseManager):
-    """Test-specific database manager with transaction rollback."""
-
-    def __init__(self):
-        super().__init__()
-        self._test_session = None
+    """Database manager with a bounded pool for the test database."""
 
     async def connect_test(self, database_url: str) -> None:
         """Connect to test database."""
@@ -137,25 +132,6 @@ async def _reset_database(manager: DatabaseManager) -> None:
             await session.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
     await TenantManager(manager).create_tenant(DEFAULT_TENANT_ID, "Default Tenant")
-
-
-@pytest.fixture
-def mock_db():
-    """
-    Create a mock database manager for unit tests that don't need real DB.
-    """
-    mock = MagicMock(spec=DatabaseManager)
-    mock.is_connected = True
-
-    # Create an async context manager for session
-    session_mock = AsyncMock()
-    session_context = AsyncMock()
-    session_context.__aenter__.return_value = session_mock
-    session_context.__aexit__.return_value = None
-    mock.session.return_value = session_context
-
-
-    return mock
 
 
 # Configure pytest-asyncio
