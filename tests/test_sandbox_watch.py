@@ -9,8 +9,9 @@ import pytest
 from fastapi import HTTPException
 
 from src.core.context_engine import ContextEngine
-from src.core.identity import ANONYMOUS_IDENTITY, Identity
 from src.core.models import DataPublishEvent
+from src.core.rate_limiter import RateLimiter
+from src.web import routes
 from src.web.routes import execute_query, project_stats, sandbox_home, subscribe_to_updates
 
 
@@ -49,7 +50,6 @@ async def test_subscribe_returns_event_stream(db):
         _request_with(engine, db),
         project_id="p",
         need="database connection settings",
-        identity=ANONYMOUS_IDENTITY,
     )
     assert resp.media_type == "text/event-stream"
     assert resp.headers["Cache-Control"] == "no-cache"
@@ -102,7 +102,7 @@ async def test_query_renders_matches_as_json(db):
 
     resp = await execute_query(
         _request_with(engine), project_id="q-proj", query="database connection",
-        top_k=5, threshold=0.0, max_tokens=51200, identity=ANONYMOUS_IDENTITY, tenant_mgr=None,
+        top_k=5, threshold=0.0, max_tokens=51200,
     )
 
     assert resp.status_code == 200
@@ -110,15 +110,15 @@ async def test_query_renders_matches_as_json(db):
 
 
 @pytest.mark.asyncio
-async def test_query_is_rate_limited_per_key(db, monkeypatch):
+async def test_query_is_rate_limited(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_QUERY", "1")
+    monkeypatch.setattr(routes, "_limiter", RateLimiter())
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    identity = Identity(key_id="rate-limited-key", scopes=frozenset(), tenant_id=None, projects=(), role=None)
 
     async def query():
         return await execute_query(
             _request_with(engine), project_id="p", query="anything", top_k=5, threshold=0.5,
-            max_tokens=51200, identity=identity, tenant_mgr=None,
+            max_tokens=51200,
         )
 
     await query()

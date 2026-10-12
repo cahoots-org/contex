@@ -3,11 +3,8 @@
 import json
 import tiktoken
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Query
-from src.core.authz import require, public, get_identity
-from src.core.identity import Identity
-from src.core.ownership import ensure_project_access
+from src.core.authz import auth_enabled, public
 from src.core.rate_limiter import RateLimiter
-from src.core.rbac import Permission
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -17,9 +14,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.web.live import stream_subscription_updates
 from src.core.logging import get_logger
 from src.core.db_models import Embedding
-from src.core.tenant import TenantManager
 
-router = APIRouter()
+
+async def _auth_off_only() -> None:
+    """The sandbox has no way to send an API key, so it is served only with auth off."""
+    if auth_enabled():
+        raise HTTPException(status_code=404)
+
+
+router = APIRouter(dependencies=[Depends(_auth_off_only)])
 
 logger = get_logger(__name__)
 
@@ -43,16 +46,12 @@ async def _documents(engine, project_id: str) -> list:
 _limiter = RateLimiter()
 
 
-def _throttle_query(identity: Identity) -> None:
-    """Apply RATE_LIMIT_QUERY per key, as the MCP query tools do; these routes embed and search too."""
-    wait = _limiter.retry_after(f"{identity.key_id}:query", "RATE_LIMIT_QUERY", 120)
+def _throttle_query() -> None:
+    """Apply RATE_LIMIT_QUERY, as the MCP query tools do; these routes embed and search too."""
+    wait = _limiter.retry_after("sandbox:query", "RATE_LIMIT_QUERY", 120)
     if wait is not None:
         raise HTTPException(status_code=429, detail="Too many requests", headers={"Retry-After": str(wait)})
 
-
-def get_tenant_manager(request: Request) -> TenantManager:
-    """FastAPI dependency: build a TenantManager bound to the request's db."""
-    return TenantManager(request.app.state.db)
 
 # Setup templates
 templates_dir = Path(__file__).parent / "templates"
@@ -89,7 +88,7 @@ async def sandbox_home(request: Request):
     )
 
 
-@router.post("/query", response_class=HTMLResponse, dependencies=[Depends(require(Permission.QUERY_DATA))])
+@router.post("/query", response_class=HTMLResponse, dependencies=[Depends(public)])
 async def execute_query(
     request: Request,
     project_id: str = Form(...),
@@ -97,12 +96,9 @@ async def execute_query(
     top_k: int = Form(10),
     threshold: float = Form(0.5),
     max_tokens: int = Form(51200),
-    identity: Identity = Depends(get_identity),
-    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Execute a semantic query and return results"""
-    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
-    _throttle_query(identity)
+    _throttle_query()
     engine = request.app.state.context_engine
 
     # Pass the per-request threshold through instead of mutating the shared
@@ -161,19 +157,16 @@ async def execute_query(
     )
 
 
-@router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
+@router.get("/projects/{project_id}/stats", response_class=HTMLResponse, dependencies=[Depends(public)])
 async def project_stats(
     request: Request,
     project_id: str,
-    identity: Identity = Depends(get_identity),
-    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Get statistics about a project's data.
 
     Reads from the `embeddings` table (Postgres/pgvector) — the store where
     published data actually lands — mirroring the sibling `/data` handler.
     """
-    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     rows = await _documents(request.app.state.context_engine, project_id)
 
     # Calculate stats
@@ -215,15 +208,12 @@ async def project_stats(
     )
 
 
-@router.get("/projects/{project_id}/data", dependencies=[Depends(require(Permission.VIEW_PROJECT_DATA))])
+@router.get("/projects/{project_id}/data", dependencies=[Depends(public)])
 async def get_project_data(
     request: Request,
     project_id: str,
-    identity: Identity = Depends(get_identity),
-    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Get all data for a project (JSON endpoint for sandbox UI)"""
-    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
     data_items = [
         {
             "data_key": data_key,
@@ -236,21 +226,18 @@ async def get_project_data(
     return {"data": data_items}
 
 
-@router.get("/subscribe", dependencies=[Depends(require(Permission.QUERY_DATA))])
+@router.get("/subscribe", dependencies=[Depends(public)])
 async def subscribe_to_updates(
     request: Request,
     project_id: str = Query(...),
     need: str = Query(...),
-    identity: Identity = Depends(get_identity),
-    tenant_mgr=Depends(get_tenant_manager),
 ):
     """Stream a natural-language need as a live-updating context bundle over SSE.
 
     Backed by an ephemeral Subscription; the browser is a parallel consumer of the
     same reconcile pipeline the MCP bridge uses.
     """
-    await ensure_project_access(identity, project_id, tenant_mgr, create_if_absent=False)
-    _throttle_query(identity)
+    _throttle_query()
     engine = request.app.state.context_engine
     return StreamingResponse(
         stream_subscription_updates(engine, project_id, need),
