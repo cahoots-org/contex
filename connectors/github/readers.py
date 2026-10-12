@@ -105,10 +105,9 @@ async def read_files(
 
         encoding = content_data.get("encoding", "")
         raw = content_data.get("content", "")
-        source_meta = {"source": "github", "owner": owner, "repo": repo, "path": path}
         if doc_format is not None and encoding == "base64":
             log.debug("document %s", key)
-            yield document_event(key, base64.b64decode(raw), doc_format, source_meta=source_meta)
+            yield document_event(key, base64.b64decode(raw), doc_format)
             continue
         if encoding == "base64":
             try:
@@ -124,7 +123,6 @@ async def read_files(
             op="upsert",
             key=key,
             payload=text,
-            source_meta=source_meta,
             data_format="text",
         )
 
@@ -177,13 +175,6 @@ async def read_issues(
                 "closed_at": issue.get("closed_at", ""),
                 "comments": comments,
             },
-            source_meta={
-                "source": "github",
-                "owner": owner,
-                "repo": repo,
-                "number": number,
-                "updated_at": issue.get("updated_at", ""),
-            },
             published_at=issue.get("updated_at"),
         )
 
@@ -218,13 +209,6 @@ async def read_pulls(
                 "closed_at": pull.get("closed_at", ""),
                 "merged_at": pull.get("merged_at", ""),
                 "comments": comments,
-            },
-            source_meta={
-                "source": "github",
-                "owner": owner,
-                "repo": repo,
-                "number": number,
-                "updated_at": pull.get("updated_at", ""),
             },
             published_at=pull.get("updated_at"),
         )
@@ -277,7 +261,6 @@ def commit_to_event(owner: str, repo: str, commit: dict[str, Any]) -> ChangeEven
             },
             "files": files,
         },
-        source_meta={"source": "github", "owner": owner, "repo": repo, "sha": sha},
         published_at=committer.get("date") or None,
     )
 

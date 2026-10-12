@@ -62,7 +62,7 @@ content_types: [".md", ".txt", ".json", ".csv", ".yaml", ".html"]
 python -m connectors.s3 --config connector.yaml
 ```
 
-Progress is logged to stdout. The final line reports published item and batch
+Progress is logged. The final line reports published item and batch
 counts.
 
 ## Running the container image

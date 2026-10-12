@@ -137,10 +137,6 @@ class TestObjectToEvent:
         event = object_to_event("file.JSON", body)
         assert event.data_format == "json"
 
-    def test_source_meta_contains_source(self):
-        event = object_to_event("file.txt", b"content")
-        assert event.source_meta == {"source": "s3"}
-
     def test_key_is_full_object_key(self):
         key = "deep/path/to/file.txt"
         event = object_to_event(key, b"text")

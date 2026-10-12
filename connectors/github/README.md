@@ -8,8 +8,6 @@ on a cron) to refresh. Live sync via webhooks is out of scope.
 
 ```bash
 pip install -r connectors/github/requirements.txt
-# also install the base connector deps
-pip install PyYAML mcp
 
 cp connectors/github/connector.yaml.example connector.yaml
 # edit connector.yaml — set GITHUB_TOKEN and CONTEX_TOKEN in the environment

@@ -34,7 +34,6 @@ def test_document_format_follows_enabled_types():
 
 
 def test_document_event_carries_base64():
-    ev = document_event("a.pdf", b"%PDF-1.7", "pdf", source_meta={"source": "s3"})
+    ev = document_event("a.pdf", b"%PDF-1.7", "pdf")
     assert (ev.op, ev.key, ev.data_format) == ("upsert", "a.pdf", "pdf")
     assert base64.b64decode(ev.payload) == b"%PDF-1.7"
-    assert ev.source_meta == {"source": "s3"}

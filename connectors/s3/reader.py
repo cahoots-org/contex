@@ -56,7 +56,7 @@ def object_to_event(
     published_at = last_modified.isoformat() if last_modified else None
     doc_format = document_format(key, document_types)
     if doc_format is not None:
-        return document_event(key, body, doc_format, source_meta={"source": "s3"}, published_at=published_at)
+        return document_event(key, body, doc_format, published_at=published_at)
     _, ext = os.path.splitext(key.lower())
     if ext == ".json":
         payload = json.loads(body.decode("utf-8"))
@@ -64,7 +64,6 @@ def object_to_event(
             op="upsert",
             key=key,
             payload=payload,
-            source_meta={"source": "s3"},
             data_format="json",
             published_at=published_at,
         )
@@ -73,7 +72,6 @@ def object_to_event(
         op="upsert",
         key=key,
         payload=text,
-        source_meta={"source": "s3"},
         data_format="text",
         published_at=published_at,
     )

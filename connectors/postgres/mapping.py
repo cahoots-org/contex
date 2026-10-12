@@ -95,7 +95,6 @@ def row_to_event(
         op="upsert",
         key=key,
         payload=payload,
-        source_meta={"source": "postgres", "schema": schema, "table": table},
         data_format="json",
     )
 

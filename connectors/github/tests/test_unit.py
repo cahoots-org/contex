@@ -138,7 +138,6 @@ def test_commit_to_event_full_metadata():
     assert ev.payload["files"] == [
         {"filename": "payments/charge.py", "status": "modified", "additions": 12, "deletions": 3}
     ]
-    assert ev.source_meta == {"source": "github", "owner": "cahoots-org", "repo": "contex", "sha": "abc123"}
     assert ev.published_at == "2026-02-01T10:05:00Z"
 
 

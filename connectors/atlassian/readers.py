@@ -123,13 +123,6 @@ def issue_to_event(issue: dict, *, site_url: str, comments: list[dict]) -> Chang
         op="upsert",
         key=f"{_site(site_url)}:jira:{key}",
         payload=payload,
-        source_meta={
-            "source": "jira",
-            "project": key.split("-", 1)[0],
-            "key": key,
-            "url": url,
-            "updated": payload["updated"],
-        },
         published_at=payload["updated"],
     )
 
@@ -209,13 +202,6 @@ def page_to_event(
         op="upsert",
         key=f"{_site(site_url)}:confluence:{page_id}",
         payload=payload,
-        source_meta={
-            "source": "confluence",
-            "spaceId": str(page.get("spaceId", "")),
-            "id": page_id,
-            "url": url,
-            "updated": payload["updated"],
-        },
         published_at=payload["updated"],
     )
 
