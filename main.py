@@ -349,7 +349,6 @@ logger.info("Body-limit middleware enabled")
 
 # Add security middleware stack (order matters - executed in reverse)
 from src.core.tracing_middleware import TracingMiddleware
-from src.core.tenant_middleware import TenantMiddleware
 
 # Tracing middleware (adds trace IDs to responses)
 app.add_middleware(TracingMiddleware)
@@ -365,10 +364,6 @@ if AUTH_ENABLED:
 else:
     logger.warning("Authentication is DISABLED - all endpoints are publicly accessible")
 
-# Tenant middleware always runs: it sets the default-tenant context in demo mode
-# and enforces the identity-derived tenant when auth is on.
-app.add_middleware(TenantMiddleware)
-logger.info("Tenant middleware enabled")
 
 # Outermost, so a disallowed Host is turned away before any other work.
 if _transport_security.enable_dns_rebinding_protection:
