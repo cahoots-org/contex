@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
 from sqlalchemy import text
 
 from src.core.database import DatabaseManager, run_migrations_to_head
@@ -39,7 +38,9 @@ class TestDatabaseManager(DatabaseManager):
         self.engine = create_async_engine(
             database_url,
             echo=False,
-            poolclass=NullPool,
+            # Bounded so concurrency tests can't exhaust a shared server's connections.
+            pool_size=10,
+            max_overflow=0,
         )
 
         self.session_factory = async_sessionmaker(
