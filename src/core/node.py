@@ -33,7 +33,6 @@ class NodeType(str, Enum):
 
     # Markup types
     HEADING = "heading"        # Heading/title
-    LIST_ITEM = "list_item"   # List item
     CODE_BLOCK = "code_block" # Code block
 
     # Tabular types
@@ -49,7 +48,7 @@ class Node:
         path: Hierarchical path (e.g., "people[1]", "section_2.paragraph_3")
         content: The actual data (can be dict, str, number, list, etc.)
         node_type: Type of node
-        metadata: Additional context (format, language, size, etc.)
+        metadata: For code, the names the node defines (defs) and references (refs)
     """
     path: str
     content: Any
@@ -81,15 +80,7 @@ class Node:
 
         # Add content
         if isinstance(self.content, dict):
-            # Convert dict to readable key: value format
-            content_parts = []
-            for k, v in self.content.items():
-                if isinstance(v, (dict, list)):
-                    v_str = str(v)
-                else:
-                    v_str = str(v)
-                content_parts.append(f"{k}: {v_str}")
-            text_parts.append(" | ".join(content_parts))
+            text_parts.append(" | ".join(f"{k}: {v}" for k, v in self.content.items()))
         elif isinstance(self.content, list):
             text_parts.append(", ".join(str(item) for item in self.content))
         else:
@@ -111,4 +102,3 @@ class ParseResult:
     format_name: str
     success: bool
     error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)

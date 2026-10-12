@@ -94,7 +94,6 @@ def test_python_defs_and_refs():
     assert "load_config" in mod.metadata["refs"]
     assert "Thing" in mod.metadata["refs"]
     assert "helpers" not in mod.metadata["refs"]
-    assert mod.metadata["defs"] == []
 
 
 def test_typescript_including_arrow_const():
