@@ -602,8 +602,8 @@ class ImageNodeParser(PDFNodeParser):
         if not OCR_ENABLED:
             raise DocumentRejected("reading text from images is not enabled on this server")
         with Image.open(io.BytesIO(data)) as image:
-            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE:
-                raise DocumentRejected(f"image is over {MAX_OCR_PIXELS_PER_SIDE} pixels on a side")
+            if max(image.size) > MAX_OCR_PIXELS_PER_SIDE or getattr(image, "n_frames", 1) > 1:
+                raise DocumentRejected(f"image must be one frame of at most {MAX_OCR_PIXELS_PER_SIDE} pixels a side")
         return [_ocr(data)]
 
 

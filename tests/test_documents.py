@@ -136,3 +136,7 @@ def test_oversized_images_are_refused_before_ocr(monkeypatch):
     Image.new("1", (node_parsers.MAX_OCR_PIXELS_PER_SIDE + 1, 1)).save(png, "PNG")
     with pytest.raises(DocumentRejected, match="pixels"):
         ImageNodeParser().parse(png.getvalue())
+    tiff = io.BytesIO()
+    Image.new("1", (1, 1)).save(tiff, "TIFF", save_all=True, append_images=[Image.new("1", (1, 1))])
+    with pytest.raises(DocumentRejected, match="one frame"):
+        ImageNodeParser().parse(tiff.getvalue())
