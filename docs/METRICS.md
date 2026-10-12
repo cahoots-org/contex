@@ -15,7 +15,7 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics
 | `contex_http_request_duration_seconds` | histogram | `method`, `endpoint` |
 | `contex_active_requests` | gauge | none |
 
-`endpoint` is the matched route template (`/sandbox/projects/{project_id}/data`),
+`endpoint` is the matched route template (`/sandbox/data`),
 the mount path for mounted apps (`/mcp`, `/static`), or `other` for unmatched
 paths, so no label carries a tenant or project ID. MCP tool calls are
 `POST /mcp`. `GET /mcp` and `GET /sandbox/subscribe` are long-lived streams, so

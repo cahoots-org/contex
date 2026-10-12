@@ -12,7 +12,7 @@ from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
 from src.core.rate_limiter import RateLimiter
 from src.web import routes
-from src.web.routes import execute_query, project_stats, sandbox_home, subscribe_to_updates
+from src.web.routes import execute_query, sandbox_home, subscribe_to_updates
 
 
 def _request_with(engine, db=None):
@@ -56,37 +56,6 @@ async def test_subscribe_returns_event_stream(db):
 
 
 @pytest.mark.asyncio
-async def test_project_stats_renders_from_embeddings(db):
-    """Regression for #107: the stats handler must read from the embeddings
-    table (Postgres), not dead RediSearch attrs, and return 200-worthy stats."""
-    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.semantic_matcher.initialize_index()
-
-    await engine.publish_data(DataPublishEvent(
-        project_id="stats-proj", data_key="db",
-        data={"purpose": "database connection settings"}, data_format="json",
-        description="DB config",
-    ))
-    await engine.publish_data(DataPublishEvent(
-        project_id="stats-proj", data_key="auth",
-        data={"purpose": "auth token secret"}, data_format="json",
-        description="Auth config",
-    ))
-
-    resp = await project_stats(_request_with(engine), project_id="stats-proj")
-
-    assert resp.template.name == "project_stats.html"
-    ctx = resp.context
-    assert ctx["project_id"] == "stats-proj"
-    # Two distinct data_keys published.
-    assert ctx["data_count"] == 2
-    keys = {item["data_key"] for item in ctx["data_items"]}
-    assert keys == {"db", "auth"}
-    for item in ctx["data_items"]:
-        assert "description" in item
-
-
-@pytest.mark.asyncio
 async def test_query_renders_matches_as_json(db):
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.semantic_matcher.initialize_index()
@@ -118,19 +87,6 @@ async def test_query_is_rate_limited(db, monkeypatch):
     with pytest.raises(HTTPException) as limited:
         await query()
     assert limited.value.status_code == 429
-
-
-@pytest.mark.asyncio
-async def test_project_stats_empty_project(db):
-    """An unknown project should render cleanly with zeroed stats, not 500."""
-    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
-    await engine.semantic_matcher.initialize_index()
-
-    resp = await project_stats(_request_with(engine), project_id="no-such-project")
-
-    assert resp.template.name == "project_stats.html"
-    assert resp.context["data_count"] == 0
-    assert resp.context["data_items"] == []
 
 
 def test_sandbox_template_has_watch_and_query_wiring():

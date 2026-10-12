@@ -2,12 +2,9 @@
 
 {% block content %}
 <div class="sandbox" x-data="{
-    activeTab: 'query',
     queryText: '',
     queryLength: 0,
     threshold: 0.5,
-    keywordThreshold: 1.0,
-    vectorThreshold: 0.75,
     topK: 10,
     selectedProject: {{ (projects[0] if projects else '')|tojson|forceescape }},
     watching: false,
@@ -70,40 +67,6 @@
             nodes[i].querySelector('pre').textContent = JSON.stringify(m.data, null, 2);
         });
         this.watchLastByKey = nextByKey;
-    },
-    projectConfigs: {
-        'saas-app': {
-            placeholder: 'e.g., authentication security OAuth JWT...',
-            examples: [
-                'authentication security OAuth JWT',
-                'database schemas migrations',
-                'API endpoints routes documentation',
-                'payment integrations Stripe PayPal'
-            ],
-            dataNeeds: 'authentication and security\ndatabase schemas\nAPI endpoints'
-        },
-        'music-rec': {
-            placeholder: 'e.g., recommendation algorithm collaborative filtering...',
-            examples: [
-                'recommendation algorithm collaborative filtering',
-                'audio feature extraction pipeline',
-                'personalization ranking user preferences',
-                'A/B testing experiment strategies'
-            ],
-            dataNeeds: 'recommendation algorithms\naudio processing\npersonalization'
-        }
-    },
-    get currentConfig() {
-        return this.projectConfigs[this.selectedProject] || {
-            placeholder: 'e.g., system architecture microservices...',
-            examples: [
-                'technologies stack frameworks libraries',
-                'system architecture components',
-                'database storage Redis PostgreSQL',
-                'services APIs microservices'
-            ],
-            dataNeeds: 'system architecture\ntechnologies\ncomponents'
-        };
     }
 }">
     <div class="sandbox-header">
@@ -136,19 +99,7 @@
     <div class="split-view">
         <!-- Query Panel: Query & Updates -->
         <div class="query-panel">
-            <!-- Tab Navigation -->
-            <div class="tab-navigation">
-                <button
-                    class="tab-button"
-                    :class="{ 'active': activeTab === 'query' }"
-                    @click="activeTab = 'query'"
-                >
-                    Search
-                </button>
-            </div>
-
-            <!-- Query Tab Content -->
-            <div class="tab-content" x-show="activeTab === 'query'">
+            <div class="tab-content">
                 <form
                     hx-post="/sandbox/query"
                     hx-target="#results"
@@ -165,7 +116,7 @@
                 name="query"
                 id="query"
                 rows="3"
-                :placeholder="currentConfig.placeholder"
+                placeholder="e.g., system architecture microservices..."
                 required
                 x-model="queryText"
                 @input="queryLength = $event.target.value.length"
@@ -203,35 +154,6 @@
                 <small x-text="`${(threshold * 100).toFixed(0)}%`"></small>
             </div>
 
-            <div class="form-group inline">
-                <label for="keyword_threshold">Keyword Threshold (BM25)</label>
-                <input
-                    type="range"
-                    name="keyword_threshold"
-                    id="keyword_threshold"
-                    min="0"
-                    max="10"
-                    step="0.5"
-                    value="1.0"
-                    x-model="keywordThreshold"
-                >
-                <small x-text="`${keywordThreshold.toFixed(1)}`"></small>
-            </div>
-
-            <div class="form-group inline">
-                <label for="vector_threshold">Vector Threshold</label>
-                <input
-                    type="range"
-                    name="vector_threshold"
-                    id="vector_threshold"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value="0.75"
-                    x-model="vectorThreshold"
-                >
-                <small x-text="`${(vectorThreshold * 100).toFixed(0)}%`"></small>
-            </div>
         </div>
 
             <button type="submit" class="btn-primary">
@@ -249,9 +171,10 @@
                 <div class="example-queries">
                     <h4>Example Searches:</h4>
                     <ul>
-                        <template x-for="(example, idx) in currentConfig.examples" :key="idx">
-                            <li x-text="example"></li>
-                        </template>
+                        <li>technologies stack frameworks libraries</li>
+                        <li>system architecture components</li>
+                        <li>database storage Redis PostgreSQL</li>
+                        <li>services APIs microservices</li>
                     </ul>
                 </div>
             </div>
@@ -323,13 +246,10 @@
         const app = Alpine.$data(document.querySelector('.sandbox'));
         if (!app.selectedProject) return;
 
-        console.log('Loading data for project:', app.selectedProject);
-
         try {
-            const response = await fetch(`/sandbox/projects/${app.selectedProject}/data`);
+            const response = await fetch('/sandbox/data?project_id=' + encodeURIComponent(app.selectedProject));
             if (response.ok) {
                 const result = await response.json();
-                console.log('Loaded project data:', result);
                 app.projectData = (result.data || []).map(item => ({
                     ...item,
                     expanded: false
