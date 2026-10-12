@@ -64,6 +64,20 @@ def _check_max_age(max_age_seconds: Optional[int]) -> None:
         raise ValueError("max_age_seconds must be a positive number of seconds")
 
 
+def _publish_event(project_id: str, item: dict) -> DataPublishEvent:
+    """Build the event for one publish item, decoding base64 documents."""
+    try:
+        event = DataPublishEvent(
+            project_id=project_id, data_key=item["data_key"], data=item["data"], data_format=item.get("data_format"),
+            published_at=_parse_timestamp(item.get("published_at"), "published_at"),
+        )
+        if resolve_format(event.data_format, event.data_key) in _BINARY_FORMATS:
+            event.data = base64.b64decode(event.data, validate=True)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(_INVALID_ITEM) from None
+    return event
+
+
 def _throttle(limiter: RateLimiter, bucket: str, limit_env: str, default_limit: int) -> None:
     """Per-key rate limit for a tool; callers without a key aren't limited.
 
@@ -290,22 +304,18 @@ def build_mcp_server(engine, db_accessor=None):
         return json.dumps(bundle)
 
     @server.tool(name="contex_publish",
-                 description="Publish/update context data for a project. "
+                 description="Publish/update context data for a project. data is a JSON object or a string "
+                             "(Markdown, code, YAML, ...); for data_format pdf, docx or image it is the file as a "
+                             "base64 string. Without data_format, the format is inferred from data_key's extension. "
                              "Pass published_at (ISO-8601) when the source changed it, e.g. for backfilled history; "
                              "time windows use it instead of ingest time.")
-    async def contex_publish(project_id: str, data_key: str, data: dict, data_format: str = "json",
+    async def contex_publish(project_id: str, data_key: str, data: dict | str, data_format: str | None = None,
                              published_at: str | None = None) -> str:
         e = _get_engine()
         _throttle(limiter, "publish", "RATE_LIMIT_PUBLISH", 60)
         await _enforce_project(e, Permission.PUBLISH_DATA, project_id, create_if_absent=True)
-        try:
-            event = DataPublishEvent(
-                project_id=project_id, data_key=data_key, data=data, data_format=data_format,
-                published_at=_parse_timestamp(published_at, "published_at"),
-            )
-        except ValueError:
-            raise ValueError(_INVALID_ITEM) from None
-        await e.publish_data(event)
+        item = {"data_key": data_key, "data": data, "data_format": data_format, "published_at": published_at}
+        await e.publish_data(_publish_event(project_id, item))
         return json.dumps({"published": data_key})
 
     @server.tool(name="contex_publish_batch",
@@ -326,17 +336,8 @@ def build_mcp_server(engine, db_accessor=None):
         events, failed = [], []
         for item in items:
             try:
-                event = DataPublishEvent(
-                    project_id=project_id,
-                    data_key=item["data_key"],
-                    data=item["data"],
-                    data_format=item.get("data_format"),
-                    published_at=_parse_timestamp(item.get("published_at"), "published_at"),
-                )
-                if resolve_format(event.data_format, event.data_key) in _BINARY_FORMATS:
-                    event.data = base64.b64decode(event.data, validate=True)
-                events.append(event)
-            except (KeyError, TypeError, ValueError):
+                events.append(_publish_event(project_id, item))
+            except ValueError:
                 failed.append({"data_key": item.get("data_key"), "error": _INVALID_ITEM})
         published, rejected = await e.publish_data_batch(events, origin=origin)
         return json.dumps({"published": len(published), "failed": failed + rejected})
