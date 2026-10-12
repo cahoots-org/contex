@@ -7,6 +7,7 @@ import shutil
 import pypdfium2
 import pytest
 from docx import Document
+from docx.text.paragraph import Paragraph
 from PIL import Image
 
 from src.core import node_parsers
@@ -121,6 +122,11 @@ def test_oversized_documents_are_refused(monkeypatch):
         DOCXNodeParser().parse(_docx())
     with pytest.raises(ValueError, match="pages"):
         PDFNodeParser().parse(_pdf())
+
+
+def test_docx_paragraph_styles_are_not_resolved(monkeypatch):
+    monkeypatch.setattr(Paragraph, "style", property(lambda self: 1 / 0))
+    assert DOCXNodeParser().parse(_docx()).nodes[0].content == PHRASE
 
 
 def test_oversized_images_are_refused_before_ocr(monkeypatch):

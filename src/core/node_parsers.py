@@ -646,57 +646,12 @@ class DOCXNodeParser(BaseNodeParser):
                 error="DOCX parser requires bytes input"
             )
 
+        # Paragraph styles are not read: python-docx resolves each one by scanning every style.
         nodes = []
-        current_heading = None
-        para_idx = 0
-
-        for paragraph in doc.paragraphs:
-            text = paragraph.text.strip()
-            if not text:
-                continue
-
-            style_name = paragraph.style.name if paragraph.style else ""
-
-            if style_name.startswith("Heading"):
-                # Extract heading level from style name (e.g., "Heading 1" -> 1)
-                try:
-                    level = int(style_name.split()[-1])
-                except (ValueError, IndexError):
-                    level = 1
-                current_heading = text
-                _add(nodes, Node(
-                    path=f"heading_{len(nodes)}",
-                    content=text,
-                    node_type=NodeType.HEADING,
-                    metadata={
-                        "format": "docx",
-                        "level": level,
-                        "style": style_name,
-                    }
-                ))
-            elif style_name.startswith("List"):
-                _add(nodes, Node(
-                    path=f"list_item_{len(nodes)}",
-                    content=text,
-                    node_type=NodeType.LIST_ITEM,
-                    metadata={
-                        "format": "docx",
-                        "heading": current_heading,
-                        "style": style_name,
-                    }
-                ))
-            else:
-                _add(nodes, Node(
-                    path=f"paragraph_{para_idx}",
-                    content=text,
-                    node_type=NodeType.PARAGRAPH,
-                    metadata={
-                        "format": "docx",
-                        "heading": current_heading,
-                        "style": style_name,
-                    }
-                ))
-                para_idx += 1
+        texts = [p.text.strip() for p in doc.paragraphs]
+        for i, text in enumerate(t for t in texts if t):
+            _add(nodes, Node(path=f"paragraph_{i}", content=text, node_type=NodeType.PARAGRAPH,
+                             metadata={"format": "docx"}))
 
         # Extract tables
         for t_idx, table in enumerate(doc.tables):
