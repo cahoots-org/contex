@@ -248,3 +248,17 @@ async def test_read_confluence_skips_comments_when_disabled(httpx_mock: "HTTPXMo
 
     assert len(events) == 1
     assert events[0].payload["comments"] == []
+
+
+@pytest.mark.anyio
+async def test_read_confluence_fails_on_a_space_it_cannot_see(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(
+        method="GET",
+        url=_url("/wiki/api/v2/spaces"),
+        json={"results": [{"id": "1", "key": "ENG", "type": "global"}], "_links": {}},
+        headers=_headers(),
+    )
+    async with AtlassianClient(SITE, EMAIL, TOKEN) as client:
+        with pytest.raises(RuntimeError, match="OPS"):
+            async for _ in read_confluence_pages(client, site_url=SITE, spaces=["ENG", "OPS"]):
+                pass

@@ -250,7 +250,8 @@ class YAMLNodeParser(JSONNodeParser):
     def parse(self, data: Any) -> ParseResult:
         """Parse YAML into nodes"""
         if isinstance(data, str):
-            data = yaml.load(data, Loader=_NoAliasLoader)
+            docs = list(yaml.load_all(data, Loader=_NoAliasLoader))
+            data = docs[0] if len(docs) == 1 else docs
 
         nodes = self._extract_nodes(data, "", [])
         return ParseResult(
@@ -650,27 +651,29 @@ _JS_CONFIG = {
     "defs": {
         "function_declaration": "function",
         "class_declaration": "class",
+        "abstract_class_declaration": "class",
+        "generator_function_declaration": "function",
         "method_definition": "method",
     },
+    "wrappers": {"export_statement", "lexical_declaration"},
     "call_type": "call_expression",
     "call_field": "function",
     "member_type": "member_expression",
     "member_field": "property",
     "import_types": {"import_statement"},
     "import_lang": "js",
-    "var_fn": True,  # const x = () => {} / function expression assigned to a name
 }
 
 _LANGUAGE_CONFIG = {
     "python": {
         "defs": {"function_definition": "function", "class_definition": "class"},
+        "wrappers": {"decorated_definition"},
         "call_type": "call",
         "call_field": "function",
         "member_type": "attribute",
         "member_field": "attribute",
         "import_types": {"import_from_statement"},
         "import_lang": "python",
-        "var_fn": False,
     },
     "javascript": _JS_CONFIG,
     "typescript": _JS_CONFIG,
@@ -681,13 +684,13 @@ _LANGUAGE_CONFIG = {
             "method_declaration": "method",
             "type_spec": "class",
         },
+        "wrappers": {"type_declaration"},
         "call_type": "call_expression",
         "call_field": "function",
         "member_type": "selector_expression",
         "member_field": "field",
         "import_types": set(),  # Go imports are package names, not symbol defs.
         "import_lang": None,
-        "var_fn": False,
     },
 }
 
@@ -766,6 +769,9 @@ class CodeNodeParser(BaseNodeParser):
         if fn is None:
             return None
         if fn.type == cfg["member_type"]:
+            # Only calls on the enclosing object resolve to project code reliably.
+            if self._txt(fn.named_children[0], src) not in ("self", "this", "cls"):
+                return None
             prop = fn.child_by_field_name(cfg["member_field"])
             return self._txt(prop, src) if prop is not None else None
         if fn.type == "identifier":
@@ -812,34 +818,22 @@ class CodeNodeParser(BaseNodeParser):
 
         def visit(node, scope: dict, stack) -> None:
             t = node.type
+            kind = cfg["defs"].get(t)
+            # const x = () => {} / function expression assigned to a name.
+            value = node.child_by_field_name("value") if t == "variable_declarator" else None
+            if value is not None and value.type in ("arrow_function", "function", "function_expression"):
+                kind = "function"
+            name = self._name_of(node, src) if kind else None
             # Definition -> its own node; descend with it as the enclosing scope.
-            if t in cfg["defs"]:
-                kind = cfg["defs"][t]
+            if name:
                 if kind == "function" and any(k == "class" for k, _ in stack):
                     kind = "method"
-                name = self._name_of(node, src)
-                if name:
-                    rec = self._record(node, kind, name, stack)
-                    records.append(rec)
-                    scope["holes"].append(rec)
-                    for c in node.children:
-                        visit(c, rec, stack + [(kind, name)])
-                    return
-            # const x = () => {} / function expression assigned to a name.
-            if cfg["var_fn"] and t == "variable_declarator":
-                value = node.child_by_field_name("value")
-                if value is not None and value.type in (
-                    "arrow_function", "function", "function_expression",
-                ):
-                    name = self._name_of(node, src)
-                    if name:
-                        kind = "method" if any(k == "class" for k, _ in stack) else "function"
-                        rec = self._record(node, kind, name, stack)
-                        records.append(rec)
-                        scope["holes"].append(rec)
-                        for c in node.children:
-                            visit(c, rec, stack + [(kind, name)])
-                        return
+                rec = self._record(node, kind, name, stack, cfg)
+                records.append(rec)
+                scope["holes"].append(rec)
+                for c in node.children:
+                    visit(c, rec, stack + [(kind, name)])
+                return
             if t == cfg["call_type"]:
                 add(scope["refs"], self._callee_name(node, cfg, src))
             if t in cfg["import_types"]:
@@ -880,10 +874,16 @@ class CodeNodeParser(BaseNodeParser):
             ))
         return nodes
 
-    def _record(self, node, kind: str, name: str, stack) -> dict:
+    def _record(self, node, kind: str, name: str, stack, cfg) -> dict:
+        """A definition spans its sole wrapper (decorators, export, Go ``type``) and the comments directly above."""
+        start = node
+        while start.parent.type in cfg["wrappers"] and [c.type for c in start.parent.named_children].count(start.type) == 1:
+            start = start.parent
+        while (prev := start.prev_named_sibling) is not None and prev.type == "comment" and prev.end_point.row + 1 >= start.start_point.row:
+            start = prev
         return {
             "kind": kind, "name": name,
             "path": ".".join([n for _, n in stack] + [name]),
-            "start_byte": node.start_byte, "end_byte": node.end_byte,
+            "start_byte": start.start_byte, "end_byte": node.end_byte,
             "defs": [name], "refs": [], "holes": [],
         }

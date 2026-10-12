@@ -26,10 +26,10 @@ SELECT
     c.relname  AS table
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r'
+WHERE c.relkind IN ('r', 'p')
+  AND NOT c.relispartition
   AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
   AND has_schema_privilege(n.nspname, 'USAGE')
-  AND has_table_privilege(quote_ident(n.nspname) || '.' || quote_ident(c.relname), 'SELECT')
 ORDER BY n.nspname, c.relname;
 """
 
@@ -69,7 +69,7 @@ def origin_for(dsn: str) -> str:
 
 
 def _discover_tables(conn: psycopg.Connection, tbl_include, tbl_exclude) -> list[tuple[str, str]]:
-    """Return (schema, table) pairs accessible to the current role."""
+    """Return the selected (schema, table) pairs in schemas the role can use."""
     with conn.cursor() as cur:
         cur.execute(_DISCOVER_SQL)
         rows = cur.fetchall()

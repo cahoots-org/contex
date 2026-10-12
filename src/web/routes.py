@@ -120,7 +120,6 @@ async def execute_query(
             "similarity_percent": round(match["similarity"] * 100, 1),
             "data": match["data"],
             "data_json": data_json,
-            "description": match.get("description", ""),
         })
 
     return templates.TemplateResponse(

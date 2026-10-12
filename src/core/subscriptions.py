@@ -348,17 +348,10 @@ class SubscriptionService:
         )
 
     async def _link_bundle(self, project_id, bundle):
-        """Attach cross-file neighbors to each matched node via the symbols join.
+        """Attach to each match, as ``links``, the nodes defining the names it references.
 
-        The "edge" is a read-time equality join: for every matched node, resolve
-        the names it references (role="ref") to the nodes that define them
-        (role="def") elsewhere in the project, and attach those as ``links``.
-        Running this at bundle-build time (create + every reconcile) solves ingest
-        ordering for free — a ref whose def hasn't arrived yet simply doesn't
-        resolve, and the def's later arrival triggers a reconcile that re-runs
-        this join. Output is deterministic (sorted) so the reconcile equality
-        check doesn't see spurious changes.
-        """
+        Joined at read time, so a def arriving after its ref links on the next reconcile;
+        sorted, so reconciles see no spurious changes."""
         matched_keys = {m["data_key"] for ms in bundle.values() for m in ms}
         if not matched_keys:
             return bundle
@@ -372,12 +365,10 @@ class SubscriptionService:
             )).all()
             if not ref_rows:
                 return bundle
-            ref_names = {name for _, name in ref_rows}
-
             def_rows = (await session.execute(
                 select(Symbol.name, Symbol.node_key)
                 .where(Symbol.project_id == project_id)
-                .where(Symbol.name.in_(ref_names))
+                .where(Symbol.name.in_({name for _, name in ref_rows}))
                 .where(Symbol.role == "def")
             )).all()
             if not def_rows:
@@ -385,18 +376,12 @@ class SubscriptionService:
             defs_by_name: dict[str, set[str]] = {}
             for name, node_key in def_rows:
                 defs_by_name.setdefault(name, set()).add(node_key)
-
-            # All defining nodes are candidate neighbors — including ones that are
-            # themselves matched (a matched handler should still link to a matched
-            # function it calls). Self-links are excluded per-entry below.
-            neighbor_keys = {nk for nks in defs_by_name.values() for nk in nks}
-            if not neighbor_keys:
-                return bundle
+            # Matched nodes are candidates too: a matched caller still links to a matched callee.
             emb_by_key = {
                 e.node_key: e for e in (await session.execute(
                     select(Embedding)
                     .where(Embedding.project_id == project_id)
-                    .where(Embedding.node_key.in_(neighbor_keys))
+                    .where(Embedding.node_key.in_({nk for _, nk in def_rows}))
                 )).scalars().all()
             }
 
@@ -406,17 +391,15 @@ class SubscriptionService:
 
         for ms in bundle.values():
             for m in ms:
-                links, seen = [], set()
+                links = []
+                seen = {m["data_key"], *(r["data_key"] for r in m.get("related", ()))}
                 for name in sorted(refs_by_node.get(m["data_key"], ())):
                     for dk in sorted(defs_by_name.get(name, ())):
-                        if dk == m["data_key"] or dk in seen or dk not in emb_by_key:
+                        if dk in seen or dk not in emb_by_key:
                             continue
                         seen.add(dk)
                         e = emb_by_key[dk]
-                        links.append({
-                            "data_key": dk, "document": e.data_key, "name": name,
-                            "data": e.data, "description": e.description,
-                        })
+                        links.append({"data_key": dk, "document": e.data_key, "name": name, "data": e.data})
                 if links:
                     m["links"] = links[:MAX_LINKS_PER_NODE]
         return bundle

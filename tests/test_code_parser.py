@@ -1,12 +1,4 @@
-"""CodeNodeParser turns source into structural nodes + defs/refs via tree-sitter.
-
-Code was the only content type without a real parser: it got shredded into
-blank-line blobs, losing every function/class boundary and all cross-file
-structure (imports, call targets). This parser emits function/class/method nodes
-with proper nesting (node_path) and records, per node, the names it defines
-(defs) and the names it references (refs: imports + call targets) in node
-metadata — the raw material for the symbols table and cross-file linking.
-"""
+"""CodeNodeParser turns source into definition nodes with defs/refs via tree-sitter."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -87,7 +79,6 @@ def test_python_defs_and_refs():
     assert by["top_level"].metadata["defs"] == ["top_level"]
     # Calls inside the function body are refs on that node.
     assert "load_config" in by["top_level"].metadata["refs"]
-    assert "join" in by["top_level"].metadata["refs"]
     assert "top_level" in by["Service.run"].metadata["refs"]
     # Imported symbols are module-level refs on the file node (path "").
     mod = by[""]
@@ -115,7 +106,6 @@ def test_go_funcs_types_methods():
     assert by["Service"].node_type == NodeType.CLASS  # type -> class node
     assert by["Run"].node_type == NodeType.METHOD
     assert "Plain" in by["Run"].metadata["refs"]
-    assert "Load" in by["Run"].metadata["refs"]  # selector call h.Load
 
 
 def test_bytes_input_is_decoded():
@@ -180,3 +170,16 @@ def test_nested_definitions_are_stored_once():
     by = {n.path: n.content for n in nc.parse(
         "def outer():\n    def inner():\n        return 'deep'\n    return inner\n", "code", data_key="m.py").nodes}
     assert "deep" in by["outer.inner"] and "deep" not in by["outer"] and "return inner" in by["outer"]
+
+
+def test_definitions_start_at_their_wrapper_and_doc_comment():
+    def content(src, key, path):
+        return _by_path(nc.parse(src, "code", data_key=key).nodes)[path].content
+    assert content("// Run starts it.\ntype Run struct{}\n", "m.go", "Run").startswith("// Run starts it.\ntype Run")
+    assert content("# Index.\n@app.get('/')\ndef index():\n    pass\n", "m.py", "index").startswith("# Index.\n@app.get")
+    assert content("/** Base. */\nexport abstract class Base {}\n", "m.ts", "Base").startswith("/** Base. */\nexport abstract")
+
+
+def test_method_calls_are_refs_only_on_self_this_or_cls():
+    by = _by_path(nc.parse("def f(self, q):\n    self.save()\n    q.get()\n", "code", data_key="m.py").nodes)
+    assert by["f"].metadata["refs"] == ["save"]

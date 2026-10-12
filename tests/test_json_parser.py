@@ -53,6 +53,11 @@ def test_yaml_aliases_are_rejected():
         YAMLNodeParser().parse(bomb)
 
 
+def test_multi_document_yaml_parses_every_document():
+    nodes = YAMLNodeParser().parse("kind: Service\n---\nkind: Deployment\n").nodes
+    assert {n.path: n.content for n in nodes} == {"[0]": {"kind": "Service"}, "[1]": {"kind": "Deployment"}}
+
+
 def test_top_level_key_named_root_does_not_replace_the_root_object():
     nodes = _by_path({"title": "Q3 plan", "root": {"a": 1}})
     assert nodes == {"": {"title": "Q3 plan"}, "root": {"a": 1}}

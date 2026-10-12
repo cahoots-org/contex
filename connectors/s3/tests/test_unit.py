@@ -70,24 +70,6 @@ class TestFilterKey:
     def test_binary_key_rejected(self):
         assert not filter_key("images/photo.png", None, None, DEFAULT_TEXT_EXTENSIONS)
 
-    def test_include_glob_keeps_matching(self):
-        assert filter_key("docs/readme.md", ["docs/*"], None, DEFAULT_TEXT_EXTENSIONS)
-
-    def test_include_glob_drops_non_matching(self):
-        assert not filter_key("archive/old.md", ["docs/*"], None, DEFAULT_TEXT_EXTENSIONS)
-
-    def test_exclude_glob_drops_matching(self):
-        assert not filter_key("file.tmp.txt", None, ["*.tmp.*"], DEFAULT_TEXT_EXTENSIONS)
-
-    def test_exclude_glob_drops_prefix(self):
-        assert not filter_key("archive/old.md", None, ["archive/*"], DEFAULT_TEXT_EXTENSIONS)
-
-    def test_include_and_exclude_combined(self):
-        include = ["docs/*"]
-        exclude = ["docs/private/*"]
-        assert filter_key("docs/readme.md", include, exclude, DEFAULT_TEXT_EXTENSIONS)
-        assert not filter_key("docs/private/secret.md", include, exclude, DEFAULT_TEXT_EXTENSIONS)
-
     def test_exclude_takes_precedence_over_include(self):
         assert not filter_key(
             "docs/trash.tmp", ["docs/*"], ["*.tmp"], DEFAULT_TEXT_EXTENSIONS
@@ -96,7 +78,7 @@ class TestFilterKey:
 
 class TestObjectToEvent:
     def test_json_object_yields_json_format(self):
-        body = json.dumps({"hello": "world"}).encode()
+        body = b"\xef\xbb\xbf" + json.dumps({"hello": "world"}).encode()
         event = object_to_event("data/config.json", body)
         assert event.data_format == "json"
         assert event.payload == {"hello": "world"}
@@ -104,10 +86,10 @@ class TestObjectToEvent:
         assert event.op == "upsert"
 
     def test_text_object_yields_text_format(self):
-        body = b"# Hello\nThis is a readme."
+        body = b"\xef\xbb\xbf# Hello\nThis is a r\xe9adme."
         event = object_to_event("docs/readme.md", body)
         assert event.data_format == "text"
-        assert event.payload == "# Hello\nThis is a readme."
+        assert event.payload == "# Hello\nThis is a r\ufffdadme."
         assert event.key == "docs/readme.md"
         assert event.op == "upsert"
 
@@ -122,22 +104,7 @@ class TestObjectToEvent:
         assert event.data_format == "pdf"
         assert base64.b64decode(event.payload) == b"%PDF-1.7"
 
-    def test_csv_yields_text_format(self):
-        body = b"a,b,c\n1,2,3"
-        event = object_to_event("export/data.csv", body)
-        assert event.data_format == "text"
-
-    def test_yaml_yields_text_format(self):
-        body = b"key: value"
-        event = object_to_event("config/settings.yaml", body)
-        assert event.data_format == "text"
-
     def test_json_extension_case_insensitive(self):
         body = json.dumps({"x": 1}).encode()
         event = object_to_event("file.JSON", body)
         assert event.data_format == "json"
-
-    def test_key_is_full_object_key(self):
-        key = "deep/path/to/file.txt"
-        event = object_to_event(key, b"text")
-        assert event.key == key

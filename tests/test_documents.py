@@ -6,6 +6,7 @@ import shutil
 
 import pypdfium2
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from docx import Document
 from docx.text.paragraph import Paragraph
 from PIL import Image
@@ -66,9 +67,9 @@ async def _publish_and_query(db, data: bytes, data_key: str, data_format: str | 
     engine = ContextEngine(db=db, similarity_threshold=0.0, max_matches=10)
     await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
-    await server.call_tool("contex_publish_batch", {"project_id": "docs", "items": [
-        {"data_key": data_key, "data": base64.b64encode(data).decode(), "data_format": data_format},
-    ]})
+    await server.call_tool("contex_publish", {
+        "project_id": "docs", "data_key": data_key, "data": base64.b64encode(data).decode(), "data_format": data_format,
+    })
     result = await server.call_tool("contex_query", {
         "project_id": "docs", "query": "Atlantis revenue forecast", "top_k": 5, "threshold": 0.0,
     })
@@ -99,7 +100,8 @@ async def test_bad_batch_items_are_listed_in_failed(db):
 @pytest.mark.asyncio
 async def test_scanned_pages_are_skipped_without_ocr(db, monkeypatch):
     monkeypatch.setattr(node_parsers, "OCR_ENABLED", False)
-    assert await _publish_and_query(db, _scanned_pdf(), "scan.pdf") == []
+    with pytest.raises(ToolError, match="no text"):
+        await _publish_and_query(db, _scanned_pdf(), "scan.pdf")
 
 
 @needs_tesseract

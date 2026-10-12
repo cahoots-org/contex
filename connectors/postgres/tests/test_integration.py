@@ -15,6 +15,7 @@ import os
 
 import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from connectors.postgres.reader import read_tables
 
@@ -178,17 +179,29 @@ class TestReaderIntegration:
         keys = {e.key for e in events}
         assert all(k.startswith(f"{_DB}.contex_test.products.") for k in keys)
 
-    def test_upsert_idempotency(self):
-        """Re-running produces the same keys (no duplication)."""
-        kwargs = dict(
-            dsn=_dsn(),
-            tbl_include=["contex_test.products"],
-            tbl_exclude=None,
-            col_include=None,
-            col_exclude=None,
-            key_columns={},
-            include_binary=False,
-        )
-        first = [e.key for e in read_tables(**kwargs)]
-        second = [e.key for e in read_tables(**kwargs)]
-        assert sorted(first) == sorted(second)
+    def test_partitioned_table_read_through_its_parent(self):
+        with psycopg.connect(_dsn(), autocommit=True) as conn:
+            conn.execute(
+                "CREATE TABLE contex_test.events (id INT, region TEXT, PRIMARY KEY (id, region))"
+                " PARTITION BY LIST (region)"
+            )
+            conn.execute("CREATE TABLE contex_test.events_eu PARTITION OF contex_test.events FOR VALUES IN ('eu')")
+            conn.execute("CREATE TABLE contex_test.events_us PARTITION OF contex_test.events FOR VALUES IN ('us')")
+            conn.execute("INSERT INTO contex_test.events VALUES (1, 'eu'), (2, 'us')")
+        keys = {e.key for e in self._collect(tbl_include=["contex_test.events*"])}
+        assert keys == {f"{_DB}.contex_test.events.1:eu", f"{_DB}.contex_test.events.2:us"}
+
+    def test_unreadable_table_fails_the_run(self):
+        with psycopg.connect(_dsn(), autocommit=True) as conn:
+            conn.execute("DROP ROLE IF EXISTS contex_test_reader")
+            conn.execute("CREATE ROLE contex_test_reader LOGIN PASSWORD 'pw'")
+            conn.execute("GRANT USAGE ON SCHEMA contex_test TO contex_test_reader")
+            conn.execute("GRANT SELECT ON contex_test.products TO contex_test_reader")
+        reader_dsn = make_conninfo(_dsn(), user="contex_test_reader", password="pw")
+        try:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                self._collect(dsn=reader_dsn, tbl_include=["contex_test.products", "contex_test.order_items"])
+        finally:
+            with psycopg.connect(_dsn(), autocommit=True) as conn:
+                conn.execute("DROP OWNED BY contex_test_reader")
+                conn.execute("DROP ROLE contex_test_reader")

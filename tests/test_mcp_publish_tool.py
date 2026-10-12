@@ -1,11 +1,13 @@
 import base64
 import json
 import pytest
+from mcp.server.auth.provider import AccessToken
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import select
 
 from src.core.db_models import Embedding
 from src.core.context_engine import ContextEngine
+from src.core import mcp_adapter
 from src.core.mcp_adapter import build_mcp_server
 from src.core.tenant import TenantManager
 
@@ -19,6 +21,7 @@ async def _publish_once(server, key, project_id="p"):
 @pytest.mark.asyncio
 async def test_direct_publish_throttled_at_configured_limit(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "2")
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: AccessToken(token="t", client_id="k", scopes=[]))
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.semantic_matcher.initialize_index()
     server, _ = build_mcp_server(engine)
@@ -35,6 +38,7 @@ async def test_direct_publish_throttled_at_configured_limit(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_bulk_ingest_exempt_by_default(db, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_PUBLISH", "1")  # direct is tight...
+    monkeypatch.setattr(mcp_adapter, "get_access_token", lambda: AccessToken(token="t", client_id="k", scopes=[]))
     monkeypatch.delenv("RATE_LIMIT_INGEST", raising=False)  # ...but ingest is exempt
     engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
     await engine.semantic_matcher.initialize_index()

@@ -154,7 +154,6 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 
 .result-header:hover, .data-item-header:hover { background: var(--surface-2); }
 .check-icon { color: var(--success); margin-right: var(--space-2); }
-.result-description { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--space-1); }
 .result-meta { display: flex; align-items: center; gap: var(--space-3); flex: none; }
 .expand-icon { color: var(--text-subtle); font-size: var(--text-xs); }
 .data-item-header strong, .watch-key { color: var(--accent); font-weight: 500; }

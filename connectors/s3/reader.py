@@ -59,7 +59,7 @@ def object_to_event(
         return document_event(key, body, doc_format, published_at=published_at)
     _, ext = os.path.splitext(key.lower())
     if ext == ".json":
-        payload = json.loads(body.decode("utf-8"))
+        payload = json.loads(body)
         return ChangeEvent(
             op="upsert",
             key=key,
@@ -67,7 +67,7 @@ def object_to_event(
             data_format="json",
             published_at=published_at,
         )
-    text = body.decode("utf-8")
+    text = body.decode("utf-8-sig", errors="replace")
     return ChangeEvent(
         op="upsert",
         key=key,
