@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import pytest
@@ -63,6 +64,7 @@ async def test_publish_tool_updates_subscription_bundle(db):
         "data": {"purpose": "database connection settings"}, "data_format": "json",
     })).content[0].text)
     assert res["published"] == "db"
+    await asyncio.gather(*engine._reconcile_tasks.values())
 
     bundle = await engine.subscriptions.get_bundle(sub_id)
     assert any(m["data_key"].startswith("db.") or m["data_key"] == "db" for matches in bundle.values() for m in matches)

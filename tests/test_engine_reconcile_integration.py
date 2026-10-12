@@ -1,4 +1,6 @@
 # tests/test_engine_reconcile_integration.py
+import asyncio
+
 import pytest
 from src.core.context_engine import ContextEngine
 from src.core.models import DataPublishEvent
@@ -17,6 +19,7 @@ async def test_publish_reconciles_matching_subscription(db):
         data={"host": "localhost", "port": 5432, "purpose": "database connection settings"},
         data_format="json",
     ))
+    await asyncio.gather(*engine._reconcile_tasks.values())
 
     bundle = await engine.subscriptions.get_bundle(sub_id)
     # the published item now appears in the subscription's materialized bundle
