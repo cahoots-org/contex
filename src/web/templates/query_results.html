@@ -6,9 +6,6 @@
                 <strong>{{ total_matches }}</strong> matches
             </span>
             <span class="stat">
-                <strong>{{ "{:,}".format(total_tokens) }}</strong> tokens
-            </span>
-            <span class="stat">
                 Threshold: <strong>{{ (threshold * 100)|round(0)|int }}%</strong>
             </span>
         </div>
@@ -42,9 +39,6 @@
                 <span class="similarity-score" :class="{ 'high': {{ match.similarity }} >= 0.8, 'medium': {{ match.similarity }} >= 0.6 }">
                     Score: {{ match.similarity_percent }}%
                 </span>
-                {% if match.token_count %}
-                <span class="token-count">{{ "{:,}".format(match.token_count) }} tokens</span>
-                {% endif %}
                 <span class="expand-icon" x-text="expandedItems[id] ? '▲' : '▼'">▼</span>
             </div>
         </div>
@@ -76,19 +70,6 @@
 </div>
 
 <div class="results-footer">
-    <p class="context-info">
-        💡 <strong>Context Window Check:</strong>
-        {% if total_tokens < 8000 %}
-        All results fit in GPT-4 Turbo (8k context)
-        {% elif total_tokens < 32000 %}
-        All results fit in GPT-4 (32k context)
-        {% elif total_tokens < 128000 %}
-        All results fit in GPT-4 Turbo (128k context)
-        {% else %}
-        Results exceed most context windows - consider filtering
-        {% endif %}
-    </p>
-
     <script type="application/json" id="all-matches-data">{{ matches|tojson }}</script>
     <div class="export-actions" x-data="{
         exportData: JSON.parse(document.getElementById('all-matches-data').textContent)

@@ -80,16 +80,10 @@ async def test_project_stats_renders_from_embeddings(db):
     assert ctx["project_id"] == "stats-proj"
     # Two distinct data_keys published.
     assert ctx["data_count"] == 2
-    assert ctx["total_tokens"] > 0
     keys = {item["data_key"] for item in ctx["data_items"]}
     assert keys == {"db", "auth"}
-    # Every item carries a non-negative token count and a description field.
     for item in ctx["data_items"]:
-        assert item["token_count"] >= 0
         assert "description" in item
-    # Sorted by token_count descending.
-    counts = [item["token_count"] for item in ctx["data_items"]]
-    assert counts == sorted(counts, reverse=True)
 
 
 @pytest.mark.asyncio
@@ -102,7 +96,7 @@ async def test_query_renders_matches_as_json(db):
 
     resp = await execute_query(
         _request_with(engine), project_id="q-proj", query="database connection",
-        top_k=5, threshold=0.0, max_tokens=51200,
+        top_k=5, threshold=0.0,
     )
 
     assert resp.status_code == 200
@@ -118,7 +112,6 @@ async def test_query_is_rate_limited(db, monkeypatch):
     async def query():
         return await execute_query(
             _request_with(engine), project_id="p", query="anything", top_k=5, threshold=0.5,
-            max_tokens=51200,
         )
 
     await query()
@@ -137,7 +130,6 @@ async def test_project_stats_empty_project(db):
 
     assert resp.template.name == "project_stats.html"
     assert resp.context["data_count"] == 0
-    assert resp.context["total_tokens"] == 0
     assert resp.context["data_items"] == []
 
 

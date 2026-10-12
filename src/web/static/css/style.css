@@ -571,11 +571,6 @@ button:disabled {
     color: var(--warning);
 }
 
-.token-count {
-    color: var(--text-muted);
-    font-size: 0.875rem;
-}
-
 .expand-icon {
     color: var(--text-muted);
 }
@@ -621,14 +616,6 @@ code {
     margin-top: 2rem;
     padding-top: 1.5rem;
     border-top: 1px solid var(--border);
-}
-
-.context-info {
-    background: var(--bg-secondary);
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
-    color: var(--text-muted);
 }
 
 .export-actions {
