@@ -79,34 +79,6 @@
       ]
     },
     {
-      "id": 3,
-      "type": "timeseries",
-      "title": "POST latency p95 by endpoint",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(contex_http_request_duration_seconds_bucket{method=\"POST\"}[5m])))",
-          "legendFormat": "{{endpoint}}"
-        }
-      ]
-    },
-    {
       "id": 4,
       "type": "timeseries",
       "title": "In-flight requests",
@@ -117,7 +89,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 8
       },
       "fieldConfig": {

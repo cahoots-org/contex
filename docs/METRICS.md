@@ -18,8 +18,9 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost:8001/metrics
 `endpoint` is the matched route template (`/sandbox/data`),
 the mount path for mounted apps (`/mcp`, `/static`), or `other` for unmatched
 paths, so no label carries a tenant or project ID. MCP tool calls are
-`POST /mcp`. `GET /mcp` and `GET /sandbox/subscribe` are long-lived streams, so
-leave them out of latency queries.
+`POST /mcp`; they stream their results and report a failure inside a 200
+response, so these metrics show neither their duration nor their errors. Watch
+the ERROR logs for failing tool calls.
 
 ## Example queries
 
@@ -30,16 +31,12 @@ sum by (method, endpoint) (rate(contex_http_requests_total[5m]))
 # Share of 5xx responses
 sum(rate(contex_http_requests_total{status_code=~"5.."}[5m]))
   / sum(rate(contex_http_requests_total[5m]))
-
-# p95 latency of MCP tool calls
-histogram_quantile(0.95,
-  sum by (le) (rate(contex_http_request_duration_seconds_bucket{method="POST", endpoint="/mcp"}[5m])))
 ```
 
 ## Prometheus and Grafana
 
 [`examples/prometheus.yml`](../examples/prometheus.yml) scrapes Contex with the
 token and loads [`examples/prometheus-alerts.yml`](../examples/prometheus-alerts.yml)
-(error rate, POST latency, and target down).
+(HTTP error rate and target down).
 [`grafana/contex-dashboard.json`](../grafana/contex-dashboard.json) charts the
 metrics above.
