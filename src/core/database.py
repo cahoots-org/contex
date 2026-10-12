@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from src.core.config import DEFAULT_DATABASE_URL
 from src.core.json_utils import json_safe_default
 from src.core.logging import get_logger
 
@@ -38,13 +39,7 @@ _ALEMBIC_DIR = _REPO_ROOT / "alembic"
 
 
 def _alembic_config(database_url: str) -> Config:
-    """Build an alembic Config pointed at our script dir and the given URL.
-
-    Note: alembic's env.py also reads DATABASE_URL from the environment and
-    overrides ``sqlalchemy.url`` with it, so the caller sets that env var for the
-    duration of the run as well. env.py uses an async engine (asyncpg), so the
-    same ``postgresql+asyncpg://`` URL the app uses works for migrations too.
-    """
+    """Build an alembic Config pointed at our script dir and the given asyncpg URL."""
     cfg = Config(str(_ALEMBIC_INI))
     cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
     cfg.set_main_option("sqlalchemy.url", database_url)
@@ -53,22 +48,8 @@ def _alembic_config(database_url: str) -> Config:
 
 
 def run_migrations_to_head(database_url: str) -> None:
-    """Synchronously run ``alembic upgrade head`` against ``database_url``.
-
-    This is the blocking worker used by ``DatabaseManager.migrate_to_head`` and by
-    the test fixtures. It temporarily exports DATABASE_URL because alembic's
-    env.py resolves the connection from that variable, restoring the previous
-    value afterwards so it is safe to call in-process.
-    """
-    prev = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = database_url
-    try:
-        command.upgrade(_alembic_config(database_url), "head")
-    finally:
-        if prev is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = prev
+    """Synchronously run ``alembic upgrade head`` against ``database_url``."""
+    command.upgrade(_alembic_config(database_url), "head")
 
 
 async def _assert_migratable(url: str) -> None:
@@ -149,10 +130,7 @@ class DatabaseManager:
             logger.warning("Database already connected")
             return
 
-        url = database_url or os.getenv(
-            "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
-        )
+        url = database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
         self._database_url = url
 
         self.engine = create_async_engine(
@@ -199,10 +177,7 @@ class DatabaseManager:
         loop. Since callers invoke this from async contexts, the blocking work is
         offloaded to a worker thread.
         """
-        url = database_url or self._database_url or os.getenv(
-            "DATABASE_URL",
-            "postgresql+asyncpg://contex:contex_password@localhost:5432/contex",
-        )
+        url = database_url or self._database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
         await _assert_migratable(url)
         await asyncio.to_thread(run_migrations_to_head, url)
 

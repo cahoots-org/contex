@@ -9,18 +9,16 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from src.core.config import DEFAULT_DATABASE_URL
 from src.core.db_models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# The database URL comes from the environment.
-database_url = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://contex:contex_password@localhost:5432/contex"
-)
-config.set_main_option("sqlalchemy.url", database_url)
+# In-process runs pass the URL; the alembic CLI reads DATABASE_URL.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL))
 
 # Interpret the config file for Python logging, but only from the alembic CLI.
 # In-process runs (app boot, test fixtures) set configure_logger=False so
