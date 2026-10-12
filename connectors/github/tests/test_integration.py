@@ -128,7 +128,7 @@ async def test_read_files_retains_a_file_it_could_not_fetch(httpx_mock: "HTTPXMo
 
 
 @pytest.mark.anyio
-async def test_read_files_fails_on_a_truncated_tree(httpx_mock: "HTTPXMock") -> None:
+async def test_read_files_skips_a_truncated_tree(httpx_mock: "HTTPXMock") -> None:
     httpx_mock.add_response(url=f"{_API}/repos/{_SLUG}", json={"default_branch": "main"}, headers=_json_headers())
     httpx_mock.add_response(
         url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/git/trees/main"),
@@ -137,8 +137,7 @@ async def test_read_files_fails_on_a_truncated_tree(httpx_mock: "HTTPXMock") -> 
     )
 
     async with GitHubClient("tok") as client:
-        with pytest.raises(RuntimeError, match="too many files"):
-            [ev async for ev in read_files(client, _OWNER, _REPO)]
+        assert [ev async for ev in read_files(client, _OWNER, _REPO)] == []
 
 
 @pytest.mark.anyio
@@ -276,6 +275,7 @@ async def test_read_issues_yields_correct_keys(httpx_mock: "HTTPXMock") -> None:
                 "state": "open",
                 "labels": [{"name": "bug"}],
                 "user": {"login": "alice"},
+                "comments": 1,
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-02-01T00:00:00Z",
                 "closed_at": None,
@@ -335,6 +335,20 @@ async def test_read_issues_skips_prs(httpx_mock: "HTTPXMock") -> None:
             events.append(ev)
 
     assert events == []
+
+
+@pytest.mark.anyio
+async def test_read_issues_skips_the_comments_request_without_comments(httpx_mock: "HTTPXMock") -> None:
+    httpx_mock.add_response(
+        url=re.compile(rf"{re.escape(_API)}/repos/{re.escape(_SLUG)}/issues"),
+        json=[{"number": 3, "title": "Quiet", "user": {"login": "alice"}, "comments": 0}],
+        headers=_no_next_headers(),
+    )
+
+    async with GitHubClient("tok") as client:
+        events = [ev async for ev in read_issues(client, _OWNER, _REPO)]
+
+    assert events[0].payload["comments"] == []
 
 
 # ---------------------------------------------------------------------------

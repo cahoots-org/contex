@@ -60,7 +60,7 @@ contex_create_subscription {
 // returns: { "subscription_id": "sub_...", "resource_uri": "contex://subscriptions/sub_..." }
 ```
 
-Read the `contex://subscriptions/sub_...` resource and you get the change back, matched by meaning even though the need and the data share no words. Publish another change and read again. The subscription already reflects it, and your agent never issued a query.
+Read the `contex://subscriptions/sub_...` resource and you get the change back, matched by meaning even though the need and the data share no words. Publish another change and the subscription updates shortly after, without your agent issuing a query.
 
 To get pushed when it changes instead of re-reading, listen on the resource. [`examples/mcp_watch.py`](examples/mcp_watch.py) shows a client receiving the update as another client publishes. Prefer to watch it in a browser? Open `http://localhost:8001/sandbox`, type a need, and hit **Watch**.
 
@@ -77,7 +77,7 @@ To get pushed when it changes instead of re-reading, listen on the resource. [`e
 | `contex_query` | Searches a project's context once, without subscribing. |
 | `contex_create_subscription` | Creates a live subscription from plain-English needs. Returns a `contex://subscriptions/{id}` resource. Identical requests share one subscription, which expires once nobody reads it. |
 
-**Resource:** `contex://subscriptions/{id}` holds a subscription's matched context. Contex re-matches it when the underlying data changes, so every read is up to date.
+**Resource:** `contex://subscriptions/{id}` holds a subscription's matched context. Contex re-matches it in the background when the underlying data changes, so it stays current without a re-query.
 
 ## Features
 

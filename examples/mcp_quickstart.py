@@ -1,9 +1,8 @@
-"""Publish, subscribe, and watch a subscription stay current, over MCP.
+"""Publish and subscribe over MCP.
 
-Runs the full Contex loop against a running server: a producer publishes data,
-an agent subscribes to a plain-English need that shares no keywords with the
-data, reads the matched context, and reads it again after the data changes
-without issuing a second query.
+Runs the Contex loop against a running server: a producer publishes data, and an
+agent subscribes to a plain-English need that shares no keywords with the data
+and reads the matched context. mcp_watch.py shows the subscription updating.
 
     pip install "mcp>=2,<3"
     python examples/mcp_quickstart.py
@@ -59,20 +58,6 @@ async def main():
             print(f"   subscription: {resource_uri}")
 
             print("3. Read the matched context. Contex matched by meaning.")
-            bundle = _resource_json(await session.read_resource(resource_uri))
-            print(json.dumps(bundle, indent=2))
-
-            print("4. Change the underlying data.")
-            await session.call_tool(
-                "contex_publish",
-                {
-                    "project_id": PROJECT_ID,
-                    "data_key": "pg_dsn",
-                    "data": {"engine": "postgres", "host": "db-replica.internal", "port": 5432, "pool": 50},
-                },
-            )
-
-            print("5. Read the subscription again. It is already current; no re-query.")
             bundle = _resource_json(await session.read_resource(resource_uri))
             print(json.dumps(bundle, indent=2))
 

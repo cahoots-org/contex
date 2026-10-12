@@ -72,8 +72,9 @@ async def read_files(
         recursive=1,
     )
     if tree_data.get("truncated"):
-        # A partial listing would make prune delete every file past the cutoff.
-        raise RuntimeError(f"{owner}/{repo} has too many files to list in one tree request")
+        # A partial listing would make prune delete every file past the cutoff; yielding nothing never prunes.
+        log.error("skipping files of %s/%s: too many to list in one tree request", owner, repo)
+        return
     blobs = [item for item in tree_data.get("tree", []) if item.get("type") == "blob"]
 
     for blob in blobs:
@@ -158,7 +159,7 @@ async def read_issues(
             continue  # GitHub issues API returns PRs too; skip them
 
         number: int = issue["number"]
-        comments = await _fetch_comments(client, owner, repo, number)
+        comments = await _fetch_comments(client, owner, repo, number) if issue.get("comments") else []
         key = f"{owner}/{repo}#{number}"
         log.debug("issue %s", key)
         yield ChangeEvent(

@@ -46,16 +46,16 @@ class PgVectorSearch:
         since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
         query_vec = (await encode_async(self.model, query)).tolist()
+        distance = Embedding.embedding.cosine_distance(query_vec)
+        recency = recency_filter(since)
         stmt = (
-            select(
-                Embedding.node_key,
-                (1 - Embedding.embedding.cosine_distance(query_vec)).label("similarity"),
-            )
+            select(Embedding.node_key, (1 - distance).label("similarity"))
             .where(Embedding.project_id == project_id)
-            .order_by(Embedding.embedding.cosine_distance(query_vec))
+            # A time window is a narrow slice: `+ 0` keeps HNSW out so it's an exact top-k
+            # over the window, not a walk of every project's index entries.
+            .order_by(distance if recency is None else distance + 0)
             .limit(top_k)
         )
-        recency = recency_filter(since)
         if recency is not None:
             stmt = stmt.where(recency)
         if exclude_documents:
