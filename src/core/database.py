@@ -245,24 +245,6 @@ class DatabaseManager:
         finally:
             await session.close()
 
-    @asynccontextmanager
-    async def session_no_commit(self) -> AsyncGenerator[AsyncSession, None]:
-        """
-        Get an async database session without auto-commit.
-        Caller is responsible for committing.
-        """
-        if not self.session_factory:
-            raise RuntimeError("Database not connected. Call connect() first.")
-
-        session = self.session_factory()
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
-
     @property
     def is_connected(self) -> bool:
         """Check if database is connected."""

@@ -4,8 +4,18 @@ import pytest
 import pytest_asyncio
 import numpy as np
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
+from sqlalchemy import select
+
 from src.core.context_engine import ContextEngine
+from src.core.db_models import Event
 from src.core.models import DataPublishEvent
+
+
+async def _event_types(engine, project_id):
+    async with engine.event_store.db.session() as session:
+        return list((await session.execute(
+            select(Event.event_type).where(Event.project_id == project_id).order_by(Event.sequence)
+        )).scalars())
 
 
 @pytest.mark.asyncio
@@ -126,9 +136,7 @@ class TestContextEngine:
         await context_engine.publish_data(event)
 
         # Check event store has the event
-        events = await context_engine.event_store.get_events_since("proj1", "0")
-        assert len(events) == 1
-        assert events[0]["event_type"] == "config_updated"
+        assert await _event_types(context_engine, "proj1") == ["config_updated"]
 
     @pytest.mark.asyncio
     async def test_publish_with_custom_event_type(self, context_engine):
@@ -139,8 +147,7 @@ class TestContextEngine:
 
         await context_engine.publish_data(event)
 
-        events = await context_engine.event_store.get_events_since("proj1", "0")
-        assert events[0]["event_type"] == "custom_event"
+        assert await _event_types(context_engine, "proj1") == ["custom_event"]
 
     @pytest.mark.asyncio
     async def test_query_project_data(self, context_engine):
