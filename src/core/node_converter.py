@@ -62,6 +62,8 @@ class NodeConverter:
             except Exception as e:  # a failed parser falls through to the next one
                 result = ParseResult(nodes=[], format_name=parser.format_name, success=False, error=str(e))
             if result.success:
+                if len({node.path for node in result.nodes}) < len(result.nodes):
+                    raise DocumentRejected("document has two parts at the same path")
                 return result
         if isinstance(data, (bytes, bytearray)):
             return result or ParseResult(

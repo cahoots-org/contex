@@ -165,6 +165,12 @@ class ArticleModel:
 def test_module_level_code_is_kept_outside_definitions():
     src = 'RETRY_LIMIT = 7\n\ndef helper():\n    return 1\n\napp.post("/login", lambda req: check(req))\n'
     nodes = nc.parse(src, "code", data_key="srv/routes.py").nodes
-    module = "\n".join(n.content for n in nodes if n.path.startswith("module_"))
+    module = "\n".join(n.content for n in nodes if n.path.startswith("<module>"))
     assert "RETRY_LIMIT" in module and "/login" in module
     assert "helper" not in module
+
+
+def test_def_named_like_a_module_chunk_keeps_the_module_code():
+    nodes = nc.parse("X = 1\n\ndef module_0():\n    return 42\n", "code", data_key="m.py").nodes
+    by = {n.path: n.content for n in nodes}
+    assert len(by) == len(nodes) and "X = 1" in by.values() and "module_0" in by

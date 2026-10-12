@@ -72,6 +72,11 @@ def test_documents_over_the_node_limit_are_rejected_not_reparsed_as_text():
         NodeConverter().parse(rows, "csv")
 
 
+def test_documents_with_colliding_paths_are_rejected():
+    with pytest.raises(DocumentRejected):
+        NodeConverter().parse({"": {"a": 1}, "b": 2}, "json")
+
+
 def test_language_for_key_maps_extensions():
     assert language_for_key("owner/repo:a.py") == "python"
     assert language_for_key("b.tsx") == "tsx"

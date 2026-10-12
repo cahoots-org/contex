@@ -103,7 +103,7 @@ class TestSemanticDataMatcher:
         )
         await matcher.register_data("proj1", "notes", {"body": "unrelated"})
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("notes.root", 0.8),
+            ("jira:DEV-1.comments[0]", 0.9), ("notes", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
@@ -119,12 +119,12 @@ class TestSemanticDataMatcher:
             {"summary": "Login times out", "comments": [{"body": "bumped pool size"}]},
         )
         matcher._rank_nodes = AsyncMock(return_value=[
-            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1.root", 0.8),
+            ("jira:DEV-1.comments[0]", 0.9), ("jira:DEV-1", 0.8),
         ])
 
         results = (await matcher.match_agent_needs("proj1", ["pool"], threshold=0.0))["pool"]
 
-        assert [r["data_key"] for r in results[0]["related"]] == ["jira:DEV-1.root"]
+        assert [r["data_key"] for r in results[0]["related"]] == ["jira:DEV-1"]
         assert "document_data" not in results[0]
 
     @pytest.mark.asyncio

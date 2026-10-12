@@ -54,7 +54,7 @@ _REWRITTEN_COLUMNS = (
 
 def _document_title(nodes) -> str:
     """The root object's title-like field (a ticket summary, a PR or page title)."""
-    root = next((n for n in nodes if n.path == "root"), None)
+    root = next((n for n in nodes if n.path == ""), None)
     if root is None or not isinstance(root.content, dict):
         return ""
     return next(
@@ -527,25 +527,19 @@ class SemanticDataMatcher:
     ) -> None:
         """Add each document's root node data (a ticket's own fields, a code
         file's summary) to its result unless that root already matched."""
-        root_keys = {
-            r["document"]: (f'{r["document"]}.root', r["document"]) for r in results
-        }
-        if not root_keys:
+        if not results:
             return
         async with self.db.session() as session:
             rows = await session.execute(
                 select(Embedding.node_key, Embedding.data)
                 .where(Embedding.project_id == project_id)
-                .where(Embedding.node_key.in_([k for keys in root_keys.values() for k in keys]))
+                .where(Embedding.node_key.in_([r["document"] for r in results]))
             )
             roots = dict(rows.all())
         for result in results:
             matched = {result["data_key"], *(r["data_key"] for r in result["related"])}
-            for key in root_keys[result["document"]]:
-                if key in roots:
-                    if key not in matched:
-                        result["document_data"] = roots[key]
-                    break
+            if result["document"] in roots and result["document"] not in matched:
+                result["document_data"] = roots[result["document"]]
 
     async def get_registered_data(self, project_id: str) -> List[str]:
         """Get all registered data keys for a project (unique data_key values)."""

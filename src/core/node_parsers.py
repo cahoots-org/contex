@@ -178,10 +178,11 @@ class JSONNodeParser(BaseNodeParser):
             # Primitive fields (and lists of primitives) stay with this object;
             # nested objects and arrays of objects become their own nodes.
             own = {k: v for k, v in data.items() if not _is_complex(v)}
-            # An empty dict still gets a node so it isn't silently dropped.
+            # An empty dict still gets a node so it isn't silently dropped. The
+            # top-level object's path is "", so its node_key is the data_key.
             if own or not data:
                 _add(nodes, Node(
-                    path=path or "root",
+                    path=path,
                     content=own,
                     node_type=NodeType.OBJECT,
                     metadata={"format": "json"}
@@ -958,7 +959,7 @@ class CodeNodeParser(BaseNodeParser):
         module_code = b"".join(outside).decode("utf-8", errors="replace")
         for i, chunk in enumerate(_chunk_blocks(module_code)):
             _add(nodes, Node(
-                path=f"module_{i}", content=chunk, node_type=NodeType.CODE_BLOCK,
+                path=f"<module>[{i}]", content=chunk, node_type=NodeType.CODE_BLOCK,
                 metadata={"language": lang, "defs": [], "refs": []},
             ))
         for r in records:
