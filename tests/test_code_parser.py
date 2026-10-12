@@ -87,7 +87,6 @@ def test_python_defs_and_refs():
     assert by["top_level"].metadata["defs"] == ["top_level"]
     # Calls inside the function body are refs on that node.
     assert "load_config" in by["top_level"].metadata["refs"]
-    assert "join" in by["top_level"].metadata["refs"]
     assert "top_level" in by["Service.run"].metadata["refs"]
     # Imported symbols are module-level refs on the file node (path "").
     mod = by[""]
@@ -115,7 +114,6 @@ def test_go_funcs_types_methods():
     assert by["Service"].node_type == NodeType.CLASS  # type -> class node
     assert by["Run"].node_type == NodeType.METHOD
     assert "Plain" in by["Run"].metadata["refs"]
-    assert "Load" in by["Run"].metadata["refs"]  # selector call h.Load
 
 
 def test_bytes_input_is_decoded():
@@ -188,3 +186,8 @@ def test_definitions_start_at_their_wrapper_and_doc_comment():
     assert content("// Run starts it.\ntype Run struct{}\n", "m.go", "Run").startswith("// Run starts it.\ntype Run")
     assert content("# Index.\n@app.get('/')\ndef index():\n    pass\n", "m.py", "index").startswith("# Index.\n@app.get")
     assert content("/** Base. */\nexport abstract class Base {}\n", "m.ts", "Base").startswith("/** Base. */\nexport abstract")
+
+
+def test_method_calls_are_refs_only_on_self_this_or_cls():
+    by = _by_path(nc.parse("def f(self, q):\n    self.save()\n    q.get()\n", "code", data_key="m.py").nodes)
+    assert by["f"].metadata["refs"] == ["save"]

@@ -772,6 +772,9 @@ class CodeNodeParser(BaseNodeParser):
         if fn is None:
             return None
         if fn.type == cfg["member_type"]:
+            # Only calls on the enclosing object resolve to project code reliably.
+            if self._txt(fn.named_children[0], src) not in ("self", "this", "cls"):
+                return None
             prop = fn.child_by_field_name(cfg["member_field"])
             return self._txt(prop, src) if prop is not None else None
         if fn.type == "identifier":
