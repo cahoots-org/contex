@@ -129,9 +129,7 @@ async def read_files(
         )
 
 
-async def _fetch_comments(
-    client: GitHubClient, owner: str, repo: str, number: int, kind: str
-) -> list[dict]:
+async def _fetch_comments(client: GitHubClient, owner: str, repo: str, number: int) -> list[dict]:
     """Fetch comment bodies for an issue or pull request."""
     comments: list[dict] = []
     path = f"/repos/{owner}/{repo}/issues/{number}/comments"
@@ -162,7 +160,7 @@ async def read_issues(
             continue  # GitHub issues API returns PRs too; skip them
 
         number: int = issue["number"]
-        comments = await _fetch_comments(client, owner, repo, number, "issue")
+        comments = await _fetch_comments(client, owner, repo, number)
         key = f"{owner}/{repo}#{number}"
         log.debug("issue %s", key)
         yield ChangeEvent(
@@ -203,7 +201,7 @@ async def read_pulls(
         state=state,
     ):
         number: int = pull["number"]
-        comments = await _fetch_comments(client, owner, repo, number, "pull")
+        comments = await _fetch_comments(client, owner, repo, number)
         key = f"{owner}/{repo}!{number}"
         log.debug("pull %s", key)
         yield ChangeEvent(
