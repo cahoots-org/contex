@@ -58,7 +58,7 @@ Docker image, and runs the security scans.
 
 ## Style
 
-Lint the files you touch with `ruff check`. Keep imports at the top of the
+CI runs `ruff check .`; run it before you push. Keep imports at the top of the
 module, docstrings short, and comments about what the code does rather than how
 it got there.
 
