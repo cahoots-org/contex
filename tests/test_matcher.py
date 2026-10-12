@@ -17,9 +17,9 @@ class _FakeSemanticMatcher:
 async def test_hybrid_matcher_delegates_and_returns_bundle_shape():
     sem = _FakeSemanticMatcher()
     matcher = HybridMatcher(sem)
-    result = await matcher.match("p1", ["auth config"], metadata={"format": "json"})
+    result = await matcher.match("p1", ["auth config"])
     assert result == {"auth config": [{"data_key": "k", "similarity": 0.8, "data": {}, "description": None}]}
-    assert sem.calls == [("p1", ("auth config",))]  # metadata is accepted but not passed through (seam only)
+    assert sem.calls == [("p1", ("auth config",))]
 
 
 @pytest.mark.asyncio

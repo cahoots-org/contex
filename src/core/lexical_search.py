@@ -1,26 +1,12 @@
-"""Lexical (keyword) search behind a backend-agnostic interface.
-
-PgFtsLexical uses pg_search BM25 (paradedb.score / ||| match operator).
-A future OpenSearchLexical can implement the same Protocol without touching
-callers (design spec §3.3).
-"""
+"""Lexical (keyword) search with pg_search BM25 (paradedb.score / ||| match operator)."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Collection, Optional, Protocol
+from typing import Collection, Optional
 
 from sqlalchemy import text
 
 from src.core.recency import recency_sql_clause
-
-
-class LexicalSearch(Protocol):
-    async def search(
-        self, project_id: str, query: str, top_k: int,
-        since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
-    ) -> list[tuple[str, float]]:
-        """Return (node_key, score) tuples, best match first."""
-        ...
 
 
 class PgFtsLexical:
