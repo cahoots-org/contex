@@ -1,9 +1,11 @@
 """Persistent semantic subscriptions with materialized bundles + reconcile."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
+import weakref
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -23,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Cap cross-file neighbors attached per matched node, to bound bundle size.
 # ponytail: fixed cap; make it configurable only if real bundles feel starved.
 MAX_LINKS_PER_NODE = 5
+
+# Namespace for per-project reconcile locks; the two-key form never overlaps single-key locks.
+_RECONCILE_LOCK_NS = 0x7375
 
 # How long a subscription outlives its last create or read.
 SUBSCRIPTION_TTL_SECONDS = positive_int_env("SUBSCRIPTION_TTL_SECONDS", 3600)
@@ -95,6 +100,7 @@ class SubscriptionService:
         self.default_top_k = default_top_k
         # ponytail: unbounded, ~3KB per distinct need; persist vectors behind an ANN index if this binds.
         self._need_vecs: dict[str, np.ndarray] = {}
+        self._project_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -202,6 +208,20 @@ class SubscriptionService:
         the list of subscription ids that changed. `changed_keys` names the documents
         just published; `None` reconciles every subscription.
         """
+        # One reconcile per project at a time, across replicas, so a slow one can't
+        # commit a bundle older than one a later reconcile already committed. The
+        # in-process lock keeps same-project waiters from each holding a connection.
+        # ponytail: the lock holder needs a second pooled connection to match; many
+        # distinct projects reconciling at once can exhaust the pool until its timeout.
+        lock = self._project_locks.setdefault(project_id, asyncio.Lock())
+        async with lock, self.db.session() as lock_session:
+            await lock_session.execute(
+                text("SELECT pg_advisory_xact_lock(:ns, hashtext(:project_id))"),
+                {"ns": _RECONCILE_LOCK_NS, "project_id": project_id},
+            )
+            return await self._reconcile_locked(project_id, changed_keys)
+
+    async def _reconcile_locked(self, project_id, changed_keys) -> list[str]:
         affected = None
         if changed_keys is not None:
             try:
