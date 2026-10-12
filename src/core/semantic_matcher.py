@@ -202,6 +202,9 @@ class SemanticDataMatcher:
             except DocumentRejected as e:
                 logger.warning("Rejected data", project_id=project_id, data_key=data_key, error=str(e))
                 errors[index] = str(e)
+            except Exception:
+                logger.exception("Failed to read data", project_id=project_id, data_key=data_key)
+                errors[index] = "could not read the document"
         texts = [plan["texts"][i] for _, plan in plans for i in plan["changed"]]
         embeddings = await encode_async(self.model, texts, batch_size=16) if texts else []
 
