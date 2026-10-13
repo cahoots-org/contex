@@ -11,6 +11,7 @@ from mcp.shared.exceptions import MCPError
 
 from src.core.context_engine import ContextEngine
 from src.core.mcp_adapter import LegacyResourceSubscriptions, build_mcp_server
+from src.core.metrics import mcp_listen_streams
 
 warnings.filterwarnings("ignore", message="resources/(un)?subscribe is removed")
 
@@ -59,6 +60,21 @@ async def test_unsubscribed_client_is_not_pushed(db):
         await bus.publish(ResourceUpdated(uri=uri))
         await asyncio.sleep(0.2)
         assert seen.empty()
+
+
+@pytest.mark.asyncio
+async def test_open_listen_streams_are_gauged(db):
+    server, _ = await _setup(db)
+    before = mcp_listen_streams._value.get()
+    async with Client(server) as client:
+        uri = await _subscription_uri(client)
+        async with client.listen(resource_subscriptions=[uri]):
+            assert mcp_listen_streams._value.get() == before + 1
+    for _ in range(50):
+        if mcp_listen_streams._value.get() == before:
+            break
+        await asyncio.sleep(0.02)
+    assert mcp_listen_streams._value.get() == before
 
 
 @pytest.mark.asyncio

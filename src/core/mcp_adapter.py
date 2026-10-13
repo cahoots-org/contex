@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 import weakref
 from collections import Counter
 from datetime import datetime
@@ -25,6 +26,7 @@ from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
+from src.core.metrics import mcp_listen_streams, record_mcp_tool_call
 from src.core.models import DataPublishEvent
 from src.core.node_parsers import resolve_format
 from src.core.ownership import ensure_project_access
@@ -168,9 +170,22 @@ class LegacyResourceSubscriptions:
 
 
 class _ContexServer(MCPServer):
-    """MCPServer that reports permission and validation failures to the caller."""
+    """MCPServer that reports permission and validation failures to the caller
+    and records tool-call metrics."""
 
     async def call_tool(self, name, arguments, context=None):
+        # Callers choose the name, so only registered tools get their own label.
+        tool = name if self._tool_manager.get_tool(name) else "unknown"
+        start = time.perf_counter()
+        outcome = "error"
+        try:
+            result = await self._call_tool(name, arguments, context)
+            outcome = "ok"
+            return result
+        finally:
+            record_mcp_tool_call(tool, outcome, time.perf_counter() - start)
+
+    async def _call_tool(self, name, arguments, context):
         try:
             return await super().call_tool(name, arguments, context)
         except UnexpectedToolError as exc:
@@ -389,7 +404,8 @@ def build_mcp_server(engine, db_accessor=None):
         try:
             for uri in uris:
                 await _enforce_resource(_get_engine(), uri)
-            return await listen(ctx, params)
+            with mcp_listen_streams.track_inprogress():
+                return await listen(ctx, params)
         finally:
             open_listens[key] -= 1
             if not open_listens[key]:

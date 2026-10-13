@@ -1,6 +1,8 @@
 """Tests for Prometheus metrics"""
 
+import pytest
 from fastapi import APIRouter, FastAPI
+from mcp.server.mcpserver.exceptions import ToolError
 from fastapi.testclient import TestClient
 from starlette.applications import Starlette
 
@@ -11,7 +13,11 @@ from src.core.metrics import (
     increment_active_requests,
     decrement_active_requests,
     get_metrics,
+    mcp_tool_calls_total,
+    mcp_tool_duration_seconds,
 )
+from src.core.context_engine import ContextEngine
+from src.core.mcp_adapter import build_mcp_server
 from src.core.metrics_middleware import MetricsMiddleware
 
 
@@ -97,3 +103,35 @@ def test_endpoint_label_is_the_route_template():
     labels = {s.labels["endpoint"] for s in http_requests_total.collect()[0].samples}
     assert {"/sandbox/projects/{project_id}/data", "/static", "other"} <= labels
     assert not any(word in label for label in labels for word in ("my-proj", "no-such", "wp-login"))
+
+
+def _sample(metric, suffix="_total", **labels):
+    return next(
+        (s.value for s in metric.collect()[0].samples if s.name.endswith(suffix) and s.labels == labels),
+        0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_calls_are_counted_by_tool_and_outcome(db):
+    engine = ContextEngine(db=db, similarity_threshold=0.1, max_matches=10)
+    await engine.semantic_matcher.initialize_index()
+    server, _ = build_mcp_server(engine)
+    before = {
+        "ok": _sample(mcp_tool_calls_total, tool="contex_query", outcome="ok"),
+        "error": _sample(mcp_tool_calls_total, tool="contex_query", outcome="error"),
+        "unknown": _sample(mcp_tool_calls_total, tool="unknown", outcome="error"),
+        "timed": _sample(mcp_tool_duration_seconds, "_count", tool="contex_query"),
+    }
+
+    await server.call_tool("contex_query", {"project_id": "p", "query": "anything"})
+    with pytest.raises(ToolError):
+        await server.call_tool("contex_query", {"project_id": "p"})
+    with pytest.raises(ToolError):
+        await server.call_tool("drop_tables_please", {})
+
+    assert _sample(mcp_tool_calls_total, tool="contex_query", outcome="ok") == before["ok"] + 1
+    assert _sample(mcp_tool_calls_total, tool="contex_query", outcome="error") == before["error"] + 1
+    assert _sample(mcp_tool_calls_total, tool="unknown", outcome="error") == before["unknown"] + 1
+    assert _sample(mcp_tool_duration_seconds, "_count", tool="contex_query") == before["timed"] + 2
+    assert "drop_tables_please" not in get_metrics().decode()
