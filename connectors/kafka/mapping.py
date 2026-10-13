@@ -28,7 +28,10 @@ def _key_text(raw: bytes) -> str:
 def _published_at(timestamp_ms) -> str | None:
     if timestamp_ms is None or timestamp_ms < 0:
         return None
-    return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def message_to_event(cluster: str, msg, unkeyed: str) -> ChangeEvent | None:
@@ -48,7 +51,7 @@ def message_to_event(cluster: str, msg, unkeyed: str) -> ChangeEvent | None:
         return None
     try:
         payload = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         payload = None
     published_at = _published_at(msg.timestamp)
     if isinstance(payload, dict):

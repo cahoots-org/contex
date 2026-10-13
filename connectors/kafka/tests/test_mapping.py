@@ -69,3 +69,14 @@ def test_missing_timestamp_leaves_published_at_unset():
 def test_key_with_control_characters_is_hex_encoded():
     event = message_to_event("main", _msg(key=b"\x00\x00\x00\x07"), "publish")
     assert event.key == "main:orders/00000007"
+
+
+def test_out_of_range_timestamp_leaves_published_at_unset():
+    assert message_to_event("main", _msg(timestamp=1_700_000_000_000_000), "publish").published_at is None
+
+
+def test_deeply_nested_json_is_text():
+    value = b"[" * 200_000
+    event = message_to_event("main", _msg(value=value), "publish")
+    assert event.payload == value.decode()
+    assert event.data_format == "text"
