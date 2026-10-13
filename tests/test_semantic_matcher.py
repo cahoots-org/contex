@@ -319,13 +319,13 @@ class TestSemanticMatcherContentHashDedup:
     @pytest.mark.asyncio
     async def test_republish_drops_nodes_and_symbols_it_no_longer_has(self, matcher):
         await matcher.register_data_batch("projd", [("lib/util.py", "def helper():\n    return compute()\n", "code")])
-        await matcher.register_data_batch("projd", [("lib/util.py", "First note.\n\nSecond note.", "text")])
+        await matcher.register_data_batch("projd", [("lib/util.py", "x" * 1500 + "\n\nSecond note.", "text")])
         await matcher.register_data_batch("projd", [("lib/util.py", "First note.", "text")])
 
         async with matcher.db.session() as session:
             nodes = (await session.execute(select(Embedding.node_key))).scalars().all()
             symbols = (await session.execute(select(Symbol.name))).scalars().all()
-        assert nodes == ["lib/util.py\x1fsentence_0"]
+        assert nodes == ["lib/util.py\x1fparagraph_0"]
         assert symbols == []
 
     @pytest.mark.asyncio

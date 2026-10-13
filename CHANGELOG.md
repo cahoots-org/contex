@@ -27,6 +27,9 @@
     `document` is still the plain key. Data keys can't contain control
     characters.
   - Subscription bundles update in the background after a publish returns.
+  - Text, Markdown and PDF documents split into blocks of about 1,500
+    characters at blank lines, not one node per paragraph or sentence. Node
+    paths change (`sentence_N` is gone); republish to re-chunk.
   - Needs longer than 8,192 characters are rejected, and each API key may hold
     32 open MCP sessions.
 - **Defaults and settings:**

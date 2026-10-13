@@ -291,39 +291,14 @@ class PlainTextNodeParser(BaseNodeParser):
             )
 
         nodes = []
-
-        # Split into paragraphs
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-
-        if len(paragraphs) == 1:
-            # Single paragraph - split into sentences
-            sentences = self._split_sentences(paragraphs[0])
-            for i, sentence in enumerate(sentences):
-                _add(nodes, Node(
-                    path=f"sentence_{i}",
-                    content=sentence,
-                    node_type=NodeType.SENTENCE
-                ))
-        else:
-            # Multiple paragraphs
-            for i, para in enumerate(paragraphs):
-                _add(nodes, Node(
-                    path=f"paragraph_{i}",
-                    content=para,
-                    node_type=NodeType.PARAGRAPH
-                ))
+        for i, chunk in enumerate(_chunk_blocks(text)):
+            _add(nodes, Node(path=f"paragraph_{i}", content=chunk, node_type=NodeType.PARAGRAPH))
 
         return ParseResult(
             nodes=nodes,
             format_name="text",
             success=True
         )
-
-    def _split_sentences(self, text: str) -> List[str]:
-        """Split text into sentences"""
-        # Simple sentence splitting
-        sentences = re.split(r'[.!?]+\s+', text)
-        return [s.strip() for s in sentences if s.strip()]
 
 
 # ============================================================================
@@ -380,9 +355,8 @@ class MarkdownNodeParser(BaseNodeParser):
                 if code:
                     _add(nodes, Node(path=f"code_block_{len(nodes)}", content=code, node_type=NodeType.CODE_BLOCK))
             else:
-                for para in (p.strip() for p in part.split('\n\n')):
-                    if para:
-                        _add(nodes, Node(path=f"paragraph_{len(nodes)}", content=para, node_type=NodeType.PARAGRAPH))
+                for para in _chunk_blocks(part):
+                    _add(nodes, Node(path=f"paragraph_{len(nodes)}", content=para, node_type=NodeType.PARAGRAPH))
 
         return ParseResult(
             nodes=nodes,
@@ -515,24 +489,12 @@ class PDFNodeParser(BaseNodeParser):
             if not text:
                 continue
 
-            # Split page text into paragraphs
-            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-
+            paragraphs = _chunk_blocks(text)
             if len(paragraphs) <= 1:
-                # Single block of text for this page — one section node
-                _add(nodes, Node(
-                    path=f"page_{page_num + 1}",
-                    content=text,
-                    node_type=NodeType.SECTION
-                ))
+                _add(nodes, Node(path=f"page_{page_num + 1}", content=text, node_type=NodeType.SECTION))
             else:
-                # Multiple paragraphs — create individual nodes
                 for i, para in enumerate(paragraphs):
-                    _add(nodes, Node(
-                        path=f"page_{page_num + 1}.paragraph_{i}",
-                        content=para,
-                        node_type=NodeType.PARAGRAPH
-                    ))
+                    _add(nodes, Node(path=f"page_{page_num + 1}.paragraph_{i}", content=para, node_type=NodeType.PARAGRAPH))
 
         if not nodes:
             raise DocumentRejected(f"no text found in the {fmt}")
