@@ -2,8 +2,9 @@
 
 The runner is transport-agnostic: it takes any object with async
 ``publish_batch(items) -> published_count``, ``delete_batch(data_keys) ->
-deleted_count`` and, to prune, ``list_keys() -> keys``. This keeps the batching logic testable without a live server
-(see ContexPublisher for the MCP transport).
+deleted_count`` and, to prune, ``list_keys() -> keys``. This keeps the
+batching logic testable without a live server (see ContexPublisher for the MCP
+transport).
 """
 from __future__ import annotations
 

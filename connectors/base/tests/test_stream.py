@@ -132,8 +132,10 @@ async def test_source_errors_propagate():
         yield (_up("a"), 0)
         raise RuntimeError("broker gone")
 
+    ack = Acks()
     with pytest.raises(RuntimeError, match="broker gone"):
-        await stream(broken(), FakePublisher(), Acks(), flush_interval=60)
+        await stream(broken(), FakePublisher(), ack, flush_interval=60)
+    assert ack.calls == []
 
 
 @pytest.mark.asyncio

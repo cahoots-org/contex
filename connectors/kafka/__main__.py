@@ -58,7 +58,7 @@ async def _main(config_path: str) -> None:
 
     logger.info(
         "starting Kafka connector — cluster=%s topics=%s project=%s",
-        source.cluster, ",".join(source._topics), contex_config.project_id,
+        source.cluster, ",".join(source.topics), contex_config.project_id,
     )
     async with source:
         await run_stream_connector(

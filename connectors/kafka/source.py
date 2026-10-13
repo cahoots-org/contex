@@ -26,8 +26,8 @@ class KafkaSource:
         topics = source.get("topics") or []
         if isinstance(topics, str):
             topics = topics.split(",")
-        self._topics = [t.strip() for t in topics if t.strip()]
-        if not self._topics:
+        self.topics = [t.strip() for t in topics if t.strip()]
+        if not self.topics:
             raise ValueError("source.topics is required")
         self._group_id = source.get("group_id") or f"contex-{self.cluster}"
         self._unkeyed = source.get("unkeyed") or "publish"
@@ -47,7 +47,7 @@ class KafkaSource:
     async def __aenter__(self) -> "KafkaSource":
         ssl_context = create_ssl_context() if self._security_protocol.endswith("SSL") else None
         self._consumer = AIOKafkaConsumer(
-            *self._topics,
+            *self.topics,
             bootstrap_servers=self._bootstrap,
             group_id=self._group_id,
             enable_auto_commit=False,

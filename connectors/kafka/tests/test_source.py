@@ -27,7 +27,7 @@ def test_topics_are_required():
 
 
 def test_topics_accept_a_comma_separated_string():
-    assert KafkaSource(_config(topics="orders, customers"))._topics == ["orders", "customers"]
+    assert KafkaSource(_config(topics="orders, customers")).topics == ["orders", "customers"]
 
 
 def test_group_id_defaults_from_cluster():
