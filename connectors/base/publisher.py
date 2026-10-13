@@ -40,6 +40,13 @@ def _backoff(error_text: str, attempt: int) -> float:
     return min(wait, _BACKOFF_CAP)
 
 
+def _single_error(exc: Exception) -> Exception:
+    """The one error inside the transport's nested task-group ExceptionGroups."""
+    while isinstance(exc, ExceptionGroup) and len(exc.exceptions) == 1:
+        exc = exc.exceptions[0]
+    return exc
+
+
 class ContexPublisher:
     """An async context manager that publishes item batches over MCP."""
 
@@ -113,12 +120,11 @@ class ContexPublisher:
         while True:
             try:
                 result = await self._call_once(tool, arguments)
-            except MCPError as exc:
-                if exc.code in _FATAL_CODES:
-                    raise RuntimeError(f"{tool} failed: {exc.message}") from exc
-                error = str(exc)
             except Exception as exc:
-                error = repr(exc)
+                cause = _single_error(exc)
+                if isinstance(cause, MCPError) and cause.code in _FATAL_CODES:
+                    raise RuntimeError(f"{tool} failed: {cause.message}") from exc
+                error = str(cause) if isinstance(cause, MCPError) else repr(cause)
             else:
                 text = result.content[0].text if result.content else ""
                 if not result.is_error:  # mcp>=2 attribute; "isError" is only the JSON alias

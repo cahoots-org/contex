@@ -130,13 +130,15 @@ def test_streaming_publisher_retries_past_max_retries(monkeypatch):
     assert max(slept) == 60.0
 
 
-def _http_publisher(monkeypatch, status: int, **kwargs):
-    """A publisher whose HTTP clients answer every request with ``status``."""
+def _http_publisher(monkeypatch, status: int, body: dict | None = None, **kwargs):
+    """A publisher whose HTTP clients answer every request with ``status`` and ``body``."""
     clients = []
 
     def client(headers=None):
-        made = httpx2.AsyncClient(headers=headers,
-                                  transport=httpx2.MockTransport(lambda request: httpx2.Response(status)))
+        made = httpx2.AsyncClient(
+            headers=headers,
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(status, json=body)),
+        )
         clients.append(made)
         return made
 
@@ -150,3 +152,12 @@ def test_each_attempt_closes_its_http_client(monkeypatch):
     with pytest.raises(Exception):
         asyncio.run(pub._call_once("contex_publish_batch", {"items": []}))
     assert [c.is_closed for c in clients] == [True]
+
+
+def test_protocol_error_from_the_server_is_fatal(monkeypatch):
+    _no_sleep(monkeypatch)
+    rejected = {"jsonrpc": "2.0", "id": None, "error": {"code": INVALID_PARAMS, "message": "bad items"}}
+    pub, clients = _http_publisher(monkeypatch, 400, rejected)
+    with pytest.raises(RuntimeError, match="contex_publish_batch failed: bad items"):
+        asyncio.run(pub.publish_batch([{}]))
+    assert len(clients) == 1
