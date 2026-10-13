@@ -158,7 +158,7 @@ jobs:
 
     strategy:
       matrix:
-        connector: [s3, postgres, github, atlassian]
+        connector: [s3, postgres, github, atlassian, kafka]
 
     steps:
     - name: Checkout code

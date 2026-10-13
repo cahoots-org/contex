@@ -1,0 +1,17 @@
+contex:
+  url: http://localhost:8001/mcp
+  project_id: my-project
+  api_key: ${CONTEX_API_KEY}
+source:
+  cluster: main                  # required; names this cluster in data keys
+  bootstrap_servers: localhost:9092
+  topics: [orders, customers]
+  group_id: contex-main
+  auto_offset_reset: earliest    # earliest | latest
+  unkeyed: publish               # publish | skip
+  security_protocol: PLAINTEXT   # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+  sasl_mechanism: PLAIN          # PLAIN | SCRAM-SHA-256 | SCRAM-SHA-512
+  sasl_username: ${KAFKA_USER}
+  sasl_password: ${KAFKA_PASSWORD}
+flush_interval: 1
+batch_size: 500

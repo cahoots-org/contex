@@ -10,9 +10,11 @@ source (read-only)  ->  connector  ->  MCP: contex_publish_batch  ->  Contex
                         reads -> ChangeEvents   (with an API key)        embeds + stores
 ```
 
-v1 connectors are **bulk snapshots, not live sync**: a run reads the source and
-upserts every item by a stable key, so re-running (e.g. on a cron) is the
-refresh story.
+Snapshot connectors (Postgres, S3, GitHub, Atlassian) read the source and
+upsert every item by a stable key, so re-running (e.g. on a cron) is the
+refresh story. Streaming connectors (Kafka) run continuously, publishing each
+change within about `flush_interval` seconds and committing their position in
+the source only after Contex accepts it.
 
 To run a connector image against Contex in another container, put both on one
 Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
@@ -26,6 +28,10 @@ Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
 - **`run` / `run_connector`** — batch a stream of `ChangeEvent`s and publish each
   batch, reporting progress. A batch holds up to `batch_size` items (default
   500); the server rejects batches over 1000 items by default, so keep it at or below that.
+- **`stream` / `run_stream_connector`** — the streaming counterpart of `run`:
+  flush a batch on size or after `flush_interval` seconds, then call the
+  connector's `ack` with the positions the batch consumed. There is no prune.
+  The publisher retries a dropped connection without limit.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
   `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with an API key when
   one is configured.
