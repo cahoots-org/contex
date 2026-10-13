@@ -15,9 +15,11 @@ record, and a null value deletes it.
 | key, value | upsert of `{cluster}:{topic}/{key}` |
 | key, null value (tombstone) | delete of `{cluster}:{topic}/{key}` |
 | no key | upsert of `{cluster}:{topic}/{partition}/{offset}` |
+| no key, null value | dropped (committed, nothing published) |
 
-A value that parses as JSON is published as `data_format=json`. Anything else
-is published as UTF-8 text. Keys are decoded as UTF-8; a key that isn't valid
+A value that parses as a JSON object is published as `data_format=json`.
+Everything else, including JSON arrays, numbers, strings and `null`, is
+published as UTF-8 text. Keys are decoded as UTF-8; a key that isn't valid
 UTF-8 is hex-encoded. `published_at` is the message timestamp.
 
 `source.cluster` is required. Keys must name their source instance, and a
