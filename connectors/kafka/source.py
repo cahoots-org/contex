@@ -58,7 +58,12 @@ class KafkaSource:
             sasl_plain_password=self._sasl_password,
             ssl_context=ssl_context,
         )
-        await self._consumer.start()
+        try:
+            await self._consumer.start()
+        except BaseException:
+            await self._consumer.stop()
+            self._consumer = None
+            raise
         return self
 
     async def __aexit__(self, *exc_info) -> None:

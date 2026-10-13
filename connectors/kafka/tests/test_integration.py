@@ -59,7 +59,9 @@ async def _produce(topic, messages):
         await producer.stop()
 
 
-async def _stream_until(config, recorder, done, timeout=30.0):
+async def _stream_until(config, recorder, done, expected_commit, timeout=30.0):
+    """Stream until ``done()``, then wait for the group's committed offset to reach ``expected_commit``."""
+    partition = TopicPartition(config["source"]["topics"][0], 0)
     async with KafkaSource(config) as source:
         task = asyncio.create_task(
             stream(source.events(), recorder, source.ack, flush_interval=0.1)
@@ -68,12 +70,12 @@ async def _stream_until(config, recorder, done, timeout=30.0):
             async with asyncio.timeout(timeout):
                 while not done():
                     await asyncio.sleep(0.1)
-            await asyncio.sleep(0.3)  # let the timer flush ack what was published
+                while await source._consumer.committed(partition) != expected_commit:
+                    await asyncio.sleep(0.1)
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        committed = await source._consumer.committed(TopicPartition(config["source"]["topics"][0], 0))
-    return committed
+        return await source._consumer.committed(partition)
 
 
 @pytest.mark.asyncio
@@ -83,7 +85,7 @@ async def test_streams_upserts_deletes_and_commits():
     config = {"source": {"cluster": "t", "bootstrap_servers": BOOTSTRAP, "topics": [topic],
                          "group_id": f"g-{topic}"}}
     recorder = Recorder()
-    committed = await _stream_until(config, recorder, lambda: len(recorder.published) == 3)
+    committed = await _stream_until(config, recorder, lambda: len(recorder.published) == 3, 4)
     assert recorder.published == [f"t:{topic}/a", f"t:{topic}/b", f"t:{topic}/0/3"]
     assert recorder.deleted == [f"t:{topic}/a"]
     assert committed == 4
@@ -96,8 +98,32 @@ async def test_restart_resumes_after_the_last_commit():
     config = {"source": {"cluster": "t", "bootstrap_servers": BOOTSTRAP, "topics": [topic],
                          "group_id": f"g-{topic}"}}
     first = Recorder()
-    await _stream_until(config, first, lambda: first.published)
+    await _stream_until(config, first, lambda: first.published, 1)
     await _produce(topic, [(b"b", b"two")])
     second = Recorder()
-    await _stream_until(config, second, lambda: second.published)
+    await _stream_until(config, second, lambda: second.published, 2)
     assert second.published == [f"t:{topic}/b"]
+
+
+class FailingRecorder(Recorder):
+    async def publish_batch(self, items):
+        raise RuntimeError("contex is down")
+
+
+@pytest.mark.asyncio
+async def test_unaccepted_messages_are_redelivered_after_restart():
+    topic = await _topic()
+    await _produce(topic, [(b"a", b"one")])
+    config = {"source": {"cluster": "t", "bootstrap_servers": BOOTSTRAP, "topics": [topic],
+                         "group_id": f"g-{topic}"}}
+    async with KafkaSource(config) as source:
+        task = asyncio.create_task(
+            stream(source.events(), FailingRecorder(), source.ack, flush_interval=0.1)
+        )
+        async with asyncio.timeout(30):
+            (outcome,) = await asyncio.gather(task, return_exceptions=True)
+        assert isinstance(outcome, RuntimeError)
+        assert await source._consumer.committed(TopicPartition(topic, 0)) is None
+    redelivered = Recorder()
+    await _stream_until(config, redelivered, lambda: redelivered.published, 1)
+    assert redelivered.published == [f"t:{topic}/a"]
