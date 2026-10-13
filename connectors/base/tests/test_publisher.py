@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from mcp.types import CallToolResult, TextContent
+from mcp.shared.exceptions import MCPError
+from mcp.types import CONNECTION_CLOSED, INVALID_PARAMS, CallToolResult, TextContent
 
 from connectors.base.publisher import ContexPublisher
 
@@ -80,7 +81,8 @@ def test_delete_batch_calls_contex_delete_and_counts_deleted():
     pub = _publisher(result)
     assert asyncio.run(pub.delete_batch(["a", "b", "c"])) == 2
     pub._session.call_tool.assert_awaited_once_with(
-        "contex_delete", {"project_id": "proj", "data_keys": ["a", "b", "c"]}
+        "contex_delete", {"project_id": "proj", "data_keys": ["a", "b", "c"]},
+        read_timeout_seconds=300.0,
     )
 
 
@@ -104,3 +106,73 @@ def test_list_keys_follows_pages():
     assert asyncio.run(pub.list_keys()) == ["a", "b", "c"]
     second = pub._session.call_tool.call_args_list[1].args
     assert second == ("contex_list_keys", {"project_id": "proj", "origin": "o", "after": "b"})
+
+
+def _no_sleep(monkeypatch) -> list[float]:
+    slept: list[float] = []
+
+    async def fake_sleep(s):
+        slept.append(s)
+
+    monkeypatch.setattr("connectors.base.publisher.asyncio.sleep", fake_sleep)
+    return slept
+
+
+def test_transport_error_reopens_and_retries(monkeypatch):
+    _no_sleep(monkeypatch)
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"))
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=[
+        MCPError(CONNECTION_CLOSED, "Connection closed"),
+        _ok(2),
+    ]))
+    pub._reopen = AsyncMock()
+    assert asyncio.run(pub.publish_batch([{}, {}])) == 2
+    pub._reopen.assert_awaited_once()
+    first, second = pub._session.call_tool.call_args_list
+    assert first == second
+
+
+def test_non_mcp_exception_is_treated_as_transport(monkeypatch):
+    _no_sleep(monkeypatch)
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"))
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=[OSError("reset"), _ok(1)]))
+    pub._reopen = AsyncMock()
+    assert asyncio.run(pub.publish_batch([{}])) == 1
+    pub._reopen.assert_awaited_once()
+
+
+def test_reopen_failure_counts_as_an_attempt(monkeypatch):
+    _no_sleep(monkeypatch)
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"))
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=[OSError("down"), _ok(1)]))
+    pub._reopen = AsyncMock(side_effect=[OSError("still down"), None])
+    assert asyncio.run(pub.publish_batch([{}])) == 1
+    assert pub._reopen.await_count == 2
+
+
+def test_protocol_errors_are_fatal_without_reopen():
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"))
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=MCPError(INVALID_PARAMS, "bad items")))
+    pub._reopen = AsyncMock()
+    with pytest.raises(RuntimeError, match="contex_publish_batch failed: bad items"):
+        asyncio.run(pub.publish_batch([{}]))
+    pub._reopen.assert_not_awaited()
+
+
+def test_snapshot_publisher_gives_up_after_max_retries(monkeypatch):
+    _no_sleep(monkeypatch)
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"))
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=OSError("down")))
+    pub._reopen = AsyncMock()
+    with pytest.raises(RuntimeError, match="contex_publish_batch failed"):
+        asyncio.run(pub.publish_batch([{}]))
+    assert pub._session.call_tool.await_count == 5
+
+
+def test_streaming_publisher_retries_past_max_retries(monkeypatch):
+    slept = _no_sleep(monkeypatch)
+    pub = ContexPublisher(SimpleNamespace(project_id="proj"), retry_forever=True)
+    pub._session = SimpleNamespace(call_tool=AsyncMock(side_effect=[OSError("down")] * 8 + [_ok(1)]))
+    pub._reopen = AsyncMock()
+    assert asyncio.run(pub.publish_batch([{}])) == 1
+    assert max(slept) == 60.0
