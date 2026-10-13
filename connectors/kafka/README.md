@@ -142,9 +142,8 @@ key, so a replay writes the same state.
 
 ## Scaling
 
-Run more processes with the same `group_id`. Kafka splits the topic's
-partitions between them. Messages with one key stay in one partition, so a
-key's upserts and its tombstone are applied in order.
+Run one process per `group_id`. Within that process, a key's upserts and its
+tombstone are applied in the order Kafka holds them.
 
 ## Limitations
 
@@ -155,5 +154,11 @@ key's upserts and its tombstone are applied in order.
 - **No prune.** Removing a topic from `source.topics` leaves its documents
   behind. List them with `contex_list_keys` (origin `kafka:{cluster}`) and
   remove them with `contex_delete`.
+- **One process per consumer group.** With several processes in one group, a
+  rebalance can move a partition while a publish to it is still retrying (a
+  slow embedding, or Contex down for longer than Kafka's five-minute poll
+  limit). The old owner may then write an older value after the new owner
+  has written a newer one, and the document stays stale until the key
+  changes again.
 - **Not exactly-once.** A replay after a crash may re-embed items that were
   already published.
