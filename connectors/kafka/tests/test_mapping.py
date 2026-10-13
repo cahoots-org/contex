@@ -64,3 +64,8 @@ def test_non_utf8_key_is_hex_encoded():
 
 def test_missing_timestamp_leaves_published_at_unset():
     assert message_to_event("main", _msg(timestamp=-1), "publish").published_at is None
+
+
+def test_key_with_control_characters_is_hex_encoded():
+    event = message_to_event("main", _msg(key=b"\x00\x00\x00\x07"), "publish")
+    assert event.key == "main:orders/00000007"

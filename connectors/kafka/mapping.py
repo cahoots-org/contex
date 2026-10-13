@@ -15,10 +15,14 @@ log = logging.getLogger(__name__)
 
 
 def _key_text(raw: bytes) -> str:
+    """The key as text, or as hex when it isn't UTF-8 or holds control characters."""
     try:
-        return raw.decode("utf-8")
+        text = raw.decode("utf-8")
     except UnicodeDecodeError:
         return raw.hex()
+    if any(ch < " " for ch in text):
+        return raw.hex()
+    return text
 
 
 def _published_at(timestamp_ms) -> str | None:

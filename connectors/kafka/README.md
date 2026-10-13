@@ -19,8 +19,9 @@ record, and a null value deletes it.
 
 A value that parses as a JSON object is published as `data_format=json`.
 Everything else, including JSON arrays, numbers, strings and `null`, is
-published as UTF-8 text. Keys are decoded as UTF-8; a key that isn't valid
-UTF-8 is hex-encoded. `published_at` is the message timestamp.
+published as UTF-8 text. Keys are decoded as UTF-8. A key that isn't valid
+UTF-8, or that contains control characters (an integer-serialized key, for
+example), is hex-encoded. `published_at` is the message timestamp.
 
 `source.cluster` is required. Keys must name their source instance, and a
 bootstrap address is not a stable identity. Two clusters with a same-named
