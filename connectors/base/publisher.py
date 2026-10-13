@@ -1,9 +1,9 @@
 """The MCP transport: publish batches to Contex with an API key.
 
-ContexPublisher opens one MCP session for the life of a run, reopening it when
-the connection drops, and pushes each batch through the ``contex_publish_batch``
-or ``contex_delete`` tool. It is the only connector module that touches the MCP
-SDK; the runner and readers stay transport-free.
+ContexPublisher pushes each batch through the ``contex_publish_batch`` or
+``contex_delete`` tool, opening one MCP session per call attempt so a dropped
+connection is simply retried. It is the only connector module that touches the
+MCP SDK; the runner and readers stay transport-free.
 """
 from __future__ import annotations
 
@@ -11,13 +11,12 @@ import asyncio
 import json
 import logging
 import re
-from contextlib import AsyncExitStack
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.shared.exceptions import MCPError
-from mcp.types import INVALID_PARAMS, METHOD_NOT_FOUND
+from mcp.types import INVALID_PARAMS, METHOD_NOT_FOUND, CallToolResult
 
 from .config import ContexConfig
 
@@ -48,46 +47,12 @@ class ContexPublisher:
         self._config = config
         self._origin = origin
         self._retry_forever = retry_forever
-        self._stack: AsyncExitStack | None = None
-        self._session: ClientSession | None = None
 
     async def __aenter__(self) -> "ContexPublisher":
-        await self._open()
         return self
 
     async def __aexit__(self, *exc_info) -> None:
-        await self._close()
-
-    async def _open(self) -> None:
-        self._stack = AsyncExitStack()
-        http_client = None
-        if self._config.api_key:
-            http_client = create_mcp_http_client(
-                headers={"Authorization": f"Bearer {self._config.api_key}"}
-            )
-        streams = await self._stack.enter_async_context(
-            streamable_http_client(self._config.url, http_client=http_client)
-        )
-        self._session = await self._stack.enter_async_context(
-            ClientSession(streams[0], streams[1])
-        )
-        await self._session.initialize()
-
-    async def _close(self) -> None:
-        if self._stack is not None:
-            await self._stack.aclose()
-        self._stack = None
-        self._session = None
-
-    async def _reopen(self) -> None:
-        """Replace a broken session with a fresh one."""
-        try:
-            await self._close()
-        except Exception:
-            log.debug("closing a broken MCP session failed", exc_info=True)
-            self._stack = None
-            self._session = None
-        await self._open()
+        return None
 
     async def publish_batch(self, items: list[dict]) -> int:
         """Publish one batch; return how many items the server accepted."""
@@ -118,35 +83,43 @@ class ContexPublisher:
         result = await self._call("contex_delete", {"data_keys": data_keys})
         return len(result.get("deleted", []))
 
+    async def _call_once(self, tool: str, arguments: dict) -> CallToolResult:
+        """Open a session, make one tool call, and close the session."""
+        http_client = None
+        if self._config.api_key:
+            http_client = create_mcp_http_client(
+                headers={"Authorization": f"Bearer {self._config.api_key}"}
+            )
+        async with (
+            streamable_http_client(self._config.url, http_client=http_client) as streams,
+            ClientSession(streams[0], streams[1]) as session,
+        ):
+            await session.initialize()
+            return await session.call_tool(
+                tool,
+                {"project_id": self._config.project_id, **arguments},
+                read_timeout_seconds=_CALL_TIMEOUT,
+            )
+
     async def _call(self, tool: str, arguments: dict) -> dict:
         """Call a project tool and return its JSON result.
 
         Retries with exponential backoff when the server's limiter rejects the
         call (``rate_limit_exceeded``), honoring its ``retry_after`` hint, and
-        when the connection fails, reopening the session first. A streaming
+        when the connection fails. A streaming
         publisher (``retry_forever``) never gives up on those; any other tool
         error is fatal and raised immediately.
         """
-        if self._session is None:
-            raise RuntimeError("ContexPublisher must be used as an async context manager")
         attempt = 0
-        broken = False
         while True:
             try:
-                if broken:
-                    await self._reopen()
-                    broken = False
-                result = await self._session.call_tool(
-                    tool,
-                    {"project_id": self._config.project_id, **arguments},
-                    read_timeout_seconds=_CALL_TIMEOUT,
-                )
+                result = await self._call_once(tool, arguments)
             except MCPError as exc:
                 if exc.code in _FATAL_CODES:
                     raise RuntimeError(f"{tool} failed: {exc.message}") from exc
-                error, broken = str(exc), True
+                error = str(exc)
             except Exception as exc:
-                error, broken = repr(exc), True
+                error = repr(exc)
             else:
                 text = result.content[0].text if result.content else ""
                 if not result.is_error:  # mcp>=2 attribute; "isError" is only the JSON alias
