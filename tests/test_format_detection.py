@@ -52,7 +52,7 @@ def test_unhinted_list_is_json():
 def test_key_value_prose_is_not_sniffed_as_yaml():
     notes = "Attendees: ana, bo\n\nDecision: ship it\n\nRisk: none"
     result = NodeConverter().parse(notes, "text")
-    assert (result.format_name, len(result.nodes)) == ("text", 3)
+    assert (result.format_name, len(result.nodes)) == ("text", 1)
 
 
 def test_no_extension_no_signal():

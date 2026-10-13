@@ -5,7 +5,7 @@ metrics (the retrieval win is driven by structure, not by any particular
 embedding model, so we measure the structure directly):
 
   1. Granularity — the code parser emits one definition per retrievable chunk,
-     where the baseline (PlainTextNodeParser, split on blank lines) fragments a
+     where the baseline (a plain split on blank lines) fragments a
      single function across chunks and/or merges several into one, so those
      definitions can't be retrieved as coherent units.
 
@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.node import NodeType
-from src.core.node_parsers import CodeNodeParser, PlainTextNodeParser
+from src.core.node_parsers import CodeNodeParser
 
 # A small multi-file corpus with realistic spacing: PEP8 blank lines between
 # top-level defs AND blank lines *inside* function bodies — exactly what makes
@@ -122,9 +122,8 @@ def measure_baseline():
     isolated = fragments = merged = 0
 
     for src in CORPUS.values():
-        res = PlainTextNodeParser().parse(src)
-        for node in res.nodes:
-            headers = _HEADER_RE.findall(str(node.content))
+        for block in (b for b in src.split("\n\n") if b.strip()):
+            headers = _HEADER_RE.findall(block)
             if len(headers) == 1:
                 isolated += 1
             elif len(headers) == 0:
