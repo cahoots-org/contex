@@ -85,12 +85,11 @@ class ContexPublisher:
 
     async def _call_once(self, tool: str, arguments: dict) -> CallToolResult:
         """Open a session, make one tool call, and close the session."""
-        http_client = None
+        headers = None
         if self._config.api_key:
-            http_client = create_mcp_http_client(
-                headers={"Authorization": f"Bearer {self._config.api_key}"}
-            )
+            headers = {"Authorization": f"Bearer {self._config.api_key}"}
         async with (
+            create_mcp_http_client(headers=headers) as http_client,
             streamable_http_client(self._config.url, http_client=http_client) as streams,
             ClientSession(streams[0], streams[1]) as session,
         ):

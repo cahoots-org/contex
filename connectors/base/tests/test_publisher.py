@@ -5,10 +5,12 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx2
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp.types import CONNECTION_CLOSED, INVALID_PARAMS, CallToolResult, TextContent
 
+from connectors.base.config import ContexConfig
 from connectors.base.publisher import ContexPublisher
 
 
@@ -126,3 +128,25 @@ def test_streaming_publisher_retries_past_max_retries(monkeypatch):
     pub = _publisher(*[OSError("down")] * 8, _ok(1), retry_forever=True)
     assert asyncio.run(pub.publish_batch([{}])) == 1
     assert max(slept) == 60.0
+
+
+def _http_publisher(monkeypatch, status: int, **kwargs):
+    """A publisher whose HTTP clients answer every request with ``status``."""
+    clients = []
+
+    def client(headers=None):
+        made = httpx2.AsyncClient(headers=headers,
+                                  transport=httpx2.MockTransport(lambda request: httpx2.Response(status)))
+        clients.append(made)
+        return made
+
+    monkeypatch.setattr("connectors.base.publisher.create_mcp_http_client", client)
+    config = ContexConfig(url="http://contex.test/mcp", project_id="proj", api_key="k")
+    return ContexPublisher(config, **kwargs), clients
+
+
+def test_each_attempt_closes_its_http_client(monkeypatch):
+    pub, clients = _http_publisher(monkeypatch, 503)
+    with pytest.raises(Exception):
+        asyncio.run(pub._call_once("contex_publish_batch", {"items": []}))
+    assert [c.is_closed for c in clients] == [True]
