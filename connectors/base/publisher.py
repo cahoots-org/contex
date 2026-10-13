@@ -52,7 +52,7 @@ class ContexPublisher:
         return self
 
     async def __aexit__(self, *exc_info) -> None:
-        return None
+        pass
 
     async def publish_batch(self, items: list[dict]) -> int:
         """Publish one batch; return how many items the server accepted."""
@@ -106,9 +106,9 @@ class ContexPublisher:
 
         Retries with exponential backoff when the server's limiter rejects the
         call (``rate_limit_exceeded``), honoring its ``retry_after`` hint, and
-        when the connection fails. A streaming
-        publisher (``retry_forever``) never gives up on those; any other tool
-        error is fatal and raised immediately.
+        when the connection fails. A streaming publisher (``retry_forever``)
+        never gives up on those; any other tool error is fatal and raised
+        immediately.
         """
         attempt = 0
         while True:
