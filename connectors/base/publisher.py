@@ -28,6 +28,7 @@ _BACKOFF_CAP = 60.0  # seconds
 _CALL_TIMEOUT = 300.0
 # Protocol errors a retry can't fix; every other raised error is a transport failure.
 _FATAL_CODES = (INVALID_PARAMS, METHOD_NOT_FOUND)
+_AUTH_REJECTED = (401, 403)
 _RETRY_AFTER = re.compile(r"retry_after=(\d+(?:\.\d+)?)")
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class ContexPublisher:
         self._config = config
         self._origin = origin
         self._retry_forever = retry_forever
+        self._auth_rejected: int | None = None
 
     async def __aenter__(self) -> "ContexPublisher":
         return self
@@ -92,20 +94,27 @@ class ContexPublisher:
 
     async def _call_once(self, tool: str, arguments: dict) -> CallToolResult:
         """Open a session, make one tool call, and close the session."""
+        self._auth_rejected = None
         headers = None
         if self._config.api_key:
             headers = {"Authorization": f"Bearer {self._config.api_key}"}
-        async with (
-            create_mcp_http_client(headers=headers) as http_client,
-            streamable_http_client(self._config.url, http_client=http_client) as streams,
-            ClientSession(streams[0], streams[1]) as session,
-        ):
-            await session.initialize()
-            return await session.call_tool(
-                tool,
-                {"project_id": self._config.project_id, **arguments},
-                read_timeout_seconds=_CALL_TIMEOUT,
-            )
+        async with create_mcp_http_client(headers=headers) as http_client:
+            http_client.event_hooks = {"response": [self._note_auth_rejection]}
+            async with (
+                streamable_http_client(self._config.url, http_client=http_client) as streams,
+                ClientSession(streams[0], streams[1]) as session,
+            ):
+                await session.initialize()
+                return await session.call_tool(
+                    tool,
+                    {"project_id": self._config.project_id, **arguments},
+                    read_timeout_seconds=_CALL_TIMEOUT,
+                )
+
+    async def _note_auth_rejection(self, response) -> None:
+        """Remember a 401/403, which the MCP client reports only as a generic error."""
+        if response.status_code in _AUTH_REJECTED:
+            self._auth_rejected = response.status_code
 
     async def _call(self, tool: str, arguments: dict) -> dict:
         """Call a project tool and return its JSON result.
@@ -113,14 +122,19 @@ class ContexPublisher:
         Retries with exponential backoff when the server's limiter rejects the
         call (``rate_limit_exceeded``), honoring its ``retry_after`` hint, and
         when the connection fails. A streaming publisher (``retry_forever``)
-        never gives up on those; any other tool error is fatal and raised
-        immediately.
+        never gives up on those; a rejected API key or any other tool error is
+        fatal and raised immediately.
         """
         attempt = 0
         while True:
             try:
                 result = await self._call_once(tool, arguments)
             except Exception as exc:
+                if self._auth_rejected is not None:
+                    raise RuntimeError(
+                        f"{tool} failed: Contex rejected the API key (HTTP {self._auth_rejected}); "
+                        "check contex.api_key"
+                    ) from exc
                 cause = _single_error(exc)
                 if isinstance(cause, MCPError) and cause.code in _FATAL_CODES:
                     raise RuntimeError(f"{tool} failed: {cause.message}") from exc

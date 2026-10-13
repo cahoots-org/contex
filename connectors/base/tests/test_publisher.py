@@ -161,3 +161,21 @@ def test_protocol_error_from_the_server_is_fatal(monkeypatch):
     with pytest.raises(RuntimeError, match="contex_publish_batch failed: bad items"):
         asyncio.run(pub.publish_batch([{}]))
     assert len(clients) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_rejected_api_key_is_fatal(monkeypatch, status):
+    slept = _no_sleep(monkeypatch)
+    pub, clients = _http_publisher(monkeypatch, status, {"error": "invalid_token"})
+    with pytest.raises(RuntimeError, match=f"rejected the API key \\(HTTP {status}\\)"):
+        asyncio.run(pub.publish_batch([{}]))
+    assert len(clients) == 1
+    assert slept == []
+
+
+def test_server_unavailable_is_retried(monkeypatch):
+    _no_sleep(monkeypatch)
+    pub, clients = _http_publisher(monkeypatch, 503)
+    with pytest.raises(RuntimeError, match="contex_publish_batch failed"):
+        asyncio.run(pub.publish_batch([{}]))
+    assert len(clients) == 5

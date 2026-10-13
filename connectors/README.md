@@ -31,7 +31,8 @@ Docker network (`--network`) and add the host in `CONTEX_URL` to the server's
 - **`stream` / `run_stream_connector`** — the streaming counterpart of `run`:
   flush a batch on size or after `flush_interval` seconds, then call the
   connector's `ack` with the positions the batch consumed. There is no prune.
-  The publisher retries a dropped connection without limit.
+  The publisher retries a dropped connection without limit and stops on a
+  rejected API key.
 - **`ContexPublisher`** — the MCP transport; publishes batches through the
   `contex_publish_batch` tool and deletes through `contex_delete`, authenticating with an API key when
   one is configured.

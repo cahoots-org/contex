@@ -139,6 +139,8 @@ key, so a replay writes the same state.
 - Every publish attempt opens a fresh MCP session. If Contex is unreachable,
   the connector retries without limit, with backoff capped at 60 seconds, and
   resumes where it stopped. It does not exit.
+- If Contex rejects the API key (HTTP 401 or 403), the connector exits with an
+  error that says so, instead of retrying.
 
 ## Scaling
 
