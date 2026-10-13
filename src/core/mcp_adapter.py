@@ -26,7 +26,7 @@ from src.core.context_engine import ContextEngine
 from src.core.identity import resolve_identity
 from src.core.limits import MAX_BATCH_SIZE, check_batch_size
 from src.core.mcp_bridge import subscription_id_for
-from src.core.metrics import record_mcp_tool_call
+from src.core.metrics import mcp_listen_streams, record_mcp_tool_call
 from src.core.models import DataPublishEvent
 from src.core.node_parsers import resolve_format
 from src.core.ownership import ensure_project_access
@@ -404,7 +404,8 @@ def build_mcp_server(engine, db_accessor=None):
         try:
             for uri in uris:
                 await _enforce_resource(_get_engine(), uri)
-            return await listen(ctx, params)
+            with mcp_listen_streams.track_inprogress():
+                return await listen(ctx, params)
         finally:
             open_listens[key] -= 1
             if not open_listens[key]:

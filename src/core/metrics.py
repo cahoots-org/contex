@@ -51,6 +51,18 @@ mcp_tool_duration_seconds = Histogram(
     registry=registry,
 )
 
+mcp_listen_streams = Gauge(
+    'contex_mcp_listen_streams',
+    'Open MCP subscriptions/listen streams',
+    registry=registry,
+)
+
+mcp_resource_updates_total = Counter(
+    'contex_mcp_resource_updates_total',
+    'resources/updated notifications published to MCP subscribers',
+    registry=registry,
+)
+
 
 def get_metrics() -> bytes:
     """Return current metrics in Prometheus exposition format."""

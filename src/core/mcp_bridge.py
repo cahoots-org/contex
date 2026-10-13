@@ -7,6 +7,7 @@ from typing import Awaitable, Callable
 
 from mcp.server.subscriptions import ResourceUpdated
 
+from src.core.metrics import mcp_resource_updates_total
 from src.core.notifier import RESYNC, Notifier
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ async def run_bridge(
                 ids = await subscription_ids() if item == RESYNC else [item]
                 for subscription_id in ids:
                     await bus.publish(ResourceUpdated(uri=resource_uri_for(subscription_id)))
+                    mcp_resource_updates_total.inc()
             except Exception:
                 logger.exception("MCP bridge failed to push an update; continuing")
     finally:

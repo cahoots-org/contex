@@ -6,6 +6,7 @@ from mcp.server.subscriptions import InMemorySubscriptionBus, ResourceUpdated
 from sqlalchemy import text
 
 from src.core.mcp_bridge import resource_uri_for, run_bridge
+from src.core.metrics import mcp_resource_updates_total
 from src.core.notifier import SUBSCRIPTION_UPDATED
 
 
@@ -55,11 +56,13 @@ async def test_bridge_pushes_every_subscription_on_resync(notifier):
     async def ids():
         return ["sub_a", "sub_b"]
 
+    pushed = mcp_resource_updates_total._value.get()
     task = asyncio.create_task(run_bridge(notifier, bus, ids))
     try:
         await asyncio.sleep(0.05)
         notifier._broadcast_resync()
         await _wait_for_uris(seen, {"contex://subscriptions/sub_a", "contex://subscriptions/sub_b"})
+        assert mcp_resource_updates_total._value.get() == pushed + 2
     finally:
         task.cancel()
 
