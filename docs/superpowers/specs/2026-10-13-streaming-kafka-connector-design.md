@@ -122,7 +122,8 @@ is the record and a null value deletes it:
   decodes as UTF-8 `text`. A value that isn't valid UTF-8 is skipped with a
   warning and still acked.
 - `published_at` is the message timestamp.
-- Message keys are decoded as UTF-8; a non-UTF-8 key is hex-encoded.
+- Message keys are decoded as UTF-8. A key that isn't valid UTF-8, or that contains
+  control characters (integer-serialized keys do), is hex-encoded.
 - `unkeyed: publish | skip`, default `publish`. Append-only topics (logs,
   clickstreams) become one document per message; set `skip` to ingest only
   keyed topics.
