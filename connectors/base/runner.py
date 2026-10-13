@@ -41,6 +41,19 @@ async def _aiter(events):
             yield event
 
 
+def _item(event: ChangeEvent, secret_scanner, stats: RunStats):
+    """The batch item for an upsert or delete, or None when the secret guard drops it."""
+    if event.op == "delete":
+        return event.key
+    if secret_scanner is not None:
+        why = secret_scanner.reason(event.key, event.payload, event.data_format)
+        if why is not None:
+            stats.skipped_secrets += 1
+            log.warning("skip secret %s (%s)", event.key, why)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+            return None
+    return event.to_item()
+
+
 async def run(
     events,
     publisher,
@@ -100,16 +113,10 @@ async def run(
         if event.op != buffer_op:
             await flush()
             buffer_op = event.op
-        if event.op == "delete":
-            item = event.key
-        else:
-            if secret_scanner is not None:
-                why = secret_scanner.reason(event.key, event.payload, event.data_format)
-                if why is not None:
-                    stats.skipped_secrets += 1
-                    log.warning("skip secret %s (%s)", event.key, why)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-                    continue
-            item = event.to_item()
+        item = _item(event, secret_scanner, stats)
+        if item is None:
+            continue
+        if event.op == "upsert":
             seen.add(event.key)
         item_bytes = len(json.dumps(item, default=str))
         if buffer and buffer_bytes + item_bytes > max_batch_bytes:
