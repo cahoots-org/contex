@@ -5,7 +5,8 @@ import asyncio
 
 import pytest
 
-from connectors.base import ChangeEvent
+import connectors.base
+from connectors.base import ChangeEvent, ContexConfig, run_stream_connector
 from connectors.base.runner import stream
 
 
@@ -133,3 +134,27 @@ async def test_source_errors_propagate():
 
     with pytest.raises(RuntimeError, match="broker gone"):
         await stream(broken(), FakePublisher(), Acks(), flush_interval=60)
+
+
+@pytest.mark.asyncio
+async def test_run_stream_connector_opens_a_retrying_publisher(monkeypatch):
+    opened = []
+
+    class Recording(FakePublisher):
+        def __init__(self, config, origin, retry_forever=False):
+            super().__init__()
+            opened.append((origin, retry_forever))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+    monkeypatch.setattr(connectors.base, "ContexPublisher", Recording)
+    config = ContexConfig.from_dict({"contex": {"url": "u", "project_id": "p"}, "origin": "team-a"})
+    ack = Acks()
+    stats = await run_stream_connector(config, [(_up("a"), 0)], ack, origin="kafka:main")
+    assert opened == [("kafka:main#team-a", True)]
+    assert stats.published == 1
+    assert ack.calls == [[0]]
