@@ -133,14 +133,16 @@ Contex has accepted the batch that contains it. A crash between publish and
 commit replays that batch on restart. Upserts and deletes are idempotent by
 key, so a replay writes the same state.
 
-- Items the server rejects, and values that aren't valid UTF-8, are logged,
-  skipped and committed. A bad message never blocks the ones behind it.
+- Items the server rejects one by one, and values that aren't valid UTF-8, are
+  logged, skipped and committed. A bad message never blocks the ones behind it.
 - Messages dropped by the secret guard are committed too.
-- Every publish attempt opens a fresh MCP session. If Contex is unreachable,
-  the connector retries without limit, with backoff capped at 60 seconds, and
-  resumes where it stopped. It does not exit.
-- If Contex rejects the API key (HTTP 401 or 403), the connector exits with an
-  error that says so, instead of retrying.
+- Every publish attempt opens a fresh MCP session. If Contex is unreachable or
+  answers with a server error, the connector retries without limit, with
+  backoff capped at 60 seconds, and resumes where it stopped.
+- The connector exits instead of retrying when Contex rejects the API key
+  (HTTP 401 or 403), when the URL is wrong (HTTP 404), or when the server
+  rejects a whole request as invalid. Nothing is committed past the last
+  accepted batch, so restarting resumes without loss.
 
 ## Scaling
 
