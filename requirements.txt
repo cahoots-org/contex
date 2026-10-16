@@ -39,7 +39,7 @@ tree-sitter-language-pack==0.13.0
 pyyaml==6.0.3
 
 # JWT — transitive dep of mcp[crypto] (auth); pinned for CVE-2026-101918
-PyJWT==2.15.0
+PyJWT==2.15.1
 
 # setuptools — unpinned build dep from the base image; floored to force an upgrade
 # over the vulnerable base version (PYSEC-2025-49, PYSEC-2026-3447).
