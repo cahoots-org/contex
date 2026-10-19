@@ -4,6 +4,7 @@ from connectors.base import (
     ContexConfig,
     load_config,
     resolve_batch_size,
+    resolve_flush_interval,
     resolve_prune,
     resolve_secret_scanner,
 )
@@ -71,3 +72,17 @@ def test_env_expanded_false_is_false():
     assert resolve_secret_scanner({"allow_secrets": "false"}) is not None
     with pytest.raises(ValueError):
         resolve_prune({"prune": "maybe"})
+
+
+def test_flush_interval_defaults_when_unset():
+    assert resolve_flush_interval({}) == 1.0
+    assert resolve_flush_interval({"flush_interval": ""}) == 1.0
+
+
+def test_flush_interval_reads_seconds():
+    assert resolve_flush_interval({"flush_interval": "0.25"}) == 0.25
+
+
+def test_flush_interval_must_be_positive():
+    with pytest.raises(ValueError, match="flush_interval"):
+        resolve_flush_interval({"flush_interval": 0})
