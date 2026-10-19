@@ -15,6 +15,11 @@
   retries the call. Streaming connectors retry without limit, with backoff
   capped at 60 seconds. Snapshot connectors keep their retry cap.
 
+### Fixed
+
+- `contex_delete` reports a key containing control characters as missing.
+  Before, a NUL in a key failed the whole call with a database error.
+
 ### Upgrading from v1.1.0
 
 - **Back up the database first.** The server migrates on boot, and migrations
