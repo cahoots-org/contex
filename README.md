@@ -101,13 +101,14 @@ Connectors load an existing source into a Contex project without any glue code. 
 | **S3** | Text objects under a bucket or prefix. Also MinIO, Cloudflare R2, and LocalStack via `endpoint_url`. |
 | **GitHub** | Files, issues, pull requests, and commits from one or more repos. |
 | **Atlassian** | Jira issues and Confluence pages from one Atlassian Cloud site. |
+| **Kafka** | Messages from the topics you choose, as they arrive. Tombstones delete. |
 
 ```bash
 pip install -r connectors/postgres/requirements.txt
 python -m connectors.postgres --config connector.yaml
 ```
 
-The connectors today are bulk snapshots: a run reads the source and upserts each item, so re-running (say, on a cron) refreshes the data.
+Postgres, S3, GitHub, and Atlassian are bulk snapshots: a run reads the source and upserts each item, so re-running (say, on a cron) refreshes the data. Kafka runs continuously and publishes each message within about a second, committing its offset only after Contex accepts it.
 
 ### Write your own
 
@@ -152,7 +153,7 @@ See the [RBAC Guide](docs/RBAC.md).
 
 ## Roadmap
 
-- **More connectors:** streaming sources like Redis, Kafka, and message queues that push updates as they happen, plus more batch sources like Slack.
+- **More connectors:** more streaming sources, like Postgres change data capture, Redis, and message queues, plus more batch sources like Slack.
 - **Higher throughput:** for high-volume sources.
 
 ## Development
@@ -163,7 +164,7 @@ Contex runs on **ParadeDB** (`paradedb/paradedb`), which bundles `pg_search` (BM
 
 ## Documentation
 
-- **[Connectors](connectors/README.md):** bulk-load Postgres, S3, GitHub, and Atlassian, or write your own
+- **[Connectors](connectors/README.md):** bulk-load Postgres, S3, GitHub, and Atlassian, stream Kafka, or write your own
 - **[Database Setup](docs/DATABASE.md):** ParadeDB (pg_search + pgvector) configuration
 - **[RBAC](docs/RBAC.md):** role-based access control
 - **[Metrics](docs/METRICS.md):** Prometheus metrics
