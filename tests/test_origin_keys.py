@@ -62,7 +62,11 @@ async def test_list_keys_pages(db):
 async def test_connector_run_removes_what_the_source_deleted(db):
     server = await _server(db)
     publisher = ContexPublisher(SimpleNamespace(project_id="p"), origin="s3:bucket/docs")
-    publisher._session = SimpleNamespace(call_tool=server.call_tool)
+
+    async def call_once(tool, arguments):
+        return await server.call_tool(tool, {"project_id": "p", **arguments})
+
+    publisher._call_once = call_once
 
     def snapshot(*keys):
         return [ChangeEvent(op="upsert", key=k, payload=f"doc {k}", data_format="text") for k in keys]
