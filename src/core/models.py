@@ -4,13 +4,16 @@ from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
+# Postgres text can't hold NUL, and no other control character belongs in a key.
+DATA_KEY_PATTERN = r"^[^\x00-\x1f]*$"
+
 
 class DataPublishEvent(BaseModel):
     """Event published by main app when data changes"""
 
     project_id: str = Field(..., description="Project identifier")
     data_key: str = Field(
-        ..., description="Data identifier (e.g., 'tech_stack', 'event_model')", pattern=r"^[^\x00-\x1f]*$"
+        ..., description="Data identifier (e.g., 'tech_stack', 'event_model')", pattern=DATA_KEY_PATTERN
     )
     data: Any = Field(
         ...,
