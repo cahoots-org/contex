@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- **Kafka connector** (`connectors/kafka`, image `contex-connector-kafka`):
+  streams topics into Contex. Keyed messages upsert, tombstones delete, and
+  unkeyed messages append. Offsets are committed only after Contex accepts the
+  batch, so delivery is at-least-once. See `connectors/kafka/README.md`.
+- **Streaming connector runner** (`run_stream_connector`): flushes a partial
+  batch after `flush_interval` seconds (default 1) and acknowledges positions
+  after each publish.
+- **Publisher reconnects.** A dropped MCP connection reopens the session and
+  retries the call. Streaming connectors retry without limit, with backoff
+  capped at 60 seconds. Snapshot connectors keep their retry cap.
+
 ### Upgrading from v1.1.0
 
 - **Back up the database first.** The server migrates on boot, and migrations
