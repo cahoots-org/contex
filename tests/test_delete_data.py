@@ -72,3 +72,10 @@ async def test_delete_is_scoped_to_the_project(engine, db):
         assert await session.scalar(
             select(func.count()).select_from(Embedding).where(Embedding.project_id == "other")
         ) > 0
+
+
+@pytest.mark.asyncio
+async def test_delete_reports_a_key_publish_would_reject_as_missing(engine):
+    result = await engine.delete_data("p", ["bad\x00key", "nope"])
+
+    assert result == {"deleted": [], "missing": ["bad\x00key", "nope"]}

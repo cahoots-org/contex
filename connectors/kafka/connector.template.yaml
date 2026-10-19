@@ -1,0 +1,22 @@
+# Fully env-driven config for the Kafka connector image. Every value is a ${VAR}
+# placeholder expanded from the environment at load time, so `docker run -e ...`
+# needs no file mount.
+contex:
+  url: ${CONTEX_URL}
+  project_id: ${CONTEX_PROJECT_ID}
+  api_key: ${CONTEX_TOKEN}
+
+source:
+  cluster: ${KAFKA_CLUSTER}
+  bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+  topics: ${KAFKA_TOPICS}            # comma-separated
+  group_id: ${KAFKA_GROUP_ID}
+  auto_offset_reset: ${KAFKA_AUTO_OFFSET_RESET}
+  unkeyed: ${KAFKA_UNKEYED}
+  security_protocol: ${KAFKA_SECURITY_PROTOCOL}
+  sasl_mechanism: ${KAFKA_SASL_MECHANISM}
+  sasl_username: ${KAFKA_SASL_USERNAME}
+  sasl_password: ${KAFKA_SASL_PASSWORD}
+
+flush_interval: ${CONTEX_FLUSH_INTERVAL}
+batch_size: ${CONTEX_BATCH_SIZE}

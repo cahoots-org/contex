@@ -17,6 +17,7 @@ from .secrets import DEFAULT_SECRET_CONTENT_PATTERNS, DEFAULT_SECRET_FILE_PATTER
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 DEFAULT_BATCH_SIZE = 500
+DEFAULT_FLUSH_INTERVAL = 1.0  # seconds a streamed event may wait for batch-mates
 # Files larger than this are binaries, fixtures, or generated data — not content
 # worth embedding. Skipped at the source (no fetch).
 DEFAULT_MAX_FILE_BYTES = 1_048_576  # 1 MiB
@@ -45,6 +46,15 @@ def load_config(path: str) -> dict:
 def resolve_batch_size(config: dict) -> int:
     """The publish batch size from config, defaulting when unset."""
     return int(config.get("batch_size") or DEFAULT_BATCH_SIZE)
+
+
+def resolve_flush_interval(config: dict) -> float:
+    """Seconds a streaming batch waits before flushing, defaulting when unset."""
+    raw = config.get("flush_interval")
+    value = DEFAULT_FLUSH_INTERVAL if raw is None or raw == "" else float(raw)
+    if value <= 0:
+        raise ValueError(f"flush_interval must be positive, got {value}")
+    return value
 
 
 def resolve_max_file_bytes(config: dict) -> int:

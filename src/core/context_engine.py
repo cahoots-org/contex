@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -10,7 +11,7 @@ from .semantic_matcher import SemanticDataMatcher
 from .node_parsers import resolve_format
 from .subscriptions import SubscriptionService
 from .limits import clamp_top_k
-from .models import DataPublishEvent
+from .models import DATA_KEY_PATTERN, DataPublishEvent
 from .notifier import Notifier
 
 logger = logging.getLogger(__name__)
@@ -143,10 +144,12 @@ class ContextEngine:
     async def delete_data(self, project_id: str, data_keys: List[str]) -> Dict[str, List[str]]:
         """Delete documents by key; subscriptions catch up in the background.
 
-        Returns the requested keys split into ``deleted`` and ``missing``.
+        Returns the requested keys split into ``deleted`` and ``missing``. A
+        key publish would reject can't exist, so it is reported missing.
         """
         keys = list(dict.fromkeys(data_keys))
-        deleted = set(await self.semantic_matcher.delete_data_keys(project_id, keys))
+        valid = [k for k in keys if re.match(DATA_KEY_PATTERN, k)]
+        deleted = set(await self.semantic_matcher.delete_data_keys(project_id, valid))
         if deleted:
             self._reconcile_later(project_id, deleted)
         return {
