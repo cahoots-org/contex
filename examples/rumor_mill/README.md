@@ -93,6 +93,11 @@ what they heard once their cooldown is over, so 20 seconds after that the feed
 says they shrug it off. `inspect` shows enough to guess what someone cares
 about, but not their needs.
 
+A shrug is a hint. The villager brushes you off in their own voice and grumbles
+about something they care about, a different concern each time until they run
+out and start over, so a miss tells you where to aim next. If the line can't be
+written, the feed falls back to the plain shrug.
+
 The feed shows each hop of a rumor you started, who told whom and in what
 words, and a line when a goal's percent changes. Goals are checked once a game
 day and are met after they hold at 100% for three checks in a row.
@@ -127,6 +132,8 @@ Where the tokens go:
 - Each time a villager wakes: one Jev request to decide what they do, plus a
   short Haiku call (at most 80 tokens out) when they speak, and a slightly
   longer one when they found a group.
+- Each shrug: one short Haiku call (at most 80 tokens out) for the brush-off,
+  and a second one if the first repeated the villager's concern word for word.
 - The judge: one Jev request per villager whose memories match a belief goal,
   once a game day. Verdicts are cached until the villager's matching memories
   change.
