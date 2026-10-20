@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketClose
 from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import Player, Refusal
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
@@ -86,6 +87,7 @@ def create_app(
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
     clients: set[asyncio.Queue] = set()
     boot = uuid.uuid4().hex
+    notes = Notes(feed)
 
     def broadcast(message: dict) -> None:
         for queue in clients:
@@ -139,6 +141,7 @@ def create_app(
             ],
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.recent],
+            "notes": notes.all(),
             "usage": usage.to_json(),
             "heat": (label := suspicion.label()),
             "heat_line": HEAT_LINES[label],
@@ -162,6 +165,7 @@ def create_app(
                 {"id": rid, "name": town.name_of(rid) or "someone who left", "kind": kind}
                 for rid, kind in v.relationships.items()
             ],
+            "note": notes.get(v.id),
         }
 
     @app.post("/api/whisper")

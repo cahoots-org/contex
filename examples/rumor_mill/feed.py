@@ -14,6 +14,8 @@ from examples.rumor_mill.suspicion import HEAT_LINES
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 REPLAY_EVENTS = 500
+LISTENING = ("checking", "busy", "heard")
+RESOLVED = ("kept", "took_the_bait", "warned")
 GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
 
 
@@ -49,6 +51,9 @@ class Feed:
         self.recent: deque[Event] = deque(maxlen=REPLAY_EVENTS)
         self._ids = itertools.count(1)
         self.closed = False
+        self._listening: dict[str, tuple[str, str]] = {}
+        # ponytail: grows by one id per whisper the player sends; a session sends far fewer than would matter.
+        self._resolved: set[str] = set()
 
     def emit(self, kind: str, line: str = "", /, **data) -> Event | None:
         """Send an event to every sink; once the feed is closed, drop it and return None."""
@@ -81,15 +86,29 @@ class Feed:
         )
 
     def on_whisper_status(self, whisper_id: str, villager_id: str, name: str, state: str, **extra) -> None:
-        """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint) or not_carried.
+        """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint),
+        not_carried, or what the villager did with it: kept, took_the_bait (with told) or warned.
 
-        The terminal prints only a brush-off once its hint is settled.
+        A whisper already resolved never goes back to being heard. The terminal prints only a brush-off once its
+        hint is settled.
         """
+        if state in LISTENING:
+            if whisper_id in self._resolved:
+                return
+            self._listening[whisper_id] = (villager_id, name)
+        else:
+            self._listening.pop(whisper_id, None)
+        if state in RESOLVED:
+            self._resolved.add(whisper_id)
         text = ""
         if state == "brushed_off" and "hint" in extra:
             hint = extra["hint"]
             text = f'{name} brushes you off: "{hint}"' if hint else f"{name} shrugs it off."
         self.emit("whisper_status", text, whisper_id=whisper_id, villager_id=villager_id, name=name, state=state, **extra)
+
+    def listening(self, villager_id: str) -> list[tuple[str, str]]:
+        """The (whisper id, name) of each whisper the villager is still hearing."""
+        return [(wid, name) for wid, (vid, name) in self._listening.items() if vid == villager_id]
 
     def on_refusal(self, villager_id: str, name: str, line: str | None = None) -> None:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."

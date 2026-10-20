@@ -92,6 +92,19 @@ def test_inspect_card_never_includes_needs(game):
     assert game.client.get("/api/villagers/v9").status_code == 404
 
 
+def test_state_and_card_carry_notes_without_needs_or_numbers(game):
+    game.feed.on_whisper_status("w-1", "v1", "Marta Hale", "brushed_off", hint="The well keeps me up.")
+    game.feed.on_whisper_status("w-2", "v2", "Bert Cole", "took_the_bait", told=3)
+    notes = game.client.get("/api/state").json()["notes"]
+    assert notes == {
+        "v1": {"status": "brushed_off", "hint": "The well keeps me up."},
+        "v2": {"status": "took_the_bait", "hint": None},
+    }
+    card = game.client.get("/api/villagers/v2")
+    assert card.json()["note"] == {"status": "took_the_bait", "hint": None}
+    assert "NEED" not in card.text and "3" not in json.dumps(notes)
+
+
 def test_page_is_served(game):
     response = game.client.get("/")
     assert response.status_code == 200 and "Rumor Mill" in response.text

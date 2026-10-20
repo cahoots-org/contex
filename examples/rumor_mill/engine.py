@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from contextlib import aclosing, suppress
 
+from examples.rumor_mill.actions import WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -24,6 +25,8 @@ log = logging.getLogger(__name__)
 LISTEN_RETRY_SECONDS = 1
 # How many keys that reached a turn are remembered per villager, so neither a poll nor a direct hit hears them again.
 CONSUMED_KEYS = 500
+# How many whispers a villager kept to themselves are watched for a later relay.
+KEPT_WHISPERS = 50
 MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
@@ -66,6 +69,8 @@ class Engine:
         self._turning: set[str] = set()
         self._consumed: dict[str, dict[str, None]] = {}
         self._listen_failed: set[str] = set()
+        self._said: dict[str, list[tuple[str, int]]] = {}
+        self._kept: dict[str, dict[str, None]] = {}
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
@@ -98,6 +103,10 @@ class Engine:
         self._turning.discard(vid)
         self._consumed.pop(vid, None)
         self._listen_failed.discard(vid)
+        self._said.pop(vid, None)
+        self._kept.pop(vid, None)
+        for wid, name in self.feed.listening(vid):
+            self.feed.on_whisper_status(wid, vid, name, "kept")
         with suppress(KeyError):
             self.town.remove(vid)
         current = asyncio.current_task()
@@ -137,6 +146,8 @@ class Engine:
                 self.hear_directly(vid, Match(f"utt:{utterance.id}", data))
         if listeners and not heard:
             raise next(r for r in results if isinstance(r, Exception))
+        if heard and utterance.speaker in self._turning:
+            self._said.setdefault(utterance.speaker, []).append((utterance.id, len(heard)))
         self.feed.on_delivery(utterance, heard)
 
     def hear_directly(self, vid: str, match: Match) -> bool:
@@ -237,25 +248,55 @@ class Engine:
             warn_threshold=self.config.warn_threshold,
             player_rooted=[m for m in new if self.lineage.is_player_rooted(m.data.get("id"))],
         )
-        async with self._turns:
-            decision = await decide(self.jev, view)
-            if self.game is not None and self.game.finished.is_set():
-                self._pending.pop(v.id, None)
-                return True
-            if decision.suspicion_strength is not None:
-                try:
-                    self.suspicion.rate(
-                        v.id, decision.suspicion_strength, "heard the newcomer named", view.player_rooted[0].data.get("id"),
-                    )
-                except Exception:
-                    log.exception("suspicion rating failed for %s", v.id)
-            await act(
-                decision, v, town=self.town, writer=self.writer, hub=self,
-                lineage=self.lineage, ids=self.ids, day=self.day,
-                inspiration=[m.data.get("text", "") for m in new],
-                suspicion_hear_max=self.config.suspicion_hear_max,
-            )
+        whispers = [m.data["id"] for m in view.player_rooted if self.lineage.root(m.data["id"]) == m.data["id"]]
+        action = None
+        try:
+            async with self._turns:
+                decision = await decide(self.jev, view)
+                action = decision.action
+                if self.game is not None and self.game.finished.is_set():
+                    self._pending.pop(v.id, None)
+                    return True
+                if decision.suspicion_strength is not None:
+                    try:
+                        self.suspicion.rate(
+                            v.id, decision.suspicion_strength, "heard the newcomer named",
+                            view.player_rooted[0].data.get("id"),
+                        )
+                    except Exception:
+                        log.exception("suspicion rating failed for %s", v.id)
+                await act(
+                    decision, v, town=self.town, writer=self.writer, hub=self,
+                    lineage=self.lineage, ids=self.ids, day=self.day,
+                    inspiration=[m.data.get("text", "") for m in new],
+                    suspicion_hear_max=self.config.suspicion_hear_max,
+                )
+        finally:
+            self._report(v, whispers, action, self._said.pop(v.id, []))
         return True
+
+    def _report(self, v: Villager, whispers: list[str], action: str | None, said: list[tuple[str, int]]) -> None:
+        """Tell the feed what the villager did with the whispers this turn heard and any they kept before.
+
+        said holds (utterance id, listeners who heard it) for what this turn said, in order.
+        """
+        told: dict[str, int] = {}
+        for uid, heard in said:
+            told.setdefault(self.lineage.root(uid), heard)
+        kept = self._kept.setdefault(v.id, {})
+        for wid in [w for w in kept if w in told]:
+            del kept[wid]
+            self.feed.on_whisper_status(wid, v.id, v.name, "took_the_bait", told=told[wid])
+        for wid in whispers:
+            if wid in told:
+                self.feed.on_whisper_status(wid, v.id, v.name, "took_the_bait", told=told[wid])
+            elif action == WARN:
+                self.feed.on_whisper_status(wid, v.id, v.name, "warned")
+            else:
+                kept[wid] = None
+                self.feed.on_whisper_status(wid, v.id, v.name, "kept")
+        while len(kept) > KEPT_WHISPERS:
+            del kept[next(iter(kept))]
 
     async def _suspicion_loop(self) -> None:
         """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""

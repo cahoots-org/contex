@@ -5,7 +5,7 @@ import time
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
-from examples.rumor_mill.actions import IGNORE
+from examples.rumor_mill.actions import IGNORE, SPEAK
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -23,8 +23,9 @@ from examples.rumor_mill.town import Town
 SETTLE = 0.1
 
 
-class RecordingFeed:
+class RecordingFeed(Feed):
     def __init__(self):
+        super().__init__(Lineage(), Town(), out=None)
         self.deliveries = []
 
     def on_delivery(self, utterance, listener_ids):
@@ -525,4 +526,81 @@ async def test_whisper_polled_then_forgotten_then_heard_directly_reaches_one_tur
     await wait_for(lambda: minds["v1"].polls == 3)
     await asyncio.sleep(SETTLE)
     assert [[m.data_key for m in v.new] for v in turns.views] == [["utt:w-1"]]
+    await engine.stop()
+
+
+class Relays:
+    """Each turn takes the next planned action; a speak relays the first new item to the planned listeners."""
+
+    def __init__(self):
+        self.plan = []
+
+    async def decide(self, jev, view):
+        action, listeners = self.plan.pop(0)
+        return Decision(action, view.new[0], listeners, None)
+
+    async def act(self, decision, villager, *, hub, lineage, ids, **kw):
+        if decision.action != SPEAK:
+            return
+        uid = ids.next("u")
+        lineage.record(uid, decision.source.data["id"])
+        utterance = Utterance(uid, villager.id, villager.name, "square", "did you hear", decision.source.data["id"])
+        await hub.deliver(utterance, decision.target)
+
+
+@pytest.fixture
+def relays(monkeypatch):
+    r = Relays()
+    monkeypatch.setattr(engine_mod, "decide", r.decide)
+    monkeypatch.setattr(engine_mod, "act", r.act)
+    return r
+
+
+def statuses(feed):
+    return [(e.data["whisper_id"], e.data["villager_id"], e.data["state"], e.data.get("told"))
+            for e in feed.recent if e.kind == "whisper_status"]
+
+
+def whisper(engine, vid, wid="w-1"):
+    engine.lineage.record(wid, None, player=True)
+    engine.hear_directly(vid, Match(f"utt:{wid}", {"id": wid, "text": "psst"}, 0.8))
+
+
+@pytest.mark.asyncio
+async def test_turn_that_relays_reports_took_the_bait_with_count(relays):
+    engine, minds, feed = await setup("v1", "v2", "v3")
+    minds["v1"].results = [[]]
+    relays.plan = [(SPEAK, ["v2", "v3"])]
+    whisper(engine, "v1")
+    await wait_for(lambda: statuses(feed))
+    assert statuses(feed) == [("w-1", "v1", "took_the_bait", 2)]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_turn_that_ignores_reports_kept_then_later_relay_upgrades(relays):
+    engine, minds, feed = await setup("v1", "v2")
+    minds["v1"].results = [[], [Match("utt:u-9", {"id": "u-9", "text": "the well"})]]
+    engine.lineage.record("u-9", "w-1")
+    relays.plan = [(IGNORE, None), (SPEAK, ["v2"])]
+    whisper(engine, "v1")
+    await wait_for(lambda: statuses(feed))
+    assert statuses(feed) == [("w-1", "v1", "kept", None)]
+    push(minds["v1"])
+    await wait_for(lambda: len(statuses(feed)) == 2)
+    assert statuses(feed)[1] == ("w-1", "v1", "took_the_bait", 1)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_departure_resolves_whispers_still_being_heard(relays):
+    engine, _, feed = await setup("v1", "v2")
+    feed.on_whisper_status("w-1", "v1", "V1", "heard")
+    feed.on_whisper_status("w-2", "v1", "V1", "busy", until=0.0)
+    feed.on_whisper_status("w-3", "v1", "V1", "brushed_off")
+    feed.on_whisper_status("w-4", "v2", "V2", "checking")
+    await engine.remove_villager("v1")
+    assert statuses(feed)[4:] == [("w-1", "v1", "kept", None), ("w-2", "v1", "kept", None)]
+    feed.on_whisper_status("w-1", "v1", "V1", "heard")
+    assert len(statuses(feed)) == 6
     await engine.stop()
