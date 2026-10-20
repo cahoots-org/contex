@@ -49,6 +49,9 @@ class Lines:
     def say(self, line):
         self.said.append(line)
 
+    def on_met(self, goal):
+        self.said.append(f'Goal met: "{goal.text}"')
+
 
 def make(n=4, believers=0):
     town, contex, jev, feed = Town(), StubContex(), StubJev(), Lines()
@@ -140,6 +143,7 @@ async def test_goal_met_only_after_hold_checks_consecutive_checks():
     await asyncio.wait_for(judge.run([BELIEF]), 2)
     assert next(progress, None) is None
     assert feed.said == ['Goal met: "cat is a spy"']
+    assert judge.met == {BELIEF.id}
 
 
 @pytest.mark.asyncio

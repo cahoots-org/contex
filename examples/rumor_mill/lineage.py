@@ -27,5 +27,12 @@ class Lineage:
             uid = self._parent[uid]
         return uid
 
+    def depth(self, uid: str) -> int:
+        """Hops between uid and its root."""
+        n = 0
+        while self._parent.get(uid) is not None:
+            uid, n = self._parent[uid], n + 1
+        return n
+
     def is_player_rooted(self, uid: str) -> bool:
         return self.root(uid) in self._player

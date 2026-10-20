@@ -73,6 +73,7 @@ whisper <name>: <text>    the same
 villagers                 everyone in town, with occupation and place
 inspect <name>            personality, grudge, and relationships
 goals                     your goals and how close each one is
+help                      these commands
 quit
 ```
 

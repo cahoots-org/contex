@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.town import Town
 
-HELP = "Commands: <name>: <text> | villagers | inspect <name> | goals | quit"
+HELP = (
+    "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
+    "Other commands: villagers, inspect <name>, goals, help, quit"
+)
 
 
 @dataclass(frozen=True)
@@ -20,7 +23,7 @@ class Command:
 def parse_command(line: str) -> Command:
     """Turn one typed line into a Command."""
     line = line.strip()
-    if line in ("villagers", "goals", "quit"):
+    if line in ("villagers", "goals", "help", "quit"):
         return Command(line)
     if line.startswith("inspect ") and line[8:].strip():
         return Command("inspect", line[8:].strip())
@@ -66,7 +69,8 @@ async def repl(player: Player, town: Town, feed, goals=(), progress=None) -> Non
         if cmd.kind == "quit":
             return
         if cmd.kind == "whisper":
-            await player.whisper(cmd.name, cmd.text)
+            if problem := await player.whisper(cmd.name, cmd.text):
+                feed.say(problem)
         elif cmd.kind == "villagers":
             for v in sorted(town.find(""), key=lambda v: v.name):
                 feed.say(f"{v.name}, {v.occupation} ({town.place_of(v.id)})")
@@ -78,5 +82,5 @@ async def repl(player: Player, town: Town, feed, goals=(), progress=None) -> Non
                 feed.say(f"{goal.text}: {int((progress or {}).get(goal.id, 0.0) * 100)}%")
             if not goals:
                 feed.say("No goals yet.")
-        elif line.strip():
+        elif cmd.kind == "help" or line.strip():
             feed.say(HELP)

@@ -4,6 +4,7 @@ import pytest
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
+from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
@@ -23,53 +24,47 @@ def make(*names, shrug=0.05, cooldown=0.0):
     lineage = Lineage()
     for i, name in enumerate(names, 1):
         town.add(Villager(f"v{i}", name, "baker", "calm", "none", [], {}), "tavern")
-
-    class Say:
-        say = staticmethod(lines.append)
-
-    player = Player(engine, town, lineage, Ids(), Say, Config(shrug_seconds=shrug, cooldown_seconds=cooldown))
+    feed = Feed(lineage, town, out=lines.append)
+    player = Player(engine, town, lineage, Ids(), feed, Config(shrug_seconds=shrug, cooldown_seconds=cooldown))
     return player, town, lines, engine, lineage
 
 
 @pytest.mark.asyncio
 async def test_unknown_name_says_so_and_publishes_nothing():
-    player, _, lines, engine, _ = make("Marta")
-    await player.whisper("Zed", "hello")
+    player, _, _, engine, _ = make("Marta")
+    assert "Zed" in await player.whisper("Zed", "hello")
     assert engine.delivered == []
-    assert "Zed" in lines[0]
 
 
 @pytest.mark.asyncio
 async def test_ambiguous_name_lists_candidates():
-    player, _, lines, engine, _ = make("Bert Baker", "Bert Miller")
-    await player.whisper("Bert", "hello")
+    player, _, _, engine, _ = make("Bert Baker", "Bert Miller")
+    problem = await player.whisper("Bert", "hello")
     assert engine.delivered == []
-    assert "Bert Baker" in lines[0] and "Bert Miller" in lines[0]
+    assert "Bert Baker" in problem and "Bert Miller" in problem
 
 
 @pytest.mark.asyncio
 async def test_departed_villager_message():
-    player, town, lines, engine, _ = make("Marta")
+    player, town, _, engine, _ = make("Marta")
     town.remove("v1")
-    await player.whisper("Marta", "hello")
+    assert await player.whisper("Marta", "hello") == "Marta has left town."
     assert engine.delivered == []
-    assert lines == ["Marta has left town."]
 
 
 @pytest.mark.asyncio
 async def test_empty_and_overlong_whisper_rejected():
-    player, _, lines, engine, _ = make("Marta")
-    await player.whisper("", "hello")
-    await player.whisper("Marta", "   ")
-    await player.whisper("Marta", "x" * (MAX_WHISPER_CHARS + 1))
+    player, _, _, engine, _ = make("Marta")
+    assert await player.whisper("", "hello")
+    assert await player.whisper("Marta", "   ")
+    assert await player.whisper("Marta", "x" * (MAX_WHISPER_CHARS + 1))
     assert engine.delivered == []
-    assert len(lines) == 3
 
 
 @pytest.mark.asyncio
 async def test_whisper_is_delivered_and_rooted_in_lineage():
     player, _, lines, engine, lineage = make("Marta", shrug=10)
-    await player.whisper("Marta", "the miller waters his flour")
+    assert await player.whisper("Marta", "the miller waters his flour") is None
     (utterance, listeners), = engine.delivered
     assert listeners == ["v1"]
     assert (utterance.id, utterance.speaker, utterance.speaker_name) == ("w-1", PLAYER_ID, "The newcomer")
@@ -86,6 +81,8 @@ async def test_unheard_whisper_triggers_shrug_line():
     await player.whisper("Marta", "hello")
     await asyncio.sleep(0.2)
     assert lines == ["Marta shrugs it off."]
+    shrug = player.feed.recent[-1]
+    assert (shrug.kind, shrug.data["villager_id"], shrug.data["uid"]) == ("shrug", "v1", "w-1")
 
 
 @pytest.mark.asyncio
@@ -118,7 +115,7 @@ async def test_failed_whisper_says_so_and_leaves_no_shrug_task():
         raise RuntimeError("contex down")
 
     engine.deliver = boom
-    await player.whisper("Marta", "hello")
+    assert await player.whisper("Marta", "hello") == "The whisper didn't carry; try again."
     await asyncio.sleep(0.2)
-    assert lines == ["The whisper didn't carry; try again."]
+    assert lines == []
     assert player._shrugs == {}

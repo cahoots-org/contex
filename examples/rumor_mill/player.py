@@ -24,23 +24,19 @@ class Player:
         self.config = config
         self._shrugs: dict[tuple[str, str], asyncio.Task] = {}
 
-    async def whisper(self, name: str, text: str) -> None:
-        """Whisper text to the villager called name, or say why it cannot be done."""
+    async def whisper(self, name: str, text: str) -> str | None:
+        """Whisper text to the villager called name; returns why it could not be done, if it couldn't."""
         name, text = name.strip(), text.strip()
         if not name or not text:
-            self.feed.say("Whisper to whom, and what? Try: Marta: the miller waters his flour")
-            return
+            return "Whisper to whom, and what? Try: Marta: the miller waters his flour"
         if len(text) > MAX_WHISPER_CHARS:
-            self.feed.say(f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters.")
-            return
+            return f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters."
         matches = self.town.find(name)
         if not matches:
             gone = [v for v in self.town.departed if v.name.lower() == name.lower()]
-            self.feed.say(f"{gone[0].name} has left town." if gone else f"No one in town is called {name}.")
-            return
+            return f"{gone[0].name} has left town." if gone else f"No one in town is called {name}."
         if len(matches) > 1:
-            self.feed.say(f"Which {name}? " + ", ".join(v.name for v in matches))
-            return
+            return f"Which {name}? " + ", ".join(v.name for v in matches)
         target = matches[0]
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
@@ -55,7 +51,8 @@ class Player:
             log.exception("whisper to %s failed", target.id)
             shrug.cancel()
             self._shrugs.pop((target.id, uid), None)
-            self.feed.say("The whisper didn't carry; try again.")
+            return "The whisper didn't carry; try again."
+        return None
 
     def note_heard(self, villager_id: str, matches: list[Match]) -> None:
         """Cancel the shrug timer when a match is a whisper to this villager."""
@@ -72,4 +69,4 @@ class Player:
     async def _shrug(self, villager_id: str, name: str, uid: str) -> None:
         await asyncio.sleep(self.config.cooldown_seconds + self.config.shrug_seconds)
         self._shrugs.pop((villager_id, uid), None)
-        self.feed.say(f"{name} shrugs it off.")
+        self.feed.on_shrug(villager_id, name, uid)

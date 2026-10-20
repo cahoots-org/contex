@@ -35,6 +35,7 @@ class Judge:
         self.config = config
         self.feed = feed
         self.progress: dict[str, float] = {}
+        self.met: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
@@ -114,4 +115,5 @@ class Judge:
                 holds[goal.id] = holds[goal.id] + 1 if progress >= 1.0 else 0
                 if holds[goal.id] >= goal.hold_checks:
                     pending.remove(goal)
-                    self.feed.say(f'Goal met: "{goal.text}"')
+                    self.met.add(goal.id)
+                    self.feed.on_met(goal)
