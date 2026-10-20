@@ -1,6 +1,7 @@
 """Per-need baselines: how a need scores against ordinary village talk, so matching can use a margin."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -39,8 +40,18 @@ CALIBRATION = (
 )
 
 
+def _calibration_data(i: int, sentence: str) -> dict:
+    return Utterance(f"cal-{i}", "newcomer", "The newcomer", "square", sentence, None, "whispered to you").to_data()
+
+
+# Baselines cached under other calibration payloads are not reused.
+FINGERPRINT = hashlib.sha256(
+    json.dumps([_calibration_data(i, s) for i, s in enumerate(CALIBRATION)]).encode()
+).hexdigest()[:16]
+
+
 class Baselines:
-    """Mean similarity of each need text to CALIBRATION, cached on disk by exact text."""
+    """Mean similarity of each need text to CALIBRATION, cached on disk by exact text and calibration payload."""
 
     def __init__(self, contex: ContexClient, config: Config):
         self.contex = contex
@@ -79,9 +90,7 @@ class Baselines:
             project = f"rumor-mill:{self.config.session}:calibration"
             if not self._published:
                 for i, sentence in enumerate(CALIBRATION):
-                    utterance = Utterance(f"cal-{i}", "newcomer", "The newcomer", "square", sentence, None,
-                                          "whispered to you")
-                    await self.contex.publish(project, f"cal:{i}", utterance.to_data(0))
+                    await self.contex.publish(project, f"cal:{i}", _calibration_data(i, sentence))
                 self._published = True
             slots = asyncio.Semaphore(CONCURRENT_QUERIES)
 
@@ -110,8 +119,10 @@ class Baselines:
         try:
             with open(self.path) as f:
                 data = json.load(f)
-            return {k: float(v) for k, v in data.items()}
-        except (OSError, ValueError, AttributeError):
+            if data.get("calibration") != FINGERPRINT:
+                return {}
+            return {k: float(v) for k, v in data["baselines"].items()}
+        except (OSError, ValueError, AttributeError, KeyError, TypeError):
             return {}
 
     def _write(self, data: dict[str, float]) -> None:
@@ -119,7 +130,7 @@ class Baselines:
         fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as f:
-                json.dump(data, f)
+                json.dump({"calibration": FINGERPRINT, "baselines": data}, f)
             os.replace(tmp, self.path)
         except BaseException:
             if os.path.exists(tmp):

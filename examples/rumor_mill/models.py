@@ -24,16 +24,9 @@ class Utterance:
     parent: str | None
     verb: str = "said"
 
-    def to_data(self, day: int) -> dict:
-        """Payload for Contex, which embeds all of it, so the text is one sentence."""
-        return {
-            "id": self.id,
-            "parent": self.parent,
-            "speaker": self.speaker,
-            "place": self.place,
-            "day": day,
-            "text": f"{self.speaker_name} {self.verb} at the {self.place}: {self.text}",
-        }
+    def to_data(self) -> dict:
+        """Payload for Contex, which embeds every field, so it holds only what the game reads back."""
+        return {"id": self.id, "text": f"{self.speaker_name} {self.verb} at the {self.place}: {self.text}"}
 
 
 @dataclass

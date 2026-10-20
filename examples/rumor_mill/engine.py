@@ -74,11 +74,6 @@ class Engine:
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
-        self._started = time.monotonic()
-
-    @property
-    def day(self) -> int:
-        return int((time.monotonic() - self._started) / self.config.day_seconds)
 
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
         mind = self.mind_factory(v)
@@ -114,8 +109,7 @@ class Engine:
         await _cancel(tasks)
 
     async def run(self) -> None:
-        """Start the clock, lease renewal and, with a game, the town check; returns at once."""
-        self._started = time.monotonic()
+        """Start lease renewal and, with a game, the town check; returns at once."""
         self._renewal = asyncio.create_task(self._renew_loop())
         if self.game is not None:
             self._checks = asyncio.create_task(self._suspicion_loop())
@@ -133,7 +127,7 @@ class Engine:
         An addressed utterance also wakes each listener and joins their next turn unmatched.
         """
         listeners = [i for i in listener_ids if i in self.town and i in self.minds]
-        data = utterance.to_data(self.day)
+        data = utterance.to_data()
         results = await asyncio.gather(
             *(self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners), return_exceptions=True,
         )
@@ -267,7 +261,7 @@ class Engine:
                         log.exception("suspicion rating failed for %s", v.id)
                 await act(
                     decision, v, town=self.town, writer=self.writer, hub=self,
-                    lineage=self.lineage, ids=self.ids, day=self.day,
+                    lineage=self.lineage, ids=self.ids,
                     inspiration=[m.data.get("text", "") for m in new],
                     suspicion_hear_max=self.config.suspicion_hear_max,
                 )

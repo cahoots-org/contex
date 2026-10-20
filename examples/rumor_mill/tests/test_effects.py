@@ -66,7 +66,7 @@ class Setup:
     async def act(self, who, decision, **kw):
         await act(
             decision, self.town.get(who), town=self.town, writer=self.writer,
-            hub=self.hub, lineage=self.lineage, ids=self.ids, day=1, **kw,
+            hub=self.hub, lineage=self.lineage, ids=self.ids, **kw,
         )
 
 

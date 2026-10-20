@@ -96,7 +96,6 @@ class FakeEngine:
         self.baselines = baselines or StubBaselines(0.5)
         self.direct = []
         self.free_at = 0.0
-        self.day = 0
 
     async def deliver(self, utterance, listener_ids):
         self.delivered.append((utterance, listener_ids))

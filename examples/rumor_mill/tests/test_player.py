@@ -293,7 +293,7 @@ async def test_hit_hands_the_whisper_to_the_engine_and_reports_heard():
     assert await player.whisper_to("v1", "the oven is cold") is None
     (vid, match), = engine.direct
     assert (vid, match.data_key, match.similarity) == ("v1", "utt:w-1", 0.8)
-    assert match.data == engine.delivered[0][0].to_data(0)
+    assert match.data == engine.delivered[0][0].to_data()
     assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
     assert "until" not in statuses(player)[-1]
     assert lines == [] and player._brush_offs == set()

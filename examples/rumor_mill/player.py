@@ -107,7 +107,7 @@ class Player:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
         if hits:
-            if not self.engine.hear_directly(target.id, Match(f"utt:{uid}", utterance.to_data(self.engine.day), max(hits))):
+            if not self.engine.hear_directly(target.id, Match(f"utt:{uid}", utterance.to_data(), max(hits))):
                 return None
             until = self.engine.cooldown_ends(target.id)
             if until > time.time():

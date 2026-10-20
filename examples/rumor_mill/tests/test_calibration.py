@@ -29,6 +29,10 @@ def config(tmp_path, **kw):
     return Config(session="s1", seed_path=str(tmp_path / "seed.json"), **kw)
 
 
+def cached(path):
+    return json.loads(path.read_text())["baselines"]
+
+
 @pytest.mark.asyncio
 async def test_baseline_is_mean_of_calibration_scores(tmp_path):
     contex = FakeContex([0.7, 0.8, None])
@@ -40,7 +44,7 @@ async def test_baseline_is_mean_of_calibration_scores(tmp_path):
     project, key, data = contex.published[0]
     assert (project, key) == ("rumor-mill:s1:calibration", "cal:0")
     assert data["text"] == f"The newcomer whispered to you at the square: {CALIBRATION[0]}"
-    assert data["id"] == "cal-0" and data["parent"] is None
+    assert data["id"] == "cal-0"
 
 
 @pytest.mark.asyncio
@@ -63,8 +67,7 @@ async def test_new_text_is_computed_even_with_a_cache(tmp_path):
     await baselines.load(["a", "b"])
     assert [q[1] for q in contex.queries] == ["b"]
     assert baselines.get("b") == 0.5 and baselines.get("a") == pytest.approx(0.75)
-    cached = json.loads((tmp_path / "seed.json.baselines.json").read_text())
-    assert cached == {"a": pytest.approx(0.75), "b": 0.5}
+    assert cached(tmp_path / "seed.json.baselines.json") == {"a": pytest.approx(0.75), "b": 0.5}
 
 
 @pytest.mark.asyncio
@@ -75,7 +78,18 @@ async def test_corrupt_cache_is_ignored_and_rewritten(tmp_path):
     baselines = Baselines(FakeContex(), cfg)
     await baselines.load(["a"])
     assert baselines.get("a") == pytest.approx(0.75)
-    assert json.loads(path.read_text()) == {"a": pytest.approx(0.75)}
+    assert cached(path) == {"a": pytest.approx(0.75)}
+
+
+@pytest.mark.asyncio
+async def test_cache_from_another_calibration_is_recomputed(tmp_path):
+    path = tmp_path / "seed.json.baselines.json"
+    path.write_text(json.dumps({"calibration": "other", "baselines": {"a": 0.9}}))
+    contex = FakeContex()
+    baselines = Baselines(contex, config(tmp_path))
+    await baselines.load(["a"])
+    assert [q[1] for q in contex.queries] == ["a"]
+    assert cached(path) == {"a": pytest.approx(0.75)}
 
 
 @pytest.mark.asyncio
@@ -83,8 +97,8 @@ async def test_no_scores_falls_back_without_failing(tmp_path):
     baselines = Baselines(FakeContex([]), config(tmp_path))
     await baselines.load(["a"])
     assert baselines.get("a") == FALLBACK_BASELINE
-    assert not (tmp_path / "seed.json.baselines.json").exists() or "a" not in json.loads(
-        (tmp_path / "seed.json.baselines.json").read_text())
+    assert not (tmp_path / "seed.json.baselines.json").exists() or "a" not in cached(
+        tmp_path / "seed.json.baselines.json")
 
 
 @pytest.mark.asyncio
@@ -95,9 +109,9 @@ async def test_fallback_is_never_cached_and_is_recomputed_later(tmp_path):
     await baselines.load(["a"])
     contex.scores = [0.5]
     await baselines.load(["b"])
-    assert json.loads(path.read_text()) == {"b": 0.5}
+    assert cached(path) == {"b": 0.5}
     await baselines.load(["a"])
-    assert json.loads(path.read_text()) == {"a": 0.5, "b": 0.5}
+    assert cached(path) == {"a": 0.5, "b": 0.5}
 
 
 @pytest.mark.asyncio
@@ -116,8 +130,7 @@ async def test_concurrent_loads_keep_both_texts_and_publish_once(tmp_path):
     baselines = Baselines(contex, config(tmp_path))
     await asyncio.gather(baselines.load(["a"]), baselines.load(["b"]))
     assert len(contex.published) == len(CALIBRATION)
-    cached = json.loads((tmp_path / "seed.json.baselines.json").read_text())
-    assert set(cached) == {"a", "b"}
+    assert set(cached(tmp_path / "seed.json.baselines.json")) == {"a", "b"}
 
 
 def test_threshold_adds_margin(tmp_path):
@@ -153,4 +166,4 @@ async def test_live_calibration_writes_cache(tmp_path):
         await baselines.load(texts)
     for text in texts:
         assert 0.5 < baselines.get(text) < 0.95
-    assert set(json.loads((tmp_path / "seed.json.baselines.json").read_text())) == set(texts)
+    assert set(cached(tmp_path / "seed.json.baselines.json")) == set(texts)

@@ -103,7 +103,7 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
         early = Mind(client, ann, config, baselines)
         await early.open()
         utt = Utterance("u-1", "v2", "Bo", "square", "the oven at the bakery is cold", None)
-        await early.hear("utt:u-1", utt.to_data(0))
+        await early.hear("utt:u-1", utt.to_data())
         assert await poll_for(client, early.uris[0], "utt:u-1")
         await engine.add_villager(ann)
         await engine.add_villager(Villager("v2", "Bo", "smith", "gruff", "none", ["anything about the forge"], {}))
@@ -135,8 +135,8 @@ async def test_default_threshold_lets_only_whispers_on_a_need_in():
                         "lattice gauge theory predicts quark confinement at low energies", None, "whispered to you")
         on = Utterance("w-2", "newcomer", "The newcomer", "square",
                        "the well has been cursed and everyone who drinks from it falls ill", None, "whispered to you")
-        await mind.hear("utt:w-1", off.to_data(0))
-        await mind.hear("utt:w-2", on.to_data(0))
+        await mind.hear("utt:w-1", off.to_data())
+        await mind.hear("utt:w-2", on.to_data())
         assert await poll_for(client, mind.uris[1], "utt:w-2")
         assert "utt:w-1" not in {m.data_key for m in mind.matches + await mind.poll()}
 
@@ -183,7 +183,7 @@ async def test_direct_check_hits_only_the_need_it_clears():
 
         async def deliver(utterance, listener_ids):
             for vid in listener_ids:
-                await client.publish(mind_project(config.session, vid), f"utt:{utterance.id}", utterance.to_data(0))
+                await client.publish(mind_project(config.session, vid), f"utt:{utterance.id}", utterance.to_data())
 
         engine.deliver = deliver
         lineage = Lineage()

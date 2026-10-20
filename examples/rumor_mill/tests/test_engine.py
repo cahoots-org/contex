@@ -141,7 +141,7 @@ async def test_deliver_skips_departed_listeners_and_notifies_feed(turns):
     engine.town.remove("v3")
     utt = Utterance("u-1", "v1", "V1", "square", "hello", None)
     await engine.deliver(utt, ["v2", "v3"])
-    assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
+    assert minds["v2"].heard == [("utt:u-1", utt.to_data())]
     assert minds["v3"].heard == []
     assert feed.deliveries == [("u-1", ["v2"])]
     await engine.stop()
@@ -197,7 +197,7 @@ async def test_one_failing_listener_does_not_hide_the_others(turns, caplog):
     utt = Utterance("u-1", "v1", "V1", "square", "hello", None)
     with caplog.at_level(logging.ERROR):
         await engine.deliver(utt, ["v2", "v3"])
-    assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
+    assert minds["v2"].heard == [("utt:u-1", utt.to_data())]
     assert feed.deliveries == [("u-1", ["v2"])]
     assert "v3" in caplog.text
     await engine.stop()
@@ -245,8 +245,8 @@ async def test_addressed_message_wakes_a_villager_whose_needs_did_not_match(turn
     await wait_for(lambda: len(turns.views) == 1)
     view = turns.views[0]
     assert view.villager.id == "v2"
-    assert view.new == [Match("utt:u-1", utt.to_data(0))]
-    assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
+    assert view.new == [Match("utt:u-1", utt.to_data())]
+    assert minds["v2"].heard == [("utt:u-1", utt.to_data())]
     await engine.stop()
 
 
@@ -265,7 +265,7 @@ async def test_unaddressed_delivery_does_not_bypass_matching(turns):
 async def test_addressed_message_also_matched_by_poll_appears_once(turns):
     engine, minds, _ = await setup("v1", "v2")
     utt = utterance()
-    minds["v2"].results = [[Match("utt:u-1", utt.to_data(0))]]
+    minds["v2"].results = [[Match("utt:u-1", utt.to_data())]]
     await engine.deliver(utt, ["v2"], addressed=True)
     await wait_for(lambda: len(turns.views) == 1)
     assert [m.data_key for m in turns.views[0].new] == ["utt:u-1"]

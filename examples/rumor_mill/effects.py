@@ -39,7 +39,6 @@ async def act(
     hub: Hub,
     lineage: Lineage,
     ids: Ids,
-    day: int,
     inspiration: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
 ) -> None:
