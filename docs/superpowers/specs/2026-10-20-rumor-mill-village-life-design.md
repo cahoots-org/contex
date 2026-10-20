@@ -21,6 +21,8 @@ fall out, marry, and die.
 
 ## Goals
 
+- Stakes: the player can lose. Villagers can work out who is behind the rumors and run
+  the newcomer out of town (see Suspicion and losing).
 - A village that visibly moves and interacts between whispers, at no model cost.
 - Relationships that matter mechanically: they decide who spends time together
   and who passes a rumor to whom.
@@ -48,6 +50,55 @@ fall out, marry, and die.
   accrues time together; it does not make them decide.
 - Realism for its own sake. If a rule does not change what the player sees or
   can do, leave it out.
+
+## Suspicion and losing
+
+The newcomer is not anonymous. Every whisper tells its recipient who it came from, and
+rumors can carry the source forward. If enough of the village works out that the
+newcomer is behind the gossip, they run the newcomer out and the game is lost.
+
+- **Per-villager suspicion.** Each villager holds a suspicion in [0, 1] that the newcomer
+  is behind the rumors, stored with game state. It never starts above zero.
+- **What raises it.**
+  - Being whispered to: the recipient knows the newcomer told them. A whisper that
+    lands or shrugs both count; probing has a cost.
+  - Hearing a player-rooted utterance that names or implies the newcomer ("the newcomer
+    told me ..."), including from a child, which weighs more.
+  - Rumors that turn out to be sensational or hurtful to someone they know.
+  - The rise is judged by the existing Jev turn request: when a villager's new items
+    include a player-rooted utterance, the request gains one Score question about how
+    strongly it makes them suspect the newcomer is behind these rumors. No extra call.
+- **What lowers it.** Slow decay each game day, and quiet: a villager who hears nothing
+  new about the newcomer for a stretch relaxes. *(My call.)* There is no cheat to clear it;
+  laying low is the counterplay, and so is making someone else look guilty (a rumor that
+  points suspicion at a villager is judged like any other and can lower suspicion of the
+  newcomer in the people who believe it).
+- **Spread.** Suspicious villagers pass it on. A villager over a threshold may warn
+  others (an ordinary retell whose text is about the newcomer, so it is itself a rumor
+  that spreads along ties and reaches children), refuse to listen, or confront the
+  newcomer. Jev chooses these from the actions offered; the action set gains `warn` for
+  villagers over the threshold.
+- **A suspicious villager turns away.** Whispering to a villager over the refusal
+  threshold fails with an in-character refusal and still counts as a whisper they
+  remember (it raises their suspicion).
+- **Losing.** Town suspicion is the sum of each villager's suspicion weighted by
+  influence (everyone counts for one; a small set of influential roles, such as the
+  priest, the innkeeper and the mayor, count for more). When it holds above the run-out
+  threshold for several consecutive checks, the town meets and runs the newcomer out. The
+  game ends with a summary: goals and progress, and what gave the newcomer away (the first
+  hops where the newcomer was named, from lineage), so the loss explains itself.
+- **Warning.** A loss with no warning feels unfair. The player gets two signals: the
+  villagers' own behavior (warnings, refusals and confrontations in the feed), and a coarse
+  four-level label in the sidebar (quiet, murmurs, watched, hunted). It is a label, never a
+  number, and it does not say who suspects. *(My call.)*
+- **Winning** is unchanged: complete the dealt goals. Losing ends the session; the player
+  can start again.
+- **Cost.** One extra Score question per player-rooted hearing, inside a turn request that
+  already exists. The influence weights and the check are plain code.
+- **Interaction with village life.** Children blab the source more often; kin warn kin;
+  births, deaths and weddings give the village things to talk about besides the newcomer,
+  which is a way to hide. A villager's affinity toward the newcomer does not lower their
+  suspicion by itself, but warm villagers are likelier to keep it to themselves.
 
 ## Naming
 
@@ -312,7 +363,10 @@ semantic match, and it is limited to messages addressed to that villager.
 
 ## Slices
 
-Each is its own PR-sized change, in this order, each building on the last:
+Each is its own PR-sized change, in this order. Suspicion comes first because it works on
+the shipped game and gives the player something to lose; village life builds on it.
+0. Suspicion and losing: per-villager suspicion, the extra Score question, `warn`, refusal,
+   town suspicion with influence weights, the lose state and summary, the sidebar label.
 1. Households, homes, routines, and the movement tick with encounters (new generation
    and seed format; no scores yet).
 2. Relationship scores, the warmth question, move and target pull, and ambient relay.
@@ -322,6 +376,8 @@ Each is its own PR-sized change, in this order, each building on the last:
 
 ## Left to the builder
 
+- Suspicion constants (rise and decay rates, thresholds, the influence weights and which
+  roles count more), the wording of refusals, and the layout of the loss summary.
 - Exact trait set, score constants, decay and saturation shapes, relay base rate and caps.
 - Tick length, phase boundaries, routine wander rules.
 - Generation prompts for households, routines, and children.
