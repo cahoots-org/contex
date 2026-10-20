@@ -21,7 +21,10 @@ class StubJev:
         self.state = state
         self.questions = questions
         return SimpleNamespace(
-            choices={k: SimpleNamespace(choice=v) for k, v in self.answers.items() if k in questions}
+            choices={
+                k: SimpleNamespace(choice=v, probabilities={v: 1.0})
+                for k, v in self.answers.items() if k in questions
+            }
         )
 
 
@@ -163,3 +166,18 @@ async def test_relationships_are_named_for_people_present():
     await decide(jev, view(villager=ada))
     assert jev.state["relationships_here"] == {"Bo": "rival"}
     assert jev.questions["villager_target"].criteria["v2"] == "Bo, baker, their rival"
+
+
+@pytest.mark.asyncio
+async def test_action_is_drawn_from_jev_probabilities():
+    jev = StubJev({"action": SPEAK})
+    real = jev.system_one
+
+    async def system_one(state, questions):
+        resp = await real(state, questions)
+        resp.choices["action"].probabilities = {SPEAK: 0.0, FOUND_GROUP: 1.0}
+        return resp
+
+    jev.system_one = system_one
+    decision = await decide(jev, view())
+    assert decision.action == FOUND_GROUP

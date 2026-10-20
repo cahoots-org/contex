@@ -23,3 +23,10 @@ def test_from_env_threshold(monkeypatch):
 def test_from_env_judge_threshold(monkeypatch):
     monkeypatch.setenv("RUMOR_MILL_JUDGE_THRESHOLD", "0.7")
     assert Config.from_env().judge_threshold == 0.7
+
+
+def test_each_run_gets_its_own_session(monkeypatch):
+    monkeypatch.delenv("RUMOR_MILL_SESSION", raising=False)
+    assert Config.from_env().session != Config.from_env().session
+    monkeypatch.setenv("RUMOR_MILL_SESSION", "replay")
+    assert Config.from_env().session == "replay"

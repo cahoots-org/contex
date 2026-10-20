@@ -1,23 +1,25 @@
 """Rumor Mill settings, overridable through RUMOR_MILL_* environment variables."""
 
 import os
-from dataclasses import dataclass, fields
+import uuid
+from dataclasses import dataclass, field, fields
 
 
 @dataclass(frozen=True)
 class Config:
     contex_url: str = "http://localhost:8001/mcp"
-    session: str = "default"
-    day_seconds: float = 180.0
+    # Names this run's Contex projects; a fresh one per run starts every mind empty.
+    session: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    day_seconds: float = 120.0
     memory_days: float = 2.0
-    cooldown_seconds: float = 15.0
+    cooldown_seconds: float = 30.0
     shrug_seconds: float = 20.0
     renew_seconds: float = 1200.0
     population: int = 100
     arrival_delay_seconds: float = 60.0
     judge_every_days: float = 1.0
     judge_concurrency: int = 10
-    judge_threshold: float = 0.6
+    judge_threshold: float = 0.75
     turn_concurrency: int = 20
     top_k: int = 5
     # Cosine similarity a memory needs to one of a villager's needs to wake them.
@@ -38,5 +40,5 @@ class Config:
                 raw = os.environ.get("CONTEX_MCP_URL")
             if raw is None:
                 continue
-            values[f.name] = type(f.default)(raw)
+            values[f.name] = f.type(raw)
         return cls(**values)

@@ -1,5 +1,6 @@
 """One Jev request per turn: what does this villager do, and to whom."""
 
+import random
 from dataclasses import dataclass
 
 from typesafe_sdk import Choice
@@ -116,10 +117,15 @@ def _questions(view: TurnView) -> dict[str, Choice]:
 
 
 async def decide(jev, view: TurnView) -> Decision:
-    """Ask Jev once and keep only the answers the chosen action needs."""
+    """Ask Jev once and keep only the answers the chosen action needs.
+
+    The action is drawn from Jev's probabilities, so a likely but not top
+    choice still happens some of the time.
+    """
     resp = await jev.system_one(state=_state(view), questions=_questions(view))
     pick = {k: c.choice for k, c in resp.choices.items()}
-    action = pick["action"]
+    odds = resp.choices["action"].probabilities
+    action = random.choices(list(odds), weights=list(odds.values()))[0]
     if action == IGNORE:
         return Decision(IGNORE, None, None, None)
     if len(view.new) > 1:

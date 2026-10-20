@@ -41,7 +41,7 @@ class Writer:
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
             f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
-            "Reply with one or two short sentences in your own voice, the way people gossip. "
+            "Reply with one or two short sentences, under 30 words, in your own voice, the way people gossip. "
             "Keep to what you heard, changed only as your manner says; bring up your grudge "
             "only when it fits. If what you heard is about you, answer as yourself. "
             "No stage directions, no quotation marks around the reply, no preamble."
