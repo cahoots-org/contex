@@ -38,7 +38,7 @@ class Config:
     warn_threshold: float = 0.4
     refuse_threshold: float = 0.7
     # Weighted town suspicion at which villagers start moving to run the newcomer out.
-    run_out_level: float = 0.3
+    run_out_level: float = 0.08
     run_out_checks: int = 3
     suspicion_check_days: float = 0.25
 

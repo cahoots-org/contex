@@ -185,10 +185,10 @@ def test_state_carries_the_label_and_no_scores(game):
     state = game.client.get("/api/state").json()
     assert (state["heat"], state["heat_line"]) == ("quiet", HEAT_LINES["quiet"])
     assert state["game"] == {"state": "playing", "summary": None}
-    game.suspicion.bump("v1", 0.37, "whispered to them directly")
+    game.suspicion.bump("v1", 0.11, "whispered to them directly")
     response = game.client.get("/api/state")
     assert (response.json()["heat"], response.json()["heat_line"]) == ("watched", HEAT_LINES["watched"])
-    assert "0.37" not in response.text and "0.185" not in response.text
+    assert "0.11" not in response.text and "0.055" not in response.text
 
 
 def test_heat_event_carries_its_sentence(game):
