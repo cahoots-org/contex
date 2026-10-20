@@ -10,8 +10,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance
-from examples.rumor_mill.tests.test_engine import FakeMind, make, wait_for
-from examples.rumor_mill.tests.test_player import make as make_player
+from examples.rumor_mill.tests.helpers import FakeMind, make, make_player, wait_for
 from examples.rumor_mill.town import Town
 
 GOALS = [("cat is a spy", 40)]

@@ -11,40 +11,11 @@ from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, make, wait_for
 from examples.rumor_mill.town import Town
 
 SETTLE = 0.1
-TIMEOUT = 2.0
-
-
-class FakeMind:
-    def __init__(self, villager):
-        self.villager = villager
-        self.queue: asyncio.Queue = asyncio.Queue()
-        self.results: list[list[Match]] = []
-        self.matches: list[Match] = []
-        self.heard = []
-        self.polls = 0
-
-    async def open(self):
-        pass
-
-    async def hear(self, key, data):
-        self.heard.append((key, data))
-
-    async def poll(self):
-        self.polls += 1
-        fresh = self.results.pop(0) if self.results else [Match("k", {"id": "u-0", "text": "news"})]
-        self.matches = fresh
-        return fresh
-
-    async def renew(self):
-        pass
-
-    async def pushes(self):
-        while True:
-            yield await self.queue.get()
 
 
 class RecordingFeed:
@@ -75,10 +46,6 @@ class Turns:
             town.remove(villager.id)
 
 
-def make(vid):
-    return Villager(vid, vid.upper(), "baker", "calm", "none", ["bread"], {})
-
-
 @pytest.fixture
 def turns(monkeypatch):
     t = Turns()
@@ -103,12 +70,6 @@ async def setup(*vids, cooldown=0.05, game=None):
         await engine.add_villager(make(vid))
     await engine.run()
     return engine, minds, feed
-
-
-async def wait_for(predicate, timeout=TIMEOUT):
-    async with asyncio.timeout(timeout):
-        while not predicate():
-            await asyncio.sleep(0.005)
 
 
 def push(mind, n=1):

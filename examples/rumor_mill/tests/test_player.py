@@ -2,36 +2,12 @@ import asyncio
 
 import pytest
 
-from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game, Summary
-from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.suspicion import Suspicion
-from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
-from examples.rumor_mill.town import PLAYER_ID, Town
-
-
-class FakeEngine:
-    def __init__(self, suspicion=None):
-        self.delivered = []
-        self.suspicion = suspicion
-
-    async def deliver(self, utterance, listener_ids):
-        self.delivered.append((utterance, listener_ids))
-
-
-def make(*names, shrug=0.05, cooldown=0.0):
-    town, lines = Town(), []
-    config = Config(shrug_seconds=shrug, cooldown_seconds=cooldown)
-    engine = FakeEngine(Suspicion(config, town))
-    lineage = Lineage()
-    for i, name in enumerate(names, 1):
-        town.add(Villager(f"v{i}", name, "baker", "calm", "none", [], {}), "tavern")
-    feed = Feed(lineage, town, out=lines.append)
-    player = Player(engine, town, lineage, Ids(), feed, config)
-    return player, town, lines, engine, lineage
+from examples.rumor_mill.player import MAX_WHISPER_CHARS, Refusal, echoes
+from examples.rumor_mill.tests.helpers import make_player as make
+from examples.rumor_mill.town import PLAYER_ID
 
 
 @pytest.mark.asyncio
