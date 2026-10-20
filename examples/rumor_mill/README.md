@@ -39,7 +39,8 @@ whenever a villager takes a turn and every 300 seconds otherwise.
 docker compose -f docker-compose.yml -f examples/rumor_mill/compose.sweep.yaml up
 ```
 
-Install the game's dependencies (Python 3.12) and set the two API keys:
+Install the game's dependencies (Python 3.12) and set the two API keys, either
+exported or in a `.env` file (the game reads the nearest one; exported values win):
 
 ```bash
 pip install -r examples/rumor_mill/requirements.txt

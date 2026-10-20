@@ -1,3 +1,4 @@
 mcp>=2,<3
 typesafe-sdk>=0.7,<0.8
 anthropic>=1,<2
+python-dotenv>=1,<2

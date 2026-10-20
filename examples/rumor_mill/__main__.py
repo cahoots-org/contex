@@ -8,6 +8,7 @@ import sys
 
 import anthropic
 import typesafe_sdk
+from dotenv import load_dotenv
 
 from examples.rumor_mill.cli import repl
 from examples.rumor_mill.config import Config
@@ -56,6 +57,7 @@ async def play() -> None:
 
 
 def main() -> None:
+    load_dotenv()
     logging.basicConfig(level=logging.WARNING)
     sys.stdout.reconfigure(line_buffering=True)
     try:
