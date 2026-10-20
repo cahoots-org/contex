@@ -28,10 +28,12 @@ class StubContex:
         self.minds: dict[str, list[Match]] = {}
         self.groups: dict[str, list[Match]] = {}
         self.thresholds: list[float | None] = []
+        self.thresholds_by_project: dict[str, float | None] = {}
         self.max_ages: dict[str, int | None] = {}
 
     async def query(self, project_id, query, top_k=3, threshold=None, max_age_seconds=None):
         self.thresholds.append(threshold)
+        self.thresholds_by_project[project_id] = threshold
         self.max_ages[project_id] = max_age_seconds
         found = self.minds.get(project_id) or self.groups.get(project_id) or []
         return [m for m in found if threshold is None or m.similarity is None or m.similarity >= threshold]
@@ -106,6 +108,18 @@ async def test_mind_queries_ignore_forgotten_memories():
     await judge.check(creed)
     assert contex.max_ages[mind_project(CONFIG.session, "v0")] == CONFIG.memory_seconds
     assert contex.max_ages[group_project(CONFIG.session, g.id)] is None
+
+
+@pytest.mark.asyncio
+async def test_group_query_leaves_the_decision_to_the_creed_question():
+    judge, contex, _, _, _ = make(n=2, believers=2)
+    judge.baselines = StubBaselines(baseline=0.6, margin=0.1)
+    g = judge.town.found_group("v0", "Order", "worship")
+    judge.town.join("v1", g.id)
+    creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
+    await judge.check(creed)
+    assert contex.thresholds_by_project[group_project(CONFIG.session, g.id)] == 0
+    assert contex.thresholds_by_project[mind_project(CONFIG.session, "v0")] == 0.7
 
 
 @pytest.mark.asyncio

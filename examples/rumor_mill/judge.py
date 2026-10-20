@@ -73,7 +73,7 @@ class Judge:
             try:
                 matches = await self.contex.query(
                     group_project(self.config.session, gid), goal.evidence[0], top_k=1,
-                    threshold=self.baselines.threshold(goal.evidence[0]),
+                    threshold=0,
                 )
                 record = next((m for m in matches if m.data_key == f"group:{gid}"), None)
                 return record is not None and await _yes(self.jev, {"group": record.data}, goal.creed_question)
