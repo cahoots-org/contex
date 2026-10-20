@@ -5,6 +5,7 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.suspicion import Suspicion
@@ -228,6 +229,17 @@ async def test_whisper_heard_during_generation_prints_nothing():
     gate.set()
     await asyncio.sleep(0.1)
     assert lines == []
+
+
+@pytest.mark.asyncio
+async def test_no_brush_off_is_written_once_the_game_is_over():
+    writer = StubWriter("Wheel's groaning.")
+    player, lines = make_hinting(writer)
+    player.game = Game(player.feed)
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    player.game.lose(Summary("lost", [], []))
+    await asyncio.sleep(0.15)
+    assert writer.concerns == []
 
 
 def test_echoes_needs_four_consecutive_words():

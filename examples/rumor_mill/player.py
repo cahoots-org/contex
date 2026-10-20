@@ -119,6 +119,8 @@ class Player:
 
     async def _shrug(self, villager_id: str, name: str, uid: str) -> None:
         await asyncio.sleep(self.config.cooldown_seconds + self.config.shrug_seconds)
+        if self._over():
+            return
         line = await self._brush_off(villager_id)
         if self._shrugs.pop((villager_id, uid), None) is None:
             return
