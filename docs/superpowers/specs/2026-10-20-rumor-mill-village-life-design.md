@@ -224,6 +224,7 @@ only if it matches one of their needs. Some messages are addressed to a person, 
 broadcast: a proposal to its target, and a birth, death, or marriage notice to kin.
 Those must not depend on a match.
 
+- Slice 0 builds this mechanism (for warnings); marriage and kin notices reuse it.
 - The engine delivers an addressed message into the recipient's mind as usual (so it
   is part of what they remember and can be matched later) **and** records it in a
   per-villager pending list. The pending list sets the villager's wake event and is
@@ -365,12 +366,13 @@ semantic match, and it is limited to messages addressed to that villager.
 
 Each is its own PR-sized change, in this order. Suspicion comes first because it works on
 the shipped game and gives the player something to lose; village life builds on it.
-0. Suspicion and losing: per-villager suspicion, the extra Score question, `warn`, refusal,
-   town suspicion with influence weights, the lose state and summary, the sidebar label.
+0. Suspicion and losing: addressed delivery (a warning must reach its target without a
+   topic match), per-villager suspicion, the extra Score question, `warn`, refusal, town
+   suspicion with influence weights, the lose state and summary, the sidebar label.
 1. Households, homes, routines, and the movement tick with encounters (new generation
    and seed format; no scores yet).
 2. Relationship scores, the warmth question, move and target pull, and ambient relay.
-3. Kin on the card, household feuds, and addressed delivery.
+3. Kin on the card and household feuds (kin notices reuse addressed delivery from slice 0).
 4. Marriage.
 5. Aging, births, deaths, and children as agents.
 
