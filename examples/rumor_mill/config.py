@@ -32,7 +32,7 @@ class Config:
     haiku_output_per_mtok: float = 5.0
     jev_input_per_mtok: float = 0.04
     jev_output_per_mtok: float = 0.0
-    suspicion_whisper_bump: float = 0.08
+    suspicion_whisper_bump: float = 0.12
     suspicion_hear_max: float = 0.25
     suspicion_decay_per_day: float = 0.03
     warn_threshold: float = 0.4

@@ -41,7 +41,7 @@ def test_price_overrides(monkeypatch):
 
 def test_suspicion_defaults_and_env_overrides(monkeypatch):
     cfg = Config()
-    assert (cfg.suspicion_whisper_bump, cfg.suspicion_hear_max, cfg.suspicion_decay_per_day) == (0.08, 0.25, 0.03)
+    assert (cfg.suspicion_whisper_bump, cfg.suspicion_hear_max, cfg.suspicion_decay_per_day) == (0.12, 0.25, 0.03)
     assert (cfg.warn_threshold, cfg.refuse_threshold, cfg.run_out_level) == (0.4, 0.7, 0.3)
     assert (cfg.run_out_checks, cfg.suspicion_check_days) == (3, 0.25)
     for name, raw in {
