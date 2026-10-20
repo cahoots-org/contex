@@ -7,7 +7,7 @@ from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
+from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, echoes
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 
@@ -130,3 +130,96 @@ async def test_whisper_to_reaches_one_of_two_namesakes():
     assert listeners == ["v2"]
     assert await player.whisper_to("v9", "hi") == "No one in town has that id."
     player.close()
+
+
+NEEDS = [
+    "I need someone to repair the water wheel before the spring thaw",
+    "My daughter wants to apprentice as a weaver in the city",
+    "The rats have gotten into my grain stores again",
+]
+
+
+class StubWriter:
+    def __init__(self, *lines, gate=None):
+        self.lines = list(lines)
+        self.concerns = []
+        self.gate = gate
+
+    async def brush_off(self, villager, concern):
+        self.concerns.append(concern)
+        if self.gate:
+            await self.gate.wait()
+        line = self.lines.pop(0)
+        if isinstance(line, Exception):
+            raise line
+        return line
+
+
+def make_hinting(writer):
+    player, town, lines, engine, lineage = make()
+    town.add(Villager("v1", "Aldwin Miller", "miller", "tired", "the smith", list(NEEDS), {}), "mill")
+    player.writer = writer
+    return player, lines
+
+
+async def shrug_once(player, lines):
+    before = len(lines)
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    for _ in range(100):
+        if len(lines) > before:
+            return lines[-1]
+        await asyncio.sleep(0.01)
+    return None
+
+
+@pytest.mark.asyncio
+async def test_shrug_brushes_off_with_unused_concerns_and_cycles():
+    writer = StubWriter("Wheel's groaning.", "Girl wants the city.", "Rats again.", "Wheel again.")
+    player, lines = make_hinting(writer)
+    for _ in range(4):
+        await shrug_once(player, lines)
+    assert writer.concerns == [NEEDS[0], NEEDS[1], NEEDS[2], NEEDS[0]]
+    assert lines[0] == 'Aldwin Miller brushes you off: "Wheel\'s groaning."'
+    event = player.feed.recent[-1]
+    assert (event.kind, event.data["hint"]) == ("shrug", "Wheel again.")
+    assert not any(n in str(e.to_json()) for e in player.feed.recent for n in NEEDS)
+
+
+@pytest.mark.asyncio
+async def test_writer_failure_falls_back_to_a_plain_shrug():
+    player, lines = make_hinting(StubWriter(RuntimeError("haiku down")))
+    assert await shrug_once(player, lines) == "Aldwin Miller shrugs it off."
+    assert player.feed.recent[-1].data["hint"] is None
+
+
+@pytest.mark.asyncio
+async def test_echoed_concern_is_retried_once_then_dropped():
+    echo = "Leave me be, someone to repair the water wheel is all I want."
+    writer = StubWriter(echo, "Fine, the wheel is creaking.")
+    player, lines = make_hinting(writer)
+    assert await shrug_once(player, lines) == 'Aldwin Miller brushes you off: "Fine, the wheel is creaking."'
+    writer = StubWriter(echo, echo)
+    player, lines = make_hinting(writer)
+    assert await shrug_once(player, lines) == "Aldwin Miller shrugs it off."
+    assert len(writer.concerns) == 2
+
+
+@pytest.mark.asyncio
+async def test_whisper_heard_during_generation_prints_nothing():
+    gate = asyncio.Event()
+    writer = StubWriter("Rats again.", gate=gate)
+    player, lines = make_hinting(writer)
+    await player.whisper_to("v1", "hello")
+    for _ in range(100):
+        if writer.concerns:
+            break
+        await asyncio.sleep(0.01)
+    player.note_heard("v1", [Match("utt:w-1", {"id": "w-1"})])
+    gate.set()
+    await asyncio.sleep(0.1)
+    assert lines == []
+
+
+def test_echoes_needs_four_consecutive_words():
+    assert echoes("The rats have gotten in, curse them", NEEDS[2])
+    assert not echoes("Rats in the grain, again", NEEDS[2])

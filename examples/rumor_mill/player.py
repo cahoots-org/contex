@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -12,17 +13,30 @@ from examples.rumor_mill.town import PLAYER_ID, Town
 log = logging.getLogger(__name__)
 
 MAX_WHISPER_CHARS = 500
+ECHO_WORDS = 4
+
+
+def _runs(text: str) -> set[tuple[str, ...]]:
+    words = re.findall(r"[a-z0-9']+", text.lower())
+    return {tuple(words[i:i + ECHO_WORDS]) for i in range(len(words) - ECHO_WORDS + 1)}
+
+
+def echoes(line: str, concern: str) -> bool:
+    """Whether the line repeats four or more consecutive words of the concern."""
+    return bool(_runs(line) & _runs(concern))
 
 
 class Player:
-    def __init__(self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config):
+    def __init__(self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config, writer=None):
         self.engine = engine
         self.town = town
         self.lineage = lineage
         self.ids = ids
         self.feed = feed
         self.config = config
+        self.writer = writer
         self._shrugs: dict[tuple[str, str], asyncio.Task] = {}
+        self._hinted: dict[str, set[int]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't."""
@@ -78,5 +92,36 @@ class Player:
 
     async def _shrug(self, villager_id: str, name: str, uid: str) -> None:
         await asyncio.sleep(self.config.cooldown_seconds + self.config.shrug_seconds)
-        self._shrugs.pop((villager_id, uid), None)
-        self.feed.on_shrug(villager_id, name, uid)
+        line = await self._brush_off(villager_id)
+        if self._shrugs.pop((villager_id, uid), None) is None:
+            return
+        self.feed.on_shrug(villager_id, name, uid, line)
+
+    def _next_concern(self, villager_id: str) -> str | None:
+        """One of the villager's needs not hinted at yet, starting over once all have been."""
+        needs = self.town.get(villager_id).needs
+        if not needs:
+            return None
+        used = self._hinted.setdefault(villager_id, set())
+        if len(used) >= len(needs):
+            used.clear()
+        i = next(i for i in range(len(needs)) if i not in used)
+        used.add(i)
+        return needs[i]
+
+    async def _brush_off(self, villager_id: str) -> str | None:
+        """An in-character line hinting at a concern, or None for a plain shrug."""
+        if self.writer is None or villager_id not in self.town:
+            return None
+        concern = self._next_concern(villager_id)
+        if concern is None:
+            return None
+        for _ in range(2):
+            try:
+                line = await self.writer.brush_off(self.town.get(villager_id), concern)
+            except Exception:
+                log.exception("brush-off for %s failed", villager_id)
+                return None
+            if line and not echoes(line, concern):
+                return line
+        return None

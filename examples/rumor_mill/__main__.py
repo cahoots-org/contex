@@ -40,7 +40,7 @@ async def play(web: bool) -> None:
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         engine = Engine(config, town, contex, jev, writer, lineage, ids, feed)
-        player = Player(engine, town, lineage, ids, feed, config)
+        player = Player(engine, town, lineage, ids, feed, config, writer)
         engine.on_heard = player.note_heard
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         goals = deal(rng)

@@ -63,8 +63,9 @@ class Feed:
     def on_met(self, goal: Goal) -> None:
         self.emit("goal", f'Goal met: "{goal.text}"', goal_id=goal.id, text=goal.text, percent=100, met=True)
 
-    def on_shrug(self, villager_id: str, name: str, whisper_id: str) -> None:
-        self.emit("shrug", f"{name} shrugs it off.", villager_id=villager_id, name=name, uid=whisper_id)
+    def on_shrug(self, villager_id: str, name: str, whisper_id: str, line: str | None = None) -> None:
+        text = f'{name} brushes you off: "{line}"' if line else f"{name} shrugs it off."
+        self.emit("shrug", text, villager_id=villager_id, name=name, uid=whisper_id, hint=line)
 
     def on_delivery(self, utterance: Utterance, listener_ids: list[str]) -> None:
         """Emit the player's whisper, a hop of a player-rooted rumor, or a town announcement."""
