@@ -4,7 +4,7 @@ import random
 import pytest
 
 from examples.rumor_mill.town_gen import (
-    MAX_BATCH_ATTEMPTS, generate_newcomer, generate_villagers, load_or_generate,
+    MAX_FAILED_BATCHES, generate_newcomer, generate_villagers, load_or_generate,
     wire_relationships,
 )
 from examples.rumor_mill.models import Villager
@@ -45,6 +45,38 @@ async def test_generate_villagers_parses_fenced_json_and_assigns_ids():
     assert [v.id for v in villagers] == [f"v{i:03d}" for i in range(1, 13)]
     assert writer.calls == 2
     assert all(v.relationships == {} for v in villagers)
+
+
+@pytest.mark.asyncio
+async def test_generate_villagers_makes_more_batches_than_the_failure_cap():
+    writer = StubWriter(fenced(10))
+
+    villagers = await generate_villagers(writer, 100, random.Random(1))
+
+    assert len(villagers) == 100
+    assert writer.calls == 10
+
+
+@pytest.mark.asyncio
+async def test_generation_asks_for_the_mayor_and_miller_until_the_village_has_them():
+    prompts = []
+    batches = [
+        [{**entry(i), "occupation": "Miller" if i == 0 else "baker"} for i in range(10)],
+        [{**entry(i), "occupation": "Mayor of the village" if i == 10 else "baker"} for i in range(10, 20)],
+        [entry(i) for i in range(20, 30)],
+    ]
+
+    class RecordingWriter:
+        async def complete(self, system, user, max_tokens=400):
+            prompts.append(user)
+            return json.dumps(batches[len(prompts) - 1])
+
+    await generate_villagers(RecordingWriter(), 30, random.Random(1))
+
+    assert "village mayor and the miller among" in prompts[0]
+    assert "village mayor among" in prompts[1]
+    assert "Include the village" not in prompts[2]
+    assert "Name10 (Mayor of the village)" in prompts[2]
 
 
 @pytest.mark.asyncio
@@ -111,7 +143,7 @@ async def test_generate_villagers_gives_up_after_max_attempts():
     with pytest.raises(ValueError, match="0 of 5"):
         await generate_villagers(writer, 5, random.Random(1))
 
-    assert writer.calls == MAX_BATCH_ATTEMPTS
+    assert writer.calls == MAX_FAILED_BATCHES
 
 
 @pytest.mark.asyncio
@@ -159,7 +191,7 @@ async def test_one_sentence_needs_string_is_rejected():
     with pytest.raises(ValueError, match="0 of 1"):
         await generate_villagers(writer, 1, random.Random(1))
 
-    assert writer.calls == MAX_BATCH_ATTEMPTS
+    assert writer.calls == MAX_FAILED_BATCHES
 
 
 @pytest.mark.asyncio

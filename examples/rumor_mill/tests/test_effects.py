@@ -134,7 +134,8 @@ async def test_leave_town_removes_villager_and_announces_in_square():
     assert s.town.alive_count == 2
     utt, listeners = s.hub.delivered[0]
     assert listeners == ["v2"]
-    assert "leaving town" in utt.text
+    assert "leaving town" in utt.text and "words" in utt.text
+    assert s.writer.say_calls == [(LEAVE_TOWN, None, "the square")]
 
 
 @pytest.mark.asyncio

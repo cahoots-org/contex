@@ -16,11 +16,14 @@ MAX_OPTIONS = 255
 MAX_RECENT = 10
 
 ACTION_INSTRUCTIONS = (
-    "You are deciding what one villager does next in a small town where rumors spread. "
-    "Judge from their personality, their relationships, and what they just heard. "
-    "Most of the time a villager simply does nothing; pick something else only when the "
-    "news concerns them or someone they care about, or fits their personality or grudge "
-    "strongly enough that they would plausibly act on it."
+    "You are deciding what one villager does next in a small village that runs on gossip. "
+    "Judge from their personality, grudge, relationships, and what they just heard. "
+    "Villagers relish news that touches their trade, family, standing, fears, or someone "
+    "they love or resent, and usually pass it on, argue about it, or act on it. "
+    "They do nothing about news that does not concern them, or that they have already "
+    "heard: if the same story is among their recent memories, they have dealt with it. "
+    "News that alarms or inspires them can move them to walk elsewhere, start or join a "
+    "group, or leave town for good."
 )
 
 
@@ -47,13 +50,19 @@ def _text(m: Match) -> str:
     return m.data.get("text", "")
 
 
+def _person(v: Villager, other: Villager) -> str:
+    kind = v.relationships.get(other.id)
+    return f"{other.name}, {other.occupation}" + (f", their {kind}" if kind else "")
+
+
 def _state(view: TurnView) -> dict:
     v = view.villager
     return {
         "villager": {
             "name": v.name, "occupation": v.occupation, "personality": v.personality,
-            "grudge": v.grudge, "relationships": v.relationships,
+            "grudge": v.grudge,
         },
+        "relationships_here": {p.name: v.relationships[p.id] for p in view.present if p.id in v.relationships},
         "place": view.place,
         "present": [p.name for p in view.present],
         "just_heard": [_text(m) for m in view.new],
@@ -82,7 +91,7 @@ def _questions(view: TurnView) -> dict[str, Choice]:
         qs["villager_target"] = Choice(
             instructions="Which person nearby is this villager addressing?",
             # Villagers beyond the first 255 in `present` order are dropped.
-            criteria={p.id: f"{p.name}, {p.occupation}" for p in view.present[:MAX_OPTIONS]},
+            criteria={p.id: _person(view.villager, p) for p in view.present[:MAX_OPTIONS]},
         )
     qs["place_target"] = Choice(
         instructions="Which place does this villager walk to?",

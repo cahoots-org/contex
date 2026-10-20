@@ -154,3 +154,12 @@ async def test_target_descriptions_include_names():
     assert "Bo" in jev.questions["villager_target"].criteria["v2"]
     for q in ("join_target", "group_target"):
         assert "Chapel Circle" in jev.questions[q].criteria["g-1"]
+
+
+@pytest.mark.asyncio
+async def test_relationships_are_named_for_people_present():
+    ada = Villager("v1", "Ada", "baker", "gossipy", "", [], {"v2": "rival", "v9": "spouse"})
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view(villager=ada))
+    assert jev.state["relationships_here"] == {"Bo": "rival"}
+    assert jev.questions["villager_target"].criteria["v2"] == "Bo, baker, their rival"

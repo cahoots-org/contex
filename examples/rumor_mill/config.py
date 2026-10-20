@@ -20,7 +20,8 @@ class Config:
     judge_threshold: float = 0.6
     turn_concurrency: int = 20
     top_k: int = 5
-    threshold: float | None = None
+    # Cosine similarity a memory needs to one of a villager's needs to wake them.
+    threshold: float = 0.815
     haiku_model: str = "claude-haiku-4-5-20251001"
     seed_path: str = "rumor_mill_seed.json"
 
@@ -37,6 +38,5 @@ class Config:
                 raw = os.environ.get("CONTEX_MCP_URL")
             if raw is None:
                 continue
-            cast = float if f.name == "threshold" else type(f.default)
-            values[f.name] = cast(raw)
+            values[f.name] = type(f.default)(raw)
         return cls(**values)

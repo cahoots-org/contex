@@ -91,7 +91,7 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
     monkeypatch.setattr(engine_mod, "decide", decide)
     monkeypatch.setattr(engine_mod, "act", act)
     async with ContexClient(URL) as client:
-        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1)
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1, threshold=0.5)
         engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed())
         ann = Villager("v1", "Ann", "baker", "kind", "none", ["anything about my bakery"], {})
         early = Mind(client, ann, config)
@@ -114,3 +114,22 @@ async def test_query_threshold_filters_unrelated_matches():
         await client.publish(pid, "u1", {"text": "the oven at the baker's shop is cold"})
         assert await client.query(pid, "quantum chromodynamics lecture", top_k=3)
         assert not await client.query(pid, "quantum chromodynamics lecture", top_k=3, threshold=0.99)
+
+
+async def test_default_threshold_lets_only_whispers_on_a_need_in():
+    async with ContexClient(URL) as client:
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}")
+        marta = Villager("v1", "Marta", "baker", "anxious", "none", [
+            "Has anyone been saying my bread is stale or my oven unsafe?",
+            "I dread omens, curses, and anything wrong with the well water.",
+        ], {})
+        mind = Mind(client, marta, config)
+        await mind.open()
+        off = Utterance("w-1", "newcomer", "The newcomer", "square",
+                        "lattice gauge theory predicts quark confinement at low energies", None, "whispered to you")
+        on = Utterance("w-2", "newcomer", "The newcomer", "square",
+                       "the well has been cursed and everyone who drinks from it falls ill", None, "whispered to you")
+        await mind.hear("utt:w-1", off.to_data(0))
+        await mind.hear("utt:w-2", on.to_data(0))
+        assert await poll_for(client, mind.uri, "utt:w-2")
+        assert "utt:w-1" not in {m.data_key for m in mind.matches + await mind.poll()}

@@ -9,13 +9,15 @@ from examples.rumor_mill.models import Villager
 from examples.rumor_mill.writer import Writer, extract_json
 
 BATCH = 10
-MAX_BATCH_ATTEMPTS = 5
+MAX_FAILED_BATCHES = 5
 REQUIRED = ("name", "occupation", "personality", "grudge", "needs")
 MAX_RELATIONSHIPS = 4
 REVERSE = {
     "spouse": "spouse", "rival": "rival", "friend": "friend",
     "debtor": "creditor", "creditor": "debtor",
 }
+# Villagers the goal deck talks about, asked for until the village has them.
+ROLES = ("mayor", "miller")
 # Weighted draw, so friends are commoner than spouses.
 KINDS = ["friend", "friend", "rival", "debtor", "creditor", "spouse"]
 
@@ -26,10 +28,13 @@ PROMPT = (
     "Invent {n} distinct villagers as a top-level JSON array of objects, not wrapped in "
     "another object. Each item has: name (a full name), occupation, personality (one "
     "short phrase), grudge (one sentence about someone or something they resent), and "
-    "needs: a JSON array of 3 to 5 strings, plain-English sentences written in the "
-    "villager's own voice about their own specific concerns: their trade, family, fears, "
-    "hobbies, grudges. Make needs particular to this person and different from the other "
-    "villagers' where possible, never generic topics like news or gossip. {taken}"
+    "needs: a JSON array of 3 to 5 strings, each one sentence in the villager's own voice "
+    "about news they would prick up their ears at: one about their trade, one about a "
+    "person they love or resent, one about their standing or money, and one about an odd "
+    "fascination or fear of their own (omens, ghosts, the stars, the church, strangers, "
+    "curses, the lord's taxes, or anything else). Make needs particular to this person and "
+    "different from the other villagers', never generic topics like news or gossip. "
+    "{roles}{taken}"
 )
 
 
@@ -70,6 +75,12 @@ def _valid(raw) -> bool:
     )
 
 
+def _missing_roles(villagers: list[Villager]) -> str:
+    """A prompt line asking for the ROLES no villager has yet, or nothing."""
+    missing = [r for r in ROLES if not any(r in v.occupation.lower() for v in villagers)]
+    return f"Include the village {' and the '.join(missing)} among them. " if missing else ""
+
+
 def _villager(vid: str, raw: dict) -> Villager:
     return Villager(
         id=vid, name=raw["name"], occupation=raw["occupation"],
@@ -79,17 +90,20 @@ def _villager(vid: str, raw: dict) -> Villager:
 
 
 async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> list[Villager]:
-    """Ask Haiku for villagers in batches of 10, with ids v001... and no relationships."""
+    """Ask Haiku for villagers in batches of 10, with ids v001... and no relationships.
+
+    Gives up after MAX_FAILED_BATCHES replies in a row that add no villager.
+    """
     villagers: list[Villager] = []
-    for _ in range(MAX_BATCH_ATTEMPTS):
-        if len(villagers) >= count:
-            break
+    failed = 0
+    while len(villagers) < count and failed < MAX_FAILED_BATCHES:
+        failed += 1
         n = min(BATCH, count - len(villagers))
         taken = ""
         if villagers:
-            names = ", ".join(v.name for v in villagers[-30:])
+            names = ", ".join(f"{v.name} ({v.occupation})" for v in villagers[-30:])
             taken = f"Do not reuse these names or occupations: {names}."
-        text = await writer.complete(SYSTEM, PROMPT.format(n=n, taken=taken), max_tokens=4000)
+        text = await writer.complete(SYSTEM, PROMPT.format(n=n, roles=_missing_roles(villagers), taken=taken), max_tokens=4000)
         try:
             parsed = extract_json(text)
         except ValueError:
@@ -99,9 +113,10 @@ async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> 
             continue
         for raw in [r for r in map(_prepare, items) if _valid(r)][:n]:
             villagers.append(_villager(f"v{len(villagers) + 1:03d}", raw))
+            failed = 0
     if len(villagers) < count:
         raise ValueError(
-            f"got {len(villagers)} of {count} villagers after {MAX_BATCH_ATTEMPTS} attempts"
+            f"got {len(villagers)} of {count} villagers after {MAX_FAILED_BATCHES} failed batches"
         )
     return villagers
 
@@ -174,7 +189,7 @@ async def generate_newcomer(
     """A new villager related to one or two living ones; departed ones only reserve their id and name."""
     everyone = [*departed, *existing]
     taken = "Do not reuse these names: " + ", ".join(v.name for v in everyone[-30:]) + "."
-    text = await writer.complete(SYSTEM, PROMPT.format(n=1, taken=taken), max_tokens=800)
+    text = await writer.complete(SYSTEM, PROMPT.format(n=1, roles="", taken=taken), max_tokens=800)
     raw = extract_json(text)
     if isinstance(raw, list):
         raw = raw[0] if raw else None

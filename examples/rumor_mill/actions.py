@@ -17,19 +17,19 @@ ACTIONS = {
     RETELL: "Pass on something just heard to one specific person nearby.",
     DENY: "Tell one specific person nearby that something being said is false.",
     CONFRONT: "Challenge one specific person nearby about what they said or did.",
-    SPEAK: "Say something of your own to the people nearby, unprompted by any one item.",
-    MOVE: "Walk to a different place in town.",
-    FOUND_GROUP: "Start a new group around a belief or cause.",
-    JOIN_GROUP: "Join a group that has members nearby.",
-    LEAVE_GROUP: "Quit a group you belong to.",
+    SPEAK: "Tell everyone nearby: spread what you just heard, or say what is on your mind.",
+    MOVE: "Walk to a different place in town: to find someone, see something for yourself, or get away.",
+    FOUND_GROUP: "Start a new group around a belief, fear, or cause you feel strongly about: a cult, a watch, a guild, a protest.",
+    JOIN_GROUP: "Join a group that has members nearby and a cause you share.",
+    LEAVE_GROUP: "Quit a group you belong to that you no longer believe in.",
     PREACH: "Speak up for one of your groups' beliefs to the people nearby.",
-    LEAVE_TOWN: "Leave town for good.",
+    LEAVE_TOWN: "Leave town for good: ruined, disgraced, frightened, or fed up.",
 }
 
 # Option details where two actions are easy to confuse.
 ACTION_NOT_FOR = {
-    RETELL: "Not for making something up of your own (speak) or disputing it (deny).",
-    SPEAK: "Not for passing on a specific piece of news to a specific person (retell).",
+    RETELL: "Not for telling everyone nearby (speak) or disputing it (deny).",
+    SPEAK: "Not for telling one person in particular (retell).",
     DENY: "Not for personal accusations (confront).",
     CONFRONT: "Not for correcting a rumor in general (deny).",
 }

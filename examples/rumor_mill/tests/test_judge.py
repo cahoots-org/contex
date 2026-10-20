@@ -27,7 +27,7 @@ class StubContex:
 
 
 class StubJev:
-    def __init__(self, answer=True):
+    def __init__(self, answer=0.9):
         self.answer = answer
         self.calls: list[tuple[dict, dict]] = []
 
@@ -67,6 +67,13 @@ async def test_villagers_without_matches_cost_no_jev_calls():
 
 
 @pytest.mark.asyncio
+async def test_unlikely_yes_does_not_count_as_belief():
+    judge, _, jev, _, _ = make(n=4, believers=4)
+    jev.answer = 0.3
+    assert await judge.check(BELIEF) == 0.0
+
+
+@pytest.mark.asyncio
 async def test_progress_is_believer_fraction_over_target():
     judge, *_ = make(n=4, believers=1)
     assert await judge.check(BELIEF) == pytest.approx(0.5)
@@ -97,7 +104,7 @@ async def test_creed_goal_capped_without_qualifying_group():
     town.join("v1", g.id)
     contex.groups[group_project(CONFIG.session, g.id)] = [Match(f"group:{g.id}", {"name": "Order"})]
     assert await judge.check(creed) == 1.0
-    jev.answer = False
+    jev.answer = 0.1
     assert await judge.check(creed) < 1.0
 
 

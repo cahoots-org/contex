@@ -78,6 +78,7 @@ async def act(
         text = await writer.say(villager, decision, source_text, group.name)
         await say(text, list(group.members), "preached")
     elif action == LEAVE_TOWN:
+        farewell = await writer.say(villager, decision, source_text, "the square")
         town.remove(vid)
         listeners = [v.id for v in town.present("square")]
-        await say(f"{villager.name} is leaving town for good", listeners, "announced")
+        await say(f"{villager.name} is leaving town for good: {farewell}", listeners, "announced")

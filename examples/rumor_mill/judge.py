@@ -22,8 +22,9 @@ def _text(match: Match) -> str:
 
 
 async def _yes(jev, state: dict, question: str) -> bool:
+    """Whether Jev thinks a yes is more likely than a no."""
     response = await jev.system_one(state=state, questions={"q": Noul(instructions=question)})
-    return response.nouls["q"].noul
+    return response.nouls["q"].noul > 0.5
 
 
 class Judge:
