@@ -184,7 +184,8 @@ whispers are refused, and you restart the program to play again.
 
 ## The browser page
 
-The page has the feed, a whisper box, your goals, and the village.
+The page has the feed with your goals pinned above it, a whisper box, and the
+village in the sidebar.
 
 The village is one tile per place, each with how many villagers are there and
 their faces. One tile is open at a time and lists everyone there: face, name,
@@ -230,7 +231,7 @@ connections from other origins.
 
 The game keeps a running count of the tokens it sends to Haiku and Jev and
 multiplies them by per-million-token prices. `usage` prints it in the
-terminal, the browser page shows it at the bottom of the sidebar, and both
+terminal, the browser page shows it in the strip above the feed, and both
 print it on quit. The figures are estimates: the prices are list prices you can
 change, and the providers' bills are the real numbers.
 

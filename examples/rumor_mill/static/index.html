@@ -199,19 +199,38 @@ input[type="text"], input[type="search"] {
 aside {
   background: var(--panel);
   overflow-y: auto;
-  padding: .5rem 1.25rem 1.5rem;
+  padding: 0 1.25rem 1.5rem;
   min-height: 0;
 }
 h2 { font-size: 1rem; margin: 1rem 0 .5rem; }
 h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 .2rem; }
-.goals { list-style: none; margin: 0; padding: 0; }
-.goals li { margin: 0 0 .75rem; }
-.goal-text { font-size: .9rem; }
+.strip {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: .25rem 1.25rem .6rem;
+  border-bottom: 1px solid var(--rail);
+}
+.strip-toggle { display: none; }
+.goals {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: .4rem 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.goals li { min-width: 0; }
+.goal-text { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip-side { flex: none; max-width: 15rem; text-align: right; }
 .bar { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
-.bar span:first-child { flex: 1; height: 6px; background: var(--rail); border-radius: 3px; overflow: hidden; }
+.bar span:first-child { flex: 1; height: 4px; background: var(--rail); border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 .met .bar { color: var(--accent); font-weight: 700; }
-.heat { margin: 0; font: italic 1rem/1.4 var(--rumor); }
+.heat { margin: 0; font: italic 1rem/1.3 var(--rumor); }
 #search { width: 100%; }
 .find-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .5rem; margin-top: .25rem; }
@@ -285,7 +304,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .suggest li { display: flex; gap: .6rem; align-items: flex-start; padding: .3rem .4rem; border-radius: 4px; cursor: pointer; }
 .suggest li:hover, .suggest li[aria-selected="true"] { background: var(--bg); }
 .suggest li[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
-.usage { margin: 1.5rem 0 0; font-size: .8rem; color: var(--muted); }
+.usage { margin: .1rem 0 0; font-size: .75rem; color: var(--muted); }
+.usage:empty { display: none; }
 .linkish { background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; font-size: .875rem; }
 
 @media (max-width: 760px) {
@@ -303,6 +323,19 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   }
   aside.open { display: block; }
   .feed { padding: .5rem 1rem 1rem; }
+  .strip { flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .25rem 1rem .5rem; }
+  .strip-toggle {
+    display: inline-block; flex: none; background: none; border: 0; padding: .2rem 0;
+    cursor: pointer; font-size: .875rem; font-weight: 700;
+  }
+  .strip-toggle::after { content: " \25BE"; }
+  .strip-toggle[aria-expanded="true"]::after { content: " \25B4"; }
+  .goals { display: none; flex: 1 0 100%; order: 3; grid-template-columns: minmax(0, 1fr); }
+  .strip.open .goals { display: grid; }
+  .strip-side { display: contents; }
+  .heat { flex: 1; min-width: 0; text-align: right; font-size: .95rem; }
+  .usage { order: 4; flex: 1 0 100%; text-align: left; }
+  .strip:not(.open) .usage { display: none; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
@@ -326,10 +359,18 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <h1>Rumor Mill</h1>
     <span class="spacer"></span>
     <span class="conn" id="conn" data-state="connecting" role="status">Connecting</span>
-    <button class="drawer-toggle" id="drawer-toggle" aria-controls="town" aria-expanded="false">Goals and villagers</button>
+    <button class="drawer-toggle" id="drawer-toggle" aria-controls="town" aria-expanded="false">Villagers</button>
   </header>
 
   <main>
+    <section class="strip" id="strip" aria-label="Goals and mood">
+      <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
+      <ul class="goals" id="goals"></ul>
+      <div class="strip-side">
+        <p class="heat" id="heat" aria-live="polite"></p>
+        <p class="usage" id="usage"></p>
+      </div>
+    </section>
     <div class="stage">
       <section class="gameover" id="gameover" aria-labelledby="gameover-title" hidden>
         <div>
@@ -357,10 +398,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     </div>
   </main>
 
-  <aside id="town" aria-label="Goals and villagers">
-    <h2>Goals</h2>
-    <ul class="goals" id="goals"></ul>
-    <p class="heat" id="heat" aria-live="polite"></p>
+  <aside id="town" aria-label="Villagers">
     <h2 id="people-heading">Village</h2>
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
@@ -374,7 +412,6 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
     </p>
     <section class="card" id="card" role="dialog" aria-labelledby="card-title" hidden></section>
-    <p class="usage" id="usage"></p>
   </aside>
 </div>
 
@@ -824,8 +861,10 @@ document.addEventListener("keydown", (ev) => {
 
 function renderGoals() {
   const list = $("goals");
-  list.replaceChildren(...[...goals.values()].map((g) => el("li", { className: g.met ? "met" : "" },
-    el("div", { className: "goal-text", textContent: g.text }),
+  const all = [...goals.values()];
+  $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : `${g.percent}%`)).join(" · ")}`;
+  list.replaceChildren(...all.map((g) => el("li", { className: g.met ? "met" : "" },
+    el("div", { className: "goal-text", textContent: g.text, title: g.text }),
     el("div", { className: "bar" },
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100 },
         el("i", { style: `width:${g.percent}%` })),
@@ -1150,9 +1189,14 @@ $("whisper").addEventListener("submit", async (ev) => {
 function setDrawer(open) {
   $("town").classList.toggle("open", open);
   $("drawer-toggle").setAttribute("aria-expanded", String(open));
-  $("drawer-toggle").textContent = open ? "Back to the feed" : "Goals and villagers";
+  $("drawer-toggle").textContent = open ? "Back to the feed" : "Villagers";
 }
 $("drawer-toggle").addEventListener("click", () => setDrawer(!$("town").classList.contains("open")));
+
+$("strip-toggle").addEventListener("click", () => {
+  const open = $("strip").classList.toggle("open");
+  $("strip-toggle").setAttribute("aria-expanded", String(open));
+});
 
 function setConn(state, text) {
   $("conn").dataset.state = state;
