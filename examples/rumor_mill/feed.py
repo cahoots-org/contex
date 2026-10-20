@@ -71,14 +71,24 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, villager_id=villager_id, name=name, line=line)
 
+    def on_warning(self, speaker_id: str, speaker_name: str, target_id: str, target_name: str) -> None:
+        self.emit(
+            "warning", f"{speaker_name} warned {target_name} about you.",
+            speaker_id=speaker_id, speaker=speaker_name, target_id=target_id, target=target_name,
+        )
+
     def on_delivery(self, utterance: Utterance, listener_ids: list[str]) -> None:
-        """Emit the player's whisper, a hop of a player-rooted rumor, or a town announcement."""
+        """Emit the player's whisper, a warning, a hop of a player-rooted rumor, or a town announcement."""
         u = utterance
         names = [self.town.get(i).name for i in listener_ids if i in self.town]
         if u.speaker == PLAYER_ID:
             if listener_ids:
                 self.emit("whisper", uid=u.id, target_id=listener_ids[0], target=names[0] if names else "",
                           place=u.place, text=u.text)
+            return
+        if u.verb == "warned":
+            if listener_ids:
+                self.on_warning(u.speaker, u.speaker_name, listener_ids[0], names[0] if names else listener_ids[0])
             return
         if listener_ids and self.lineage.is_player_rooted(u.id):
             if len(listener_ids) == 1:

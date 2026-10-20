@@ -60,12 +60,13 @@ class Turns:
         self.acts = []
         self.fail_first = fail_first
         self.leave = leave
+        self.strength = None
 
     async def decide(self, jev, view):
         self.views.append(view)
         if self.fail_first and len(self.views) == 1:
             raise RuntimeError("jev down")
-        return Decision(IGNORE, None, None, None)
+        return Decision(IGNORE, None, None, None, self.strength)
 
     async def act(self, decision, villager, *, town, **kw):
         self.acts.append((villager.id, kw["inspiration"]))
@@ -398,4 +399,30 @@ async def test_addressed_message_survives_a_failed_poll(turns):
     await engine.deliver(utterance(), ["v2"], addressed=True)
     await wait_for(lambda: len(turns.views) == 1)
     assert [m.data_key for m in turns.views[0].new] == ["utt:u-1"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fail_the_turn(turns, caplog):
+    engine, minds, _ = await setup("v1")
+    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("u-0", "w-1")
+    turns.strength = 1.0
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.acts) == 1)
+    view = turns.views[0]
+    assert view.player_rooted == view.new
+    assert (view.suspicion, view.warn_threshold) == (0.0, engine.config.warn_threshold)
+    assert engine.suspicion.score("v1") == engine.config.suspicion_hear_max
+
+    def broken(*args):
+        raise RuntimeError("rating down")
+
+    engine.suspicion.rate = broken
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.acts) == 2)
+    assert turns.views[1].suspicion == engine.config.suspicion_hear_max
+    assert "rating down" in caplog.text
+    engine.suspect("v1", 0.1, "was warned about the newcomer", "u-1")
+    assert engine.suspicion.score("v1") == pytest.approx(engine.config.suspicion_hear_max + 0.1)
     await engine.stop()

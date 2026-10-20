@@ -6,28 +6,31 @@ import pytest
 
 from examples.rumor_mill.actions import (
     CONFRONT, DENY, FOUND_GROUP, IGNORE, JOIN_GROUP, LEAVE_GROUP, LEAVE_TOWN, MOVE,
-    PREACH, RETELL, SPEAK,
+    PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.decide import Decision, TurnView, decide
+from examples.rumor_mill.decide import SUSPICION_LEVELS, Decision, TurnView, decide
 from examples.rumor_mill.models import Group, Villager
 
 
 class StubJev:
-    def __init__(self, answers):
+    def __init__(self, answers, scores=None):
         self.answers = answers
+        self.scores = scores
         self.questions = {}
         self.state = None
 
     async def system_one(self, state, questions):
         self.state = state
         self.questions = questions
-        return SimpleNamespace(
-            choices={
-                k: SimpleNamespace(choice=v, probabilities={v: 1.0})
-                for k, v in self.answers.items() if k in questions
-            }
-        )
+        choices = {
+            k: SimpleNamespace(choice=v, probabilities={v: 1.0})
+            for k, v in self.answers.items() if k in questions
+        }
+        if self.scores is None:
+            return SimpleNamespace(choices=choices)
+        scores = {k: SimpleNamespace(score=v, confidence=0.9) for k, v in self.scores.items() if k in questions}
+        return SimpleNamespace(choices=choices, scores=scores)
 
 
 def villager(vid="v1", name="Ada"):
@@ -42,6 +45,7 @@ def view(**kw):
     base = dict(
         villager=villager(), place="square", present=[villager("v2", "Bo")],
         member_groups=[], visible_groups=[], new=[match("m1")], recent=[],
+        suspicion=0.0, warn_threshold=0.4, player_rooted=[],
     )
     return TurnView(**{**base, **kw})
 
@@ -218,3 +222,53 @@ async def test_odds_and_drawn_action_are_logged_at_debug(caplog):
     with caplog.at_level(logging.DEBUG):
         await decide(jev, view())
     assert "v1" in caplog.text and SPEAK in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_suspicion_question_only_when_a_player_rooted_item_is_new():
+    jev = StubJev({"action": IGNORE}, scores={"suspicion": 2.0})
+    d = await decide(jev, view())
+    assert "suspicion" not in jev.questions
+    assert d.suspicion_strength is None
+    d = await decide(jev, view(player_rooted=[match("m1")]))
+    question = jev.questions["suspicion"]
+    assert list(question.criteria) == SUSPICION_LEVELS == ["not at all", "a little", "quite a bit", "convinced"]
+    assert all(s in question.instructions for s in ("newcomer", "personality", "hurtful"))
+    assert d.action == IGNORE
+    assert d.suspicion_strength == pytest.approx(2 / 3)
+
+
+@pytest.mark.asyncio
+async def test_missing_suspicion_answer_leaves_strength_none():
+    rooted = view(player_rooted=[match("m1")])
+    assert (await decide(StubJev({"action": IGNORE}), rooted)).suspicion_strength is None
+    assert (await decide(StubJev({"action": IGNORE}, scores={}), rooted)).suspicion_strength is None
+    assert (await decide(StubJev({"action": IGNORE}, scores={"suspicion": "high"}), rooted)).suspicion_strength is None
+    assert (await decide(StubJev({"action": IGNORE}, scores={"suspicion": 9.0}), rooted)).suspicion_strength == 1.0
+
+
+@pytest.mark.asyncio
+async def test_warn_offered_only_above_threshold_and_with_someone_present():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view(suspicion=0.39))
+    assert WARN not in jev.questions["action"].criteria
+    await decide(jev, view(suspicion=0.4))
+    assert WARN in jev.questions["action"].criteria
+    await decide(jev, view(suspicion=0.9, present=[]))
+    assert WARN not in jev.questions["action"].criteria
+
+
+@pytest.mark.asyncio
+async def test_state_shows_suspicion_in_words_not_numbers():
+    jev = StubJev({"action": IGNORE})
+    for score, words in ((0.0, "none"), (0.2, "a little"), (0.5, "quite a bit"), (0.95, "convinced")):
+        await decide(jev, view(suspicion=score))
+        assert jev.state["suspicion_of_the_newcomer"] == words
+        assert str(score) not in str(jev.state)
+
+
+@pytest.mark.asyncio
+async def test_warn_maps_target_and_style():
+    jev = StubJev({"action": WARN, "villager_target": "v2", "style": "exaggerated"})
+    d = await decide(jev, view(suspicion=0.5))
+    assert d == Decision(WARN, match("m1"), "v2", "exaggerated")

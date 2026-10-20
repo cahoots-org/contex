@@ -11,6 +11,7 @@ JOIN_GROUP = "join_group"
 LEAVE_GROUP = "leave_group"
 PREACH = "preach"
 LEAVE_TOWN = "leave_town"
+WARN = "warn"
 
 ACTIONS = {
     IGNORE: "Do nothing; carry on with the day.",
@@ -24,6 +25,7 @@ ACTIONS = {
     LEAVE_GROUP: "Quit a group you belong to that you no longer believe in.",
     PREACH: "Speak up for one of your groups' beliefs to the people nearby.",
     LEAVE_TOWN: "Leave town for good: ruined, disgraced, frightened, or fed up.",
+    WARN: "Warn one specific person nearby that the newcomer is behind the rumors.",
 }
 
 # Option details where two actions are easy to confuse.
@@ -51,12 +53,13 @@ TARGET_KIND = {
     JOIN_GROUP: "group",
     LEAVE_GROUP: "group",
     PREACH: "group",
+    WARN: "villager",
 }
 
 # Speech actions, which carry a style.
-STYLED = (RETELL, DENY, CONFRONT, SPEAK, PREACH)
+STYLED = (RETELL, DENY, CONFRONT, SPEAK, PREACH, WARN)
 
-NEEDS_SOMEONE = (RETELL, DENY, CONFRONT, SPEAK)
+NEEDS_SOMEONE = (RETELL, DENY, CONFRONT, SPEAK, WARN)
 
 
 def available_actions(view) -> list[str]:
@@ -68,6 +71,8 @@ def available_actions(view) -> list[str]:
         if a == JOIN_GROUP and not view.visible_groups:
             continue
         if a in (LEAVE_GROUP, PREACH) and not view.member_groups:
+            continue
+        if a == WARN and view.suspicion < view.warn_threshold:
             continue
         out.append(a)
     return out

@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from examples.rumor_mill.decide import Decision
@@ -91,3 +93,18 @@ async def test_brush_off_prompts_with_profile_and_concern_and_returns_one_line()
     assert "owes me flour" not in call["system"]
     assert "my oven needs a new hearthstone" in call["messages"][0]["content"]
     assert call["max_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_warn_asks_for_one_line_and_never_says_how_suspicious_anyone_is():
+    client = StubClient('"Watch that newcomer, Bo."\nMore.')
+    target = Villager("v002", "Bo", "miller", "dour", "", [], {})
+    line = await Writer(client, "haiku-test").warn(villager(), target)
+    assert line == "Watch that newcomer, Bo."
+    call = client.messages.calls[0]
+    prompt = call["system"] + call["messages"][0]["content"]
+    assert all(s in prompt for s in ("Ada", "baker", "sharp-tongued", "Bo", "newcomer", "one short sentence"))
+    assert "owes me flour" not in prompt
+    assert "Never say how sure" in prompt
+    assert re.search(r"\d\.\d|suspicion", prompt) is None
+    assert call["max_tokens"] == 60

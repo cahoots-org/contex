@@ -1,8 +1,9 @@
 import pytest
 
 from examples.rumor_mill.actions import (
-    FOUND_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK,
+    FOUND_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK, WARN,
 )
+from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.effects import act
@@ -15,10 +16,15 @@ class StubWriter:
     def __init__(self):
         self.say_calls = []
         self.group_calls = []
+        self.warn_calls = []
 
     async def say(self, villager, decision, source_text, audience):
         self.say_calls.append((decision.action, source_text, audience))
         return "words"
+
+    async def warn(self, villager, target):
+        self.warn_calls.append((villager.id, target.id))
+        return "Mind the newcomer."
 
     async def describe_group(self, villager, inspiration):
         self.group_calls.append(list(inspiration))
@@ -28,10 +34,16 @@ class StubWriter:
 class RecordingHub:
     def __init__(self):
         self.delivered = []
+        self.addressed = []
         self.groups = []
+        self.suspects = []
 
     async def deliver(self, utterance, listener_ids, addressed=False):
         self.delivered.append((utterance, listener_ids))
+        self.addressed.append(addressed)
+
+    def suspect(self, vid, amount, reason, uid=None):
+        self.suspects.append((vid, amount, reason, uid))
 
     async def publish_group(self, group):
         self.groups.append(group)
@@ -144,3 +156,31 @@ async def test_move_changes_place_without_delivery():
     await s.act("v1", Decision(MOVE, None, "tavern", None))
     assert s.town.place_of("v1") == "tavern"
     assert s.hub.delivered == []
+
+
+@pytest.mark.asyncio
+async def test_warn_is_addressed_to_the_target_only():
+    s = Setup()
+    await s.act("v1", Decision(WARN, source(), "v2", "faithful"))
+    assert s.writer.warn_calls == [("v1", "v2")]
+    assert s.writer.say_calls == []
+    utt, listeners = s.hub.delivered[0]
+    assert listeners == ["v2"]
+    assert s.hub.addressed == [True]
+    assert (utt.verb, utt.parent, utt.text) == ("warned", None, "Mind the newcomer.")
+    assert s.lineage.root(utt.id) == utt.id
+
+
+@pytest.mark.asyncio
+async def test_warn_raises_the_targets_suspicion():
+    s = Setup()
+    await s.act("v1", Decision(WARN, None, "v2", None))
+    utt, _ = s.hub.delivered[0]
+    assert s.hub.suspects == [("v2", 0.5 * Config().suspicion_hear_max, "was warned about the newcomer", utt.id)]
+
+    def broken(*args):
+        raise RuntimeError("suspicion down")
+
+    s.hub.suspect = broken
+    await s.act("v1", Decision(WARN, None, "v2", None))
+    assert len(s.hub.delivered) == 2

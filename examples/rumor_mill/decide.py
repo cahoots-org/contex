@@ -4,7 +4,7 @@ import logging
 import random
 from dataclasses import dataclass
 
-from typesafe_sdk import Choice
+from typesafe_sdk import Choice, Score
 
 from examples.rumor_mill.actions import (
     ACTION_NOT_FOR, ACTIONS, IGNORE, JOIN_GROUP, STYLED, STYLES, TARGET_KIND,
@@ -32,6 +32,13 @@ ACTION_INSTRUCTIONS = (
     "group, or leave town for good."
 )
 
+SUSPICION_LEVELS = ["not at all", "a little", "quite a bit", "convinced"]
+SUSPICION_INSTRUCTIONS = (
+    "How strongly does what this villager just heard make them suspect the newcomer is "
+    "behind these rumors, given their personality? Count it when the newcomer is named or "
+    "implied, and also when a rumor is sensational or hurtful to someone this villager knows."
+)
+
 
 @dataclass
 class TurnView:
@@ -42,6 +49,10 @@ class TurnView:
     visible_groups: list[Group]
     new: list[Match]
     recent: list[Match]
+    suspicion: float
+    warn_threshold: float
+    # New items whose utterance traces back to the newcomer.
+    player_rooted: list[Match]
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,8 @@ class Decision:
     source: Match | None
     target: str | None
     style: str | None
+    # How much this turn's news raised suspicion of the newcomer, in [0, 1].
+    suspicion_strength: float | None = None
 
 
 def _text(m: Match) -> str:
@@ -59,6 +72,16 @@ def _text(m: Match) -> str:
 def _person(v: Villager, other: Villager) -> str:
     kind = v.relationships.get(other.id)
     return f"{other.name}, {other.occupation}" + (f", their {kind}" if kind else "")
+
+
+def _suspicion_words(view: TurnView) -> str:
+    if view.suspicion <= 0:
+        return "none"
+    if view.suspicion < view.warn_threshold:
+        return "a little"
+    if view.suspicion < (1 + view.warn_threshold) / 2:
+        return "quite a bit"
+    return "convinced"
 
 
 def _state(view: TurnView) -> dict:
@@ -74,6 +97,7 @@ def _state(view: TurnView) -> dict:
         "just_heard": [_text(m) for m in view.new],
         "recent_memories": [_text(m) for m in view.recent[:MAX_RECENT]],
         "groups": [g.name for g in view.member_groups],
+        "suspicion_of_the_newcomer": _suspicion_words(view),
     }
 
 
@@ -85,8 +109,10 @@ def _action_criteria(view: TurnView) -> dict:
     return out
 
 
-def _questions(view: TurnView) -> dict[str, Choice]:
+def _questions(view: TurnView) -> dict[str, Choice | Score]:
     qs = {"action": Choice(instructions=ACTION_INSTRUCTIONS, criteria=_action_criteria(view))}
+    if view.player_rooted:
+        qs["suspicion"] = Score(instructions=SUSPICION_INSTRUCTIONS, criteria=SUSPICION_LEVELS)
     if len(view.new) > 1:
         qs["source"] = Choice(
             instructions="Which of the things this villager just heard does the action respond to? "
@@ -121,6 +147,14 @@ def _questions(view: TurnView) -> dict[str, Choice]:
     return qs
 
 
+def _strength(resp) -> float | None:
+    """The suspicion score scaled from its levels to [0, 1], or None when it is missing."""
+    score = getattr(getattr(resp, "scores", {}).get("suspicion"), "score", None)
+    if not isinstance(score, (int, float)):
+        return None
+    return min(1.0, max(0.0, score / (len(SUSPICION_LEVELS) - 1)))
+
+
 async def decide(jev, view: TurnView) -> Decision:
     """Ask Jev once and keep only the answers the chosen action needs.
 
@@ -137,8 +171,9 @@ async def decide(jev, view: TurnView) -> Decision:
     else:
         action = max(odds, key=odds.get)
     log.debug("%s: action odds %s, drew %s", view.villager.id, odds, action)
+    strength = _strength(resp) if view.player_rooted else None
     if action == IGNORE:
-        return Decision(IGNORE, None, None, None)
+        return Decision(IGNORE, None, None, None, strength)
     if len(view.new) > 1:
         source = next(m for m in view.new if m.data_key == pick["source"])
     else:
@@ -151,4 +186,4 @@ async def decide(jev, view: TurnView) -> Decision:
     }.get(kind)
     target = pick.get(target_key) if target_key else None
     style = pick.get("style") if action in STYLED else None
-    return Decision(action, source, target, style)
+    return Decision(action, source, target, style, strength)

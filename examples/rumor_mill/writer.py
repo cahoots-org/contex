@@ -8,6 +8,12 @@ from examples.rumor_mill.models import Villager
 
 SAY_MAX_TOKENS = 80
 TURN_AWAY_MAX_TOKENS = 60
+WARN_MAX_TOKENS = 60
+
+
+def first_line(text: str) -> str:
+    """The first line of a reply, without surrounding quotes."""
+    return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
 
 
 def extract_json(text: str):
@@ -72,8 +78,7 @@ class Writer:
             "thing, number, or person it is about. Never repeat its wording. "
             "No stage directions, no quotation marks, no preamble."
         )
-        text = await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS)
-        return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
+        return first_line(await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS))
 
     async def turn_away(self, villager: Villager) -> str:
         """The villager refusing to hear the newcomer any more, in one line."""
@@ -85,8 +90,22 @@ class Writer:
             "Never mention suspicion or why. "
             "No stage directions, no quotation marks, no preamble."
         )
-        text = await self.complete(system, "The newcomer is whispering to you again.", max_tokens=TURN_AWAY_MAX_TOKENS)
-        return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
+        return first_line(
+            await self.complete(system, "The newcomer is whispering to you again.", max_tokens=TURN_AWAY_MAX_TOKENS)
+        )
+
+    async def warn(self, villager: Villager, target: Villager) -> str:
+        """The villager warning the target that the newcomer is behind the rumors, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "You have come to believe the newcomer in town is behind the rumors going around. "
+            "Warn the person you are talking to in one short sentence, under 25 words, in your own voice. "
+            "Never say how sure you are or how many people suspect the newcomer. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        user = f"You are talking to {target.name}, a {target.occupation}."
+        return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
     async def describe_group(
         self, villager: Villager, inspiration: list[str],

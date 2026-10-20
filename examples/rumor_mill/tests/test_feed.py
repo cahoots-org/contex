@@ -87,3 +87,12 @@ def test_refusal_event_and_terminal_lines():
     first, second = feed.recent
     assert (first.kind, first.data) == ("refusal", {"name": "Bert", "villager_id": "v1", "line": "Not a word more."})
     assert second.data["line"] is None
+
+
+def test_warning_event_has_names_and_no_line_or_score():
+    feed, lines = make()
+    feed.on_delivery(Utterance("u-9", "v1", "Bert", "tavern", "the newcomer is behind it", None, "warned"), ["v2"])
+    assert lines == ["Bert warned Marta about you."]
+    (event,) = feed.recent
+    assert event.kind == "warning"
+    assert event.data == {"speaker_id": "v1", "speaker": "Bert", "target_id": "v2", "target": "Marta"}

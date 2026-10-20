@@ -125,6 +125,9 @@ class Engine:
             raise next(r for r in results if isinstance(r, Exception))
         self.feed.on_delivery(utterance, heard)
 
+    def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None:
+        self.suspicion.bump(vid, amount, reason, uid)
+
     async def publish_group(self, group: Group) -> None:
         data = {"id": group.id, "name": group.name, "creed": group.creed, "founder": group.founder}
         await self.contex.publish(group_project(self.config.session, group.id), f"group:{group.id}", data)
@@ -189,13 +192,24 @@ class Engine:
             visible_groups=self.town.visible_groups(v.id),
             new=new,
             recent=[m for m in mind.matches if m.data_key not in keys],
+            suspicion=self.suspicion.score(v.id),
+            warn_threshold=self.config.warn_threshold,
+            player_rooted=[m for m in new if self.lineage.is_player_rooted(m.data.get("id"))],
         )
         async with self._turns:
             decision = await decide(self.jev, view)
+            if decision.suspicion_strength is not None:
+                try:
+                    self.suspicion.rate(
+                        v.id, decision.suspicion_strength, "heard the newcomer named", view.player_rooted[0].data.get("id"),
+                    )
+                except Exception:
+                    log.exception("suspicion rating failed for %s", v.id)
             await act(
                 decision, v, town=self.town, writer=self.writer, hub=self,
                 lineage=self.lineage, ids=self.ids, day=self.day,
                 inspiration=[m.data.get("text", "") for m in new],
+                suspicion_hear_max=self.config.suspicion_hear_max,
             )
         return True
 
