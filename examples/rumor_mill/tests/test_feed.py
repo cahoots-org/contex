@@ -113,3 +113,21 @@ def test_terminal_prints_only_the_brush_off():
     assert {k: busy[k] for k in ("whisper_id", "villager_id", "name", "state", "until")} == {
         "whisper_id": "w-1", "villager_id": "v1", "name": "Bert", "state": "busy", "until": 123.0,
     }
+
+
+def test_a_resolved_whisper_never_moves_backwards():
+    feed, _ = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "kept")
+    feed.on_whisper_status("w-1", "v1", "Bert", "heard")
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Not now.")
+    feed.on_whisper_status("w-1", "v1", "Bert", "not_carried")
+    assert [e.data["state"] for e in feed.recent] == ["kept"]
+
+
+def test_a_brush_off_takes_its_hint_and_can_be_upgraded():
+    feed, lines = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off")
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Not now.")
+    feed.on_whisper_status("w-1", "v1", "Bert", "took_the_bait", told=1)
+    assert [e.data["state"] for e in feed.recent] == ["brushed_off", "brushed_off", "took_the_bait"]
+    assert lines == ['Bert brushes you off: "Not now."']

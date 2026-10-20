@@ -89,12 +89,12 @@ class Feed:
         """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint),
         not_carried, or what the villager did with it: kept, took_the_bait (with told) or warned.
 
-        A whisper already resolved never goes back to being heard. The terminal prints only a brush-off once its
-        hint is settled.
+        A whisper already resolved only takes another outcome: a late heard, brush-off or not-carried is dropped.
+        The terminal prints only a brush-off once its hint is settled.
         """
+        if whisper_id in self._resolved and state not in RESOLVED:
+            return
         if state in LISTENING:
-            if whisper_id in self._resolved:
-                return
             self._listening[whisper_id] = (villager_id, name)
         else:
             self._listening.pop(whisper_id, None)
