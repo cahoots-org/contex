@@ -23,7 +23,7 @@ class Config:
     # How far before a whisper's publish its direct check looks, absorbing clock skew with Contex's database.
     check_lookback_seconds: float = 5.0
     # How far above a need's ordinary-talk similarity a whisper must score to match it.
-    match_margin: float = 0.03
+    match_margin: float = 0.02
     # Where need baselines are cached; empty means the seed path plus .baselines.json.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"

@@ -147,7 +147,7 @@ def test_explicit_calibration_path_wins(tmp_path):
 
 
 def test_playtest_fixture(tmp_path):
-    baselines = Baselines(FakeContex(), config(tmp_path, match_margin=0.03))
+    baselines = Baselines(FakeContex(), config(tmp_path))
     for need, base in [("curse", 0.769), ("vineyards", 0.742), ("cellar", 0.784), ("mistress", 0.784)]:
         baselines.set(need, base)
     assert baselines.matches("curse", 0.807)

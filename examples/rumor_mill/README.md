@@ -217,7 +217,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_POPULATION` | `100` | village size; newcomers arrive to keep it there |
 | `RUMOR_MILL_DAY_SECONDS` | `120` | length of a game day |
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
-| `RUMOR_MILL_MATCH_MARGIN` | `0.03` | how far above a need's score against ordinary village talk a whisper must score to match that need |
+| `RUMOR_MILL_MATCH_MARGIN` | `0.02` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
 | `RUMOR_MILL_CHECK_LOOKBACK_SECONDS` | `5` | how far before a whisper the check that it landed looks, to absorb clock skew with Contex |
