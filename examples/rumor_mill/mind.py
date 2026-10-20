@@ -1,15 +1,15 @@
-"""A villager's mind: one Contex project and one subscription of their needs."""
+"""A villager's mind: one Contex project and one subscription per need."""
 
 import asyncio
 from contextlib import aclosing
 from collections.abc import AsyncIterator
 
+from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
-from examples.rumor_mill.contex_client import ContexClient, Match, SubscriptionGone, new_matches
+from examples.rumor_mill.contex_client import Bundle, ContexClient, Match, SubscriptionGone, new_matches
 from examples.rumor_mill.models import Villager
 
 REOPEN_PAUSE_SECONDS = 1
-WAKE_THRESHOLD = 0.815
 
 
 def mind_project(session: str, villager_id: str) -> str:
@@ -21,35 +21,44 @@ def group_project(session: str, gid: str) -> str:
 
 
 class Mind:
-    def __init__(self, contex: ContexClient, villager: Villager, config: Config):
+    def __init__(self, contex: ContexClient, villager: Villager, config: Config, baselines: Baselines):
         self.contex = contex
         self.villager = villager
         self.config = config
+        self.baselines = baselines
         self.project = mind_project(config.session, villager.id)
-        self.uri = ""
+        self.uris: list[str] = []
         self.seen: set[str] = set()
         self.matches: list[Match] = []
         self._epoch = 0
 
     async def open(self) -> None:
-        """Create (or resume) the subscription on the villager's needs."""
-        self.uri = await self.contex.subscribe(
-            self.project, self.villager.needs,
+        """Create (or resume) one subscription per need, at that need's threshold."""
+        self.uris = [await self._subscribe(need) for need in self.villager.needs]
+
+    async def _subscribe(self, need: str) -> str:
+        return await self.contex.subscribe(
+            self.project, [need],
             max_age_seconds=self.config.memory_seconds,
-            top_k=self.config.top_k, threshold=WAKE_THRESHOLD,
+            top_k=self.config.top_k, threshold=self.baselines.threshold(need),
         )
 
     async def hear(self, key: str, data: dict) -> None:
         await self.contex.publish(self.project, key, data)
 
-    async def _read(self):
-        """Read the bundle, re-subscribing once if the subscription expired."""
-        try:
-            return await self.contex.read(self.uri)
-        except SubscriptionGone:
-            await self.open()
-            self._epoch += 1
-            return await self.contex.read(self.uri)
+    async def _read(self) -> Bundle:
+        """Read every need's bundle into one, re-subscribing only the subscriptions that expired."""
+        bundles = await asyncio.gather(*(self.contex.read(uri) for uri in self.uris), return_exceptions=True)
+        merged: Bundle = {}
+        for i, bundle in enumerate(bundles):
+            if isinstance(bundle, SubscriptionGone):
+                self.uris[i] = await self._subscribe(self.villager.needs[i])
+                self._epoch += 1
+                bundle = await self.contex.read(self.uris[i])
+            elif isinstance(bundle, BaseException):
+                raise bundle
+            merged.update(bundle)
+        return merged
 
     async def poll(self) -> list[Match]:
         """Matches not in the previous poll; forgotten items count as new if they return."""
@@ -60,14 +69,19 @@ class Mind:
         return fresh
 
     async def renew(self) -> None:
-        """Keep the subscription alive without touching seen."""
+        """Keep the subscriptions alive without touching seen."""
         await self._read()
 
     async def pushes(self) -> AsyncIterator[None]:
-        """Yield per push and once per (re)connect, re-opening the stream when it closes or after a resubscribe."""
+        """Yield per push on any need and once per (re)connect, re-opening the stream when it closes or after a resubscribe.
+
+        A mind with no needs never yields.
+        """
+        if not self.uris:
+            await asyncio.Event().wait()
         while True:
             epoch = self._epoch
-            async with aclosing(self.contex.listen(self.uri)) as stream:
+            async with aclosing(self.contex.listen_many(self.uris)) as stream:
                 async for _ in stream:
                     yield
                     if epoch != self._epoch:

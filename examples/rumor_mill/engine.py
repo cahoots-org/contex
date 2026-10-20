@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from contextlib import aclosing, suppress
 
+from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.decide import TurnView, decide
@@ -38,6 +39,7 @@ class Engine:
         mind_factory: Callable[[Villager], Mind] | None = None,
         game: Game | None = None,
         summary_source: Callable[[], list[tuple[str, int]]] = list,
+        baselines: Baselines | None = None,
     ):
         self.config = config
         self.town = town
@@ -48,7 +50,8 @@ class Engine:
         self.ids = ids
         self.feed = feed
         self.suspicion = Suspicion(config, town)
-        self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config))
+        self.baselines = baselines
+        self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source
         self.on_heard: Callable[[str, list[Match]], None] | None = None

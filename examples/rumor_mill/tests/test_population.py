@@ -20,9 +20,19 @@ def make(vid, occupation="baker"):
     return Villager(vid, vid.upper(), occupation, "calm", "none", ["bread"], {})
 
 
+class StubBaselines:
+    def __init__(self, engine):
+        self.engine = engine
+        self.loaded = []
+
+    async def load(self, texts):
+        self.loaded.append((list(texts), len(self.engine.added)))
+
+
 class StubEngine:
     def __init__(self, town):
         self.town = town
+        self.baselines = StubBaselines(self)
         self.lineage = Lineage()
         self.ids = Ids()
         self.departures: asyncio.Queue[str] = asyncio.Queue()
@@ -166,4 +176,13 @@ async def test_failure_is_logged_and_next_departure_tops_up(monkeypatch, caplog)
     engine.leave("v1")
     await wait_for(lambda: town.alive_count == 3)
     assert len(engine.added) == 2
+    await stop(task)
+
+
+@pytest.mark.asyncio
+async def test_newcomer_needs_are_calibrated_before_joining(newcomers):
+    engine, town, task = await start(3, 3)
+    engine.leave("v0")
+    await wait_for(lambda: engine.added)
+    assert engine.baselines.loaded == [(["bread"], 0)]
     await stop(task)

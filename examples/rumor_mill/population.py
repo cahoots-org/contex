@@ -44,6 +44,7 @@ class Replenisher:
         newcomer = await generate_newcomer(
             self.writer, self.town.villagers, self.rng, departed=self.town.departed,
         )
+        await self.engine.baselines.load(newcomer.needs)
         await self.engine.add_villager(newcomer, GATE)
         utt = Utterance(
             self.engine.ids.next("u"), "town", CRIER, GATE,

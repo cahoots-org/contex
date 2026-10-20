@@ -12,6 +12,7 @@ import typesafe_sdk
 import uvicorn
 from dotenv import load_dotenv
 
+from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.cli import repl, until_over
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
@@ -43,8 +44,10 @@ async def play(web: bool) -> None:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         goals = deal(rng)
         judge = Judge(contex, jev, town, config, feed, game)
+        baselines = Baselines(contex, config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
+            baselines=baselines,
         )
         player = Player(engine, town, lineage, ids, feed, config, writer, game)
         engine.on_heard = player.note_heard
@@ -55,6 +58,7 @@ async def play(web: bool) -> None:
         judging = asyncio.create_task(judge.run(goals))
         places = [p for p in PLACES if p != GATE]
         try:
+            await baselines.load([need for v in villagers for need in v.needs])
             await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
             await engine.run()
             if web:

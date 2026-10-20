@@ -5,12 +5,14 @@ import pytest
 
 from examples.rumor_mill import engine as engine_mod
 from examples.rumor_mill.actions import IGNORE
+from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
+from examples.rumor_mill.mind import Mind
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, make, wait_for
 from examples.rumor_mill.town import Town
@@ -424,3 +426,11 @@ async def test_a_turn_still_deciding_when_the_game_ends_does_nothing(turns, monk
     assert engine.suspicion.score("v1") == 0.0
     assert engine._pending.get("v1") is None
     await engine.stop()
+
+
+def test_default_minds_get_the_engine_baselines():
+    config = Config()
+    baselines = Baselines(None, config)
+    engine = Engine(config, Town(), None, None, None, Lineage(), Ids(), RecordingFeed(), baselines=baselines)
+    mind = engine.mind_factory(make("v1"))
+    assert isinstance(mind, Mind) and mind.baselines is baselines

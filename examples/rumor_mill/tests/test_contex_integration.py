@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
-from examples.rumor_mill import mind as mind_mod
 from examples.rumor_mill.actions import IGNORE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
@@ -73,6 +72,20 @@ async def test_mind_projects_are_isolated():
         assert not await poll_for(client, uri_b, "u3", tries=3)
 
 
+class StubBaselines:
+    """A fixed threshold per need, with a default for the rest."""
+
+    def __init__(self, default, **by_need):
+        self.default = default
+        self.by_need = by_need
+
+    def threshold(self, need):
+        return self.by_need.get(need, self.default)
+
+    async def load(self, texts):
+        pass
+
+
 class NullFeed:
     def on_delivery(self, utterance, listener_ids):
         pass
@@ -92,16 +105,16 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
 
     monkeypatch.setattr(engine_mod, "decide", decide)
     monkeypatch.setattr(engine_mod, "act", act)
-    monkeypatch.setattr(mind_mod, "WAKE_THRESHOLD", 0.5)
     async with ContexClient(URL) as client:
         config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1)
-        engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed())
+        baselines = StubBaselines(0.5)
+        engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed(), baselines=baselines)
         ann = Villager("v1", "Ann", "baker", "kind", "none", ["anything about my bakery"], {})
-        early = Mind(client, ann, config)
+        early = Mind(client, ann, config, baselines)
         await early.open()
         utt = Utterance("u-1", "v2", "Bo", "square", "the oven at the bakery is cold", None)
         await early.hear("utt:u-1", utt.to_data(0))
-        assert await poll_for(client, early.uri, "utt:u-1")
+        assert await poll_for(client, early.uris[0], "utt:u-1")
         await engine.add_villager(ann)
         await engine.add_villager(Villager("v2", "Bo", "smith", "gruff", "none", ["anything about the forge"], {}))
         await engine.run()
@@ -126,7 +139,7 @@ async def test_default_threshold_lets_only_whispers_on_a_need_in():
             "Has anyone been saying my bread is stale or my oven unsafe?",
             "I dread omens, curses, and anything wrong with the well water.",
         ], {})
-        mind = Mind(client, marta, config)
+        mind = Mind(client, marta, config, StubBaselines(0.815))
         await mind.open()
         off = Utterance("w-1", "newcomer", "The newcomer", "square",
                         "lattice gauge theory predicts quark confinement at low energies", None, "whispered to you")
@@ -134,8 +147,24 @@ async def test_default_threshold_lets_only_whispers_on_a_need_in():
                        "the well has been cursed and everyone who drinks from it falls ill", None, "whispered to you")
         await mind.hear("utt:w-1", off.to_data(0))
         await mind.hear("utt:w-2", on.to_data(0))
-        assert await poll_for(client, mind.uri, "utt:w-2")
+        assert await poll_for(client, mind.uris[1], "utt:w-2")
         assert "utt:w-1" not in {m.data_key for m in mind.matches + await mind.poll()}
+
+
+async def test_each_need_has_its_own_subscription():
+    async with ContexClient(URL) as client:
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}")
+        bakery, physics = "anything about my bakery", "quantum chromodynamics lecture"
+        ann = Villager("v1", "Ann", "baker", "kind", "none", [bakery, physics], {})
+        mind = Mind(client, ann, config, StubBaselines(0.5, **{physics: 0.95}))
+        await mind.open()
+        assert len(set(mind.uris)) == 2
+        await mind.hear("utt:b", {"text": "the oven at the baker's shop is cold"})
+        assert await poll_for(client, mind.uris[0], "utt:b")
+        bundle = await mind._read()
+        assert {m.data_key for m in bundle[bakery]} == {"utt:b"}
+        assert bundle.get(physics, []) == []
+        assert [m.data_key for m in await mind.poll()] == ["utt:b"]
 
 
 async def test_query_since_excludes_older_items():
