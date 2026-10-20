@@ -15,13 +15,13 @@ backwards-flying birds can end up as a ploughman's doomsday watch society.
 | Feature | Where |
 |---|---|
 | `contex_publish` | every line a villager hears (one publish per listener), whispers, group records |
-| `contex_create_subscription` | one per villager, on their mind project, with their 3 to 5 needs |
+| `contex_create_subscription` | one per need (each villager has 3 to 5) on the villager's mind project, at that need's threshold |
 | `max_age_seconds` | forgetting: memories older than `memory_days` drop out of the subscription |
-| `subscriptions/listen` | one stream per villager; a push is the only thing that wakes them |
+| `subscriptions/listen` | one stream per villager over all their subscriptions; a push is what wakes them |
 | reading the subscription resource | the villager's memories each turn, and lease renewal for quiet villagers |
-| `contex_query` | the judge reads minds and group records to score goals |
+| `contex_query` | the check right after a whisper of whether it matched the target's needs; calibrating needs; the judge reading minds and group records to score goals |
 | semantic matching | a whisper wakes a villager only if it scores clearly above ordinary village talk for one of their needs, and a rumor still reaches people after it is retold in other words |
-| scale | 100 projects, 100 subscriptions, and 100 listen streams at once |
+| scale | 100 projects, about 400 subscriptions, and 100 listen streams at once |
 
 A villager never hears their own words, so speaking never wakes the speaker.
 Who told whom is tracked in the game, which is how the feed shows every hop of
@@ -71,6 +71,53 @@ start from the seed file, and the game process used 125 MB of memory and
 6 seconds of CPU over a 400-second session. The Contex server held 100 listen
 connections and used 4 to 5 CPU cores for a few seconds at each 30-second
 sweep; the override uses 60 seconds.
+
+## How a whisper lands
+
+The embedding model gives almost any two village sentences a similarity
+between about 0.72 and 0.82, related or not, and each need sits at its own
+level within that band. So each need gets a baseline: its mean similarity to
+20 ordinary sentences (weather, chores, prices, a lost goat) that concern no
+one. A line matches a need when it scores at least `RUMOR_MILL_MATCH_MARGIN`
+(0.02) above that need's baseline. Each need's subscription uses that
+threshold, so Contex pushes only real matches.
+
+Right after you whisper, the game queries each of the target's needs for your
+whisper, one query per need and no model call, which is how the feed can say
+at once whether it landed. A whisper that lands joins the villager's next turn
+even if the push is slow.
+
+The first run computes the baselines and writes them next to the seed, in
+`rumor_mill_seed.json.baselines.json`; for 400 needs that took 5.4 seconds on
+the machine this was tuned on. Later runs read the file. Baselines are kept by
+need text and by the exact payload the calibration sentences were published
+in, and are recomputed when either changes.
+
+Contex embeds every field of what is published, including the data key, so
+the game publishes only an utterance's id and its sentence. The key alone
+still moves a score by up to about 0.02, so a whisper that sits right at the
+margin can land under one id and miss under another.
+
+The margin was tuned on the 100-villager seed with 20 whispers written from
+villagers' cards before reading their needs, half aimed at a trade and grudge
+and half unrelated, each published four times with random ids and places:
+
+| Margin | Aimed whispers that land | Unrelated whispers that land |
+|---|---|---|
+| 0.0175 | 100% | 36% |
+| 0.02 | 96% | 26% |
+| 0.025 | 90% | 16% |
+| 0.03 | 82% | 5% |
+
+A line someone retells ("Bert said at the tavern: ...") matches a little more
+easily than a whisper: at 0.02, 42% of the unrelated lines matched a need of
+whoever heard them retold. A lower margin makes the village talk more, and a
+higher one makes more of your aimed whispers miss.
+
+Run Contex with authentication off, since its rate limits would throttle
+calibration and the check after each whisper, and with `SYSTEM_ONE_ENABLED`
+off, since query reranking would call a model on every check. Both are off by
+default.
 
 ## Commands
 
@@ -219,6 +266,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
 | `RUMOR_MILL_MATCH_MARGIN` | `0.02` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
+| `RUMOR_MILL_CALIBRATION_PATH` | seed path plus `.baselines.json` | where need baselines are cached |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
 | `RUMOR_MILL_CHECK_LOOKBACK_SECONDS` | `5` | how far before a whisper the check that it landed looks, to absorb clock skew with Contex |
 | `RUMOR_MILL_ARRIVAL_DELAY_SECONDS` | `60` | wait after a departure before newcomers arrive |
@@ -238,7 +286,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_RUN_OUT_CHECKS` | `3` | checks in a row at that level before you are run out |
 | `RUMOR_MILL_SUSPICION_CHECK_DAYS` | `0.25` | game days between mood checks |
 
-`MATCH_MARGIN` matters most. The embedding model scores most pairs of sentences between 0.74 and 0.86, and each need sits at its own level, so a need matches a whisper only when it scores the margin above that need's average against ordinary village sentences. Lower it and villagers react to more of what they hear; raise it and the village goes quiet.
+`MATCH_MARGIN` matters most; see [How a whisper lands](#how-a-whisper-lands). Lower it and villagers react to more of what they hear; raise it and the village goes quiet.
 
 The mood is a mean over the whole village, so the same whispers count for more
 in a small one. In a village of 100, a player who whispered to someone
