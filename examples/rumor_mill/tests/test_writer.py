@@ -1,7 +1,9 @@
 import pytest
 
 from examples.rumor_mill.decide import Decision
+from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.usage import Usage
 from examples.rumor_mill.writer import Writer
 
 
@@ -13,7 +15,8 @@ class StubMessages:
     async def create(self, **kwargs):
         self.calls.append(kwargs)
         block = type("Block", (), {"text": self.texts.pop(0)})()
-        return type("Response", (), {"content": [block]})()
+        usage = type("Usage", (), {"input_tokens": 120, "output_tokens": 30})()
+        return type("Response", (), {"content": [block], "usage": usage})()
 
 
 class StubClient:
@@ -58,3 +61,10 @@ async def test_say_caps_tokens():
     client = StubClient("Hm.")
     await Writer(client, "haiku-test").say(villager(), Decision("speak", None, None, None), None, "all")
     assert client.messages.calls[0]["max_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_complete_records_usage():
+    usage = Usage(Config())
+    await Writer(StubClient("Hm.", "Ha."), "haiku-test", usage).complete("s", "u")
+    assert usage.tokens["haiku"] == [120, 30]

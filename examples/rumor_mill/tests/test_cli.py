@@ -9,6 +9,7 @@ def test_parse_command_forms():
     assert parse_command("inspect Old Bert") == Command("inspect", "Old Bert")
     assert parse_command("goals") == Command("goals")
     assert parse_command("help") == Command("help")
+    assert parse_command("usage") == Command("usage")
     assert parse_command("quit") == Command("quit")
     assert parse_command("  quit  ") == Command("quit")
     assert parse_command("dance") == Command("unknown")

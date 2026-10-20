@@ -24,6 +24,7 @@ from examples.rumor_mill.player import Player
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.town import GATE, PLACES, Town
 from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate
+from examples.rumor_mill.usage import CountingJev, Usage
 from examples.rumor_mill.web import create_app
 from examples.rumor_mill.writer import Writer
 
@@ -31,12 +32,13 @@ from examples.rumor_mill.writer import Writer
 async def play(web: bool) -> None:
     config = Config.from_env()
     rng = random.Random()
-    writer = Writer(anthropic.AsyncAnthropic(), config.haiku_model)
+    usage = Usage(config)
+    writer = Writer(anthropic.AsyncAnthropic(), config.haiku_model, usage)
     villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town, out=None if web else print)
     async with ContexClient(config.contex_url) as contex:
-        jev = typesafe_sdk.AsyncTypeSafeClient()
+        jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         engine = Engine(config, town, contex, jev, writer, lineage, ids, feed)
         player = Player(engine, town, lineage, ids, feed, config)
         engine.on_heard = player.note_heard
@@ -59,8 +61,9 @@ async def play(web: bool) -> None:
                 print(f"Rumor Mill is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
                 await server.serve()
             else:
-                await repl(player, town, feed, goals, judge.progress)
+                await repl(player, town, feed, goals, judge.progress, usage)
         finally:
+            print(usage.summary())
             replenisher.cancel()
             judging.cancel()
             await asyncio.gather(replenisher, judging, return_exceptions=True)

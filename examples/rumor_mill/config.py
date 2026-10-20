@@ -27,6 +27,11 @@ class Config:
     haiku_model: str = "claude-haiku-4-5-20251001"
     seed_path: str = "rumor_mill_seed.json"
     web_port: int = 8765
+    # Estimated list prices in dollars per million tokens.
+    haiku_input_per_mtok: float = 1.0
+    haiku_output_per_mtok: float = 5.0
+    jev_input_per_mtok: float = 0.04
+    jev_output_per_mtok: float = 0.0
 
     @property
     def memory_seconds(self) -> int:

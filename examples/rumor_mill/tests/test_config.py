@@ -30,3 +30,10 @@ def test_each_run_gets_its_own_session(monkeypatch):
     assert Config.from_env().session != Config.from_env().session
     monkeypatch.setenv("RUMOR_MILL_SESSION", "replay")
     assert Config.from_env().session == "replay"
+
+
+def test_price_overrides(monkeypatch):
+    monkeypatch.setenv("RUMOR_MILL_JEV_INPUT_PER_MTOK", "0.1")
+    monkeypatch.setenv("RUMOR_MILL_HAIKU_OUTPUT_PER_MTOK", "4")
+    cfg = Config.from_env()
+    assert (cfg.jev_input_per_mtok, cfg.haiku_output_per_mtok, cfg.haiku_input_per_mtok) == (0.1, 4.0, 1.0)

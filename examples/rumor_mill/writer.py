@@ -22,9 +22,10 @@ def extract_json(text: str):
 
 
 class Writer:
-    def __init__(self, client, model: str):
+    def __init__(self, client, model: str, usage=None):
         self.client = client
         self.model = model
+        self.usage = usage
 
     async def complete(self, system: str, user: str, max_tokens: int = 400) -> str:
         """One Haiku call, returning the reply text."""
@@ -34,6 +35,8 @@ class Writer:
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        if self.usage:
+            self.usage.record("haiku", response.usage.input_tokens, response.usage.output_tokens)
         return response.content[0].text.strip()
 
     async def say(
