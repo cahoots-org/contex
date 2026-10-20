@@ -260,7 +260,7 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
         game.game.lose(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
         events = [receive(ws) for _ in range(5)]
     assert [e["kind"] for e in events] == ["whisper", "refusal", "warning", "heat", "gameover"]
-    assert events[-1]["reasons"][:2] == ["Marta Hale heard the newcomer named.", "Bert Cole heard the newcomer named."]
+    assert events[-1]["reasons"][:2] == ["Marta Hale grew wary of the rumors going around.", "Bert Cole grew wary of the rumors going around."]
     responses += [game.client.get("/api/state").json(), *(game.client.get(f"/api/villagers/{v}").json() for v in scores)]
     responses += [game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).json(), *events]
     raw = {str(game.suspicion.score(v)) for v in scores} | {str(a) for a in scores.values()}

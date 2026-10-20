@@ -23,7 +23,7 @@ HEAT_LINES = {
 REASON_LINES = {
     "whispered to them directly": "{} heard it from you directly.",
     "tried to whisper again": "{} caught you whispering to them again.",
-    "heard the newcomer named": "{} heard the newcomer named.",
+    "heard the newcomer named": "{} grew wary of the rumors going around.",
     "was warned about the newcomer": "{} was warned about you.",
 }
 
