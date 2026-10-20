@@ -85,6 +85,12 @@ main {
   flex-direction: column;
   min-height: 0;
 }
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .feed {
   flex: 1;
   overflow-y: auto;
@@ -132,6 +138,24 @@ mark.kept {
 .note { font-size: .875rem; color: var(--muted); padding: .2rem 0; max-width: 46rem; }
 .note.goal { color: var(--ink); }
 .brush { font: italic 1rem/1.4 var(--rumor); color: var(--ink); }
+.note.against { color: var(--ink); border-left: 2px solid var(--danger); padding-left: .6rem; margin: .25rem 0; }
+.gameover {
+  flex: none;
+  max-height: 50%;
+  overflow-y: auto;
+  background: var(--panel);
+  border-bottom: 1px solid var(--rail);
+  padding: 1rem 1.25rem 1.1rem;
+  animation: settle 400ms ease-out;
+}
+.gameover[hidden] { display: none; }
+.gameover > div { max-width: 46rem; }
+.gameover h2 { font: 500 1.5rem/1.25 var(--rumor); margin: 0 0 .5rem; width: fit-content; }
+.gameover h3 { color: var(--ink); font-size: .9rem; font-weight: 700; margin: .75rem 0 .2rem; }
+.gameover ul { margin: 0; padding-left: 1.25rem; font-size: .95rem; }
+.gameover li { margin: .1rem 0; }
+.gameover .restart { margin: .75rem 0 0; color: var(--muted); font-size: .875rem; }
+@keyframes settle { from { opacity: 0; } to { opacity: 1; } }
 .feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
 .lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
 
@@ -161,6 +185,7 @@ input[type="text"], input[type="search"] {
   cursor: pointer;
 }
 .primary:disabled { opacity: .6; cursor: progress; }
+.over .primary:disabled { cursor: not-allowed; }
 .status { margin: .4rem 0 0; min-height: 1.25rem; font-size: .875rem; color: var(--muted); }
 .status.error { color: var(--danger); }
 
@@ -179,6 +204,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .bar span:first-child { flex: 1; height: 6px; background: var(--rail); border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 .met .bar { color: var(--accent); font-weight: 700; }
+.heat { margin: 0; font: italic 1rem/1.4 var(--rumor); }
 #search { width: 100%; }
 .people { list-style: none; margin: 0; padding: 0; }
 .people button {
@@ -219,13 +245,16 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   }
   aside.open { display: block; }
   .feed { padding: .5rem 1rem 1rem; }
+  .gameover { max-height: 45%; padding: .75rem 1rem; }
+  .gameover h2 { font-size: 1.25rem; }
+  .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
   #target { flex: 1 1 100%; width: auto; }
   #text { flex-basis: 10rem; }
   .rails { width: calc(min(var(--d, 0), 4) * .75rem); background-size: .75rem 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fresh mark { animation: none; }
+  .fresh mark, .gameover { animation: none; }
 }
 </style>
 </head>
@@ -239,8 +268,19 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   </header>
 
   <main>
-    <ol class="feed" id="feed" role="log" aria-live="off" aria-label="What the village is saying"></ol>
-    <p class="empty" id="empty">Whisper to a villager to start a rumor. Pick someone whose trade or fears fit it.</p>
+    <div class="stage">
+      <section class="gameover" id="gameover" aria-labelledby="gameover-title" hidden>
+        <div>
+          <h2 id="gameover-title" tabindex="-1"></h2>
+          <h3>Goals</h3>
+          <ul id="gameover-goals"></ul>
+          <div id="gameover-reasons"></div>
+          <p class="restart">To play again, restart the program.</p>
+        </div>
+      </section>
+      <ol class="feed" id="feed" role="log" aria-live="off" aria-label="What the village is saying"></ol>
+      <p class="empty" id="empty">Whisper to a villager to start a rumor. Pick someone whose trade or fears fit it.</p>
+    </div>
     <div class="composer">
       <form id="whisper">
         <label for="target">Whisper to</label>
@@ -257,6 +297,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   <aside id="town" aria-label="Goals and villagers">
     <h2>Goals</h2>
     <ul class="goals" id="goals"></ul>
+    <p class="heat" id="heat" aria-live="polite"></p>
     <h2 id="people-heading">Villagers</h2>
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
@@ -285,6 +326,7 @@ let selected = null;
 let rover = null;
 let pointerDown = false;
 let peopleStale = false;
+let over = false;
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -381,7 +423,7 @@ function hopMeta(e, parent) {
   return meta;
 }
 
-function render(e) {
+function render(e, fresh) {
   switch (e.kind) {
     case "whisper": {
       spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
@@ -398,6 +440,19 @@ function render(e) {
         el("span", { className: "rails", style: `--d:${Math.min(e.depth, 8)}` }),
         el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
     }
+    case "warning":
+      return el("li", { className: "note against" },
+        el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
+    case "refusal":
+      if (!e.line) return el("li", { className: "note against" }, el("b", { textContent: e.name }), " turns away from you.");
+      return el("li", { className: "note against" },
+        el("b", { textContent: e.name }), " turns away from you: ", el("span", { className: "brush", textContent: `“${e.line}”` }));
+    case "heat":
+      $("heat").textContent = e.text;
+      return el("li", { className: "note", ariaHidden: "true" }, e.text);
+    case "gameover":
+      showGameOver(e, fresh);
+      return null;
     case "shrug":
       if (!e.hint) return el("li", { className: "note", dataset: { uid: e.uid } }, `${e.name} shrugs it off.`);
       return el("li", { className: "note", dataset: { uid: e.uid } },
@@ -414,6 +469,29 @@ function render(e) {
     default:
       return null;
   }
+}
+
+const OUTCOMES = { won: "Every goal is met. You won.", lost: "The village ran you out of town." };
+
+// The end of the game: a panel above the feed, and no more whispers.
+function showGameOver(summary, live) {
+  const panel = $("gameover");
+  const wasHidden = panel.hidden;
+  const stick = nearBottom();
+  $("gameover-title").textContent = OUTCOMES[summary.outcome] || "The game is over.";
+  $("gameover-goals").replaceChildren(...summary.goals.map(([text, percent]) => el("li", { textContent: `${text}: ${percent}%` })));
+  $("gameover-reasons").replaceChildren(...(summary.reasons.length
+    ? [el("h3", { textContent: "What gave you away" }), el("ul", {}, ...summary.reasons.map((r) => el("li", { textContent: r })))]
+    : []));
+  panel.hidden = false;
+  if (stick) feed.scrollTop = feed.scrollHeight;
+  over = true;
+  $("whisper").classList.add("over");
+  for (const node of $("whisper").elements) node.disabled = true;
+  $("text").value = "";
+  $("text").placeholder = "The game is over.";
+  setStatus("The game is over.");
+  if (live && wasHidden) $("gameover-title").focus({ preventScroll: true });
 }
 
 function nearBottom() {
@@ -445,7 +523,7 @@ function addEvents(events, fresh) {
   for (const e of events) {
     if (e.id <= lastId) continue;
     lastId = e.id;
-    const node = render(e);
+    const node = render(e, fresh);
     if (!node) continue;
     if (fresh) node.classList.add("fresh");
     feed.append(node);
@@ -614,7 +692,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   } catch {
     setStatus("Can't reach the game. Check that it is still running, then try again.", true);
   } finally {
-    button.disabled = false;
+    button.disabled = over;
   }
 });
 
@@ -640,6 +718,12 @@ function reset() {
   pinned = null;
   rover = null;
   feed.classList.remove("tracing");
+  over = false;
+  $("gameover").hidden = true;
+  $("whisper").classList.remove("over");
+  for (const node of $("whisper").elements) node.disabled = false;
+  $("text").placeholder = "the miller waters his flour";
+  setStatus("");
 }
 
 async function loadState() {
@@ -654,10 +738,12 @@ async function loadState() {
   villagersKey = "";
   setVillagers(state.villagers);
   $("usage").textContent = state.usage.summary;
+  if (state.game.summary) showGameOver(state.game.summary, false);
   // The replay goes in before the log is live, so a reload doesn't read it all out.
   feed.setAttribute("aria-live", "off");
   addEvents(state.events, false);
   setTimeout(() => feed.setAttribute("aria-live", "polite"));
+  $("heat").textContent = state.heat_line;
 }
 
 function receive(e) {

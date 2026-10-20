@@ -102,6 +102,39 @@ The feed shows each hop of a rumor you started, who told whom and in what
 words, and a line when a goal's percent changes. Goals are checked once a game
 day and are met after they hold at 100% for three checks in a row.
 
+## Suspicion
+
+Each villager keeps their own suspicion of the newcomer. It goes up when:
+
+- you whisper to them: every whisper tells them it came from you;
+- they hear the newcomer named or hinted at in a rumor, or hear a rumor that is
+  hurtful to someone they know;
+- someone warns them about you.
+
+A villager who suspects you enough may warn someone else about you. The feed
+shows that a warning happened ("Bert Cole warned Marta Hale about you."), but
+not what was said. A villager who suspects you strongly turns you away: your
+whisper doesn't reach them, and trying again makes them more suspicious.
+
+Suspicion fades a little each day. The village's mood is a mean of everyone's
+suspicion in which the mayor, priest, innkeeper, constable, and reeve count for
+more. You see it as one of four lines, under your goals on the browser page and
+after `goals` in the terminal:
+
+| Label | What it says |
+|---|---|
+| quiet | Folk are not talking about you. |
+| murmurs | There are murmurs. |
+| watched | Folk are watching you. |
+| hunted | The village is hunting for you. |
+
+The village checks its mood four times a game day. If it is at the run-out
+level for three checks in a row, the village meets in the square and runs you
+out of town, and you lose. The summary lists your goals with their percent and
+says what gave you away, such as "Marta Hale heard it from you directly." You
+win when every goal is met before that happens. Either way the game is over:
+whispers are refused, and you restart the program to play again.
+
 ## The browser page
 
 The page has the feed, a whisper box with a villager picker, your goals, and
