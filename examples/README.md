@@ -54,7 +54,7 @@ python examples/query.py
 
 ### [`rumor_mill/`](rumor_mill/README.md)
 
-A terminal gossip game with 100 villagers. Each villager's mind is a project
+A gossip game with 100 villagers, played in the terminal or a browser. Each villager's mind is a project
 with one subscription on their needs, they wake only on push, and they forget
 through `max_age_seconds`. You whisper rumors and watch them spread and change
 by meaning. Needs `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY`. An
@@ -63,7 +63,8 @@ for setup and cost.
 
 ```bash
 pip install -r examples/rumor_mill/requirements.txt
-python -m examples.rumor_mill
+python -m examples.rumor_mill          # terminal
+python -m examples.rumor_mill --web    # browser, at http://127.0.0.1:8765
 ```
 
 ## Also here

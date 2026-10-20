@@ -1,6 +1,6 @@
 # Rumor Mill
 
-A terminal gossip game. A village of 100 villagers runs on Contex. You are the
+A gossip game you play in the terminal or a browser. A village of 100 villagers runs on Contex. You are the
 newcomer, and all you can do is whisper. You get three goals, such as "a third
 of the village believes the well is cursed", and you win by spreading rumors
 until the village matches them.
@@ -54,6 +54,13 @@ Run it from the repo root:
 python -m examples.rumor_mill
 ```
 
+To play in a browser instead, add `--web` and open the address it prints,
+`http://127.0.0.1:8765` unless `RUMOR_MILL_WEB_PORT` says otherwise:
+
+```bash
+python -m examples.rumor_mill --web
+```
+
 The first run asks Haiku for the village in batches of 10 and writes it to
 `rumor_mill_seed.json`; later runs reuse that file. Delete it to get a new
 village; if its size differs from `RUMOR_MILL_POPULATION` the game exits and
@@ -66,6 +73,8 @@ connections and used 4 to 5 CPU cores for a few seconds at each 30-second
 sweep; the override uses 60 seconds.
 
 ## Commands
+
+In the terminal:
 
 ```
 <name>: <text>            whisper to a villager, e.g. Marta: the miller waters his flour
@@ -86,6 +95,21 @@ about, but not their needs.
 The feed shows each hop of a rumor you started, who told whom and in what
 words, and a line when a goal's percent changes. Goals are checked once a game
 day and are met after they hold at 100% for three checks in a row.
+
+## The browser page
+
+The page has the feed, a whisper box with a villager picker, your goals, and
+the villagers grouped by where they are. Click a villager to see their card and
+whisper to them. Each hop of your rumor is indented once per retelling, says
+whom the speaker heard it from, and highlights the words that differ from what
+they heard. When most of it was reworded, it underlines the words that
+survived instead. Hover or click a hop to light up its path back to your whisper;
+Escape clears it. Reloading the page
+brings back the last 500 feed events.
+
+The server listens on 127.0.0.1 only. It answers only requests addressed to
+`127.0.0.1` or `localhost` on its own port, and refuses whispers and WebSocket
+connections from other origins.
 
 ## Settings
 
@@ -110,6 +134,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_RENEW_SECONDS` | `1200` | read quiet villagers' subscriptions this often so they don't expire |
 | `RUMOR_MILL_HAIKU_MODEL` | `claude-haiku-4-5-20251001` | model for speech and village generation |
 | `RUMOR_MILL_SEED_PATH` | `rumor_mill_seed.json` | where the village is cached |
+| `RUMOR_MILL_WEB_PORT` | `8765` | port for `--web` |
 
 `THRESHOLD` matters most. The embedding model scores most pairs of sentences
 between 0.74 and 0.86. In two generated 25-villager towns, whispers written to
