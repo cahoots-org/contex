@@ -131,6 +131,7 @@ mark.kept {
 @keyframes ink { from { background-size: 0 100%; } to { background-size: 100% 100%; } }
 .note { font-size: .875rem; color: var(--muted); padding: .2rem 0; max-width: 46rem; }
 .note.goal { color: var(--ink); }
+.brush { font: italic 1rem/1.4 var(--rumor); color: var(--ink); }
 .feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
 .lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
 
@@ -398,7 +399,9 @@ function render(e) {
         el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
     }
     case "shrug":
-      return el("li", { className: "note", dataset: { uid: e.uid } }, `${e.name} shrugs it off.`);
+      if (!e.hint) return el("li", { className: "note", dataset: { uid: e.uid } }, `${e.name} shrugs it off.`);
+      return el("li", { className: "note", dataset: { uid: e.uid } },
+        `${e.name} brushes you off: `, el("span", { className: "brush", textContent: `“${e.hint}”` }));
     case "announcement":
       return el("li", { className: "note" }, e.text);
     case "goal":

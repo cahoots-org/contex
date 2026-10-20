@@ -157,3 +157,11 @@ def test_usage_is_in_state_and_reaches_the_websocket(game):
         event = receive(ws)
     assert event["kind"] == "usage"
     assert event["usage"]["summary"] == "Estimated cost so far: $0.02 (Haiku 10k in / 2k out)"
+
+
+def test_shrug_hint_reaches_the_websocket(game):
+    with game.client.websocket_connect(WS) as ws:
+        game.feed.on_shrug("v1", "Marta Hale", "w-1", "Leave off, my willow bark won't gather itself.")
+        event = receive(ws)
+    assert (event["kind"], event["hint"]) == ("shrug", "Leave off, my willow bark won't gather itself.")
+    assert "NEED" not in str(event)
