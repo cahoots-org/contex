@@ -16,7 +16,6 @@ from examples.rumor_mill.town import Town
 log = logging.getLogger(__name__)
 
 NO_QUALIFYING_GROUP_CAP = 0.99
-EVIDENCE_THRESHOLD = 0.75
 
 
 def _text(match: Match) -> str:
@@ -30,13 +29,14 @@ async def _yes(jev, state: dict, question: str) -> bool:
 
 
 class Judge:
-    def __init__(self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None):
+    def __init__(self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None):
         self.contex = contex
         self.jev = jev
         self.town = town
         self.config = config
         self.feed = feed
         self.game = game
+        self.baselines = baselines
         self.progress: dict[str, float] = {}
         self.met: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
@@ -48,7 +48,7 @@ class Judge:
             try:
                 project = mind_project(self.config.session, villager.id)
                 matches = await self.contex.query(
-                    project, goal.evidence[0], top_k=3, threshold=EVIDENCE_THRESHOLD,
+                    project, goal.evidence[0], top_k=3, threshold=self.baselines.threshold(goal.evidence[0]),
                     max_age_seconds=self.config.memory_seconds,
                 )
                 if not matches:
@@ -73,7 +73,7 @@ class Judge:
             try:
                 matches = await self.contex.query(
                     group_project(self.config.session, gid), goal.evidence[0], top_k=1,
-                    threshold=EVIDENCE_THRESHOLD,
+                    threshold=self.baselines.threshold(goal.evidence[0]),
                 )
                 record = next((m for m in matches if m.data_key == f"group:{gid}"), None)
                 return record is not None and await _yes(self.jev, {"group": record.data}, goal.creed_question)

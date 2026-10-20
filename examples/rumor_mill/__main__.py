@@ -43,8 +43,8 @@ async def play(web: bool) -> None:
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         goals = deal(rng)
-        judge = Judge(contex, jev, town, config, feed, game)
         baselines = Baselines(contex, config)
+        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
             baselines=baselines,
@@ -54,10 +54,12 @@ async def play(web: bool) -> None:
         if not web:
             for goal in goals:
                 feed.say(f"Goal: {goal.text}")
-        judging = asyncio.create_task(judge.run(goals))
         places = [p for p in PLACES if p != GATE]
+        judging = None
         try:
             await baselines.load([need for v in villagers for need in v.needs])
+            await baselines.load([g.evidence[0] for g in goals if g.evidence])
+            judging = asyncio.create_task(judge.run(goals))
             await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
             await engine.run()
             if web:
@@ -74,9 +76,10 @@ async def play(web: bool) -> None:
                 await until_over(repl(player, town, feed, goals, judge.progress, usage, engine.suspicion), game)
         finally:
             print(usage.summary())
-            replenisher.cancel()
-            judging.cancel()
-            await asyncio.gather(replenisher, judging, return_exceptions=True)
+            tasks = [t for t in (replenisher, judging) if t is not None]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             player.close()
             await engine.stop()
 

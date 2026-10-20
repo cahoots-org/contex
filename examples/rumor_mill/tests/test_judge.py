@@ -6,13 +6,21 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.goals import Goal
-from examples.rumor_mill.judge import EVIDENCE_THRESHOLD, Judge
+from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.town import Town
 
 CONFIG = Config(day_seconds=0.01, judge_every_days=1.0)
 BELIEF = Goal("g", "cat is a spy", "belief", ("cat spy",), "Does it believe?", 0.5, hold_checks=2)
+
+
+class StubBaselines:
+    def __init__(self, baseline=0.7, margin=0.05):
+        self.baseline, self.margin = baseline, margin
+
+    def threshold(self, text):
+        return self.baseline + self.margin
 
 
 class StubContex:
@@ -25,7 +33,8 @@ class StubContex:
     async def query(self, project_id, query, top_k=3, threshold=None, max_age_seconds=None):
         self.thresholds.append(threshold)
         self.max_ages[project_id] = max_age_seconds
-        return self.minds.get(project_id) or self.groups.get(project_id) or []
+        found = self.minds.get(project_id) or self.groups.get(project_id) or []
+        return [m for m in found if threshold is None or m.similarity is None or m.similarity >= threshold]
 
 
 class StubJev:
@@ -60,7 +69,7 @@ def make(n=4, believers=0):
         town.add(v)
         if i < believers:
             contex.minds[mind_project(CONFIG.session, v.id)] = [Match("k", {"text": "the cat is a spy"})]
-    return Judge(contex, jev, town, CONFIG, feed), contex, jev, feed, town
+    return Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines()), contex, jev, feed, town
 
 
 @pytest.mark.asyncio
@@ -68,7 +77,24 @@ async def test_villagers_without_matches_cost_no_jev_calls():
     judge, contex, jev, _, _ = make(n=4, believers=1)
     await judge.check(BELIEF)
     assert len(jev.calls) == 1
-    assert contex.thresholds == [EVIDENCE_THRESHOLD] * 4
+    assert contex.thresholds == [StubBaselines().threshold("")] * 4
+
+
+@pytest.mark.asyncio
+async def test_judge_queries_with_the_evidence_threshold():
+    judge, contex, _, _, _ = make(n=2, believers=2)
+    judge.baselines = StubBaselines(baseline=0.6, margin=0.1)
+    await judge.check(BELIEF)
+    assert contex.thresholds == [0.7, 0.7]
+
+
+@pytest.mark.asyncio
+async def test_villager_below_the_margin_costs_no_jev_call():
+    judge, contex, jev, _, town = make(n=1)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [Match("k", {"text": "weather"}, similarity=0.74)]
+    judge.baselines = StubBaselines(baseline=0.7, margin=0.05)
+    assert await judge.check(BELIEF) == 0.0
+    assert jev.calls == []
 
 
 @pytest.mark.asyncio
