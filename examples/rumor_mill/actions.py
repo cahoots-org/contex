@@ -34,6 +34,7 @@ ACTION_NOT_FOR = {
     SPEAK: "Not for telling one person in particular (retell).",
     DENY: "Not for personal accusations (confront).",
     CONFRONT: "Not for correcting a rumor in general (deny).",
+    WARN: "Not for passing on what you heard (retell) or arguing with someone (confront).",
 }
 
 STYLES = {
