@@ -202,6 +202,14 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_HAIKU_MODEL` | `claude-haiku-4-5-20251001` | model for speech and village generation |
 | `RUMOR_MILL_SEED_PATH` | `rumor_mill_seed.json` | where the village is cached |
 | `RUMOR_MILL_WEB_PORT` | `8765` | port for `--web` |
+| `RUMOR_MILL_SUSPICION_WHISPER_BUMP` | `0.12` | suspicion a whisper adds to the villager you whisper to |
+| `RUMOR_MILL_SUSPICION_HEAR_MAX` | `0.25` | most suspicion one rumor about the newcomer can add |
+| `RUMOR_MILL_SUSPICION_DECAY_PER_DAY` | `0.05` | suspicion each villager loses per game day |
+| `RUMOR_MILL_WARN_THRESHOLD` | `0.3` | suspicion at which a villager may warn others |
+| `RUMOR_MILL_REFUSE_THRESHOLD` | `0.7` | suspicion at which a villager turns you away |
+| `RUMOR_MILL_RUN_OUT_LEVEL` | `0.08` | village mood at which the run-out checks start counting |
+| `RUMOR_MILL_RUN_OUT_CHECKS` | `3` | checks in a row at that level before you are run out |
+| `RUMOR_MILL_SUSPICION_CHECK_DAYS` | `0.25` | game days between mood checks |
 
 `THRESHOLD` matters most. The embedding model scores most pairs of sentences
 between 0.74 and 0.86. In two generated 25-villager towns, whispers written to
@@ -209,6 +217,12 @@ touch a villager's needs scored a median of 0.834 against their closest need and
 unrelated ones 0.794. At 0.815, 21 of 25 on-topic whispers landed and unrelated
 ones such as "the tide tables were misprinted" landed on nobody. Lower it and
 villagers react to more of what they hear; raise it and the village goes quiet.
+
+The mood is a mean over the whole village, so the same whispers count for more
+in a small one. In a village of 100, a player who whispered to someone
+every few seconds was run out on the fourth game day, while one who picked a
+dozen villagers whose worries matched stayed at quiet or murmurs. In a village
+of 30, eight well-aimed whispers reached watched.
 
 ## Tests
 
