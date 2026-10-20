@@ -181,7 +181,21 @@ async def test_progress_line_only_when_percent_changes():
 
 
 @pytest.mark.asyncio
-async def test_failing_villager_counts_as_non_believer():
+async def test_failing_villager_is_not_counted():
+    judge, contex, _, _, _ = make(n=3, believers=1)
+    healthy = contex.query
+
+    async def query(project_id, *a, **k):
+        if project_id == mind_project(CONFIG.session, "v1"):
+            raise RuntimeError("down")
+        return await healthy(project_id, *a, **k)
+
+    contex.query = query
+    assert await judge.check(BELIEF) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_all_villagers_failing_gives_zero_progress():
     judge, contex, _, _, _ = make(n=2, believers=2)
 
     async def boom(*a, **k):

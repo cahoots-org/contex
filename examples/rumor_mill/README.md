@@ -29,8 +29,11 @@ your rumors and only yours.
 
 ## Setup
 
-Start Contex with a 30-second reconcile sweep, so forgetting keeps pace with
-two-minute days (the default sweep is 300 seconds):
+Optionally, start Contex with a 60-second reconcile sweep so quiet minds forget
+sooner. The setting applies to the whole Contex server, and each sweep costs a
+CPU burst: at a 30-second sweep with 100 villagers, the server used 4 to 5 CPU
+cores for a few seconds each time. Without the override, forgetting is trimmed
+whenever a villager takes a turn and every 300 seconds otherwise.
 
 ```bash
 docker compose -f docker-compose.yml -f examples/rumor_mill/compose.sweep.yaml up
@@ -59,7 +62,7 @@ On the machine this was tuned on, a 100-villager game took 5.5 seconds to
 start from the seed file, and the game process used 125 MB of memory and
 6 seconds of CPU over a 400-second session. The Contex server held 100 listen
 connections and used 4 to 5 CPU cores for a few seconds at each 30-second
-sweep.
+sweep; the override uses 60 seconds.
 
 ## Commands
 
@@ -116,6 +119,7 @@ villagers react to more of what they hear; raise it and the village goes quiet.
 ## Tests
 
 ```bash
+pip install -r requirements-dev.txt
 pytest examples/rumor_mill
 RUMOR_MILL_CONTEX_URL=http://localhost:8001/mcp pytest examples/rumor_mill
 ```

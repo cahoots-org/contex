@@ -6,6 +6,8 @@ from examples.rumor_mill.actions import STYLES
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.models import Villager
 
+SAY_MAX_TOKENS = 80
+
 
 def extract_json(text: str):
     """Parse the first JSON array or object in text, ignoring fences and prose."""
@@ -51,7 +53,7 @@ class Writer:
             lines.append(f"Manner: {STYLES[decision.style]}")
         if source_text:
             lines.append(f"What you heard: {source_text}")
-        return await self.complete(system, "\n".join(lines))
+        return await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS)
 
     async def describe_group(
         self, villager: Villager, inspiration: list[str],

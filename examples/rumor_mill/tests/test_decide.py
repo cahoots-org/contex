@@ -1,3 +1,5 @@
+import logging
+import random
 from types import SimpleNamespace
 
 import pytest
@@ -181,3 +183,38 @@ async def test_action_is_drawn_from_jev_probabilities():
     jev.system_one = system_one
     decision = await decide(jev, view())
     assert decision.action == FOUND_GROUP
+
+
+def with_odds(odds):
+    jev = StubJev({"action": max(odds, key=odds.get)})
+    real = jev.system_one
+
+    async def system_one(state, questions):
+        resp = await real(state, questions)
+        resp.choices["action"].probabilities = odds
+        return resp
+
+    jev.system_one = system_one
+    return jev
+
+
+@pytest.mark.asyncio
+async def test_options_below_the_floor_are_never_drawn():
+    random.seed(7)
+    jev = with_odds({SPEAK: 0.57, RETELL: 0.40, FOUND_GROUP: 0.03})
+    drawn = {(await decide(jev, view())).action for _ in range(500)}
+    assert drawn == {SPEAK, RETELL}
+
+
+@pytest.mark.asyncio
+async def test_argmax_chosen_when_every_option_is_below_the_floor():
+    jev = with_odds({SPEAK: 0.09, RETELL: 0.05, FOUND_GROUP: 0.04})
+    assert {(await decide(jev, view())).action for _ in range(50)} == {SPEAK}
+
+
+@pytest.mark.asyncio
+async def test_odds_and_drawn_action_are_logged_at_debug(caplog):
+    jev = with_odds({SPEAK: 1.0})
+    with caplog.at_level(logging.DEBUG):
+        await decide(jev, view())
+    assert "v1" in caplog.text and SPEAK in caplog.text

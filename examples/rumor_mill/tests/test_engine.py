@@ -258,3 +258,21 @@ async def test_deliver_raises_when_every_listener_fails(turns):
         await engine.deliver(utt, ["v2"])
     assert feed.deliveries == []
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_repeated_listen_failures_log_one_traceback(turns, monkeypatch, caplog):
+    monkeypatch.setattr(engine_mod, "LISTEN_RETRY_SECONDS", 0.01)
+    engine, minds, _ = await setup("v1")
+
+    async def broken():
+        raise RuntimeError("contex down")
+        yield
+
+    minds["v1"].pushes = broken
+    with caplog.at_level(logging.WARNING):
+        await wait_for(lambda: len(caplog.records) >= 3)
+    await engine.stop()
+    with_trace = [r for r in caplog.records if r.exc_info]
+    assert len(with_trace) == 1
+    assert all("v1" in r.getMessage() for r in caplog.records)

@@ -48,6 +48,7 @@ class Engine:
         self.departures: asyncio.Queue[str] = asyncio.Queue()
         self._tasks: dict[str, list[asyncio.Task]] = {}
         self._read_at: dict[str, float] = {}
+        self._listen_failed: set[str] = set()
         self._renewal: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
         self._started = time.monotonic()
@@ -73,6 +74,7 @@ class Engine:
         if self.minds.pop(vid, None) is not None:
             self.departures.put_nowait(vid)
         self._read_at.pop(vid, None)
+        self._listen_failed.discard(vid)
         with suppress(KeyError):
             self.town.remove(vid)
         current = asyncio.current_task()
@@ -118,8 +120,13 @@ class Engine:
                 async with aclosing(mind.pushes()) as pushes:
                     async for _ in pushes:
                         wake.set()
-            except Exception:
-                log.exception("listen failed for %s", mind.villager.id)
+            except Exception as e:
+                vid = mind.villager.id
+                if vid in self._listen_failed:
+                    log.warning("listen failed again for %s: %r", vid, e)
+                else:
+                    self._listen_failed.add(vid)
+                    log.exception("listen failed for %s", vid)
             await asyncio.sleep(LISTEN_RETRY_SECONDS)
 
     async def _work(self, mind: Mind, wake: asyncio.Event) -> None:

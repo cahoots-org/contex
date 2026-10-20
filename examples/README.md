@@ -57,8 +57,9 @@ python examples/query.py
 A terminal gossip game with 100 villagers. Each villager's mind is a project
 with one subscription on their needs, they wake only on push, and they forget
 through `max_age_seconds`. You whisper rumors and watch them spread and change
-by meaning. Needs `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY`, and a 30-second
-reconcile sweep; see its README for setup.
+by meaning. Needs `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY`. An
+optional faster reconcile sweep makes quiet minds forget sooner; see its README
+for setup and cost.
 
 ```bash
 pip install -r examples/rumor_mill/requirements.txt

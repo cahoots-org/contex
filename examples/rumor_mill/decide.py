@@ -1,5 +1,6 @@
 """One Jev request per turn: what does this villager do, and to whom."""
 
+import logging
 import random
 from dataclasses import dataclass
 
@@ -13,7 +14,11 @@ from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.models import Group, Villager
 from examples.rumor_mill.town import PLACES
 
+log = logging.getLogger(__name__)
+
 MAX_OPTIONS = 255
+# Actions Jev rates below this are never drawn.
+MIN_ACTION_PROBABILITY = 0.1
 MAX_RECENT = 10
 
 ACTION_INSTRUCTIONS = (
@@ -120,12 +125,18 @@ async def decide(jev, view: TurnView) -> Decision:
     """Ask Jev once and keep only the answers the chosen action needs.
 
     The action is drawn from Jev's probabilities, so a likely but not top
-    choice still happens some of the time.
+    choice still happens some of the time. Options below MIN_ACTION_PROBABILITY
+    are dropped first; if none remain, the most probable one is taken.
     """
     resp = await jev.system_one(state=_state(view), questions=_questions(view))
     pick = {k: c.choice for k, c in resp.choices.items()}
     odds = resp.choices["action"].probabilities
-    action = random.choices(list(odds), weights=list(odds.values()))[0]
+    likely = {a: p for a, p in odds.items() if p >= MIN_ACTION_PROBABILITY}
+    if likely:
+        action = random.choices(list(likely), weights=list(likely.values()))[0]
+    else:
+        action = max(odds, key=odds.get)
+    log.debug("%s: action odds %s, drew %s", view.villager.id, odds, action)
     if action == IGNORE:
         return Decision(IGNORE, None, None, None)
     if len(view.new) > 1:

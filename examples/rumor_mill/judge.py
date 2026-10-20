@@ -39,7 +39,7 @@ class Judge:
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
     async def _believes(self, goal: Goal, villager: Villager) -> bool | None:
-        """Whether the villager believes the goal's claim; None if they left mid-check."""
+        """Whether the villager believes the goal's claim; None if they left or the check failed."""
         async with self._semaphore:
             try:
                 project = mind_project(self.config.session, villager.id)
@@ -59,7 +59,7 @@ class Judge:
                 believes = self._verdicts[key]
             except Exception:
                 log.exception("judging %s failed for %s", goal.id, villager.id)
-                believes = False
+                return None
             return believes if villager.id in self.town else None
 
     async def _group_qualifies(self, goal: Goal, gid: str, members: int) -> bool:
