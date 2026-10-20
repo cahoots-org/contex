@@ -58,6 +58,22 @@ class Writer:
             lines.append(f"What you heard: {source_text}")
         return await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS)
 
+    async def brush_off(self, villager: Villager, concern: str) -> str:
+        """The villager waving off the newcomer while grumbling about their concern, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "A newcomer just whispered something to you that you don't care about. Brush them off "
+            "in one short sentence, under 25 words, in your own voice, grumbling about what is "
+            "really on your mind and nothing else. "
+            "Allude to it rather than state it plainly, so the listener has to guess the real "
+            "problem: grumble about a symptom or a related worry, and don't name the specific "
+            "thing, number, or person it is about. Never repeat its wording. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        text = await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS)
+        return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
+
     async def describe_group(
         self, villager: Villager, inspiration: list[str],
     ) -> tuple[str, str]:

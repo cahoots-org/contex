@@ -68,3 +68,15 @@ async def test_complete_records_usage():
     usage = Usage(Config())
     await Writer(StubClient("Hm.", "Ha."), "haiku-test", usage).complete("s", "u")
     assert usage.tokens["haiku"] == [120, 30]
+
+
+@pytest.mark.asyncio
+async def test_brush_off_prompts_with_profile_and_concern_and_returns_one_line():
+    client = StubClient('"Not now, my oven is cracked."\nAnd another thing.')
+    line = await Writer(client, "haiku-test").brush_off(villager(), "my oven needs a new hearthstone")
+    assert line == "Not now, my oven is cracked."
+    call = client.messages.calls[0]
+    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued", "Allude to it"))
+    assert "owes me flour" not in call["system"]
+    assert "my oven needs a new hearthstone" in call["messages"][0]["content"]
+    assert call["max_tokens"] == 80
