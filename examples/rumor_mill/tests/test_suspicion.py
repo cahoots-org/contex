@@ -55,6 +55,8 @@ def test_weight_table_is_case_insensitive_substring():
     assert s.weight(v("a", "INNKEEPER")) == 2.0
     assert s.weight(v("a", "Constable")) == 2.0
     assert s.weight(v("a", "reeve of the mill")) == 2.0
+    assert s.weight(v("a", "Ale brewer and tavern keeper")) == 2.0
+    assert s.weight(v("a", "Village bailiff and law keeper")) == 2.0
     assert s.weight(v("a", "baker")) == 1.0
 
 

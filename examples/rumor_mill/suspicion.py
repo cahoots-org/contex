@@ -8,7 +8,8 @@ from examples.rumor_mill.models import Villager
 from examples.rumor_mill.town import Town
 
 # Occupation substring (lowercase) to how much that villager's suspicion counts.
-WEIGHTS = {"mayor": 3.0, "priest": 2.0, "innkeeper": 2.0, "constable": 2.0, "reeve": 2.0}
+WEIGHTS = {"mayor": 3.0, "priest": 2.0, "innkeeper": 2.0, "constable": 2.0, "reeve": 2.0,
+           "tavern": 2.0, "bailiff": 2.0}
 # Upper bound of each label as a fraction of the run-out level.
 LABELS = ((0.25, "quiet"), (0.5, "murmurs"), (0.8, "watched"))
 # What the player is told for each label.

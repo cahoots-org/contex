@@ -117,9 +117,9 @@ not what was said. A villager who suspects you strongly turns you away: your
 whisper doesn't reach them, and trying again makes them more suspicious.
 
 Suspicion fades a little each day. The village's mood is a mean of everyone's
-suspicion in which the mayor, priest, innkeeper, constable, and reeve count for
-more. You see it as one of four lines, under your goals on the browser page and
-after `goals` in the terminal:
+suspicion in which the mayor, priest, innkeeper, tavern keeper, constable,
+bailiff, and reeve count for more. You see it as one of four lines, under your
+goals on the browser page and after `goals` in the terminal:
 
 | Label | What it says |
 |---|---|
