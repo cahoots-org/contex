@@ -112,6 +112,32 @@ The server listens on 127.0.0.1 only. It answers only requests addressed to
 `127.0.0.1` or `localhost` on its own port, and refuses whispers and WebSocket
 connections from other origins.
 
+## What it costs
+
+The game keeps a running count of the tokens it sends to Haiku and Jev and
+multiplies them by per-million-token prices. `usage` prints it in the
+terminal, the browser page shows it at the bottom of the sidebar, and both
+print it on quit. The figures are estimates: the prices are list prices you can
+change, and the providers' bills are the real numbers.
+
+Where the tokens go:
+
+- Setup: Haiku writes the village once per seed file, and writes each newcomer
+  who arrives after someone leaves.
+- Each time a villager wakes: one Jev request to decide what they do, plus a
+  short Haiku call (at most 80 tokens out) when they speak, and a slightly
+  longer one when they found a group.
+- The judge: one Jev request per villager whose memories match a belief goal,
+  once a game day. Verdicts are cached until the villager's matching memories
+  change.
+
+| Variable | Default (dollars per million tokens) |
+|---|---|
+| `RUMOR_MILL_HAIKU_INPUT_PER_MTOK` | `1.0` |
+| `RUMOR_MILL_HAIKU_OUTPUT_PER_MTOK` | `5.0` |
+| `RUMOR_MILL_JEV_INPUT_PER_MTOK` | `0.04` |
+| `RUMOR_MILL_JEV_OUTPUT_PER_MTOK` | `0.0` |
+
 ## Settings
 
 Every field of `Config` can be set with an environment variable.
