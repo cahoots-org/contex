@@ -47,12 +47,14 @@ async def act(
     action = decision.action
     vid = villager.id
     place = town.place_of(vid)
-    parent = decision.source.data["id"] if decision.source else None
+    source_id = decision.source.data["id"] if decision.source else None
     source_text = decision.source.data.get("text") if decision.source else None
 
     async def say(
-        text: str, listeners: list[str], verb: str = "said", parent: str | None = parent, addressed: bool = False,
+        text: str, listeners: list[str], verb: str = "said", addressed: bool = False, root: bool = False,
     ) -> str:
+        """Deliver an utterance descended from the decision's source, or starting a new line if root."""
+        parent = None if root else source_id
         uid = ids.next("u")
         lineage.record(uid, parent)
         utterance = Utterance(uid, vid, villager.name, place, text, parent, verb)
@@ -74,7 +76,7 @@ async def act(
     elif action == WARN:
         if decision.target in others():
             text = await writer.warn(villager, town.get(decision.target))
-            uid = await say(text, [decision.target], "warned", parent=None, addressed=True)
+            uid = await say(text, [decision.target], "warned", addressed=True, root=True)
             try:
                 hub.suspect(decision.target, WARNED_SHARE * suspicion_hear_max, "was warned about the newcomer", uid)
             except Exception:
