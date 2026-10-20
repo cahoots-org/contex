@@ -200,6 +200,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dd { margin: 0 0 .35rem; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.usage { margin: 1.5rem 0 0; font-size: .8rem; color: var(--muted); }
 .linkish { background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; font-size: .875rem; }
 
 @media (max-width: 760px) {
@@ -260,6 +261,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
     <div id="card"></div>
     <div id="people"></div>
+    <p class="usage" id="usage"></p>
   </aside>
 </div>
 
@@ -648,6 +650,7 @@ async function loadState() {
   renderGoals();
   villagersKey = "";
   setVillagers(state.villagers);
+  $("usage").textContent = state.usage.summary;
   // The replay goes in before the log is live, so a reload doesn't read it all out.
   feed.setAttribute("aria-live", "off");
   addEvents(state.events, false);
@@ -657,6 +660,8 @@ async function loadState() {
 function receive(e) {
   if (e.kind === "villagers") {
     setVillagers(e.villagers);
+  } else if (e.kind === "usage") {
+    $("usage").textContent = e.usage.summary;
   } else {
     addEvents([e], true);
   }

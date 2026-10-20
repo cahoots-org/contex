@@ -54,7 +54,9 @@ async def play(web: bool) -> None:
             await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
             await engine.run()
             if web:
-                app = create_app(player=player, town=town, feed=feed, judge=judge, goals=goals, port=config.web_port)
+                app = create_app(
+                    player=player, town=town, feed=feed, judge=judge, goals=goals, usage=usage, port=config.web_port,
+                )
                 server = uvicorn.Server(uvicorn.Config(
                     app, host="127.0.0.1", port=config.web_port, log_level="warning", timeout_graceful_shutdown=1,
                 ))

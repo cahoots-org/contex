@@ -13,6 +13,8 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
 from examples.rumor_mill.town import PLACES, Town
+from examples.rumor_mill.usage import Usage
+from examples.rumor_mill import web
 from examples.rumor_mill.web import create_app
 
 PORT = 8765
@@ -40,16 +42,18 @@ class FakeEngine:
 
 
 @pytest.fixture
-def game():
+def game(monkeypatch):
+    monkeypatch.setattr(web, "USAGE_POLL_SECONDS", 0.05)
     town, lineage = Town(), Lineage()
     town.add(Villager("v1", "Marta Hale", "herbalist", "anxious", "the miller", ["SECRET NEED"], {"v2": "rival"}), "well")
     town.add(Villager("v2", "Bert Cole", "miller", "jolly", "none", ["OTHER NEED"], {}), "mill")
     feed = Feed(lineage, town, out=None)
     player = Player(FakeEngine(feed), town, lineage, Ids(), feed, Config(shrug_seconds=60))
     judge = SimpleNamespace(progress={"cat": 0.42}, met=set())
-    app = create_app(player=player, town=town, feed=feed, judge=judge, goals=[GOAL], port=PORT)
+    usage = Usage(Config())
+    app = create_app(player=player, town=town, feed=feed, judge=judge, goals=[GOAL], usage=usage, port=PORT)
     with TestClient(app, base_url=BASE) as client:
-        yield SimpleNamespace(client=client, town=town, feed=feed, app=app)
+        yield SimpleNamespace(client=client, town=town, feed=feed, app=app, usage=usage)
     player.close()
 
 
@@ -144,3 +148,12 @@ def test_whisper_by_id_picks_the_right_namesake(game):
     assert game.client.post("/api/whisper", json={"name": "Bert Cole", "text": "hi"}).status_code == 400
     assert game.client.post("/api/whisper", json={"villager_id": "v3", "text": "hi"}).json() == {"ok": True}
     assert game.feed.recent[-1].data["target_id"] == "v3"
+
+
+def test_usage_is_in_state_and_reaches_the_websocket(game):
+    assert game.client.get("/api/state").json()["usage"]["summary"] == "Estimated cost so far: $0.00"
+    with game.client.websocket_connect(WS) as ws:
+        game.usage.record("haiku", 10_000, 2_000)
+        event = receive(ws)
+    assert event["kind"] == "usage"
+    assert event["usage"]["summary"] == "Estimated cost so far: $0.02 (Haiku 10k in / 2k out)"

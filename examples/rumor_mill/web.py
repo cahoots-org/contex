@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 from collections.abc import Sequence
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket
@@ -17,12 +17,14 @@ from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.town import PLACES, Town
+from examples.rumor_mill.usage import Usage
 
 log = logging.getLogger(__name__)
 
 PAGE = Path(__file__).parent / "static" / "index.html"
 MAX_BODY_BYTES = 8192
 VILLAGER_POLL_SECONDS = 1.0
+USAGE_POLL_SECONDS = 3.0
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
 
 
@@ -61,7 +63,7 @@ def _error(status: int, message: str) -> JSONResponse:
 
 
 def create_app(
-    *, player: Player, town: Town, feed: Feed, judge, goals: Sequence[Goal], port: int,
+    *, player: Player, town: Town, feed: Feed, judge, goals: Sequence[Goal], usage: Usage, port: int,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
     clients: set[asyncio.Queue] = set()
@@ -74,26 +76,30 @@ def create_app(
     def on_event(event: Event) -> None:
         broadcast(event.to_json())
 
-    async def watch_villagers() -> None:
-        last = villagers(town)
+    async def watch(kind: str, snapshot, seconds: float) -> None:
+        """Send the snapshot whenever it has changed, checking every few seconds."""
+        last = snapshot()
         while True:
-            await asyncio.sleep(VILLAGER_POLL_SECONDS)
-            now = villagers(town)
+            await asyncio.sleep(seconds)
+            now = snapshot()
             if now != last:
                 last = now
-                broadcast({"kind": "villagers", "villagers": now})
+                broadcast({"kind": kind, kind: now})
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         feed.sinks.append(on_event)
-        watcher = asyncio.create_task(watch_villagers())
+        watchers = [
+            asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
+        ]
         try:
             yield
         finally:
             feed.sinks.remove(on_event)
-            watcher.cancel()
-            with suppress(asyncio.CancelledError):
-                await watcher
+            for w in watchers:
+                w.cancel()
+            await asyncio.gather(*watchers, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(Guard, port=port)
@@ -115,6 +121,7 @@ def create_app(
             ],
             "villagers": villagers(town),
             "events": [e.to_json() for e in feed.recent],
+            "usage": usage.to_json(),
         }
 
     @app.get("/api/villagers/{vid}")
