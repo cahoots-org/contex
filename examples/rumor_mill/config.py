@@ -32,6 +32,15 @@ class Config:
     haiku_output_per_mtok: float = 5.0
     jev_input_per_mtok: float = 0.04
     jev_output_per_mtok: float = 0.0
+    suspicion_whisper_bump: float = 0.08
+    suspicion_hear_max: float = 0.25
+    suspicion_decay_per_day: float = 0.03
+    warn_threshold: float = 0.4
+    refuse_threshold: float = 0.7
+    # Weighted town suspicion at which villagers start moving to run the newcomer out.
+    run_out_level: float = 0.3
+    run_out_checks: int = 3
+    suspicion_check_days: float = 0.25
 
     @property
     def memory_seconds(self) -> int:
