@@ -12,11 +12,12 @@ import typesafe_sdk
 import uvicorn
 from dotenv import load_dotenv
 
-from examples.rumor_mill.cli import repl
+from examples.rumor_mill.cli import repl, until_over
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import deal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
@@ -37,14 +38,17 @@ async def play(web: bool) -> None:
     villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town, out=None if web else print)
+    game = Game(feed)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
-        engine = Engine(config, town, contex, jev, writer, lineage, ids, feed)
-        player = Player(engine, town, lineage, ids, feed, config, writer)
+        goals = deal(rng)
+        judge = Judge(contex, jev, town, config, feed, game)
+        engine = Engine(
+            config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
+        )
+        player = Player(engine, town, lineage, ids, feed, config, writer, game)
         engine.on_heard = player.note_heard
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
-        goals = deal(rng)
-        judge = Judge(contex, jev, town, config, feed)
         if not web:
             for goal in goals:
                 feed.say(f"Goal: {goal.text}")
@@ -63,7 +67,7 @@ async def play(web: bool) -> None:
                 print(f"Rumor Mill is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
                 await server.serve()
             else:
-                await repl(player, town, feed, goals, judge.progress, usage)
+                await until_over(repl(player, town, feed, goals, judge.progress, usage, engine.suspicion), game)
         finally:
             print(usage.summary())
             replenisher.cancel()
@@ -85,8 +89,9 @@ def main() -> None:
     except SeedMismatch as e:
         sys.exit(str(e))
     except KeyboardInterrupt:
-        # A thread blocked on stdin would stall interpreter exit.
-        os._exit(0)
+        pass
+    # A thread blocked on stdin would stall interpreter exit.
+    os._exit(0)
 
 
 main()

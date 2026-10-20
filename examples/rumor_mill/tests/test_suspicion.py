@@ -121,3 +121,8 @@ def test_rate_clamps_strength_to_unit_range():
     assert s.rate("a", -1.0, "x") == 0.0
     assert s.top_evidence() == []
     assert s.rate("b", 5.0, "x") == pytest.approx(0.25)
+
+
+def test_label_without_a_run_out_level_is_hunted():
+    s, _ = make(v("a"), run_out_level=0.0)
+    assert s.label() == "hunted"

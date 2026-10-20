@@ -9,6 +9,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import Town
@@ -86,7 +87,7 @@ def turns(monkeypatch):
     return t
 
 
-async def setup(*vids, cooldown=0.05):
+async def setup(*vids, cooldown=0.05, game=None):
     minds = {}
 
     def factory(v):
@@ -96,7 +97,7 @@ async def setup(*vids, cooldown=0.05):
     feed = RecordingFeed()
     engine = Engine(
         Config(cooldown_seconds=cooldown), Town(), None, None, None, Lineage(), Ids(), feed,
-        mind_factory=factory,
+        mind_factory=factory, game=game,
     )
     for vid in vids:
         await engine.add_villager(make(vid))
@@ -196,7 +197,7 @@ async def test_on_heard_called_with_new_matches(turns):
 
 @pytest.mark.asyncio
 async def test_stop_leaves_no_pending_tasks(turns):
-    engine, minds, _ = await setup("v1", "v2")
+    engine, minds, _ = await setup("v1", "v2", game=Game(RecordingFeed()))
     push(minds["v1"])
     await wait_for(lambda: len(turns.acts) == 1)
     await engine.stop()
@@ -425,4 +426,15 @@ async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fai
     assert "rating down" in caplog.text
     engine.suspect("v1", 0.1, "was warned about the newcomer", "u-1")
     assert engine.suspicion.score("v1") == pytest.approx(engine.config.suspicion_hear_max + 0.1)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_no_turns_start_after_the_game_is_over(turns):
+    game = Game(RecordingFeed())
+    engine, minds, _ = await setup("v1", game=game)
+    game.finished.set()
+    push(minds["v1"])
+    await asyncio.sleep(SETTLE)
+    assert (turns.views, minds["v1"].polls) == ([], 0)
     await engine.stop()

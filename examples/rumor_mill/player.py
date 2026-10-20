@@ -6,6 +6,7 @@ import re
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
+from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import PLAYER_ID, Town
@@ -14,6 +15,7 @@ log = logging.getLogger(__name__)
 
 MAX_WHISPER_CHARS = 500
 ECHO_WORDS = 4
+GAME_OVER = "The game is over."
 
 
 def _runs(text: str) -> set[tuple[str, ...]]:
@@ -27,7 +29,9 @@ def echoes(line: str, concern: str) -> bool:
 
 
 class Player:
-    def __init__(self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config, writer=None):
+    def __init__(
+        self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config, writer=None, game: Game | None = None,
+    ):
         self.engine = engine
         self.town = town
         self.lineage = lineage
@@ -35,11 +39,14 @@ class Player:
         self.feed = feed
         self.config = config
         self.writer = writer
+        self.game = game
         self._shrugs: dict[tuple[str, str], asyncio.Task] = {}
         self._hinted: dict[str, set[int]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't."""
+        if self._over():
+            return GAME_OVER
         name = name.strip()
         if not name or not text.strip():
             return "Whisper to whom, and what? Try: Marta: the miller waters his flour"
@@ -53,6 +60,8 @@ class Player:
 
     async def whisper_to(self, villager_id: str, text: str) -> str | None:
         """Whisper text to the villager with this id; returns why it could not be done, if it couldn't."""
+        if self._over():
+            return GAME_OVER
         text = text.strip()
         if villager_id not in self.town:
             gone = self.town.name_of(villager_id)
@@ -82,6 +91,9 @@ class Player:
             return "The whisper didn't carry; try again."
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         return None
+
+    def _over(self) -> bool:
+        return self.game is not None and self.game.finished.is_set()
 
     def note_heard(self, villager_id: str, matches: list[Match]) -> None:
         """Cancel the shrug timer when a match is a whisper to this villager."""

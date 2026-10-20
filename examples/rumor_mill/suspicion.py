@@ -11,6 +11,20 @@ from examples.rumor_mill.town import Town
 WEIGHTS = {"mayor": 3.0, "priest": 2.0, "innkeeper": 2.0, "constable": 2.0, "reeve": 2.0}
 # Upper bound of each label as a fraction of the run-out level.
 LABELS = ((0.25, "quiet"), (0.5, "murmurs"), (0.8, "watched"))
+# What the player is told for each label.
+HEAT_LINES = {
+    "quiet": "Folk are not talking about you.",
+    "murmurs": "There are murmurs.",
+    "watched": "Folk are watching you.",
+    "hunted": "The village is hunting for you.",
+}
+# Evidence reason to the loss-summary sentence about the villager.
+REASON_LINES = {
+    "whispered to them directly": "{} heard it from you directly.",
+    "tried to whisper again": "{} caught you whispering to them again.",
+    "heard the newcomer named": "{} heard the newcomer named.",
+    "was warned about the newcomer": "{} was warned about you.",
+}
 
 
 @dataclass
@@ -60,6 +74,8 @@ class Suspicion:
         return sum(self.score(v.id) * self.weight(v) for v in villagers) / total
 
     def label(self) -> str:
+        if self.config.run_out_level <= 0:
+            return "hunted"
         ratio = self.level() / self.config.run_out_level
         return next((name for bound, name in LABELS if ratio < bound), "hunted")
 
@@ -75,3 +91,11 @@ class Suspicion:
             uids.setdefault((e.vid, e.reason), e.uid)
         ranked = sorted(sums, key=sums.__getitem__, reverse=True)
         return [Evidence(vid, sums[(vid, reason)], reason, uids[(vid, reason)]) for vid, reason in ranked[:n]]
+
+    def reasons(self, n: int = 3) -> list[str]:
+        """Plain sentences for the top evidence, skipping villagers whose name is unknown."""
+        lines = []
+        for e in self.top_evidence(n):
+            if name := self.town.name_of(e.vid):
+                lines.append(REASON_LINES.get(e.reason, "{} grew suspicious of you.").format(name))
+        return lines

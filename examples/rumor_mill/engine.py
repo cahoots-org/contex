@@ -10,6 +10,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.decide import TurnView, decide
 from examples.rumor_mill.effects import act
+from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project
 from examples.rumor_mill.models import Group, Utterance, Villager
@@ -20,6 +21,7 @@ from examples.rumor_mill.writer import Writer
 log = logging.getLogger(__name__)
 
 LISTEN_RETRY_SECONDS = 1
+MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
 class Engine:
@@ -34,6 +36,8 @@ class Engine:
         ids: Ids,
         feed,
         mind_factory: Callable[[Villager], Mind] | None = None,
+        game: Game | None = None,
+        summary_source: Callable[[], list[tuple[str, int]]] = list,
     ):
         self.config = config
         self.town = town
@@ -45,6 +49,8 @@ class Engine:
         self.feed = feed
         self.suspicion = Suspicion(config, town)
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config))
+        self.game = game
+        self.summary_source = summary_source
         self.on_heard: Callable[[str, list[Match]], None] | None = None
         self.minds: dict[str, Mind] = {}
         self.departures: asyncio.Queue[str] = asyncio.Queue()
@@ -54,6 +60,7 @@ class Engine:
         self._pending: dict[str, list[Match]] = {}
         self._listen_failed: set[str] = set()
         self._renewal: asyncio.Task | None = None
+        self._checks: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
         self._started = time.monotonic()
 
@@ -88,16 +95,17 @@ class Engine:
         await _cancel(tasks)
 
     async def run(self) -> None:
-        """Start the clock and lease renewal; returns at once."""
+        """Start the clock, lease renewal and, with a game, the town check; returns at once."""
         self._started = time.monotonic()
         self._renewal = asyncio.create_task(self._renew_loop())
+        if self.game is not None:
+            self._checks = asyncio.create_task(self._suspicion_loop())
 
     async def stop(self) -> None:
         tasks = [t for ts in self._tasks.values() for t in ts]
-        if self._renewal:
-            tasks.append(self._renewal)
+        tasks += [t for t in (self._renewal, self._checks) if t]
         self._tasks.clear()
-        self._renewal = None
+        self._renewal = self._checks = None
         await _cancel(tasks)
 
     async def deliver(self, utterance: Utterance, listener_ids: list[str], addressed: bool = False) -> None:
@@ -173,6 +181,8 @@ class Engine:
 
         Returns whether a turn ran.
         """
+        if self.game is not None and self.game.finished.is_set():
+            return False
         v = mind.villager
         new = await mind.poll()
         self._read_at[v.id] = time.monotonic()
@@ -212,6 +222,27 @@ class Engine:
                 suspicion_hear_max=self.config.suspicion_hear_max,
             )
         return True
+
+    async def _suspicion_loop(self) -> None:
+        """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""
+        days = self.config.suspicion_check_days
+        label, held = "quiet", 0
+        while not self.game.finished.is_set():
+            await asyncio.sleep(days * self.config.day_seconds)
+            if self.game.finished.is_set():
+                return
+            try:
+                self.suspicion.decay(days)
+                if (now := self.suspicion.label()) != label:
+                    label = now
+                    self.feed.on_heat(label)
+                held = held + 1 if self.suspicion.level() >= self.config.run_out_level else 0
+                if held >= self.config.run_out_checks:
+                    summary = Summary("lost", self.summary_source(), self.suspicion.reasons())
+                    self.feed.say(MEETING)
+                    self.game.lose(summary)
+            except Exception:
+                log.exception("town check failed")
 
     async def _renew_loop(self) -> None:
         """Renew the lease of every mind not read within renew_seconds."""

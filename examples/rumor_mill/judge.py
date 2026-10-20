@@ -7,6 +7,7 @@ from typesafe_sdk import Noul
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
+from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
@@ -28,12 +29,13 @@ async def _yes(jev, state: dict, question: str) -> bool:
 
 
 class Judge:
-    def __init__(self, contex: ContexClient, jev, town: Town, config: Config, feed):
+    def __init__(self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None):
         self.contex = contex
         self.jev = jev
         self.town = town
         self.config = config
         self.feed = feed
+        self.game = game
         self.progress: dict[str, float] = {}
         self.met: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
@@ -97,12 +99,17 @@ class Judge:
         return progress
 
     async def run(self, goals: list[Goal]) -> None:
-        """Check every goal each interval until all have held at full progress."""
+        """Check every goal each interval until all have held at full progress, then win the game.
+
+        Stops early once the game is over.
+        """
         holds = {g.id: 0 for g in goals}
         pending = list(goals)
         interval = self.config.judge_every_days * self.config.day_seconds
         while pending:
             await asyncio.sleep(interval)
+            if self._over():
+                return
             for goal in list(pending):
                 try:
                     progress = await self.check(goal)
@@ -117,3 +124,12 @@ class Judge:
                     pending.remove(goal)
                     self.met.add(goal.id)
                     self.feed.on_met(goal)
+        if self.game is not None:
+            self.game.win(Summary("won", self.percents(goals), []))
+
+    def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
+        """Each goal's text and whole percent progress."""
+        return [(g.text, int(self.progress.get(g.id, 0.0) * 100)) for g in goals]
+
+    def _over(self) -> bool:
+        return self.game is not None and self.game.finished.is_set()

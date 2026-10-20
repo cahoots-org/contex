@@ -6,12 +6,15 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from examples.rumor_mill.game import Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.suspicion import HEAT_LINES
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 REPLAY_EVENTS = 500
+GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
 
 
 @dataclass(frozen=True)
@@ -45,8 +48,12 @@ class Feed:
         self.sinks: list[Sink] = [terminal(out)] if out else []
         self.recent: deque[Event] = deque(maxlen=REPLAY_EVENTS)
         self._ids = itertools.count(1)
+        self.closed = False
 
-    def emit(self, kind: str, line: str = "", /, **data) -> Event:
+    def emit(self, kind: str, line: str = "", /, **data) -> Event | None:
+        """Send an event to every sink; once the feed is closed, drop it and return None."""
+        if self.closed:
+            return None
         event = Event(next(self._ids), time.time(), kind, line, data)
         self.recent.append(event)
         for sink in self.sinks:
@@ -62,6 +69,16 @@ class Feed:
 
     def on_met(self, goal: Goal) -> None:
         self.emit("goal", f'Goal met: "{goal.text}"', goal_id=goal.id, text=goal.text, percent=100, met=True)
+
+    def on_heat(self, label: str) -> None:
+        self.emit("heat", HEAT_LINES[label], label=label)
+
+    def on_game_over(self, summary: Summary) -> None:
+        lines = [GAME_OVER[summary.outcome], *(f"{text}: {percent}%" for text, percent in summary.goals), *summary.reasons]
+        self.emit(
+            "gameover", "\n".join(lines), outcome=summary.outcome,
+            goals=[[text, percent] for text, percent in summary.goals], reasons=list(summary.reasons),
+        )
 
     def on_shrug(self, villager_id: str, name: str, whisper_id: str, line: str | None = None) -> None:
         text = f'{name} brushes you off: "{line}"' if line else f"{name} shrugs it off."

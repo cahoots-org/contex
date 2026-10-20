@@ -2,15 +2,23 @@
 
 import asyncio
 import sys
+from collections.abc import Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from examples.rumor_mill.game import Game
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import Town
 
 HELP = (
     "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
     "Other commands: villagers, inspect <name>, goals, usage, help, quit"
 )
+
+
+# Its own thread, so a read still blocked on stdin at exit does not hold up asyncio.run.
+_STDIN = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stdin")
 
 
 @dataclass(frozen=True)
@@ -51,11 +59,34 @@ def _inspect(town: Town, name: str) -> list[str]:
     ]
 
 
-async def repl(player: Player, town: Town, feed, goals=(), progress=None, usage=None) -> None:
+async def _readline() -> str:
+    return await asyncio.get_running_loop().run_in_executor(_STDIN, sys.stdin.readline)
+
+
+async def until_over(session: Coroutine, game: Game) -> None:
+    """Run the session until it returns or the game is over, cancelling whichever is left.
+
+    An error raised by the session propagates.
+    """
+    running = asyncio.ensure_future(session)
+    tasks = {running, asyncio.ensure_future(game.finished.wait())}
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    if running.done() and not running.cancelled():
+        running.result()
+
+
+async def repl(
+    player: Player, town: Town, feed, goals=(), progress=None, usage=None, suspicion: Suspicion | None = None,
+) -> None:
     """Read commands until quit or end of input; stdin is read off the event loop."""
     feed.say(HELP)
     while True:
-        line = await asyncio.to_thread(sys.stdin.readline)
+        line = await _readline()
         if not line:
             return
         cmd = parse_command(line)
@@ -75,6 +106,8 @@ async def repl(player: Player, town: Town, feed, goals=(), progress=None, usage=
                 feed.say(f"{goal.text}: {int((progress or {}).get(goal.id, 0.0) * 100)}%")
             if not goals:
                 feed.say("No goals yet.")
+            if suspicion:
+                feed.say(HEAT_LINES[suspicion.label()])
         elif cmd.kind == "usage" and usage:
             feed.say(usage.summary())
         elif cmd.kind == "help" or line.strip():
