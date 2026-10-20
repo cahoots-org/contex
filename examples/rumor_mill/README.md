@@ -91,7 +91,8 @@ The first run computes the baselines and writes them next to the seed, in
 `rumor_mill_seed.json.baselines.json`; for 400 needs that took 5.4 seconds on
 the machine this was tuned on. Later runs read the file. Baselines are kept by
 need text and by the exact payload the calibration sentences were published
-in, and are recomputed when either changes.
+in, and are recomputed when either changes. They depend on Contex's embedding
+model, so delete the `.baselines.json` file next to the seed after changing it.
 
 Contex embeds every field of what is published, including the data key, so
 the game publishes only an utterance's id and its sentence. The key alone
@@ -212,7 +213,7 @@ The open tile and the card say the same in words. Each whisper in the feed
 shows where it stands, updated as it changes: checking, busy (with the seconds
 until they hear you), heard, took the bait (and how many people they told),
 kept it quiet, warned others, brushed you off (with their line once it is
-written), or didn't carry (the game couldn't deliver or check it).
+written), or didn't carry (the game couldn't check it; a delivery failure shows no chip).
 
 Each hop of your rumor is indented once per retelling, says
 whom the speaker heard it from, and highlights the words that differ from what

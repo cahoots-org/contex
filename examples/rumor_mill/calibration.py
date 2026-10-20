@@ -44,9 +44,9 @@ def _calibration_data(i: int, sentence: str) -> dict:
     return Utterance(f"cal-{i}", "newcomer", "The newcomer", "square", sentence, None, "whispered to you").to_data()
 
 
-# Baselines cached under other calibration payloads are not reused.
+# Baselines cached under other calibration keys or payloads are not reused.
 FINGERPRINT = hashlib.sha256(
-    json.dumps([_calibration_data(i, s) for i, s in enumerate(CALIBRATION)]).encode()
+    json.dumps([(f"cal:{i}", _calibration_data(i, s)) for i, s in enumerate(CALIBRATION)]).encode()
 ).hexdigest()[:16]
 
 
