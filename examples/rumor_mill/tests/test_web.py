@@ -12,6 +12,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
+from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill import web
@@ -34,8 +35,9 @@ def receive(ws, timeout=5.0):
 
 
 class FakeEngine:
-    def __init__(self, feed):
+    def __init__(self, feed, suspicion):
         self.feed = feed
+        self.suspicion = suspicion
 
     async def deliver(self, utterance, listener_ids):
         self.feed.on_delivery(utterance, listener_ids)
@@ -48,7 +50,8 @@ def game(monkeypatch):
     town.add(Villager("v1", "Marta Hale", "herbalist", "anxious", "the miller", ["SECRET NEED"], {"v2": "rival"}), "well")
     town.add(Villager("v2", "Bert Cole", "miller", "jolly", "none", ["OTHER NEED"], {}), "mill")
     feed = Feed(lineage, town, out=None)
-    player = Player(FakeEngine(feed), town, lineage, Ids(), feed, Config(shrug_seconds=60))
+    config = Config(shrug_seconds=60)
+    player = Player(FakeEngine(feed, Suspicion(config, town)), town, lineage, Ids(), feed, config)
     judge = SimpleNamespace(progress={"cat": 0.42}, met=set())
     usage = Usage(Config())
     app = create_app(player=player, town=town, feed=feed, judge=judge, goals=[GOAL], usage=usage, port=PORT)

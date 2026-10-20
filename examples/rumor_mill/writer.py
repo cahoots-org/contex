@@ -7,6 +7,7 @@ from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.models import Villager
 
 SAY_MAX_TOKENS = 80
+TURN_AWAY_MAX_TOKENS = 60
 
 
 def extract_json(text: str):
@@ -72,6 +73,19 @@ class Writer:
             "No stage directions, no quotation marks, no preamble."
         )
         text = await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS)
+        return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
+
+    async def turn_away(self, villager: Villager) -> str:
+        """The villager refusing to hear the newcomer any more, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "You have grown wary of the newcomer who keeps whispering to you. Refuse to hear "
+            "them out in one short sentence, about 15 words, in your own voice. "
+            "Never mention suspicion or why. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        text = await self.complete(system, "The newcomer is whispering to you again.", max_tokens=TURN_AWAY_MAX_TOKENS)
         return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
 
     async def describe_group(

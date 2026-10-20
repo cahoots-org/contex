@@ -7,25 +7,29 @@ from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, echoes
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 
 class FakeEngine:
-    def __init__(self):
+    def __init__(self, suspicion=None):
         self.delivered = []
+        self.suspicion = suspicion
 
     async def deliver(self, utterance, listener_ids):
         self.delivered.append((utterance, listener_ids))
 
 
 def make(*names, shrug=0.05, cooldown=0.0):
-    town, lines, engine = Town(), [], FakeEngine()
+    town, lines = Town(), []
+    config = Config(shrug_seconds=shrug, cooldown_seconds=cooldown)
+    engine = FakeEngine(Suspicion(config, town))
     lineage = Lineage()
     for i, name in enumerate(names, 1):
         town.add(Villager(f"v{i}", name, "baker", "calm", "none", [], {}), "tavern")
     feed = Feed(lineage, town, out=lines.append)
-    player = Player(engine, town, lineage, Ids(), feed, Config(shrug_seconds=shrug, cooldown_seconds=cooldown))
+    player = Player(engine, town, lineage, Ids(), feed, config)
     return player, town, lines, engine, lineage
 
 
@@ -145,6 +149,12 @@ class StubWriter:
         self.concerns = []
         self.gate = gate
 
+    async def turn_away(self, villager):
+        line = self.lines.pop(0)
+        if isinstance(line, Exception):
+            raise line
+        return line
+
     async def brush_off(self, villager, concern):
         self.concerns.append(concern)
         if self.gate:
@@ -223,3 +233,83 @@ async def test_whisper_heard_during_generation_prints_nothing():
 def test_echoes_needs_four_consecutive_words():
     assert echoes("The rats have gotten in, curse them", NEEDS[2])
     assert not echoes("Rats in the grain, again", NEEDS[2])
+
+
+def suspect(player, vid="v1"):
+    player.engine.suspicion.bump(vid, player.config.refuse_threshold, "test")
+
+
+@pytest.mark.asyncio
+async def test_whisper_raises_the_recipients_suspicion_even_when_it_shrugs():
+    player, _, lines, _, _ = make("Marta")
+    suspicion = player.engine.suspicion
+    await player.whisper("Marta", "hello")
+    assert suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
+    for _ in range(100):
+        if lines:
+            break
+        await asyncio.sleep(0.01)
+    assert lines == ["Marta shrugs it off."]
+    assert suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
+    assert suspicion.top_evidence()[0].uid == "w-1"
+
+
+@pytest.mark.asyncio
+async def test_whisper_to_a_suspicious_villager_is_refused_and_not_delivered():
+    player, _, _, engine, _ = make("Marta", shrug=0.05)
+    suspect(player)
+    assert await player.whisper("Marta", "hello") is None
+    await asyncio.sleep(0.15)
+    assert engine.delivered == []
+    assert player._shrugs == {}
+    assert [e.kind for e in player.feed.recent] == ["refusal"]
+
+
+@pytest.mark.asyncio
+async def test_refusal_bumps_suspicion_and_prints_a_line():
+    player, _, lines, _, _ = make("Marta")
+    player.writer = StubWriter("Not another word.")
+    suspect(player)
+    before = player.engine.suspicion.score("v1")
+    await player.whisper("Marta", "hello")
+    assert lines == ['Marta turns away from you: "Not another word."']
+    after = player.engine.suspicion.score("v1")
+    assert after == pytest.approx(min(1.0, before + player.config.suspicion_whisper_bump))
+    assert "tried to whisper again" in {e.reason for e in player.engine.suspicion._evidence}
+
+
+@pytest.mark.asyncio
+async def test_refusal_falls_back_without_a_line_when_haiku_fails():
+    player, _, lines, _, _ = make("Marta")
+    player.writer = StubWriter(RuntimeError("haiku down"))
+    suspect(player)
+    assert await player.whisper("Marta", "hello") is None
+    assert lines == ["Marta turns away from you."]
+    assert player.feed.recent[-1].data["line"] is None
+    player.writer = None
+    assert await player.whisper("Marta", "hello") is None
+    assert lines[-1] == "Marta turns away from you."
+
+
+@pytest.mark.asyncio
+async def test_refusal_event_carries_no_score():
+    player, _, _, _, _ = make("Marta", "Bert")
+    player.writer = StubWriter("Go away.")
+    suspect(player)
+    await player.whisper("Marta", "hello")
+    event = player.feed.recent[-1].to_json()
+    assert set(event) == {"id", "at", "kind", "name", "villager_id", "line"}
+    assert not any(isinstance(v, float) for k, v in event.items() if k != "at")
+    assert "Bert" not in str(event)
+
+
+@pytest.mark.asyncio
+async def test_failed_delivery_does_not_bump():
+    player, _, _, engine, _ = make("Marta")
+
+    async def boom(utterance, listener_ids):
+        raise RuntimeError("contex down")
+
+    engine.deliver = boom
+    assert await player.whisper("Marta", "hello")
+    assert player.engine.suspicion.score("v1") == 0.0

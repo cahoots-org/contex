@@ -46,7 +46,7 @@ class Feed:
         self.recent: deque[Event] = deque(maxlen=REPLAY_EVENTS)
         self._ids = itertools.count(1)
 
-    def emit(self, kind: str, line: str = "", **data) -> Event:
+    def emit(self, kind: str, line: str = "", /, **data) -> Event:
         event = Event(next(self._ids), time.time(), kind, line, data)
         self.recent.append(event)
         for sink in self.sinks:
@@ -66,6 +66,10 @@ class Feed:
     def on_shrug(self, villager_id: str, name: str, whisper_id: str, line: str | None = None) -> None:
         text = f'{name} brushes you off: "{line}"' if line else f"{name} shrugs it off."
         self.emit("shrug", text, villager_id=villager_id, name=name, uid=whisper_id, hint=line)
+
+    def on_refusal(self, villager_id: str, name: str, line: str | None = None) -> None:
+        text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
+        self.emit("refusal", text, villager_id=villager_id, name=name, line=line)
 
     def on_delivery(self, utterance: Utterance, listener_ids: list[str]) -> None:
         """Emit the player's whisper, a hop of a player-rooted rumor, or a town announcement."""

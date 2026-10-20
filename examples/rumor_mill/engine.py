@@ -13,6 +13,7 @@ from examples.rumor_mill.effects import act
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project
 from examples.rumor_mill.models import Group, Utterance, Villager
+from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
 from examples.rumor_mill.writer import Writer
 
@@ -42,6 +43,7 @@ class Engine:
         self.lineage = lineage
         self.ids = ids
         self.feed = feed
+        self.suspicion = Suspicion(config, town)
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config))
         self.on_heard: Callable[[str, list[Match]], None] | None = None
         self.minds: dict[str, Mind] = {}

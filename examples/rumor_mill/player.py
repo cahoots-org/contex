@@ -7,7 +7,7 @@ import re
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 log = logging.getLogger(__name__)
@@ -62,6 +62,10 @@ class Player:
         if len(text) > MAX_WHISPER_CHARS:
             return f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters."
         target = self.town.get(villager_id)
+        if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
+            self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
+            self.feed.on_refusal(target.id, target.name, await self._turn_away(target))
+            return None
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
         utterance = Utterance(
@@ -76,6 +80,7 @@ class Player:
             shrug.cancel()
             self._shrugs.pop((target.id, uid), None)
             return "The whisper didn't carry; try again."
+        self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         return None
 
     def note_heard(self, villager_id: str, matches: list[Match]) -> None:
@@ -108,6 +113,16 @@ class Player:
         i = next(i for i in range(len(needs)) if i not in used)
         used.add(i)
         return needs[i]
+
+    async def _turn_away(self, villager: Villager) -> str | None:
+        """An in-character refusal line, or None when there is no writer or it fails."""
+        if self.writer is None:
+            return None
+        try:
+            return await self.writer.turn_away(villager) or None
+        except Exception:
+            log.exception("turn-away for %s failed", villager.id)
+            return None
 
     async def _brush_off(self, villager_id: str) -> str | None:
         """An in-character line hinting at a concern, or None for a plain shrug."""

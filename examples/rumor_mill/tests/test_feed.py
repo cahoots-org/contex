@@ -77,3 +77,13 @@ def test_goal_events_and_replay_is_bounded():
         feed.say("x")
     assert len(feed.recent) == REPLAY_EVENTS
     assert feed.recent[-1].id == REPLAY_EVENTS + 2
+
+
+def test_refusal_event_and_terminal_lines():
+    feed, lines = make()
+    feed.on_refusal("v1", "Bert", "Not a word more.")
+    feed.on_refusal("v2", "Marta", None)
+    assert lines == ['Bert turns away from you: "Not a word more."', "Marta turns away from you."]
+    first, second = feed.recent
+    assert (first.kind, first.data) == ("refusal", {"name": "Bert", "villager_id": "v1", "line": "Not a word more."})
+    assert second.data["line"] is None
