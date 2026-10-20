@@ -2,6 +2,7 @@
 
 import json
 import random
+import re
 from dataclasses import asdict
 
 from examples.rumor_mill.models import Villager
@@ -22,13 +23,40 @@ SYSTEM = (
     "You invent villagers for a small medieval village. Reply with only JSON, no prose."
 )
 PROMPT = (
-    "Invent {n} distinct villagers as a JSON array. Each item has: name (a full name), "
-    "occupation, personality (one short phrase), grudge (one sentence about someone or "
-    "something they resent), and needs: 3 to 5 plain-English sentences written in the "
+    "Invent {n} distinct villagers as a top-level JSON array of objects, not wrapped in "
+    "another object. Each item has: name (a full name), occupation, personality (one "
+    "short phrase), grudge (one sentence about someone or something they resent), and "
+    "needs: a JSON array of 3 to 5 strings, plain-English sentences written in the "
     "villager's own voice about their own specific concerns: their trade, family, fears, "
     "hobbies, grudges. Make needs particular to this person and different from the other "
     "villagers' where possible, never generic topics like news or gossip. {taken}"
 )
+
+
+BULLET = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s*")
+
+
+def _split_needs(text: str) -> list[str]:
+    """Split a needs string on newlines and semicolons, else on sentence ends."""
+    parts = re.split(r"[\n;]+", text)
+    if len(parts) < 2:
+        parts = re.split(r"(?<=[.!?])\s+", text)
+    return [p for p in (BULLET.sub("", part).strip() for part in parts) if p]
+
+
+def _prepare(raw):
+    """Turn a needs string into a list of needs; anything else passes through."""
+    if isinstance(raw, dict) and isinstance(raw.get("needs"), str):
+        raw = {**raw, "needs": _split_needs(raw["needs"])}
+    return raw
+
+
+def _unwrap(parsed):
+    """The villager list from a bare array or an object holding a single list."""
+    if isinstance(parsed, dict):
+        lists = [v for v in parsed.values() if isinstance(v, list)]
+        return lists[0] if len(lists) == 1 else None
+    return parsed if isinstance(parsed, list) else None
 
 
 def _valid(raw) -> bool:
@@ -66,9 +94,10 @@ async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> 
             parsed = extract_json(text)
         except ValueError:
             continue
-        if not isinstance(parsed, list):
+        items = _unwrap(parsed)
+        if items is None:
             continue
-        for raw in [r for r in parsed if _valid(r)][:n]:
+        for raw in [r for r in map(_prepare, items) if _valid(r)][:n]:
             villagers.append(_villager(f"v{len(villagers) + 1:03d}", raw))
     if len(villagers) < count:
         raise ValueError(
@@ -147,6 +176,7 @@ async def generate_newcomer(
     raw = extract_json(text)
     if isinstance(raw, list):
         raw = raw[0] if raw else None
+    raw = _prepare(raw)
     if not _valid(raw):
         raise ValueError(f"newcomer reply is not a valid villager: {text[:200]!r}")
     last = max(int(v.id[1:]) for v in existing) if existing else 0

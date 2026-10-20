@@ -1,5 +1,7 @@
 import pytest
 
+from examples.rumor_mill import mind as mind_mod
+
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match, SubscriptionGone
 from examples.rumor_mill.mind import Mind, mind_project
@@ -89,3 +91,33 @@ async def test_renew_resubscribes_when_gone():
     mind = await opened(client)
     await mind.renew()
     assert len(client.subscribes) == 2
+
+
+@pytest.mark.asyncio
+async def test_poll_keeps_whole_bundle_as_matches():
+    mind = await opened(StubClient([{"n": [m("a")]}, {"n": [m("a"), m("b")], "o": [m("b")]}]))
+    await mind.poll()
+    await mind.poll()
+    assert [x.data_key for x in mind.matches] == ["a", "b"]
+
+
+class ReconnectingClient(StubClient):
+    def __init__(self):
+        super().__init__([{}])
+        self.connects = 0
+
+    async def listen(self, uri):
+        self.connects += 1
+        yield
+
+
+@pytest.mark.asyncio
+async def test_pushes_yields_on_every_reconnect(monkeypatch):
+    monkeypatch.setattr(mind_mod, "REOPEN_PAUSE_SECONDS", 0)
+    client = ReconnectingClient()
+    mind = await opened(client)
+    pushes = mind.pushes()
+    for _ in range(3):
+        await anext(pushes)
+    await pushes.aclose()
+    assert client.connects == 3

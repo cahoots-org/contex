@@ -27,6 +27,7 @@ class Mind:
         self.project = mind_project(config.session, villager.id)
         self.uri = ""
         self.seen: set[str] = set()
+        self.matches: list[Match] = []
         self._epoch = 0
 
     async def open(self) -> None:
@@ -53,6 +54,7 @@ class Mind:
         """Matches not in the previous poll; forgotten items count as new if they return."""
         bundle = await self._read()
         fresh = new_matches(self.seen, bundle)
+        self.matches = new_matches(set(), bundle)
         self.seen = {m.data_key for matches in bundle.values() for m in matches}
         return fresh
 
@@ -61,7 +63,7 @@ class Mind:
         await self._read()
 
     async def pushes(self) -> AsyncIterator[None]:
-        """Yield per push, re-opening the stream when it closes or after a resubscribe."""
+        """Yield per push and once per (re)connect, re-opening the stream when it closes or after a resubscribe."""
         while True:
             epoch = self._epoch
             async with aclosing(self.contex.listen(self.uri)) as stream:

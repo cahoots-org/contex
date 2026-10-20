@@ -15,6 +15,9 @@ class Town:
         self._groups: dict[str, Group] = {}
         self.departed: list[Villager] = []
 
+    def __contains__(self, vid: str) -> bool:
+        return vid in self._villagers
+
     @property
     def alive_count(self) -> int:
         return len(self._villagers)

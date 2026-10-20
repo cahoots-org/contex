@@ -129,3 +129,34 @@ async def test_generate_villagers_retries_invalid_replies():
 async def test_newcomer_rejects_empty_list():
     with pytest.raises(ValueError):
         await generate_newcomer(StubWriter("[]"), ring(3), random.Random(1))
+
+
+@pytest.mark.asyncio
+async def test_wrapper_object_reply_yields_villagers():
+    writer = StubWriter(json.dumps({"villagers": [entry(i) for i in range(3)]}))
+
+    villagers = await generate_villagers(writer, 3, random.Random(1))
+
+    assert [v.name for v in villagers] == ["Name0", "Name1", "Name2"]
+
+
+@pytest.mark.asyncio
+async def test_needs_string_is_split_into_needs():
+    multi = "- my oven keeps failing\n- my daughter wants to leave\n2. flour prices"
+    sentences = "My oven fails. My daughter wants to leave! Flour is dear."
+    reply = json.dumps([{**entry(0), "needs": multi}, {**entry(1), "needs": sentences}])
+
+    villagers = await generate_villagers(StubWriter(reply), 2, random.Random(1))
+
+    assert villagers[0].needs == ["my oven keeps failing", "my daughter wants to leave", "flour prices"]
+    assert villagers[1].needs == ["My oven fails.", "My daughter wants to leave!", "Flour is dear."]
+
+
+@pytest.mark.asyncio
+async def test_one_sentence_needs_string_is_rejected():
+    writer = StubWriter(json.dumps([{**entry(0), "needs": "Just one worry."}]))
+
+    with pytest.raises(ValueError, match="0 of 1"):
+        await generate_villagers(writer, 1, random.Random(1))
+
+    assert writer.calls == MAX_BATCH_ATTEMPTS

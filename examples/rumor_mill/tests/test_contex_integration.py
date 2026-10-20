@@ -4,7 +4,16 @@ import uuid
 
 import pytest
 
+from examples.rumor_mill import engine as engine_mod
+from examples.rumor_mill.actions import IGNORE
+from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
+from examples.rumor_mill.decide import Decision
+from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.lineage import Ids, Lineage
+from examples.rumor_mill.mind import Mind
+from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.town import Town
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
 pytestmark = [
@@ -44,10 +53,10 @@ async def test_push_arrives_on_publish():
         pid = project()
         uri = await client.subscribe(pid, ["anything about my bakery"], max_age_seconds=600, top_k=5)
         events = client.listen(uri)
-        publish = asyncio.create_task(delayed_publish(client, pid))
         async with asyncio.timeout(30):
-            async for _ in events:
-                break
+            await anext(events)
+            publish = asyncio.create_task(delayed_publish(client, pid))
+            await anext(events)
         await events.aclose()
         await publish
 
@@ -60,3 +69,40 @@ async def test_mind_projects_are_isolated():
         await client.publish(a, "u3", {"text": "the baker's oven is cold"})
         assert await poll_for(client, uri_a, "u3")
         assert not await poll_for(client, uri_b, "u3", tries=3)
+
+
+class NullFeed:
+    def on_delivery(self, utterance, listener_ids):
+        pass
+
+
+async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatch):
+    woke = []
+    turned = asyncio.Event()
+
+    async def decide(jev, view):
+        woke.append((view.villager.id, [m.data_key for m in view.new]))
+        turned.set()
+        return Decision(IGNORE, None, None, None)
+
+    async def act(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(engine_mod, "decide", decide)
+    monkeypatch.setattr(engine_mod, "act", act)
+    async with ContexClient(URL) as client:
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1)
+        engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed())
+        ann = Villager("v1", "Ann", "baker", "kind", "none", ["anything about my bakery"], {})
+        early = Mind(client, ann, config)
+        await early.open()
+        utt = Utterance("u-1", "v2", "Bo", "square", "the oven at the bakery is cold", None)
+        await early.hear("utt:u-1", utt.to_data(0))
+        assert await poll_for(client, early.uri, "utt:u-1")
+        await engine.add_villager(ann)
+        await engine.add_villager(Villager("v2", "Bo", "smith", "gruff", "none", ["anything about the forge"], {}))
+        await engine.run()
+        async with asyncio.timeout(30):
+            await turned.wait()
+        await engine.stop()
+    assert woke == [("v1", ["utt:u-1"])]

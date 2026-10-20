@@ -80,12 +80,16 @@ class ContexClient:
         return [Match(m["data_key"], m["data"]) for m in found["matches"]]
 
     async def listen(self, uri: str) -> AsyncIterator[None]:
-        """Yield once per push on uri, in its own session, until the stream closes."""
+        """Yield once when the stream is acknowledged, then once per push on uri, until it closes.
+
+        The first yield lets the caller catch up on anything published while it was not listening.
+        """
         async with Client(self.url) as session:
             async with session.listen(resource_subscriptions=[uri]) as events:
-                async for _ in events:
-                    try:
+                try:
+                    yield
+                    async for _ in events:
                         yield
-                    except GeneratorExit:
-                        # Closing the generator must unwind the sessions normally, not as a task-group error.
-                        return
+                except GeneratorExit:
+                    # Closing the generator must unwind the sessions normally, not as a task-group error.
+                    return
