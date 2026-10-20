@@ -438,3 +438,28 @@ async def test_no_turns_start_after_the_game_is_over(turns):
     await asyncio.sleep(SETTLE)
     assert (turns.views, minds["v1"].polls) == ([], 0)
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_turn_still_deciding_when_the_game_ends_does_nothing(turns, monkeypatch):
+    game = Game(RecordingFeed())
+    engine, minds, _ = await setup("v1", game=game)
+    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("u-0", "w-1")
+    deciding, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_decide(jev, view):
+        deciding.set()
+        await release.wait()
+        return Decision(IGNORE, None, None, None, 1.0)
+
+    monkeypatch.setattr(engine_mod, "decide", slow_decide)
+    push(minds["v1"])
+    await asyncio.wait_for(deciding.wait(), TIMEOUT)
+    game.finished.set()
+    release.set()
+    await asyncio.sleep(SETTLE)
+    assert turns.acts == []
+    assert engine.suspicion.score("v1") == 0.0
+    assert engine._pending.get("v1") is None
+    await engine.stop()

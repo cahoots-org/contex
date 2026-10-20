@@ -208,6 +208,9 @@ class Engine:
         )
         async with self._turns:
             decision = await decide(self.jev, view)
+            if self.game is not None and self.game.finished.is_set():
+                self._pending.pop(v.id, None)
+                return True
             if decision.suspicion_strength is not None:
                 try:
                     self.suspicion.rate(
