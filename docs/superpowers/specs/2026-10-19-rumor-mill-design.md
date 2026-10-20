@@ -91,8 +91,11 @@ and a belief has to be kept alive to last.
 
 Contex applies the window only when a bundle is recalculated: on a publish
 that affects it, or on the reconcile sweep (`RECONCILE_SWEEP_SECONDS`,
-default 300). The example ships a compose override that sets the sweep to
-about 30s, so forgetting keeps pace with a day of a few minutes. *(My call.)*
+default 300). The example ships an optional compose override that sets the
+sweep to 60s so quiet minds forget sooner. The sweep runs server-wide and costs
+a CPU burst each time (4-5 cores at 30s with 100 villagers), so the override is
+not required: a mind is also trimmed whenever its villager takes a turn.
+*(My call; revised after measuring, from 30s.)*
 
 ### Waking is push
 
@@ -155,6 +158,13 @@ right project(s). Then the turn ends.
 
 A villager who just acted can't act again for a short cooldown, so one rumor
 can't loop two villagers forever. *(My call; the builder picks the number.)*
+
+As built, after tuning against the real APIs: the action is drawn from Jev's
+probabilities rather than taken as the top choice, after dropping options
+below 10% so rare actions such as leaving town do not fire every few turns;
+the cooldown is 30s; speech is capped at 30 words; moving costs the villager
+the chance to spread the news that turn. Jev still owns the judgment, since
+code only draws from the distribution Jev returns.
 
 ## The player
 
