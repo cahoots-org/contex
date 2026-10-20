@@ -52,7 +52,8 @@ python -m examples.rumor_mill
 
 The first run asks Haiku for the village in batches of 10 and writes it to
 `rumor_mill_seed.json`; later runs reuse that file. Delete it to get a new
-village. Each run starts with empty minds unless you set `RUMOR_MILL_SESSION`.
+village; if its size differs from `RUMOR_MILL_POPULATION` the game exits and
+says so. Each run starts with empty minds unless you set `RUMOR_MILL_SESSION`.
 
 On the machine this was tuned on, a 100-villager game took 5.5 seconds to
 start from the seed file, and the game process used 125 MB of memory and
@@ -72,8 +73,9 @@ quit
 ```
 
 A name can be part of a full name if it is unambiguous. A whisper that
-touches nothing the villager cares about does nothing, and after 20 seconds the
-feed says they shrug it off. `inspect` shows enough to guess what someone cares
+touches nothing the villager cares about does nothing. A villager only checks
+what they heard once their cooldown is over, so 20 seconds after that the feed
+says they shrug it off. `inspect` shows enough to guess what someone cares
 about, but not their needs.
 
 The feed shows each hop of a rumor you started, who told whom and in what
@@ -94,7 +96,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_THRESHOLD` | `0.815` | cosine similarity to a need that wakes a villager |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
-| `RUMOR_MILL_SHRUG_SECONDS` | `20` | wait before a whisper that woke no one is reported |
+| `RUMOR_MILL_SHRUG_SECONDS` | `20` | extra seconds after the cooldown before a whisper that woke no one is reported |
 | `RUMOR_MILL_ARRIVAL_DELAY_SECONDS` | `60` | wait after a departure before newcomers arrive |
 | `RUMOR_MILL_JUDGE_EVERY_DAYS` | `1` | days between goal checks |
 | `RUMOR_MILL_JUDGE_THRESHOLD` | `0.75` | similarity a memory needs to a goal's evidence to be judged |

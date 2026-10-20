@@ -211,3 +211,50 @@ async def test_remove_villager_enqueues_departure_once(turns):
     assert engine.departures.qsize() == 1
     assert engine.departures.get_nowait() == "v1"
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_failed_open_leaves_town_and_engine_unchanged(turns):
+    engine, _, _ = await setup("v1")
+
+    class BrokenMind(FakeMind):
+        async def open(self):
+            raise RuntimeError("contex down")
+
+    engine.mind_factory = BrokenMind
+    with pytest.raises(RuntimeError):
+        await engine.add_villager(make("v2"))
+    assert engine.town.alive_count == 1
+    assert [v.id for v in engine.town.villagers] == ["v1"]
+    assert list(engine.minds) == ["v1"]
+    assert list(engine._tasks) == ["v1"]
+    await engine.stop()
+
+
+class FailingMind(FakeMind):
+    async def hear(self, key, data):
+        raise RuntimeError("contex down")
+
+
+@pytest.mark.asyncio
+async def test_one_failing_listener_does_not_hide_the_others(turns, caplog):
+    engine, minds, feed = await setup("v1", "v2", "v3")
+    engine.minds["v3"] = FailingMind(engine.town.get("v3"))
+    utt = Utterance("u-1", "v1", "V1", "square", "hello", None)
+    with caplog.at_level(logging.ERROR):
+        await engine.deliver(utt, ["v2", "v3"])
+    assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
+    assert feed.deliveries == [("u-1", ["v2"])]
+    assert "v3" in caplog.text
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_deliver_raises_when_every_listener_fails(turns):
+    engine, _, feed = await setup("v1", "v2")
+    engine.minds["v2"] = FailingMind(engine.town.get("v2"))
+    utt = Utterance("u-1", "v1", "V1", "square", "hello", None)
+    with pytest.raises(RuntimeError):
+        await engine.deliver(utt, ["v2"])
+    assert feed.deliveries == []
+    await engine.stop()

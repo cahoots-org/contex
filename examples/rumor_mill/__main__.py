@@ -20,7 +20,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.town import GATE, PLACES, Town
-from examples.rumor_mill.town_gen import load_or_generate
+from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate
 from examples.rumor_mill.writer import Writer
 
 
@@ -60,6 +60,8 @@ def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
     try:
         asyncio.run(play())
+    except SeedMismatch as e:
+        sys.exit(str(e))
     except KeyboardInterrupt:
         # A thread blocked on stdin would stall interpreter exit.
         os._exit(0)

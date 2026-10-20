@@ -18,7 +18,7 @@ class FakeEngine:
         self.delivered.append((utterance, listener_ids))
 
 
-def make(*names, shrug=0.05):
+def make(*names, shrug=0.05, cooldown=0.0):
     town, lines, engine = Town(), [], FakeEngine()
     lineage = Lineage()
     for i, name in enumerate(names, 1):
@@ -27,7 +27,7 @@ def make(*names, shrug=0.05):
     class Say:
         say = staticmethod(lines.append)
 
-    player = Player(engine, town, lineage, Ids(), Say, Config(shrug_seconds=shrug))
+    player = Player(engine, town, lineage, Ids(), Say, Config(shrug_seconds=shrug, cooldown_seconds=cooldown))
     return player, town, lines, engine, lineage
 
 
@@ -95,3 +95,30 @@ async def test_heard_whisper_cancels_shrug():
     player.note_heard("v1", [Match("utt:w-1", {"id": "w-1"})])
     await asyncio.sleep(0.2)
     assert lines == []
+
+
+@pytest.mark.asyncio
+async def test_shrug_waits_out_the_cooldown():
+    player, _, lines, _, _ = make("Marta", shrug=0.1, cooldown=0.4)
+    await player.whisper("Marta", "hello")
+    await asyncio.sleep(0.3)
+    assert lines == []
+    for _ in range(40):
+        if lines:
+            break
+        await asyncio.sleep(0.05)
+    assert lines == ["Marta shrugs it off."]
+
+
+@pytest.mark.asyncio
+async def test_failed_whisper_says_so_and_leaves_no_shrug_task():
+    player, _, lines, engine, _ = make("Marta", shrug=0.05)
+
+    async def boom(utterance, listener_ids):
+        raise RuntimeError("contex down")
+
+    engine.deliver = boom
+    await player.whisper("Marta", "hello")
+    await asyncio.sleep(0.2)
+    assert lines == ["The whisper didn't carry; try again."]
+    assert player._shrugs == {}

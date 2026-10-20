@@ -52,3 +52,19 @@ async def test_query_sends_threshold_only_when_set():
     await client.query("p", "q", threshold=0.6)
     assert "threshold" not in sent[0]
     assert sent[1]["threshold"] == 0.6
+
+
+@pytest.mark.asyncio
+async def test_query_sends_max_age_only_when_set():
+    sent = []
+
+    async def tool(name, args):
+        sent.append(args)
+        return {"matches": []}
+
+    client = ContexClient("url")
+    client._tool = tool
+    await client.query("p", "q")
+    await client.query("p", "q", max_age_seconds=240)
+    assert "max_age_seconds" not in sent[0]
+    assert sent[1]["max_age_seconds"] == 240

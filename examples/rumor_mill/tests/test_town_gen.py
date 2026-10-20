@@ -4,7 +4,7 @@ import random
 import pytest
 
 from examples.rumor_mill.town_gen import (
-    MAX_FAILED_BATCHES, generate_newcomer, generate_villagers, load_or_generate,
+    MAX_FAILED_BATCHES, SeedMismatch, generate_newcomer, generate_villagers, load_or_generate,
     wire_relationships,
 )
 from examples.rumor_mill.models import Villager
@@ -111,6 +111,16 @@ async def test_load_or_generate_reuses_seed_file(tmp_path):
     assert writer.calls == calls
     assert second == first
     assert all(v.relationships for v in second)
+
+
+@pytest.mark.asyncio
+async def test_seed_of_another_size_is_rejected(tmp_path):
+    path = tmp_path / "seed.json"
+    await load_or_generate(str(path), StubWriter(fenced(10)), 10, random.Random(1))
+
+    with pytest.raises(SeedMismatch, match=f"{path} has 10 villagers but population is 20; "
+                       "delete it or set RUMOR_MILL_POPULATION=10"):
+        await load_or_generate(str(path), StubWriter(fenced(10)), 20, random.Random(1))
 
 
 @pytest.mark.asyncio

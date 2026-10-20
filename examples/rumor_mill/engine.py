@@ -57,9 +57,9 @@ class Engine:
         return int((time.monotonic() - self._started) / self.config.day_seconds)
 
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
-        self.town.add(v, place)
         mind = self.mind_factory(v)
         await mind.open()
+        self.town.add(v, place)
         self.minds[v.id] = mind
         self._read_at[v.id] = time.monotonic()
         wake = asyncio.Event()
@@ -93,10 +93,19 @@ class Engine:
         await _cancel(tasks)
 
     async def deliver(self, utterance: Utterance, listener_ids: list[str]) -> None:
+        """Publish the utterance to each listener's mind; raises only if every listener failed."""
         listeners = [i for i in listener_ids if i in self.town and i in self.minds]
         data = utterance.to_data(self.day)
-        await asyncio.gather(*(self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners))
-        self.feed.on_delivery(utterance, listeners)
+        results = await asyncio.gather(
+            *(self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners), return_exceptions=True,
+        )
+        for vid, result in zip(listeners, results):
+            if isinstance(result, Exception):
+                log.error("delivery to %s failed", vid, exc_info=result)
+        heard = [vid for vid, result in zip(listeners, results) if not isinstance(result, Exception)]
+        if listeners and not heard:
+            raise next(r for r in results if isinstance(r, Exception))
+        self.feed.on_delivery(utterance, heard)
 
     async def publish_group(self, group: Group) -> None:
         data = {"id": group.id, "name": group.name, "creed": group.creed, "founder": group.founder}

@@ -1,12 +1,15 @@
 """The player's whispers: validation, delivery, and the shrug timer."""
 
 import asyncio
+import logging
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.town import PLAYER_ID, Town
+
+log = logging.getLogger(__name__)
 
 MAX_WHISPER_CHARS = 500
 
@@ -44,8 +47,15 @@ class Player:
         utterance = Utterance(
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
         )
-        self._shrugs[(target.id, uid)] = asyncio.create_task(self._shrug(target.id, target.name, uid))
-        await self.engine.deliver(utterance, [target.id])
+        shrug = asyncio.create_task(self._shrug(target.id, target.name, uid))
+        self._shrugs[(target.id, uid)] = shrug
+        try:
+            await self.engine.deliver(utterance, [target.id])
+        except Exception:
+            log.exception("whisper to %s failed", target.id)
+            shrug.cancel()
+            self._shrugs.pop((target.id, uid), None)
+            self.feed.say("The whisper didn't carry; try again.")
 
     def note_heard(self, villager_id: str, matches: list[Match]) -> None:
         """Cancel the shrug timer when a match is a whisper to this villager."""
@@ -60,6 +70,6 @@ class Player:
         self._shrugs.clear()
 
     async def _shrug(self, villager_id: str, name: str, uid: str) -> None:
-        await asyncio.sleep(self.config.shrug_seconds)
+        await asyncio.sleep(self.config.cooldown_seconds + self.config.shrug_seconds)
         self._shrugs.pop((villager_id, uid), None)
         self.feed.say(f"{name} shrugs it off.")

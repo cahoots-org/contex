@@ -20,9 +20,11 @@ class StubContex:
         self.minds: dict[str, list[Match]] = {}
         self.groups: dict[str, list[Match]] = {}
         self.thresholds: list[float | None] = []
+        self.max_ages: dict[str, int | None] = {}
 
-    async def query(self, project_id, query, top_k=3, threshold=None):
+    async def query(self, project_id, query, top_k=3, threshold=None, max_age_seconds=None):
         self.thresholds.append(threshold)
+        self.max_ages[project_id] = max_age_seconds
         return self.minds.get(project_id) or self.groups.get(project_id) or []
 
 
@@ -64,6 +66,53 @@ async def test_villagers_without_matches_cost_no_jev_calls():
     await judge.check(BELIEF)
     assert len(jev.calls) == 1
     assert contex.thresholds == [CONFIG.judge_threshold] * 4
+
+
+@pytest.mark.asyncio
+async def test_mind_queries_ignore_forgotten_memories():
+    judge, contex, _, _, _ = make(n=2, believers=2)
+    g = judge.town.found_group("v0", "Order", "worship")
+    judge.town.join("v1", g.id)
+    creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
+    await judge.check(creed)
+    assert contex.max_ages[mind_project(CONFIG.session, "v0")] == CONFIG.memory_seconds
+    assert contex.max_ages[group_project(CONFIG.session, g.id)] is None
+
+
+@pytest.mark.asyncio
+async def test_unchanged_matches_are_not_judged_again():
+    judge, _, jev, _, _ = make(n=3, believers=3)
+    await judge.check(BELIEF)
+    await judge.check(BELIEF)
+    assert len(jev.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_changed_matches_are_judged_again():
+    judge, contex, jev, _, _ = make(n=1, believers=1)
+    await judge.check(BELIEF)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [
+        Match("k", {"text": "the cat is a spy"}), Match("k2", {"text": "the cat sells secrets"}),
+    ]
+    await judge.check(BELIEF)
+    assert len(jev.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_idle_village_progress_is_stable():
+    judge, _, jev, _, _ = make(n=4, believers=4)
+    first = await judge.check(BELIEF)
+    jev.answer = 0.1
+    assert await judge.check(BELIEF) == first == 1.0
+
+
+@pytest.mark.asyncio
+async def test_departed_villagers_are_evicted_from_the_cache():
+    judge, _, _, _, town = make(n=2, believers=2)
+    await judge.check(BELIEF)
+    town.remove("v0")
+    await judge.check(BELIEF)
+    assert {vid for _, vid, _ in judge._verdicts} == {"v1"}
 
 
 @pytest.mark.asyncio

@@ -166,15 +166,26 @@ def wire_relationships(villagers: list[Villager], rng: random.Random) -> None:
             _link(v, other, rng)
 
 
+class SeedMismatch(ValueError):
+    """The seed file holds a different number of villagers than the configured population."""
+
+
 async def load_or_generate(
     path: str, writer: Writer, count: int, rng: random.Random,
 ) -> list[Villager]:
     """Load the seed file if present, else generate, wire, and write it."""
     try:
         with open(path) as f:
-            return [Villager(**raw) for raw in json.load(f)]
+            villagers = [Villager(**raw) for raw in json.load(f)]
     except FileNotFoundError:
         pass
+    else:
+        if len(villagers) != count:
+            raise SeedMismatch(
+                f"{path} has {len(villagers)} villagers but population is {count}; "
+                f"delete it or set RUMOR_MILL_POPULATION={len(villagers)}"
+            )
+        return villagers
     villagers = await generate_villagers(writer, count, rng)
     wire_relationships(villagers, rng)
     with open(path, "w") as f:

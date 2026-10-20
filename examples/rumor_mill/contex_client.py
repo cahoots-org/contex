@@ -76,10 +76,12 @@ class ContexClient:
         return {need: [Match(m["data_key"], m["data"]) for m in matches] for need, matches in raw.items()}
 
     async def query(self, project_id: str, query: str, top_k: int = 3,
-                    threshold: float | None = None) -> list[Match]:
+                    threshold: float | None = None, max_age_seconds: int | None = None) -> list[Match]:
         args = {"project_id": project_id, "query": query, "top_k": top_k}
         if threshold is not None:
             args["threshold"] = threshold
+        if max_age_seconds is not None:
+            args["max_age_seconds"] = max_age_seconds
         found = await self._tool("contex_query", args)
         return [Match(m["data_key"], m["data"]) for m in found["matches"]]
 

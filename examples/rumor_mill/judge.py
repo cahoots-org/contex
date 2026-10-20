@@ -35,6 +35,7 @@ class Judge:
         self.config = config
         self.feed = feed
         self.progress: dict[str, float] = {}
+        self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
     async def _believes(self, goal: Goal, villager: Villager) -> bool | None:
@@ -42,14 +43,20 @@ class Judge:
         async with self._semaphore:
             try:
                 project = mind_project(self.config.session, villager.id)
-                matches = await self.contex.query(project, goal.evidence[0], top_k=3, threshold=self.config.judge_threshold)
+                matches = await self.contex.query(
+                    project, goal.evidence[0], top_k=3, threshold=self.config.judge_threshold,
+                    max_age_seconds=self.config.memory_seconds,
+                )
                 if not matches:
                     return False
-                state = {
-                    "villager": f"{villager.name}, {villager.occupation}. {villager.personality}",
-                    "memories": [_text(m) for m in matches],
-                }
-                believes = await _yes(self.jev, state, goal.believer_question)
+                key = (goal.id, villager.id, frozenset(m.data_key for m in matches))
+                if key not in self._verdicts:
+                    state = {
+                        "villager": f"{villager.name}, {villager.occupation}. {villager.personality}",
+                        "memories": [_text(m) for m in matches],
+                    }
+                    self._verdicts[key] = await _yes(self.jev, state, goal.believer_question)
+                believes = self._verdicts[key]
             except Exception:
                 log.exception("judging %s failed for %s", goal.id, villager.id)
                 believes = False
@@ -74,6 +81,7 @@ class Judge:
         """Progress toward the goal, from 0 to 1."""
         if goal.kind == "state":
             return max(0.0, min(1.0, goal.state_check(self.town)))
+        self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         results = await asyncio.gather(*(self._believes(goal, v) for v in self.town.villagers))
         counted = [r for r in results if r is not None]
         if not counted:
