@@ -1,0 +1,65 @@
+"""Haiku writes the words; it never decides what anyone does."""
+
+import json
+
+from examples.rumor_mill.actions import STYLES
+from examples.rumor_mill.decide import Decision
+from examples.rumor_mill.models import Villager
+
+
+def extract_json(text: str):
+    """Parse the first JSON array or object in text, ignoring fences and prose."""
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch in "[{":
+            try:
+                return decoder.raw_decode(text, i)[0]
+            except json.JSONDecodeError:
+                continue
+    raise ValueError(f"no JSON in model output: {text[:200]!r}")
+
+
+class Writer:
+    def __init__(self, client, model: str):
+        self.client = client
+        self.model = model
+
+    async def complete(self, system: str, user: str, max_tokens: int = 400) -> str:
+        """One Haiku call, returning the reply text."""
+        response = await self.client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return response.content[0].text.strip()
+
+    async def say(
+        self, villager: Villager, decision: Decision, source_text: str | None, audience: str,
+    ) -> str:
+        """The villager's words for this decision, in their voice and chosen style."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
+            "Reply with one to three sentences in your own voice. No stage directions, "
+            "no quotation marks around the reply, no preamble."
+        )
+        lines = [f"Action: {decision.action}.", f"Listening: {audience}."]
+        if decision.style:
+            lines.append(f"Manner: {STYLES[decision.style]}")
+        if source_text:
+            lines.append(f"What you heard: {source_text}")
+        return await self.complete(system, "\n".join(lines))
+
+    async def describe_group(
+        self, villager: Villager, inspiration: list[str],
+    ) -> tuple[str, str]:
+        """A name and creed for a group the villager founds."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} ({villager.personality}). "
+            "You are founding a village group. Reply with only a JSON object "
+            '{"name": "...", "creed": "..."}: a short name and a one-sentence creed.'
+        )
+        user = "What inspired you:\n" + "\n".join(f"- {t}" for t in inspiration)
+        parsed = extract_json(await self.complete(system, user))
+        return parsed["name"], parsed["creed"]
