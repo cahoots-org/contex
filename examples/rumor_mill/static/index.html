@@ -1,1 +1,696 @@
-<!doctype html><title>Rumor Mill</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rumor Mill</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;1,400&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+:root {
+  --limewash: #eef0ea;
+  --plaster: #e2e6dd;
+  --slate: #23302e;
+  --lichen: #55654f;
+  --woad: #2f5d8a;
+  --weld: #f0d873;
+  --rail: #b9c3b5;
+  --edge: #76836f;
+  --danger: #9b2c2c;
+  --bg: var(--limewash);
+  --panel: var(--plaster);
+  --ink: var(--slate);
+  --muted: var(--lichen);
+  --accent: var(--woad);
+  --mark: var(--weld);
+  --on-accent: #ffffff;
+  --rumor: "Alegreya", Georgia, "Times New Roman", serif;
+  --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a2226;
+    --panel: #222c31;
+    --ink: #dce3dc;
+    --muted: #9aab99;
+    --accent: #8fb4de;
+    --mark: #6a5714;
+    --rail: #3f4d50;
+    --edge: #6b7a7c;
+    --danger: #f19a9a;
+    --on-accent: #10202f;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 var(--ui);
+  overflow: hidden;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+}
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: .75rem 1.25rem;
+}
+h1 { font: 500 1.5rem/1.2 var(--rumor); margin: 0; }
+.conn { font-size: .875rem; color: var(--muted); margin-left: auto; }
+.conn::before {
+  content: ""; display: inline-block; width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--muted); margin-right: .4rem; vertical-align: .05rem;
+}
+.conn[data-state="live"]::before { background: var(--accent); }
+.conn[data-state="down"] { color: var(--danger); }
+.conn[data-state="down"]::before { background: var(--danger); }
+.drawer-toggle { display: none; }
+
+main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.feed {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: .5rem 1.25rem 1.5rem;
+}
+.feed:empty { flex: 0; padding: 0; }
+.empty { flex: 1; display: grid; place-content: center; color: var(--muted); text-align: center; padding: 1rem; margin: 0; }
+.empty[hidden] { display: none; }
+.ev { display: flex; padding: .35rem 0; max-width: 46rem; }
+.ev .body { min-width: 0; }
+.meta { margin: 0; font-size: .875rem; color: var(--muted); }
+.meta b { color: var(--ink); font-weight: 700; }
+.said {
+  margin: .1rem 0 0;
+  font: 1.15rem/1.45 var(--rumor);
+  max-width: 62ch;
+  overflow-wrap: anywhere;
+}
+.rails {
+  flex: none;
+  align-self: stretch;
+  width: calc(var(--d, 0) * 1rem);
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 1rem);
+  background-position: .35rem 0;
+}
+.whisper { margin-top: .75rem; }
+.whisper .said { font-style: italic; }
+.hop, .whisper { cursor: pointer; border-radius: 4px; }
+mark {
+  background: linear-gradient(transparent 55%, var(--mark) 55%, var(--mark) 92%, transparent 92%) no-repeat;
+  color: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+mark.kept {
+  background: none;
+  text-decoration: underline 2px var(--accent);
+  text-underline-offset: .2em;
+}
+.diffnote { margin: .1rem 0 0; font-size: .8rem; color: var(--muted); }
+.fresh mark:not(.kept) { animation: ink 900ms ease-out; }
+@keyframes ink { from { background-size: 0 100%; } to { background-size: 100% 100%; } }
+.note { font-size: .875rem; color: var(--muted); padding: .2rem 0; max-width: 46rem; }
+.note.goal { color: var(--ink); }
+.feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
+.lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
+
+.composer {
+  border-top: 1px solid var(--rail);
+  padding: .75rem 1.25rem 1rem;
+  background: var(--bg);
+}
+.composer form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.composer label { font-size: .875rem; color: var(--muted); }
+input[type="text"], input[type="search"] {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: .5rem .65rem;
+  min-width: 0;
+}
+#target { width: 12rem; }
+#text { flex: 1 1 16rem; font-family: var(--rumor); font-size: 1.1rem; padding: .4rem .65rem; }
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 6px;
+  padding: .5rem 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.primary:disabled { opacity: .6; cursor: progress; }
+.status { margin: .4rem 0 0; min-height: 1.25rem; font-size: .875rem; color: var(--muted); }
+.status.error { color: var(--danger); }
+
+aside {
+  background: var(--panel);
+  overflow-y: auto;
+  padding: .5rem 1.25rem 1.5rem;
+  min-height: 0;
+}
+h2 { font-size: 1rem; margin: 1rem 0 .5rem; }
+h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 .2rem; }
+.goals { list-style: none; margin: 0; padding: 0; }
+.goals li { margin: 0 0 .75rem; }
+.goal-text { font-size: .9rem; }
+.bar { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
+.bar span:first-child { flex: 1; height: 6px; background: var(--rail); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.met .bar { color: var(--accent); font-weight: 700; }
+#search { width: 100%; }
+.people { list-style: none; margin: 0; padding: 0; }
+.people button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 4px; padding: .2rem .35rem; margin: 0 -.35rem;
+  cursor: pointer;
+}
+.people button:hover, .people button[aria-current="true"] { background: var(--bg); }
+.people small { color: var(--muted); }
+.card {
+  background: var(--bg);
+  border-radius: 6px;
+  padding: .75rem .9rem;
+  margin: .75rem 0;
+}
+.card h3 { color: var(--ink); font-size: 1.05rem; font-weight: 700; margin: 0; }
+.card p { margin: .35rem 0; font-size: .9rem; }
+.card dl { margin: .35rem 0; font-size: .9rem; }
+.card dt { color: var(--muted); font-size: .8rem; }
+.card dd { margin: 0 0 .35rem; }
+.card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.linkish { background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; font-size: .875rem; }
+
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  header { padding: .6rem 1rem; align-items: center; }
+  .drawer-toggle {
+    display: inline-block; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 6px; padding: .3rem .7rem; cursor: pointer; font-size: .875rem;
+  }
+  .conn { margin-left: 0; }
+  header .spacer { margin-left: auto; }
+  aside {
+    position: fixed; inset: 3.25rem 0 0 0; z-index: 2; display: none;
+    padding: .5rem 1rem 2rem;
+  }
+  aside.open { display: block; }
+  .feed { padding: .5rem 1rem 1rem; }
+  .composer { padding: .6rem 1rem .8rem; }
+  #target { flex: 1 1 100%; width: auto; }
+  #text { flex-basis: 10rem; }
+  .rails { width: calc(min(var(--d, 0), 4) * .75rem); background-size: .75rem 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh mark { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Rumor Mill</h1>
+    <span class="spacer"></span>
+    <span class="conn" id="conn" data-state="connecting" role="status">Connecting</span>
+    <button class="drawer-toggle" id="drawer-toggle" aria-controls="town" aria-expanded="false">Goals and villagers</button>
+  </header>
+
+  <main>
+    <ol class="feed" id="feed" role="log" aria-live="off" aria-label="What the village is saying"></ol>
+    <p class="empty" id="empty">Whisper to a villager to start a rumor. Pick someone whose trade or fears fit it.</p>
+    <div class="composer">
+      <form id="whisper">
+        <label for="target">Whisper to</label>
+        <input type="text" id="target" list="names" autocomplete="off" placeholder="a villager" required>
+        <datalist id="names"></datalist>
+        <label for="text" class="visually-hidden">What to whisper</label>
+        <input type="text" id="text" maxlength="500" autocomplete="off" placeholder="the miller waters his flour" required>
+        <button class="primary" type="submit">Whisper</button>
+      </form>
+      <p class="status" id="status" role="status"></p>
+    </div>
+  </main>
+
+  <aside id="town" aria-label="Goals and villagers">
+    <h2>Goals</h2>
+    <ul class="goals" id="goals"></ul>
+    <h2 id="people-heading">Villagers</h2>
+    <label for="search" class="visually-hidden">Find a villager</label>
+    <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
+    <div id="card"></div>
+    <div id="people"></div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const feed = $("feed");
+const spoken = new Map();
+const goals = new Map();
+const MAX_ITEMS = 1000;
+// Above this share of new words, mark what survived instead of what changed.
+const REWORDED = 0.6;
+let villagers = [];
+let villagersKey = "";
+let places = [];
+let boot = null;
+let lastId = 0;
+let pinned = null;
+let selected = null;
+let rover = null;
+let pointerDown = false;
+let peopleStale = false;
+
+function el(tag, { dataset, ...props } = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  Object.assign(node.dataset, dataset);
+  node.append(...children.filter((c) => c != null));
+  return node;
+}
+
+function words(text) {
+  return text.split(/\s+/).filter(Boolean);
+}
+
+function bare(word) {
+  return word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+}
+
+// Words of `text` that are not in its longest common word sequence with `parent`.
+function changed(parent, text) {
+  const a = words(parent).map(bare);
+  const b = words(text);
+  const bb = b.map(bare);
+  const lcs = Array.from({ length: a.length + 1 }, () => new Array(bb.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = bb.length - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] === bb[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const kept = new Set();
+  for (let i = 0, j = 0; i < a.length && j < bb.length;) {
+    if (a[i] === bb[j]) { kept.add(j); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
+    else j++;
+  }
+  return b.map((w, j) => [w, !kept.has(j)]);
+}
+
+// Words too common to count as having survived a retelling.
+const STOPWORDS = new Set(("about after again also because been before being could does from have here into just like more most much only other over said some such than that their them then there these they this those very were what when where which while will with would your").split(" "));
+const NOTES = {
+  changed: "Highlighted words changed since the last telling.",
+  kept: "Mostly reworded. Underlined words survived from the last telling.",
+};
+const noted = new Set();
+
+function content(word) {
+  const w = bare(word);
+  return w.length > 3 && !STOPWORDS.has(w);
+}
+
+// The quote, plus a note on the first hop of a thread that uses each kind of mark.
+function quoted(text, parentText, root) {
+  const p = el("p", { className: "said" });
+  if (parentText == null) {
+    p.textContent = `“${text}”`;
+    return [p];
+  }
+  const parts = changed(parentText, text);
+  const fresh = parts.filter(([, isNew]) => isNew).length;
+  const mode = fresh > REWORDED * parts.length ? "kept" : "changed";
+  // Neighbouring marked words become one run, so a stretch reads as one stroke.
+  const runs = [];
+  for (const [w, isNew] of parts) {
+    const marked = mode === "kept" ? !isNew && content(w) : isNew;
+    const last = runs[runs.length - 1];
+    if (last && last.marked === marked) last.words.push(w);
+    else runs.push({ marked, words: [w] });
+  }
+  p.append("“");
+  runs.forEach((run, i) => {
+    if (i) p.append(" ");
+    const said = run.words.join(" ");
+    p.append(run.marked ? el("mark", { className: mode === "kept" ? "kept" : "", textContent: said }) : said);
+  });
+  p.append("”");
+  const key = `${root} ${mode}`;
+  if (!runs.some((run) => run.marked) || noted.has(key)) return [p];
+  noted.add(key);
+  return [p, el("p", { className: "diffnote", textContent: NOTES[mode] })];
+}
+
+function nameList(names, heard) {
+  if (heard === 1) return names[0] || "someone";
+  return `${heard} people`;
+}
+
+function hopMeta(e, parent) {
+  const meta = el("p", { className: "meta" }, el("b", { textContent: e.speaker }));
+  const where = ` at the ${e.place}`;
+  if (e.verb === "announced") meta.append(` announced${where}, heard by ${nameList(e.listeners, e.heard)}`);
+  else if (e.verb === "preached") meta.append(` preached to ${nameList(e.listeners, e.heard)}${where}`);
+  else if (e.heard === 1) meta.append(" told ", el("b", { textContent: e.listeners[0] || "someone" }), where);
+  else meta.append(` told ${e.heard} people${where}`);
+  if (parent) meta.append(`, after hearing ${parent.speaker}`);
+  return meta;
+}
+
+function render(e) {
+  switch (e.kind) {
+    case "whisper": {
+      spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
+      return el("li", { className: "ev whisper", tabIndex: -1, dataset: { uid: e.uid } },
+        el("span", { className: "rails", style: "--d:0" }),
+        el("div", { className: "body" },
+          el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: e.target }), ` at the ${e.place}`),
+          ...quoted(e.text)));
+    }
+    case "hop": {
+      const parent = spoken.get(e.parent);
+      spoken.set(e.uid, { text: e.text, parent: e.parent, speaker: e.speaker });
+      return el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: e.uid } },
+        el("span", { className: "rails", style: `--d:${Math.min(e.depth, 8)}` }),
+        el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
+    }
+    case "shrug":
+      return el("li", { className: "note", dataset: { uid: e.uid } }, `${e.name} shrugs it off.`);
+    case "announcement":
+      return el("li", { className: "note" }, e.text);
+    case "goal":
+      goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met });
+      renderGoals();
+      return el("li", { className: "note goal" },
+        e.met ? `Goal met: ${e.text}` : `${e.text}: now ${e.percent}%`);
+    case "system":
+      return el("li", { className: "note" }, e.text);
+    default:
+      return null;
+  }
+}
+
+function nearBottom() {
+  return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+}
+
+function threadItems() {
+  return [...feed.querySelectorAll(".hop, .whisper")];
+}
+
+// Roving focus: the feed is one tab stop, and arrow keys move between hops.
+function setRover(node) {
+  if (rover) rover.tabIndex = -1;
+  rover = node;
+  if (rover) rover.tabIndex = 0;
+}
+
+function prune() {
+  while (feed.children.length > MAX_ITEMS) {
+    const node = feed.firstElementChild;
+    if (node.matches(".hop, .whisper")) spoken.delete(node.dataset.uid);
+    if (node === rover) rover = null;
+    node.remove();
+  }
+}
+
+function addEvents(events, fresh) {
+  const stick = feed.children.length === 0 || nearBottom();
+  for (const e of events) {
+    if (e.id <= lastId) continue;
+    lastId = e.id;
+    const node = render(e);
+    if (!node) continue;
+    if (fresh) node.classList.add("fresh");
+    feed.append(node);
+  }
+  prune();
+  if (!rover) setRover(threadItems()[0] || null);
+  $("empty").hidden = feed.children.length > 0;
+  if (stick) feed.scrollTop = feed.scrollHeight;
+}
+
+// Thread tracing: light a hop and every hop back to your whisper.
+function trace(uid) {
+  feed.querySelectorAll(".lit").forEach((n) => n.classList.remove("lit"));
+  feed.classList.toggle("tracing", uid != null);
+  for (let id = uid; id != null; id = spoken.get(id) && spoken.get(id).parent) {
+    const node = feed.querySelector(`[data-uid="${CSS.escape(id)}"]:not(.note)`);
+    if (node) node.classList.add("lit");
+  }
+}
+function threadItem(target) {
+  return target.closest(".hop, .whisper");
+}
+feed.addEventListener("mouseover", (ev) => {
+  const item = threadItem(ev.target);
+  if (pinned == null) trace(item ? item.dataset.uid : null);
+});
+feed.addEventListener("mouseleave", () => { if (pinned == null) trace(null); });
+function togglePin(item) {
+  pinned = item && pinned !== item.dataset.uid ? item.dataset.uid : null;
+  trace(pinned);
+}
+feed.addEventListener("click", (ev) => {
+  const item = threadItem(ev.target);
+  if (item) setRover(item);
+  togglePin(item);
+});
+feed.addEventListener("keydown", (ev) => {
+  const item = threadItem(ev.target);
+  if (!item) return;
+  const items = threadItems();
+  const at = items.indexOf(item);
+  const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[ev.key];
+  if (ev.key === "Enter" || ev.key === " ") {
+    ev.preventDefault();
+    togglePin(item);
+  } else if (next != null && items[next]) {
+    ev.preventDefault();
+    setRover(items[next]);
+    items[next].focus();
+    if (pinned != null) togglePin(items[next]);
+  }
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && pinned != null) { pinned = null; trace(null); }
+});
+
+function renderGoals() {
+  const list = $("goals");
+  list.replaceChildren(...[...goals.values()].map((g) => el("li", { className: g.met ? "met" : "" },
+    el("div", { className: "goal-text", textContent: g.text }),
+    el("div", { className: "bar" },
+      el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100 },
+        el("i", { style: `width:${g.percent}%` })),
+      el("span", { textContent: g.met ? "Met" : `${g.percent}%` })))));
+}
+
+function renderVillagers() {
+  const people = $("people");
+  const focused = people.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+  const q = $("search").value.trim().toLowerCase();
+  const shown = villagers.filter((v) => !q || `${v.name} ${v.occupation} ${v.place}`.toLowerCase().includes(q));
+  $("people-heading").textContent = `Villagers (${villagers.length})`;
+  const order = [...places, ...[...new Set(villagers.map((v) => v.place))].filter((p) => !places.includes(p)).sort()];
+  const groups = order.map((place) => [place, shown.filter((v) => v.place === place)]).filter(([, vs]) => vs.length);
+  people.replaceChildren(...groups.map(([place, vs]) => el("section", {},
+    el("h3", { textContent: `${place[0].toUpperCase()}${place.slice(1)} (${vs.length})` }),
+    el("ul", { className: "people" }, ...vs.map((v) => el("li", {},
+      el("button", { type: "button", dataset: { id: v.id }, onclick: () => inspect(v.id), ariaCurrent: String(v.id === selected) },
+        v.name, " ", el("small", { textContent: v.occupation }))))))));
+  if (!groups.length) people.replaceChildren(el("p", { className: "meta", textContent: q ? "No one matches. Try part of a name or a trade." : "No one is in town yet." }));
+  $("names").replaceChildren(...villagers.map((v) => el("option", { value: v.name })));
+  if (focused) {
+    const again = people.querySelector(`[data-id="${CSS.escape(focused)}"]`);
+    if (again) again.focus();
+  }
+}
+
+// Moves arrive every second; hold them while someone is pointing at or tabbing through the list.
+function setVillagers(list) {
+  const key = list.map((v) => `${v.id}:${v.place}`).join("|");
+  if (key === villagersKey) return;
+  villagers = list;
+  villagersKey = key;
+  if (pointerDown || $("people").contains(document.activeElement)) peopleStale = true;
+  else renderVillagers();
+}
+function flushVillagers() {
+  if (peopleStale && !pointerDown && !$("people").contains(document.activeElement)) {
+    peopleStale = false;
+    renderVillagers();
+  }
+}
+$("people").addEventListener("pointerdown", () => { pointerDown = true; });
+document.addEventListener("pointerup", () => { pointerDown = false; setTimeout(flushVillagers); });
+$("people").addEventListener("focusout", () => setTimeout(flushVillagers));
+$("search").addEventListener("input", renderVillagers);
+
+async function inspect(id) {
+  selected = id;
+  renderVillagers();
+  const res = await fetch(`/api/villagers/${encodeURIComponent(id)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    $("card").replaceChildren(el("div", { className: "card" }, el("p", { textContent: body.error || "Couldn't load that villager. Try again." })));
+    return;
+  }
+  const rels = body.relationships.length
+    ? body.relationships.map((r, i) => [i ? ", " : "", el("button", { className: "rel", type: "button", textContent: r.name, onclick: () => inspect(r.id) }), ` (${r.kind})`]).flat()
+    : ["none"];
+  $("card").replaceChildren(el("div", { className: "card" },
+    el("h3", { textContent: body.name }),
+    el("p", { className: "meta", textContent: `${body.occupation}, at the ${body.place}` }),
+    el("dl", {},
+      el("dt", { textContent: "Personality" }), el("dd", { textContent: body.personality }),
+      el("dt", { textContent: "Grudge" }), el("dd", { textContent: body.grudge }),
+      el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels)),
+    el("div", { className: "actions" },
+      el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name.split(" ")[0]}`, onclick: () => whisperTo(body.name) }),
+      el("button", { className: "linkish", type: "button", textContent: "Close", onclick: () => { selected = null; $("card").replaceChildren(); renderVillagers(); } }))));
+  $("card").scrollIntoView({ block: "nearest" });
+}
+
+function whisperTo(name) {
+  $("target").value = name;
+  setDrawer(false);
+  $("text").focus();
+}
+
+function setStatus(text, error = false) {
+  $("status").textContent = text;
+  $("status").classList.toggle("error", error);
+}
+
+$("whisper").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const name = $("target").value.trim();
+  const text = $("text").value.trim();
+  if (!name || !text) return setStatus("Pick a villager and write what to whisper.", true);
+  const match = villagers.find((v) => v.name.toLowerCase() === name.toLowerCase());
+  const button = ev.submitter || $("whisper").querySelector("button");
+  button.disabled = true;
+  setStatus("Whispering…");
+  try {
+    const res = await fetch("/api/whisper", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(match ? { villager_id: match.id, text } : { name, text }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      $("text").value = "";
+      setStatus(`Whispered to ${match ? match.name : name}. If it touches what they care about, they'll pass it on.`);
+    } else {
+      setStatus(body.error || "The whisper didn't go through. Try again.", true);
+    }
+  } catch {
+    setStatus("Can't reach the game. Check that it is still running, then try again.", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function setDrawer(open) {
+  $("town").classList.toggle("open", open);
+  $("drawer-toggle").setAttribute("aria-expanded", String(open));
+  $("drawer-toggle").textContent = open ? "Back to the feed" : "Goals and villagers";
+}
+$("drawer-toggle").addEventListener("click", () => setDrawer(!$("town").classList.contains("open")));
+
+function setConn(state, text) {
+  $("conn").dataset.state = state;
+  $("conn").textContent = text;
+}
+
+// A new boot means the game restarted and numbers its events from 1 again.
+function reset() {
+  feed.replaceChildren();
+  spoken.clear();
+  goals.clear();
+  noted.clear();
+  lastId = 0;
+  pinned = null;
+  rover = null;
+  feed.classList.remove("tracing");
+}
+
+async function loadState() {
+  const res = await fetch("/api/state");
+  if (!res.ok) throw new Error(String(res.status));
+  const state = await res.json();
+  if (boot !== null && state.boot !== boot) reset();
+  boot = state.boot;
+  places = state.places;
+  for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met });
+  renderGoals();
+  villagersKey = "";
+  setVillagers(state.villagers);
+  // The replay goes in before the log is live, so a reload doesn't read it all out.
+  feed.setAttribute("aria-live", "off");
+  addEvents(state.events, false);
+  setTimeout(() => feed.setAttribute("aria-live", "polite"));
+}
+
+function receive(e) {
+  if (e.kind === "villagers") {
+    setVillagers(e.villagers);
+  } else {
+    addEvents([e], true);
+  }
+}
+
+// Open the socket first and hold its messages until the state has loaded, so nothing falls in between.
+let retry = 1000;
+function connect() {
+  setConn("connecting", "Connecting");
+  const socket = new WebSocket(`ws://${location.host}/ws`);
+  let held = [];
+  socket.onmessage = (msg) => {
+    const e = JSON.parse(msg.data);
+    if (held) held.push(e); else receive(e);
+  };
+  socket.onopen = async () => {
+    try {
+      await loadState();
+    } catch {
+      socket.close();
+      return;
+    }
+    held.forEach(receive);
+    held = null;
+    retry = 1000;
+    setConn("live", "Live");
+  };
+  socket.onclose = () => {
+    setConn("down", "Can't reach the game; retrying");
+    setTimeout(connect, retry);
+    retry = Math.min(retry * 2, 8000);
+  };
+}
+connect();
+</script>
+</body>
+</html>
