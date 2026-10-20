@@ -14,6 +14,7 @@ MAX_CONCURRENT_CALLS = 8
 class Match:
     data_key: str
     data: dict
+    similarity: float | None = None
 
 
 Bundle = dict[str, list[Match]]
@@ -73,25 +74,33 @@ class ContexClient:
                 raise SubscriptionGone(uri) from e
             raise
         raw = json.loads(result.contents[0].text)
-        return {need: [Match(m["data_key"], m["data"]) for m in matches] for need, matches in raw.items()}
+        return {need: [Match(m["data_key"], m["data"], m.get("similarity")) for m in matches]
+                for need, matches in raw.items()}
 
     async def query(self, project_id: str, query: str, top_k: int = 3,
-                    threshold: float | None = None, max_age_seconds: int | None = None) -> list[Match]:
+                    threshold: float | None = None, max_age_seconds: int | None = None,
+                    since: str | None = None) -> list[Match]:
         args = {"project_id": project_id, "query": query, "top_k": top_k}
         if threshold is not None:
             args["threshold"] = threshold
         if max_age_seconds is not None:
             args["max_age_seconds"] = max_age_seconds
+        if since is not None:
+            args["since"] = since
         found = await self._tool("contex_query", args)
-        return [Match(m["data_key"], m["data"]) for m in found["matches"]]
+        return [Match(m["data_key"], m["data"], m.get("similarity")) for m in found["matches"]]
 
-    async def listen(self, uri: str) -> AsyncIterator[None]:
-        """Yield once when the stream is acknowledged, then once per push on uri, until it closes.
+    def listen(self, uri: str) -> AsyncIterator[None]:
+        """Listen on one resource; see listen_many."""
+        return self.listen_many([uri])
+
+    async def listen_many(self, uris: list[str]) -> AsyncIterator[None]:
+        """Yield once when the stream is acknowledged, then once per push on any of uris, until it closes.
 
         The first yield lets the caller catch up on anything published while it was not listening.
         """
         async with Client(self.url) as session:
-            async with session.listen(resource_subscriptions=[uri]) as events:
+            async with session.listen(resource_subscriptions=uris) as events:
                 try:
                     yield
                     async for _ in events:

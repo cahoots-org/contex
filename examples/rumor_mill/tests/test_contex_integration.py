@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -133,3 +134,18 @@ async def test_default_threshold_lets_only_whispers_on_a_need_in():
         await mind.hear("utt:w-2", on.to_data(0))
         assert await poll_for(client, mind.uri, "utt:w-2")
         assert "utt:w-1" not in {m.data_key for m in mind.matches + await mind.poll()}
+
+
+async def test_query_since_excludes_older_items():
+    async with ContexClient(URL) as client:
+        pid = project()
+        await client.publish(pid, "old", {"text": "the oven at the baker's shop is cold"})
+        await asyncio.sleep(1)
+        cutoff = datetime.now(UTC).isoformat()
+        await asyncio.sleep(1)
+        await client.publish(pid, "new", {"text": "the oven at the baker's shop is cold again"})
+        everything = await client.query(pid, "the baker's oven", top_k=5)
+        recent = await client.query(pid, "the baker's oven", top_k=5, since=cutoff)
+        assert {m.data_key for m in everything} == {"old", "new"}
+        assert [m.data_key for m in recent] == ["new"]
+        assert recent[0].similarity is not None
