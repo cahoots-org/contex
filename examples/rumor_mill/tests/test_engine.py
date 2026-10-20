@@ -276,3 +276,126 @@ async def test_repeated_listen_failures_log_one_traceback(turns, monkeypatch, ca
     with_trace = [r for r in caplog.records if r.exc_info]
     assert len(with_trace) == 1
     assert all("v1" in r.getMessage() for r in caplog.records)
+
+
+def utterance():
+    return Utterance("u-1", "v1", "V1", "square", "watch the newcomer", None)
+
+
+@pytest.mark.asyncio
+async def test_addressed_message_wakes_a_villager_whose_needs_did_not_match(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    minds["v2"].results = [[]]
+    utt = utterance()
+    await engine.deliver(utt, ["v2"], addressed=True)
+    await wait_for(lambda: len(turns.views) == 1)
+    view = turns.views[0]
+    assert view.villager.id == "v2"
+    assert view.new == [Match("utt:u-1", utt.to_data(0))]
+    assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_unaddressed_delivery_does_not_bypass_matching(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    await engine.deliver(utterance(), ["v2"])
+    await asyncio.sleep(SETTLE)
+    assert minds["v2"].polls == 0
+    assert turns.views == []
+    assert engine._pending == {}
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_addressed_message_also_matched_by_poll_appears_once(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    utt = utterance()
+    minds["v2"].results = [[Match("utt:u-1", utt.to_data(0))]]
+    await engine.deliver(utt, ["v2"], addressed=True)
+    await wait_for(lambda: len(turns.views) == 1)
+    assert [m.data_key for m in turns.views[0].new] == ["utt:u-1"]
+    assert turns.views[0].recent == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_pending_is_cleared_after_the_turn(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    minds["v2"].results = [[], []]
+    await engine.deliver(utterance(), ["v2"], addressed=True)
+    await wait_for(lambda: len(turns.views) == 1)
+    assert "v2" not in engine._pending
+    push(minds["v2"])
+    await wait_for(lambda: minds["v2"].polls == 2)
+    await asyncio.sleep(SETTLE)
+    assert len(turns.views) == 1
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_addressed_message_during_cooldown_is_kept_for_the_next_turn(turns):
+    engine, minds, _ = await setup("v1", "v2", cooldown=1.0)
+    push(minds["v2"])
+    await wait_for(lambda: len(turns.views) == 1)
+    minds["v2"].results = [[]]
+    await engine.deliver(utterance(), ["v2"], addressed=True)
+    await asyncio.sleep(SETTLE)
+    assert len(turns.views) == 1
+    assert [m.data_key for m in engine._pending["v2"]] == ["utt:u-1"]
+    await wait_for(lambda: len(turns.views) == 2)
+    assert [m.data_key for m in turns.views[1].new] == ["utt:u-1"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_addressed_message_to_a_departed_villager_is_dropped_quietly(turns):
+    engine, minds, feed = await setup("v1", "v2")
+    await engine.remove_villager("v2")
+    await engine.deliver(utterance(), ["v2"], addressed=True)
+    assert engine._pending == {}
+    assert "v2" not in engine._wakes
+    assert minds["v2"].heard == []
+    assert feed.deliveries == [("u-1", [])]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_addressed_listener_who_leaves_during_delivery_is_skipped(turns):
+    engine, minds, feed = await setup("v1", "v2", "v3")
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_hear(key, data):
+        started.set()
+        await release.wait()
+
+    minds["v2"].hear = slow_hear
+    delivery = asyncio.create_task(engine.deliver(utterance(), ["v2", "v3"], addressed=True))
+    await started.wait()
+    await engine.remove_villager("v2")
+    release.set()
+    await delivery
+    assert "v2" not in engine._pending
+    assert feed.deliveries == [("u-1", ["v2", "v3"])]
+    await wait_for(lambda: [v.villager.id for v in turns.views] == ["v3"])
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_addressed_message_survives_a_failed_poll(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    mind = minds["v2"]
+    real_poll = mind.poll
+    mind.results = [[]]
+
+    async def flaky_poll():
+        if mind.polls == 0:
+            mind.polls += 1
+            raise RuntimeError("contex down")
+        return await real_poll()
+
+    mind.poll = flaky_poll
+    await engine.deliver(utterance(), ["v2"], addressed=True)
+    await wait_for(lambda: len(turns.views) == 1)
+    assert [m.data_key for m in turns.views[0].new] == ["utt:u-1"]
+    await engine.stop()

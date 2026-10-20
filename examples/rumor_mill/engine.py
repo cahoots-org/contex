@@ -48,6 +48,8 @@ class Engine:
         self.departures: asyncio.Queue[str] = asyncio.Queue()
         self._tasks: dict[str, list[asyncio.Task]] = {}
         self._read_at: dict[str, float] = {}
+        self._wakes: dict[str, asyncio.Event] = {}
+        self._pending: dict[str, list[Match]] = {}
         self._listen_failed: set[str] = set()
         self._renewal: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
@@ -63,7 +65,7 @@ class Engine:
         self.town.add(v, place)
         self.minds[v.id] = mind
         self._read_at[v.id] = time.monotonic()
-        wake = asyncio.Event()
+        wake = self._wakes[v.id] = asyncio.Event()
         self._tasks[v.id] = [
             asyncio.create_task(self._listen(mind, wake)),
             asyncio.create_task(self._work(mind, wake)),
@@ -74,6 +76,8 @@ class Engine:
         if self.minds.pop(vid, None) is not None:
             self.departures.put_nowait(vid)
         self._read_at.pop(vid, None)
+        self._wakes.pop(vid, None)
+        self._pending.pop(vid, None)
         self._listen_failed.discard(vid)
         with suppress(KeyError):
             self.town.remove(vid)
@@ -94,8 +98,11 @@ class Engine:
         self._renewal = None
         await _cancel(tasks)
 
-    async def deliver(self, utterance: Utterance, listener_ids: list[str]) -> None:
-        """Publish the utterance to each listener's mind; raises only if every listener failed."""
+    async def deliver(self, utterance: Utterance, listener_ids: list[str], addressed: bool = False) -> None:
+        """Publish the utterance to each listener's mind; raises only if every listener failed.
+
+        An addressed utterance also wakes each listener and joins their next turn unmatched.
+        """
         listeners = [i for i in listener_ids if i in self.town and i in self.minds]
         data = utterance.to_data(self.day)
         results = await asyncio.gather(
@@ -105,6 +112,13 @@ class Engine:
             if isinstance(result, Exception):
                 log.error("delivery to %s failed", vid, exc_info=result)
         heard = [vid for vid, result in zip(listeners, results) if not isinstance(result, Exception)]
+        if addressed:
+            for vid in heard:
+                wake = self._wakes.get(vid)
+                if wake is None:
+                    continue
+                self._pending.setdefault(vid, []).append(Match(f"utt:{utterance.id}", data))
+                wake.set()
         if listeners and not heard:
             raise next(r for r in results if isinstance(r, Exception))
         self.feed.on_delivery(utterance, heard)
@@ -143,15 +157,22 @@ class Engine:
             except Exception:
                 log.exception("turn failed for %s", vid)
                 last_turn = time.monotonic()
+                if self._pending.get(vid):
+                    wake.set()
             if vid not in self.town:
                 await self.remove_villager(vid)
                 return
 
     async def _turn(self, mind: Mind) -> bool:
-        """Poll the mind and, if anything is new, decide and act. Returns whether a turn ran."""
+        """Poll the mind, add addressed messages, and if anything is new, decide and act.
+
+        Returns whether a turn ran.
+        """
         v = mind.villager
         new = await mind.poll()
         self._read_at[v.id] = time.monotonic()
+        polled = {m.data_key for m in new}
+        new = new + [m for m in self._pending.pop(v.id, []) if m.data_key not in polled]
         if not new:
             return False
         if self.on_heard:

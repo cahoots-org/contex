@@ -30,7 +30,7 @@ class RecordingHub:
         self.delivered = []
         self.groups = []
 
-    async def deliver(self, utterance, listener_ids):
+    async def deliver(self, utterance, listener_ids, addressed=False):
         self.delivered.append((utterance, listener_ids))
 
     async def publish_group(self, group):
