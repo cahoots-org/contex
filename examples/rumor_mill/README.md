@@ -88,10 +88,9 @@ quit
 ```
 
 A name can be part of a full name if it is unambiguous. A whisper that
-touches nothing the villager cares about does nothing. A villager only checks
-what they heard once their cooldown is over, so 20 seconds after that the feed
-says they shrug it off. `inspect` shows enough to guess what someone cares
-about, but not their needs.
+touches nothing the villager cares about does nothing, and the feed says at
+once whether it caught their ear or they shrug it off. `inspect` shows enough
+to guess what someone cares about, but not their needs.
 
 A shrug is a hint. The villager brushes you off in their own voice and grumbles
 about something they care about, a different concern each time until they run
@@ -192,7 +191,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_MATCH_MARGIN` | `0.03` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
-| `RUMOR_MILL_SHRUG_SECONDS` | `20` | extra seconds after the cooldown before a whisper that woke no one is reported |
+| `RUMOR_MILL_CHECK_LOOKBACK_SECONDS` | `5` | how far before a whisper the check that it landed looks, to absorb clock skew with Contex |
 | `RUMOR_MILL_ARRIVAL_DELAY_SECONDS` | `60` | wait after a departure before newcomers arrive |
 | `RUMOR_MILL_JUDGE_EVERY_DAYS` | `1` | days between goal checks |
 | `RUMOR_MILL_JUDGE_CONCURRENCY` | `10` | goal-check calls in flight |

@@ -11,9 +11,13 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind
+from examples.rumor_mill.mind import Mind, mind_project
 from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.player import Player
+from examples.rumor_mill.suspicion import Suspicion
+from examples.rumor_mill.tests.helpers import FakeEngine, StubBaselines
 from examples.rumor_mill.town import Town
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
@@ -70,20 +74,6 @@ async def test_mind_projects_are_isolated():
         await client.publish(a, "u3", {"text": "the baker's oven is cold"})
         assert await poll_for(client, uri_a, "u3")
         assert not await poll_for(client, uri_b, "u3", tries=3)
-
-
-class StubBaselines:
-    """A fixed threshold per need, with a default for the rest."""
-
-    def __init__(self, default, **by_need):
-        self.default = default
-        self.by_need = by_need
-
-    def threshold(self, need):
-        return self.by_need.get(need, self.default)
-
-    async def load(self, texts):
-        pass
 
 
 class NullFeed:
@@ -180,3 +170,28 @@ async def test_query_since_excludes_older_items():
         assert {m.data_key for m in everything} == {"old", "new"}
         assert [m.data_key for m in recent] == ["new"]
         assert recent[0].similarity is not None
+
+
+async def test_direct_check_hits_only_the_need_it_clears():
+    bakery, physics = "anything about my bakery", "quantum chromodynamics lecture"
+    async with ContexClient(URL) as client:
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}")
+        town = Town()
+        town.add(Villager("v1", "Ann", "baker", "kind", "none", [physics, bakery], {}), "square")
+        town.add(Villager("v2", "Bo", "scholar", "dry", "none", [physics], {}), "square")
+        engine = FakeEngine(Suspicion(config, town), client, StubBaselines(0.99, **{bakery: 0.5}))
+
+        async def deliver(utterance, listener_ids):
+            for vid in listener_ids:
+                await client.publish(mind_project(config.session, vid), f"utt:{utterance.id}", utterance.to_data(0))
+
+        engine.deliver = deliver
+        lineage = Lineage()
+        player = Player(engine, town, lineage, Ids(), Feed(lineage, town, out=None), config)
+        assert await player.whisper_to("v1", "the oven at the bakery is cold") is None
+        assert await player.whisper_to("v2", "the oven at the bakery is cold") is None
+        player.close()
+    (vid, match), = engine.direct
+    assert (vid, match.data_key) == ("v1", "utt:w-1") and match.similarity >= 0.5
+    states = {(e.data["whisper_id"], e.data["state"]) for e in player.feed.recent if e.kind == "whisper_status"}
+    assert {("w-1", "heard"), ("w-2", "brushed_off")} <= states

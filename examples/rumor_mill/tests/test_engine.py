@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 import pytest
 
@@ -10,11 +11,13 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind
 from examples.rumor_mill.models import Utterance
-from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, make, wait_for
+from examples.rumor_mill.player import Player
+from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, StubBaselines, StubContex, make, wait_for
 from examples.rumor_mill.town import Town
 
 SETTLE = 0.1
@@ -140,21 +143,6 @@ async def test_deliver_skips_departed_listeners_and_notifies_feed(turns):
     assert minds["v2"].heard == [("utt:u-1", utt.to_data(0))]
     assert minds["v3"].heard == []
     assert feed.deliveries == [("u-1", ["v2"])]
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_on_heard_called_with_new_matches(turns):
-    engine, minds, _ = await setup("v1")
-    heard = []
-    engine.on_heard = lambda vid, matches: heard.append((vid, [m.data_key for m in matches]))
-    minds["v1"].results = [[Match("a", {"id": "u-1", "text": "x"})], []]
-    push(minds["v1"])
-    await wait_for(lambda: len(turns.acts) == 1)
-    push(minds["v1"])
-    await wait_for(lambda: minds["v1"].polls == 2)
-    assert heard == [("v1", ["a"])]
-    assert turns.acts == [("v1", ["x"])]
     await engine.stop()
 
 
@@ -434,3 +422,107 @@ def test_default_minds_get_the_engine_baselines():
     engine = Engine(config, Town(), None, None, None, Lineage(), Ids(), RecordingFeed(), baselines=baselines)
     mind = engine.mind_factory(make("v1"))
     assert isinstance(mind, Mind) and mind.baselines is baselines
+
+
+@pytest.mark.asyncio
+async def test_hit_goes_to_the_next_turn_without_a_push(turns):
+    engine, minds, _ = await setup("v1", cooldown=1.0)
+    assert engine.cooldown_ends("v1") <= time.time()
+    minds["v1"].results = [[]]
+    hit = Match("utt:w-1", {"id": "w-1", "text": "psst"}, 0.8)
+    engine.hear_directly("v1", hit)
+    engine.hear_directly("v1", hit)
+    await wait_for(lambda: len(turns.views) == 1)
+    assert turns.views[0].new == [hit]
+    assert minds["v1"].heard == []
+    assert time.time() + 0.5 < engine.cooldown_ends("v1") <= time.time() + 1.0
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_target_leaving_before_the_turn_leaves_no_pending(turns):
+    engine, minds, _ = await setup("v1", "v2", cooldown=1.0)
+    push(minds["v2"])
+    await wait_for(lambda: len(turns.views) == 1)
+    engine.hear_directly("v2", Match("utt:w-1", {"id": "w-1"}, 0.8))
+    assert [m.data_key for m in engine._pending["v2"]] == ["utt:w-1"]
+    await engine.remove_villager("v2")
+    assert engine._pending == {}
+    assert engine.cooldown_ends("v2") <= time.time()
+    engine.hear_directly("v2", Match("utt:w-2", {"id": "w-2"}, 0.8))
+    assert engine._pending == {}
+    await asyncio.sleep(SETTLE)
+    assert len(turns.views) == 1
+    await engine.stop()
+
+
+def whisper_match():
+    return Match("utt:w-1", {"id": "w-1", "text": "psst"}, 0.8)
+
+
+@pytest.mark.asyncio
+async def test_whisper_heard_directly_then_polled_reaches_one_turn(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[], [whisper_match()]]
+    engine.hear_directly("v1", whisper_match())
+    await wait_for(lambda: len(turns.views) == 1)
+    push(minds["v1"])
+    await wait_for(lambda: minds["v1"].polls == 2)
+    await asyncio.sleep(SETTLE)
+    assert [[m.data_key for m in v.new] for v in turns.views] == [["utt:w-1"]]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_whisper_polled_then_heard_directly_reaches_one_turn(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[whisper_match()], []]
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    engine.hear_directly("v1", whisper_match())
+    await wait_for(lambda: minds["v1"].polls == 2)
+    await asyncio.sleep(SETTLE)
+    assert [[m.data_key for m in v.new] for v in turns.views] == [["utt:w-1"]]
+    assert engine._pending.get("v1") is None
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_hit_while_a_turn_is_in_progress_reports_busy(turns, monkeypatch):
+    engine, minds, _ = await setup("v1", cooldown=5.0)
+    engine.contex = StubContex({"bread": [Match("utt:w-1", {}, 0.9)]})
+    engine.baselines = StubBaselines(0.5)
+    deciding, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_decide(jev, view):
+        deciding.set()
+        await release.wait()
+        return Decision(IGNORE, None, None, None)
+
+    monkeypatch.setattr(engine_mod, "decide", slow_decide)
+    lineage = Lineage()
+    feed = Feed(lineage, engine.town, out=None)
+    player = Player(engine, engine.town, lineage, Ids(), feed, engine.config)
+    push(minds["v1"])
+    await asyncio.wait_for(deciding.wait(), TIMEOUT)
+    assert await player.whisper_to("v1", "psst") is None
+    status = [e.data for e in feed.recent if e.kind == "whisper_status"][-1]
+    assert status["state"] == "busy" and status["until"] > time.time() + 4
+    release.set()
+    await wait_for(lambda: engine.cooldown_ends("v1") > time.time() and "v1" not in engine._turning)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_whisper_polled_then_forgotten_then_heard_directly_reaches_one_turn(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[whisper_match()], [], [whisper_match()]]
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    engine.hear_directly("v1", whisper_match())
+    await wait_for(lambda: minds["v1"].polls == 2)
+    push(minds["v1"])
+    await wait_for(lambda: minds["v1"].polls == 3)
+    await asyncio.sleep(SETTLE)
+    assert [[m.data_key for m in v.new] for v in turns.views] == [["utt:w-1"]]
+    await engine.stop()

@@ -453,9 +453,10 @@ function render(e, fresh) {
     case "gameover":
       showGameOver(e, fresh);
       return null;
-    case "shrug":
-      if (!e.hint) return el("li", { className: "note", dataset: { uid: e.uid } }, `${e.name} shrugs it off.`);
-      return el("li", { className: "note", dataset: { uid: e.uid } },
+    case "whisper_status":
+      if (e.state !== "brushed_off" || !("hint" in e)) return null;
+      if (!e.hint) return el("li", { className: "note", dataset: { uid: e.whisper_id } }, `${e.name} shrugs it off.`);
+      return el("li", { className: "note", dataset: { uid: e.whisper_id } },
         `${e.name} brushes you off: `, el("span", { className: "brush", textContent: `“${e.hint}”` }));
     case "announcement":
       return el("li", { className: "note" }, e.text);

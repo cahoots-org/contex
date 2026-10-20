@@ -21,6 +21,7 @@ class FakeMind:
         self.results: list[list[Match]] = []
         self.matches: list[Match] = []
         self.heard = []
+        self.seen = set()
         self.polls = 0
 
     async def open(self):
@@ -31,8 +32,9 @@ class FakeMind:
 
     async def poll(self):
         self.polls += 1
-        fresh = self.results.pop(0) if self.results else [Match("k", {"id": "u-0", "text": "news"})]
+        fresh = self.results.pop(0) if self.results else [Match(f"k{self.polls}", {"id": "u-0", "text": "news"})]
         self.matches = fresh
+        self.seen = {m.data_key for m in fresh}
         return fresh
 
     async def renew(self):
@@ -53,18 +55,63 @@ async def wait_for(predicate, timeout=TIMEOUT):
             await asyncio.sleep(0.005)
 
 
+class StubBaselines:
+    """A fixed threshold per need, with a default for the rest."""
+
+    def __init__(self, default, **by_need):
+        self.default = default
+        self.by_need = by_need
+
+    def threshold(self, need):
+        return self.by_need.get(need, self.default)
+
+    def matches(self, need, similarity):
+        return similarity >= self.threshold(need)
+
+    async def load(self, texts):
+        pass
+
+
+class StubContex:
+    """Answers each query from results keyed by query text; records every call."""
+
+    def __init__(self, results=None, error=None):
+        self.results = results or {}
+        self.error = error
+        self.default = []
+        self.queries = []
+
+    async def query(self, project_id, query, **kwargs):
+        self.queries.append((project_id, query, kwargs))
+        if self.error:
+            raise self.error
+        return self.results.get(query, self.default)
+
+
 class FakeEngine:
-    def __init__(self, suspicion=None):
+    def __init__(self, suspicion=None, contex=None, baselines=None):
         self.delivered = []
         self.suspicion = suspicion
+        self.contex = contex or StubContex()
+        self.baselines = baselines or StubBaselines(0.5)
+        self.direct = []
+        self.free_at = 0.0
+        self.day = 0
 
     async def deliver(self, utterance, listener_ids):
         self.delivered.append((utterance, listener_ids))
 
+    def hear_directly(self, vid, match):
+        self.direct.append((vid, match))
+        return True
 
-def make_player(*names, shrug=0.05, cooldown=0.0):
+    def cooldown_ends(self, vid):
+        return self.free_at
+
+
+def make_player(*names, cooldown=0.0):
     town, lines = Town(), []
-    config = Config(shrug_seconds=shrug, cooldown_seconds=cooldown)
+    config = Config(cooldown_seconds=cooldown)
     engine = FakeEngine(Suspicion(config, town))
     lineage = Lineage()
     for i, name in enumerate(names, 1):

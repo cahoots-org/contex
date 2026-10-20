@@ -2,10 +2,15 @@ import asyncio
 
 import pytest
 
+import time
+from datetime import datetime
+
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Refusal, echoes
+from examples.rumor_mill.mind import mind_project
+from examples.rumor_mill.tests.helpers import StubBaselines, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
 from examples.rumor_mill.town import PLAYER_ID
 
@@ -44,7 +49,7 @@ async def test_empty_and_overlong_whisper_rejected():
 
 @pytest.mark.asyncio
 async def test_whisper_is_delivered_and_rooted_in_lineage():
-    player, _, lines, engine, lineage = make("Marta", shrug=10)
+    player, _, _, engine, lineage = make("Marta")
     assert await player.whisper("Marta", "the miller waters his flour") is None
     (utterance, listeners), = engine.delivered
     assert listeners == ["v1"]
@@ -52,45 +57,12 @@ async def test_whisper_is_delivered_and_rooted_in_lineage():
     assert (utterance.verb, utterance.place, utterance.parent) == ("whispered to you", "tavern", None)
     assert utterance.text == "the miller waters his flour"
     assert lineage.is_player_rooted("w-1")
-    assert lines == []
     player.close()
 
 
 @pytest.mark.asyncio
-async def test_unheard_whisper_triggers_shrug_line():
-    player, _, lines, _, _ = make("Marta")
-    await player.whisper("Marta", "hello")
-    await asyncio.sleep(0.2)
-    assert lines == ["Marta shrugs it off."]
-    shrug = player.feed.recent[-1]
-    assert (shrug.kind, shrug.data["villager_id"], shrug.data["uid"]) == ("shrug", "v1", "w-1")
-
-
-@pytest.mark.asyncio
-async def test_heard_whisper_cancels_shrug():
-    player, _, lines, _, _ = make("Marta")
-    await player.whisper("Marta", "hello")
-    player.note_heard("v1", [Match("utt:w-1", {"id": "w-1"})])
-    await asyncio.sleep(0.2)
-    assert lines == []
-
-
-@pytest.mark.asyncio
-async def test_shrug_waits_out_the_cooldown():
-    player, _, lines, _, _ = make("Marta", shrug=0.1, cooldown=0.4)
-    await player.whisper("Marta", "hello")
-    await asyncio.sleep(0.3)
-    assert lines == []
-    for _ in range(40):
-        if lines:
-            break
-        await asyncio.sleep(0.05)
-    assert lines == ["Marta shrugs it off."]
-
-
-@pytest.mark.asyncio
-async def test_failed_whisper_says_so_and_leaves_no_shrug_task():
-    player, _, lines, engine, _ = make("Marta", shrug=0.05)
+async def test_failed_whisper_says_so_and_leaves_no_brush_off():
+    player, _, lines, engine, _ = make("Marta")
 
     async def boom(utterance, listener_ids):
         raise RuntimeError("contex down")
@@ -99,12 +71,13 @@ async def test_failed_whisper_says_so_and_leaves_no_shrug_task():
     assert await player.whisper("Marta", "hello") == "The whisper didn't carry; try again."
     await asyncio.sleep(0.2)
     assert lines == []
-    assert player._shrugs == {}
+    assert player._brush_offs == set()
+    assert not [e for e in player.feed.recent if e.kind == "whisper_status"]
 
 
 @pytest.mark.asyncio
 async def test_whisper_to_reaches_one_of_two_namesakes():
-    player, _, _, engine, _ = make("Bert Cole", "Bert Cole", shrug=10)
+    player, _, _, engine, _ = make("Bert Cole", "Bert Cole")
     assert (await player.whisper("Bert Cole", "hi")).startswith("Which Bert Cole?")
     assert await player.whisper_to("v2", "hi") is None
     (_, listeners), = engine.delivered
@@ -149,7 +122,7 @@ def make_hinting(writer):
     return player, lines
 
 
-async def shrug_once(player, lines):
+async def brush_off_once(player, lines):
     before = len(lines)
     await player.whisper_to("v1", "the tide tables were misprinted")
     for _ in range(100):
@@ -160,22 +133,22 @@ async def shrug_once(player, lines):
 
 
 @pytest.mark.asyncio
-async def test_shrug_brushes_off_with_unused_concerns_and_cycles():
+async def test_misses_brush_off_with_unused_concerns_and_cycles():
     writer = StubWriter("Wheel's groaning.", "Girl wants the city.", "Rats again.", "Wheel again.")
     player, lines = make_hinting(writer)
     for _ in range(4):
-        await shrug_once(player, lines)
+        await brush_off_once(player, lines)
     assert writer.concerns == [NEEDS[0], NEEDS[1], NEEDS[2], NEEDS[0]]
     assert lines[0] == 'Aldwin Miller brushes you off: "Wheel\'s groaning."'
     event = player.feed.recent[-1]
-    assert (event.kind, event.data["hint"]) == ("shrug", "Wheel again.")
+    assert (event.kind, event.data["state"], event.data["hint"]) == ("whisper_status", "brushed_off", "Wheel again.")
     assert not any(n in str(e.to_json()) for e in player.feed.recent for n in NEEDS)
 
 
 @pytest.mark.asyncio
 async def test_writer_failure_falls_back_to_a_plain_shrug():
     player, lines = make_hinting(StubWriter(RuntimeError("haiku down")))
-    assert await shrug_once(player, lines) == "Aldwin Miller shrugs it off."
+    assert await brush_off_once(player, lines) == "Aldwin Miller shrugs it off."
     assert player.feed.recent[-1].data["hint"] is None
 
 
@@ -184,27 +157,11 @@ async def test_echoed_concern_is_retried_once_then_dropped():
     echo = "Leave me be, someone to repair the water wheel is all I want."
     writer = StubWriter(echo, "Fine, the wheel is creaking.")
     player, lines = make_hinting(writer)
-    assert await shrug_once(player, lines) == 'Aldwin Miller brushes you off: "Fine, the wheel is creaking."'
+    assert await brush_off_once(player, lines) == 'Aldwin Miller brushes you off: "Fine, the wheel is creaking."'
     writer = StubWriter(echo, echo)
     player, lines = make_hinting(writer)
-    assert await shrug_once(player, lines) == "Aldwin Miller shrugs it off."
+    assert await brush_off_once(player, lines) == "Aldwin Miller shrugs it off."
     assert len(writer.concerns) == 2
-
-
-@pytest.mark.asyncio
-async def test_whisper_heard_during_generation_prints_nothing():
-    gate = asyncio.Event()
-    writer = StubWriter("Rats again.", gate=gate)
-    player, lines = make_hinting(writer)
-    await player.whisper_to("v1", "hello")
-    for _ in range(100):
-        if writer.concerns:
-            break
-        await asyncio.sleep(0.01)
-    player.note_heard("v1", [Match("utt:w-1", {"id": "w-1"})])
-    gate.set()
-    await asyncio.sleep(0.1)
-    assert lines == []
 
 
 @pytest.mark.asyncio
@@ -244,12 +201,12 @@ async def test_whisper_raises_the_recipients_suspicion_even_when_it_shrugs():
 
 @pytest.mark.asyncio
 async def test_whisper_to_a_suspicious_villager_is_refused_and_not_delivered():
-    player, _, _, engine, _ = make("Marta", shrug=0.05)
+    player, _, _, engine, _ = make("Marta")
     suspect(player)
     assert await player.whisper("Marta", "hello") == Refusal("Marta turns away from you.")
     await asyncio.sleep(0.15)
     assert engine.delivered == []
-    assert player._shrugs == {}
+    assert player._brush_offs == set()
     assert [e.kind for e in player.feed.recent] == ["refusal"]
 
 
@@ -301,3 +258,145 @@ async def test_failed_delivery_does_not_bump():
     engine.deliver = boom
     assert await player.whisper("Marta", "hello")
     assert player.engine.suspicion.score("v1") == 0.0
+
+
+def statuses(player):
+    return [e.data for e in player.feed.recent if e.kind == "whisper_status"]
+
+
+def landing(similarity, key="utt:w-1"):
+    return [Match(key, {"id": key[4:]}, similarity)]
+
+
+@pytest.mark.asyncio
+async def test_miss_is_brushed_off_at_once_then_gets_its_hint():
+    gate = asyncio.Event()
+    player, lines = make_hinting(StubWriter("Wheel's groaning.", gate=gate))
+    assert await player.whisper_to("v1", "the tide tables were misprinted") is None
+    first = statuses(player)
+    assert [s["state"] for s in first] == ["checking", "brushed_off"]
+    assert "hint" not in first[1] and first[1]["whisper_id"] == "w-1"
+    assert lines == []
+    gate.set()
+    await wait_for(lambda: len(statuses(player)) == 3)
+    last = statuses(player)[-1]
+    assert (last["state"], last["whisper_id"], last["hint"]) == ("brushed_off", "w-1", "Wheel's groaning.")
+    assert lines == ['Aldwin Miller brushes you off: "Wheel\'s groaning."']
+    assert player.engine.direct == []
+
+
+@pytest.mark.asyncio
+async def test_hit_hands_the_whisper_to_the_engine_and_reports_heard():
+    player, _, lines, engine, _ = make("Marta")
+    player.town.get("v1").needs.append("bread")
+    engine.contex = StubContex({"bread": landing(0.8)})
+    assert await player.whisper_to("v1", "the oven is cold") is None
+    (vid, match), = engine.direct
+    assert (vid, match.data_key, match.similarity) == ("v1", "utt:w-1", 0.8)
+    assert match.data == engine.delivered[0][0].to_data(0)
+    assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
+    assert "until" not in statuses(player)[-1]
+    assert lines == [] and player._brush_offs == set()
+
+
+@pytest.mark.asyncio
+async def test_busy_villager_reports_until():
+    player, _, lines, engine, _ = make("Marta")
+    player.town.get("v1").needs.append("bread")
+    engine.contex = StubContex({"bread": landing(0.8)})
+    engine.free_at = time.time() + 20
+    await player.whisper_to("v1", "the oven is cold")
+    last = statuses(player)[-1]
+    assert (last["state"], last["until"]) == ("busy", engine.free_at)
+    assert lines == []
+
+
+@pytest.mark.asyncio
+async def test_check_error_reports_not_carried_and_leaves_no_pending():
+    player, _, lines, engine, _ = make("Marta")
+    player.town.get("v1").needs.append("bread")
+    engine.contex = StubContex(error=RuntimeError("contex down"))
+    assert await player.whisper_to("v1", "the oven is cold") == "The whisper didn't carry; try again."
+    await asyncio.sleep(0.05)
+    assert engine.direct == []
+    assert [s["state"] for s in statuses(player)] == ["checking", "not_carried"]
+    assert lines == [] and player._brush_offs == set()
+    assert player.engine.suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
+
+
+@pytest.mark.asyncio
+async def test_check_uses_since_and_each_needs_threshold():
+    player, _, _, engine, _ = make("Marta")
+    player.town.get("v1").needs.extend(["bread", "flour"])
+    engine.baselines = StubBaselines(0.5, flour=0.99)
+    engine.contex = StubContex({
+        "bread": landing(None) + landing(0.95, "utt:other"),
+        "flour": landing(0.8),
+    })
+    before = time.time()
+    await player.whisper_to("v1", "the oven is cold")
+    assert engine.direct == []
+    assert statuses(player)[-1]["state"] == "brushed_off"
+    queries = engine.contex.queries
+    assert sorted(q for _, q, _ in queries) == ["bread", "flour"]
+    for project, _, kwargs in queries:
+        assert project == mind_project(player.config.session, "v1")
+        assert kwargs["top_k"] == player.config.top_k
+        lookback = player.config.check_lookback_seconds
+        assert before - lookback - 1 <= datetime.fromisoformat(kwargs["since"]).timestamp() <= time.time() - lookback
+    engine.baselines = StubBaselines(0.5, flour=0.75)
+    engine.contex.results["flour"] = landing(0.8, "utt:w-2")
+    await player.whisper_to("v1", "the oven is cold")
+    assert [(vid, m.data_key) for vid, m in engine.direct] == [("v1", "utt:w-2")]
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_check_looks_back_from_the_publish():
+    player, _, _, engine, _ = make("Marta")
+    player.town.get("v1").needs.append("bread")
+    published = []
+
+    async def deliver(utterance, listener_ids):
+        published.append(time.time())
+
+    engine.deliver = deliver
+    await player.whisper_to("v1", "the oven is cold")
+    (_, _, kwargs), = engine.contex.queries
+    since = datetime.fromisoformat(kwargs["since"]).timestamp()
+    assert since <= published[0] - player.config.check_lookback_seconds
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_hit_on_a_villager_who_just_left_reports_nothing_more():
+    player, _, lines, engine, _ = make("Marta")
+    player.town.get("v1").needs.append("bread")
+    engine.contex = StubContex({"bread": landing(0.8)})
+    engine.hear_directly = lambda vid, match: False
+    assert await player.whisper_to("v1", "the oven is cold") is None
+    assert [s["state"] for s in statuses(player)] == ["checking"]
+    assert lines == [] and player._brush_offs == set()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_brush_off_still_prints_the_plain_shrug():
+    player, _, lines, _, _ = make("Marta")
+
+    async def broken(villager_id):
+        raise RuntimeError("unexpected")
+
+    player._brush_off = broken
+    await player.whisper_to("v1", "hello")
+    await wait_for(lambda: lines)
+    assert lines == ["Marta shrugs it off."]
+
+
+@pytest.mark.asyncio
+async def test_check_queries_each_need_at_its_threshold():
+    player, _, _, engine, _ = make("Marta")
+    player.town.get("v1").needs.extend(["bread", "flour"])
+    engine.baselines = StubBaselines(0.5, flour=0.9)
+    await player.whisper_to("v1", "the oven is cold")
+    assert {q: kwargs["threshold"] for _, q, kwargs in engine.contex.queries} == {"bread": 0.5, "flour": 0.9}
+    player.close()

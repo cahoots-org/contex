@@ -13,7 +13,6 @@ class Config:
     day_seconds: float = 120.0
     memory_days: float = 2.0
     cooldown_seconds: float = 30.0
-    shrug_seconds: float = 20.0
     renew_seconds: float = 1200.0
     population: int = 100
     arrival_delay_seconds: float = 60.0
@@ -21,6 +20,8 @@ class Config:
     judge_concurrency: int = 10
     turn_concurrency: int = 20
     top_k: int = 5
+    # How far before a whisper's publish its direct check looks, absorbing clock skew with Contex's database.
+    check_lookback_seconds: float = 5.0
     # How far above a need's ordinary-talk similarity a whisper must score to match it.
     match_margin: float = 0.03
     # Where need baselines are cached; empty means the seed path plus .baselines.json.

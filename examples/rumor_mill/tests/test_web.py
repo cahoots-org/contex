@@ -8,6 +8,7 @@ from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from examples.rumor_mill.config import Config
+from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
@@ -16,6 +17,7 @@ from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
+from examples.rumor_mill.tests import helpers
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill import web
 from examples.rumor_mill.web import create_app
@@ -36,13 +38,16 @@ def receive(ws, timeout=5.0):
     return got[0]
 
 
-class FakeEngine:
+class FakeEngine(helpers.FakeEngine):
+    """Shows deliveries in the feed; every whisper lands."""
+
     def __init__(self, feed, suspicion):
+        super().__init__(suspicion)
         self.feed = feed
-        self.suspicion = suspicion
 
     async def deliver(self, utterance, listener_ids):
         self.feed.on_delivery(utterance, listener_ids)
+        self.contex.default = [Match(f"utt:{utterance.id}", {}, 0.9)]
 
 
 @pytest.fixture
@@ -52,7 +57,7 @@ def game(monkeypatch):
     town.add(Villager("v1", "Marta Hale", "herbalist", "anxious", "the miller", ["SECRET NEED"], {"v2": "rival"}), "well")
     town.add(Villager("v2", "Bert Cole", "miller", "jolly", "none", ["OTHER NEED"], {}), "mill")
     feed = Feed(lineage, town, out=None)
-    config = Config(shrug_seconds=60)
+    config = Config()
     suspicion, game = Suspicion(config, town), Game(feed)
     player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game)
     judge = SimpleNamespace(progress={"cat": 0.42}, met=set())
@@ -158,7 +163,8 @@ def test_whisper_by_id_picks_the_right_namesake(game):
     game.town.add(Villager("v3", "Bert Cole", "baker", "shy", "none", [], {}), "square")
     assert game.client.post("/api/whisper", json={"name": "Bert Cole", "text": "hi"}).status_code == 400
     assert game.client.post("/api/whisper", json={"villager_id": "v3", "text": "hi"}).json() == {"ok": True}
-    assert game.feed.recent[-1].data["target_id"] == "v3"
+    whisper, = [e for e in game.feed.recent if e.kind == "whisper"]
+    assert whisper.data["target_id"] == "v3"
 
 
 def test_usage_is_in_state_and_reaches_the_websocket(game):
@@ -170,11 +176,12 @@ def test_usage_is_in_state_and_reaches_the_websocket(game):
     assert event["usage"]["summary"] == "Estimated cost so far: $0.02 (Haiku 10k in / 2k out)"
 
 
-def test_shrug_hint_reaches_the_websocket(game):
+def test_brush_off_hint_reaches_the_websocket(game):
+    hint = "Leave off, my willow bark won't gather itself."
     with game.client.websocket_connect(WS) as ws:
-        game.feed.on_shrug("v1", "Marta Hale", "w-1", "Leave off, my willow bark won't gather itself.")
+        game.feed.on_whisper_status("w-1", "v1", "Marta Hale", "brushed_off", hint=hint)
         event = receive(ws)
-    assert (event["kind"], event["hint"]) == ("shrug", "Leave off, my willow bark won't gather itself.")
+    assert (event["kind"], event["state"], event["hint"]) == ("whisper_status", "brushed_off", hint)
     assert "NEED" not in str(event)
 
 
@@ -258,8 +265,9 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
         game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale")
         game.feed.on_heat(game.suspicion.label())
         game.game.lose(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
-        events = [receive(ws) for _ in range(5)]
-    assert [e["kind"] for e in events] == ["whisper", "refusal", "warning", "heat", "gameover"]
+        events = [receive(ws) for _ in range(7)]
+    kinds = ["whisper", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
+    assert [e["kind"] for e in events] == kinds
     assert events[-1]["reasons"][:2] == ["Marta Hale grew wary of the rumors going around.", "Bert Cole grew wary of the rumors going around."]
     responses += [game.client.get("/api/state").json(), *(game.client.get(f"/api/villagers/{v}").json() for v in scores)]
     responses += [game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).json(), *events]

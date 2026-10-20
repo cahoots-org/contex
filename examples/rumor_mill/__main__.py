@@ -50,7 +50,6 @@ async def play(web: bool) -> None:
             baselines=baselines,
         )
         player = Player(engine, town, lineage, ids, feed, config, writer, game)
-        engine.on_heard = player.note_heard
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         if not web:
             for goal in goals:

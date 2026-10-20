@@ -96,3 +96,20 @@ def test_warning_event_has_names_and_no_line_or_score():
     (event,) = feed.recent
     assert event.kind == "warning"
     assert event.data == {"speaker_id": "v1", "speaker": "Bert", "target_id": "v2", "target": "Marta"}
+
+
+def test_terminal_prints_only_the_brush_off():
+    feed, lines = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "checking")
+    feed.on_whisper_status("w-1", "v1", "Bert", "busy", until=123.0)
+    feed.on_whisper_status("w-1", "v1", "Bert", "heard")
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off")
+    assert lines == []
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Not now, the oven.")
+    feed.on_whisper_status("w-2", "v1", "Bert", "brushed_off", hint=None)
+    assert lines == ['Bert brushes you off: "Not now, the oven."', "Bert shrugs it off."]
+    busy = feed.recent[1].to_json()
+    assert busy["kind"] == "whisper_status"
+    assert {k: busy[k] for k in ("whisper_id", "villager_id", "name", "state", "until")} == {
+        "whisper_id": "w-1", "villager_id": "v1", "name": "Bert", "state": "busy", "until": 123.0,
+    }

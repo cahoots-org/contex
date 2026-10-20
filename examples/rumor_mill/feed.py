@@ -80,9 +80,16 @@ class Feed:
             goals=[[text, percent] for text, percent in summary.goals], reasons=list(summary.reasons),
         )
 
-    def on_shrug(self, villager_id: str, name: str, whisper_id: str, line: str | None = None) -> None:
-        text = f'{name} brushes you off: "{line}"' if line else f"{name} shrugs it off."
-        self.emit("shrug", text, villager_id=villager_id, name=name, uid=whisper_id, hint=line)
+    def on_whisper_status(self, whisper_id: str, villager_id: str, name: str, state: str, **extra) -> None:
+        """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint) or not_carried.
+
+        The terminal prints only a brush-off once its hint is settled.
+        """
+        text = ""
+        if state == "brushed_off" and "hint" in extra:
+            hint = extra["hint"]
+            text = f'{name} brushes you off: "{hint}"' if hint else f"{name} shrugs it off."
+        self.emit("whisper_status", text, whisper_id=whisper_id, villager_id=villager_id, name=name, state=state, **extra)
 
     def on_refusal(self, villager_id: str, name: str, line: str | None = None) -> None:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."

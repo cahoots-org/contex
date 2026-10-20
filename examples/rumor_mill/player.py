@@ -1,13 +1,16 @@
-"""The player's whispers: validation, delivery, and the shrug timer."""
+"""The player's whispers: validation, delivery, and whether each one landed."""
 
 import asyncio
 import logging
 import re
+import time
+from datetime import UTC, datetime, timedelta
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
+from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import PLAYER_ID, Town
 
@@ -16,6 +19,7 @@ log = logging.getLogger(__name__)
 MAX_WHISPER_CHARS = 500
 ECHO_WORDS = 4
 GAME_OVER = "The game is over."
+NOT_CARRIED = "The whisper didn't carry; try again."
 
 
 class Refusal(str):
@@ -44,7 +48,7 @@ class Player:
         self.config = config
         self.writer = writer
         self.game = game
-        self._shrugs: dict[tuple[str, str], asyncio.Task] = {}
+        self._brush_offs: set[asyncio.Task] = set()
         self._hinted: dict[str, set[int]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
@@ -90,41 +94,71 @@ class Player:
         utterance = Utterance(
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
         )
-        shrug = asyncio.create_task(self._shrug(target.id, target.name, uid))
-        self._shrugs[(target.id, uid)] = shrug
+        since = (datetime.now(UTC) - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
         try:
             await self.engine.deliver(utterance, [target.id])
         except Exception:
             log.exception("whisper to %s failed", target.id)
-            shrug.cancel()
-            self._shrugs.pop((target.id, uid), None)
-            return "The whisper didn't carry; try again."
+            return NOT_CARRIED
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
+        self.feed.on_whisper_status(uid, target.id, target.name, "checking")
+        hits = await self.check(target, utterance, since)
+        if hits is None:
+            self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
+            return NOT_CARRIED
+        if hits:
+            if not self.engine.hear_directly(target.id, Match(f"utt:{uid}", utterance.to_data(self.engine.day), max(hits))):
+                return None
+            until = self.engine.cooldown_ends(target.id)
+            if until > time.time():
+                self.feed.on_whisper_status(uid, target.id, target.name, "busy", until=until)
+            else:
+                self.feed.on_whisper_status(uid, target.id, target.name, "heard")
+        else:
+            self.feed.on_whisper_status(uid, target.id, target.name, "brushed_off")
+            task = asyncio.create_task(self._hint(target.id, target.name, uid))
+            self._brush_offs.add(task)
+            task.add_done_callback(self._brush_offs.discard)
         return None
+
+    async def check(self, target: Villager, utterance: Utterance, since: str) -> list[float] | None:
+        """The similarities with which the whisper clears the target's needs; empty for a miss, None on error."""
+        key = f"utt:{utterance.id}"
+        project = mind_project(self.config.session, target.id)
+        try:
+            found = await asyncio.gather(*(
+                self.engine.contex.query(
+                    project, need, top_k=self.config.top_k, since=since, threshold=self.engine.baselines.threshold(need),
+                )
+                for need in target.needs
+            ))
+        except Exception:
+            log.exception("whisper check for %s failed", target.id)
+            return None
+        return [
+            m.similarity for need, matches in zip(target.needs, found) for m in matches
+            if m.data_key == key and m.similarity is not None and self.engine.baselines.matches(need, m.similarity)
+        ]
 
     def _over(self) -> bool:
         return self.game is not None and self.game.finished.is_set()
 
-    def note_heard(self, villager_id: str, matches: list[Match]) -> None:
-        """Cancel the shrug timer when a match is a whisper to this villager."""
-        for m in matches:
-            task = self._shrugs.pop((villager_id, m.data.get("id")), None)
-            if task:
-                task.cancel()
-
     def close(self) -> None:
-        for task in self._shrugs.values():
+        for task in self._brush_offs:
             task.cancel()
-        self._shrugs.clear()
+        self._brush_offs.clear()
 
-    async def _shrug(self, villager_id: str, name: str, uid: str) -> None:
-        await asyncio.sleep(self.config.cooldown_seconds + self.config.shrug_seconds)
+    async def _hint(self, villager_id: str, name: str, uid: str) -> None:
+        """Add the brush-off line, or a plain shrug, to a missed whisper's status."""
         if self._over():
             return
-        line = await self._brush_off(villager_id)
-        if self._shrugs.pop((villager_id, uid), None) is None:
-            return
-        self.feed.on_shrug(villager_id, name, uid, line)
+        try:
+            line = await self._brush_off(villager_id)
+        except Exception:
+            log.exception("brush-off for %s failed", villager_id)
+            line = None
+        if not self._over():
+            self.feed.on_whisper_status(uid, villager_id, name, "brushed_off", hint=line)
 
     def _next_concern(self, villager_id: str) -> str | None:
         """One of the villager's needs not hinted at yet, starting over once all have been."""

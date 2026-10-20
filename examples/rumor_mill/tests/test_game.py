@@ -170,7 +170,7 @@ def test_nothing_prints_after_the_game_is_over():
 
 @pytest.mark.asyncio
 async def test_whisper_after_game_over_is_refused():
-    player, _, lines, engine, lineage = make_player("Marta", shrug=0.01)
+    player, _, lines, engine, lineage = make_player("Marta")
     player.game = Game(player.feed)
     player.game.lose(Summary("lost", [], []))
     assert await player.whisper_to("v1", "hello") == "The game is over."
@@ -179,7 +179,7 @@ async def test_whisper_after_game_over_is_refused():
     assert engine.delivered == []
     assert not lineage.is_player_rooted("w-1")
     assert engine.suspicion.score("v1") == 0.0
-    assert player._shrugs == {}
+    assert player._brush_offs == set()
     assert len(lines) == 1
 
 

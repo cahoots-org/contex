@@ -22,6 +22,8 @@ from examples.rumor_mill.writer import Writer
 log = logging.getLogger(__name__)
 
 LISTEN_RETRY_SECONDS = 1
+# How many keys that reached a turn are remembered per villager, so neither a poll nor a direct hit hears them again.
+CONSUMED_KEYS = 500
 MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
@@ -54,13 +56,15 @@ class Engine:
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source
-        self.on_heard: Callable[[str, list[Match]], None] | None = None
         self.minds: dict[str, Mind] = {}
         self.departures: asyncio.Queue[str] = asyncio.Queue()
         self._tasks: dict[str, list[asyncio.Task]] = {}
         self._read_at: dict[str, float] = {}
         self._wakes: dict[str, asyncio.Event] = {}
         self._pending: dict[str, list[Match]] = {}
+        self._last_turn: dict[str, float] = {}
+        self._turning: set[str] = set()
+        self._consumed: dict[str, dict[str, None]] = {}
         self._listen_failed: set[str] = set()
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
@@ -90,6 +94,9 @@ class Engine:
         self._read_at.pop(vid, None)
         self._wakes.pop(vid, None)
         self._pending.pop(vid, None)
+        self._last_turn.pop(vid, None)
+        self._turning.discard(vid)
+        self._consumed.pop(vid, None)
         self._listen_failed.discard(vid)
         with suppress(KeyError):
             self.town.remove(vid)
@@ -127,14 +134,29 @@ class Engine:
         heard = [vid for vid, result in zip(listeners, results) if not isinstance(result, Exception)]
         if addressed:
             for vid in heard:
-                wake = self._wakes.get(vid)
-                if wake is None:
-                    continue
-                self._pending.setdefault(vid, []).append(Match(f"utt:{utterance.id}", data))
-                wake.set()
+                self.hear_directly(vid, Match(f"utt:{utterance.id}", data))
         if listeners and not heard:
             raise next(r for r in results if isinstance(r, Exception))
         self.feed.on_delivery(utterance, heard)
+
+    def hear_directly(self, vid: str, match: Match) -> bool:
+        """Add the match to the villager's next turn and wake them; False once they have left."""
+        if vid not in self.town or vid not in self.minds:
+            return False
+        pending = self._pending.setdefault(vid, [])
+        if all(m.data_key != match.data_key for m in pending):
+            pending.append(match)
+        self._wakes[vid].set()
+        return True
+
+    def cooldown_ends(self, vid: str) -> float:
+        """Wall-clock time when the villager can next take a turn; now or earlier when free."""
+        if vid in self._turning:
+            return time.time() + self.config.cooldown_seconds
+        last = self._last_turn.get(vid)
+        if last is None:
+            return time.time()
+        return time.time() + last + self.config.cooldown_seconds - time.monotonic()
 
     def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None:
         self.suspicion.bump(vid, amount, reason, uid)
@@ -162,19 +184,21 @@ class Engine:
     async def _work(self, mind: Mind, wake: asyncio.Event) -> None:
         """Take at most one turn per cooldown, coalescing the pushes in between."""
         vid = mind.villager.id
-        last_turn = float("-inf")
         while True:
             await wake.wait()
-            await asyncio.sleep(max(0.0, last_turn + self.config.cooldown_seconds - time.monotonic()))
+            await asyncio.sleep(max(0.0, self.cooldown_ends(vid) - time.time()))
             wake.clear()
+            self._turning.add(vid)
             try:
                 if await self._turn(mind):
-                    last_turn = time.monotonic()
+                    self._last_turn[vid] = time.monotonic()
             except Exception:
                 log.exception("turn failed for %s", vid)
-                last_turn = time.monotonic()
+                self._last_turn[vid] = time.monotonic()
                 if self._pending.get(vid):
                     wake.set()
+            finally:
+                self._turning.discard(vid)
             if vid not in self.town:
                 await self.remove_villager(vid)
                 return
@@ -189,12 +213,16 @@ class Engine:
         v = mind.villager
         new = await mind.poll()
         self._read_at[v.id] = time.monotonic()
-        polled = {m.data_key for m in new}
-        new = new + [m for m in self._pending.pop(v.id, []) if m.data_key not in polled]
+        consumed = self._consumed.setdefault(v.id, {})
+        pending = self._pending.pop(v.id, [])
+        new = [m for m in new if m.data_key not in consumed]
+        new += [m for m in pending if m.data_key not in consumed and m.data_key not in mind.seen]
+        for m in new:
+            consumed[m.data_key] = None
+        while len(consumed) > CONSUMED_KEYS:
+            del consumed[next(iter(consumed))]
         if not new:
             return False
-        if self.on_heard:
-            self.on_heard(v.id, new)
         keys = {m.data_key for m in new}
         place = self.town.place_of(v.id)
         view = TurnView(
