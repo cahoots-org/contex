@@ -26,18 +26,28 @@ class Player:
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't."""
-        name, text = name.strip(), text.strip()
-        if not name or not text:
+        name = name.strip()
+        if not name or not text.strip():
             return "Whisper to whom, and what? Try: Marta: the miller waters his flour"
-        if len(text) > MAX_WHISPER_CHARS:
-            return f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters."
         matches = self.town.find(name)
         if not matches:
             gone = [v for v in self.town.departed if v.name.lower() == name.lower()]
             return f"{gone[0].name} has left town." if gone else f"No one in town is called {name}."
         if len(matches) > 1:
             return f"Which {name}? " + ", ".join(v.name for v in matches)
-        target = matches[0]
+        return await self.whisper_to(matches[0].id, text)
+
+    async def whisper_to(self, villager_id: str, text: str) -> str | None:
+        """Whisper text to the villager with this id; returns why it could not be done, if it couldn't."""
+        text = text.strip()
+        if villager_id not in self.town:
+            gone = self.town.name_of(villager_id)
+            return f"{gone} has left town." if gone else "No one in town has that id."
+        if not text:
+            return "Whisper what? Try: the miller waters his flour"
+        if len(text) > MAX_WHISPER_CHARS:
+            return f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters."
+        target = self.town.get(villager_id)
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
         utterance = Utterance(

@@ -119,3 +119,14 @@ async def test_failed_whisper_says_so_and_leaves_no_shrug_task():
     await asyncio.sleep(0.2)
     assert lines == []
     assert player._shrugs == {}
+
+
+@pytest.mark.asyncio
+async def test_whisper_to_reaches_one_of_two_namesakes():
+    player, _, _, engine, _ = make("Bert Cole", "Bert Cole", shrug=10)
+    assert (await player.whisper("Bert Cole", "hi")).startswith("Which Bert Cole?")
+    assert await player.whisper_to("v2", "hi") is None
+    (_, listeners), = engine.delivered
+    assert listeners == ["v2"]
+    assert await player.whisper_to("v9", "hi") == "No one in town has that id."
+    player.close()

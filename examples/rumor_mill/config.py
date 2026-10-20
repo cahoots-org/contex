@@ -26,6 +26,7 @@ class Config:
     threshold: float = 0.815
     haiku_model: str = "claude-haiku-4-5-20251001"
     seed_path: str = "rumor_mill_seed.json"
+    web_port: int = 8765
 
     @property
     def memory_seconds(self) -> int:

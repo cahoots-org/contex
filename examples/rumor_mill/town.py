@@ -45,6 +45,11 @@ class Town:
     def get(self, vid: str) -> Villager:
         return self._villagers[vid]
 
+    def name_of(self, vid: str) -> str | None:
+        """The villager's name, even after they left town."""
+        v = self._villagers.get(vid) or next((d for d in self.departed if d.id == vid), None)
+        return v.name if v else None
+
     def place_of(self, vid: str) -> str:
         return self._places[vid]
 

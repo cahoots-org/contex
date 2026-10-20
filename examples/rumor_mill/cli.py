@@ -35,13 +35,6 @@ def parse_command(line: str) -> Command:
     return Command("unknown")
 
 
-def _name(town: Town, vid: str) -> str:
-    try:
-        return town.get(vid).name
-    except KeyError:
-        return next((v.name for v in town.departed if v.id == vid), vid)
-
-
 def _inspect(town: Town, name: str) -> list[str]:
     found = town.find(name)
     if not found:
@@ -49,7 +42,7 @@ def _inspect(town: Town, name: str) -> list[str]:
     if len(found) > 1:
         return [f"Which {name}? " + ", ".join(v.name for v in found)]
     v = found[0]
-    relations = ", ".join(f"{_name(town, rid)} ({kind})" for rid, kind in v.relationships.items())
+    relations = ", ".join(f"{town.name_of(rid) or rid} ({kind})" for rid, kind in v.relationships.items())
     return [
         f"{v.name}, {v.occupation}",
         f"Personality: {v.personality}",
