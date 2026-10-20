@@ -55,7 +55,7 @@ def _inspect(town: Town, name: str) -> list[str]:
     ]
 
 
-async def repl(player: Player, town: Town, feed) -> None:
+async def repl(player: Player, town: Town, feed, goals=(), progress=None) -> None:
     """Read commands until quit or end of input; stdin is read off the event loop."""
     feed.say(HELP)
     while True:
@@ -74,6 +74,9 @@ async def repl(player: Player, town: Town, feed) -> None:
             for out in _inspect(town, cmd.name):
                 feed.say(out)
         elif cmd.kind == "goals":
-            feed.say("No goals yet.")
+            for goal in goals:
+                feed.say(f"{goal.text}: {int((progress or {}).get(goal.id, 0.0) * 100)}%")
+            if not goals:
+                feed.say("No goals yet.")
         elif line.strip():
             feed.say(HELP)

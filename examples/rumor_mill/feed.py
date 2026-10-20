@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 
+from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.town import PLAYER_ID, Town
@@ -15,6 +16,9 @@ class Feed:
 
     def say(self, line: str) -> None:
         self.out(line)
+
+    def on_progress(self, goal: Goal, fraction: float) -> None:
+        self.say(f'Goal "{goal.text}": {int(fraction * 100)}%')
 
     def on_delivery(self, utterance: Utterance, listener_ids: list[str]) -> None:
         """Print one line for a delivery batch of a player-rooted rumor."""

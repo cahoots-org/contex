@@ -169,9 +169,11 @@ async def load_or_generate(
 
 async def generate_newcomer(
     writer: Writer, existing: list[Villager], rng: random.Random,
+    departed: list[Villager] = (),
 ) -> Villager:
-    """A new villager related to one or two existing ones; the existing are untouched."""
-    taken = "Do not reuse these names: " + ", ".join(v.name for v in existing[-30:]) + "."
+    """A new villager related to one or two living ones; departed ones only reserve their id and name."""
+    everyone = [*departed, *existing]
+    taken = "Do not reuse these names: " + ", ".join(v.name for v in everyone[-30:]) + "."
     text = await writer.complete(SYSTEM, PROMPT.format(n=1, taken=taken), max_tokens=800)
     raw = extract_json(text)
     if isinstance(raw, list):
@@ -179,7 +181,7 @@ async def generate_newcomer(
     raw = _prepare(raw)
     if not _valid(raw):
         raise ValueError(f"newcomer reply is not a valid villager: {text[:200]!r}")
-    last = max(int(v.id[1:]) for v in existing) if existing else 0
+    last = max((int(v.id[1:]) for v in everyone), default=0)
     newcomer = _villager(f"v{last + 1:03d}", raw)
     for other in rng.sample(existing, min(rng.randint(1, 2), len(existing))):
         newcomer.relationships[other.id] = rng.choice(

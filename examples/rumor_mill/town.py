@@ -34,6 +34,14 @@ class Town:
         self.departed.append(v)
         return v
 
+    @property
+    def villagers(self) -> list[Villager]:
+        return list(self._villagers.values())
+
+    @property
+    def groups(self) -> list[Group]:
+        return list(self._groups.values())
+
     def get(self, vid: str) -> Villager:
         return self._villagers[vid]
 

@@ -17,6 +17,7 @@ class Config:
     arrival_delay_seconds: float = 60.0
     judge_every_days: float = 1.0
     judge_concurrency: int = 10
+    judge_threshold: float = 0.6
     turn_concurrency: int = 20
     top_k: int = 5
     threshold: float | None = None

@@ -18,3 +18,8 @@ def test_from_env_threshold(monkeypatch):
     monkeypatch.delenv("RUMOR_MILL_CONTEX_URL", raising=False)
     monkeypatch.setenv("RUMOR_MILL_THRESHOLD", "0.4")
     assert Config.from_env().threshold == 0.4
+
+
+def test_from_env_judge_threshold(monkeypatch):
+    monkeypatch.setenv("RUMOR_MILL_JUDGE_THRESHOLD", "0.7")
+    assert Config.from_env().judge_threshold == 0.7

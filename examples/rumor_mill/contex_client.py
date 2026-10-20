@@ -75,8 +75,12 @@ class ContexClient:
         raw = json.loads(result.contents[0].text)
         return {need: [Match(m["data_key"], m["data"]) for m in matches] for need, matches in raw.items()}
 
-    async def query(self, project_id: str, query: str, top_k: int = 3) -> list[Match]:
-        found = await self._tool("contex_query", {"project_id": project_id, "query": query, "top_k": top_k})
+    async def query(self, project_id: str, query: str, top_k: int = 3,
+                    threshold: float | None = None) -> list[Match]:
+        args = {"project_id": project_id, "query": query, "top_k": top_k}
+        if threshold is not None:
+            args["threshold"] = threshold
+        found = await self._tool("contex_query", args)
         return [Match(m["data_key"], m["data"]) for m in found["matches"]]
 
     async def listen(self, uri: str) -> AsyncIterator[None]:

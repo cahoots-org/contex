@@ -14,8 +14,11 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.goals import deal
+from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.town import GATE, PLACES, Town
 from examples.rumor_mill.town_gen import load_or_generate
 from examples.rumor_mill.writer import Writer
@@ -29,15 +32,25 @@ async def play() -> None:
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town)
     async with ContexClient(config.contex_url) as contex:
-        engine = Engine(config, town, contex, typesafe_sdk.AsyncTypeSafeClient(), writer, lineage, ids, feed)
+        jev = typesafe_sdk.AsyncTypeSafeClient()
+        engine = Engine(config, town, contex, jev, writer, lineage, ids, feed)
         player = Player(engine, town, lineage, ids, feed, config)
         engine.on_heard = player.note_heard
+        replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
+        goals = deal(rng)
+        judge = Judge(contex, jev, town, config, feed)
+        for goal in goals:
+            feed.say(f"Goal: {goal.text}")
+        judging = asyncio.create_task(judge.run(goals))
         places = [p for p in PLACES if p != GATE]
         try:
             await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
             await engine.run()
-            await repl(player, town, feed)
+            await repl(player, town, feed, goals, judge.progress)
         finally:
+            replenisher.cancel()
+            judging.cancel()
+            await asyncio.gather(replenisher, judging, return_exceptions=True)
             player.close()
             await engine.stop()
 

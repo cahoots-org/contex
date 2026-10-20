@@ -106,3 +106,11 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
             await turned.wait()
         await engine.stop()
     assert woke == [("v1", ["utt:u-1"])]
+
+
+async def test_query_threshold_filters_unrelated_matches():
+    async with ContexClient(URL) as client:
+        pid = project()
+        await client.publish(pid, "u1", {"text": "the oven at the baker's shop is cold"})
+        assert await client.query(pid, "quantum chromodynamics lecture", top_k=3)
+        assert not await client.query(pid, "quantum chromodynamics lecture", top_k=3, threshold=0.99)

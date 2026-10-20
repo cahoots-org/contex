@@ -45,6 +45,7 @@ class Engine:
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config))
         self.on_heard: Callable[[str, list[Match]], None] | None = None
         self.minds: dict[str, Mind] = {}
+        self.departures: asyncio.Queue[str] = asyncio.Queue()
         self._tasks: dict[str, list[asyncio.Task]] = {}
         self._read_at: dict[str, float] = {}
         self._renewal: asyncio.Task | None = None
@@ -69,7 +70,8 @@ class Engine:
 
     async def remove_villager(self, vid: str) -> None:
         """Stop the villager's tasks; the subscription is left to expire."""
-        self.minds.pop(vid, None)
+        if self.minds.pop(vid, None) is not None:
+            self.departures.put_nowait(vid)
         self._read_at.pop(vid, None)
         with suppress(KeyError):
             self.town.remove(vid)

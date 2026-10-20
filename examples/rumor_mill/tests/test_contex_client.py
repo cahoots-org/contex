@@ -36,3 +36,19 @@ class FakeSession:
 async def test_listen_yields_once_on_connect_then_per_push(monkeypatch):
     monkeypatch.setattr(contex_client, "Client", FakeSession)
     assert len([_ async for _ in ContexClient("url").listen("uri")]) == 3
+
+
+@pytest.mark.asyncio
+async def test_query_sends_threshold_only_when_set():
+    sent = []
+
+    async def tool(name, args):
+        sent.append(args)
+        return {"matches": []}
+
+    client = ContexClient("url")
+    client._tool = tool
+    await client.query("p", "q")
+    await client.query("p", "q", threshold=0.6)
+    assert "threshold" not in sent[0]
+    assert sent[1]["threshold"] == 0.6

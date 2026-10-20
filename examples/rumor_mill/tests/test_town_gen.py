@@ -160,3 +160,15 @@ async def test_one_sentence_needs_string_is_rejected():
         await generate_villagers(writer, 1, random.Random(1))
 
     assert writer.calls == MAX_BATCH_ATTEMPTS
+
+
+@pytest.mark.asyncio
+async def test_newcomer_relates_only_to_living_and_keeps_ids_unique():
+    living, gone = ring(3), [Villager(f"v{i:03d}", f"Gone{i}", "baker", "x", "y", [], {}) for i in range(10, 60)]
+
+    for seed in range(20):
+        newcomer = await generate_newcomer(
+            StubWriter(json.dumps(entry(99))), living, random.Random(seed), departed=gone,
+        )
+        assert newcomer.id == "v060"
+        assert set(newcomer.relationships) <= {v.id for v in living}

@@ -68,3 +68,12 @@ def test_utterance_to_data_is_one_sentence():
     assert d["text"] == "Bert said at the tavern: the oven is cold"
     assert d["id"] == "u-1" and d["parent"] == "w-1"
     assert d["speaker"] == "a" and d["place"] == "tavern" and d["day"] == 3
+
+
+def test_villagers_lists_current_roster():
+    town = Town()
+    a, b = v("v1", "Ann"), v("v2", "Bob")
+    town.add(a)
+    town.add(b)
+    town.remove("v1")
+    assert town.villagers == [b]
