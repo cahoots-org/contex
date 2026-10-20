@@ -8,7 +8,7 @@ from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.suspicion import Suspicion
-from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, echoes
+from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 
@@ -258,7 +258,7 @@ async def test_whisper_raises_the_recipients_suspicion_even_when_it_shrugs():
 async def test_whisper_to_a_suspicious_villager_is_refused_and_not_delivered():
     player, _, _, engine, _ = make("Marta", shrug=0.05)
     suspect(player)
-    assert await player.whisper("Marta", "hello") is None
+    assert await player.whisper("Marta", "hello") == Refusal("Marta turns away from you.")
     await asyncio.sleep(0.15)
     assert engine.delivered == []
     assert player._shrugs == {}
@@ -283,11 +283,11 @@ async def test_refusal_falls_back_without_a_line_when_haiku_fails():
     player, _, lines, _, _ = make("Marta")
     player.writer = StubWriter(RuntimeError("haiku down"))
     suspect(player)
-    assert await player.whisper("Marta", "hello") is None
+    assert isinstance(await player.whisper("Marta", "hello"), Refusal)
     assert lines == ["Marta turns away from you."]
     assert player.feed.recent[-1].data["line"] is None
     player.writer = None
-    assert await player.whisper("Marta", "hello") is None
+    assert isinstance(await player.whisper("Marta", "hello"), Refusal)
     assert lines[-1] == "Marta turns away from you."
 
 

@@ -223,6 +223,15 @@ def test_whisper_after_game_over_is_refused(game):
     assert (response.status_code, response.json()) == (400, {"error": "The game is over."})
 
 
+def test_a_refused_whisper_is_an_error_with_the_sentence_and_nothing_else(game):
+    game.suspicion.bump("v1", game.config.refuse_threshold, "whispered to them directly")
+    with game.client.websocket_connect(WS) as ws:
+        response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"})
+        event = receive(ws)
+    assert (response.status_code, response.json()) == (409, {"error": "Marta Hale turns away from you."})
+    assert (event["kind"], event["name"], event["line"]) == ("refusal", "Marta Hale", None)
+
+
 SUSPICION_KEYS = ("susp", "score", "level", "evidence", "amount", "heat", "game", "summary", "reasons", "label")
 
 

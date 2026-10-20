@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.player import Refusal
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import Town
 
@@ -46,6 +48,20 @@ def village():
     town.add(Villager("v1", "Marta", "baker", "calm", "none", [], {}))
     feed = Feed(Lineage(), town, out=out.append)
     return town, feed, out
+
+
+@pytest.mark.asyncio
+async def test_a_refused_whisper_prints_once(monkeypatch):
+    town, feed, out = village()
+
+    async def refuse(name, text):
+        feed.on_refusal("v1", "Marta", "Not another word.")
+        return Refusal("Marta turns away from you.")
+
+    player = SimpleNamespace(whisper=refuse)
+    monkeypatch.setattr(cli, "_readline", scripted(["Marta: hi\n", ""]))
+    await cli.repl(player, town, feed)
+    assert [line for line in out if "turns away" in line] == ['Marta turns away from you: "Not another word."']
 
 
 @pytest.mark.asyncio

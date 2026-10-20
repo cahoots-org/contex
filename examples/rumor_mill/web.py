@@ -16,7 +16,7 @@ from starlette.websockets import WebSocketClose
 from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
-from examples.rumor_mill.player import Player
+from examples.rumor_mill.player import Player, Refusal
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.usage import Usage
@@ -179,7 +179,7 @@ def create_app(
         if not all(isinstance(x, str) for x in (text, name)) or not isinstance(vid, str | None):
             return _error(400, BAD_WHISPER)
         if problem := await (player.whisper_to(vid, text) if vid else player.whisper(name, text)):
-            return _error(400, problem)
+            return _error(409 if isinstance(problem, Refusal) else 400, problem)
         return {"ok": True}
 
     @app.websocket("/ws")

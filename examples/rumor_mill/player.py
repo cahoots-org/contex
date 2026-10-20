@@ -18,6 +18,10 @@ ECHO_WORDS = 4
 GAME_OVER = "The game is over."
 
 
+class Refusal(str):
+    """The message for a whisper a suspicious villager turned away; the feed has already shown it."""
+
+
 def _runs(text: str) -> set[tuple[str, ...]]:
     words = re.findall(r"[a-z0-9']+", text.lower())
     return {tuple(words[i:i + ECHO_WORDS]) for i in range(len(words) - ECHO_WORDS + 1)}
@@ -44,7 +48,10 @@ class Player:
         self._hinted: dict[str, set[int]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
-        """Whisper text to the villager called name; returns why it could not be done, if it couldn't."""
+        """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
+
+        A villager turning the whisper away comes back as a Refusal.
+        """
         if self._over():
             return GAME_OVER
         name = name.strip()
@@ -59,7 +66,10 @@ class Player:
         return await self.whisper_to(matches[0].id, text)
 
     async def whisper_to(self, villager_id: str, text: str) -> str | None:
-        """Whisper text to the villager with this id; returns why it could not be done, if it couldn't."""
+        """Whisper text to the villager with this id; returns why it could not be done, if it couldn't.
+
+        A villager turning the whisper away comes back as a Refusal.
+        """
         if self._over():
             return GAME_OVER
         text = text.strip()
@@ -74,7 +84,7 @@ class Player:
         if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
             self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
             self.feed.on_refusal(target.id, target.name, await self._turn_away(target))
-            return None
+            return Refusal(f"{target.name} turns away from you.")
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
         utterance = Utterance(

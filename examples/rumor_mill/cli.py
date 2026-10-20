@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.player import Player
+from examples.rumor_mill.player import Player, Refusal
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import Town
 
@@ -93,7 +93,8 @@ async def repl(
         if cmd.kind == "quit":
             return
         if cmd.kind == "whisper":
-            if problem := await player.whisper(cmd.name, cmd.text):
+            problem = await player.whisper(cmd.name, cmd.text)
+            if problem and not isinstance(problem, Refusal):
                 feed.say(problem)
         elif cmd.kind == "villagers":
             for v in sorted(town.find(""), key=lambda v: v.name):
