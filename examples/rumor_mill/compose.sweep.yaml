@@ -1,0 +1,6 @@
+# Shortens Contex's forgetting sweep so villagers lose old memories sooner.
+# Use: docker compose -f docker-compose.yml -f examples/rumor_mill/compose.sweep.yaml up
+services:
+  contex:
+    environment:
+      - RECONCILE_SWEEP_SECONDS=30
