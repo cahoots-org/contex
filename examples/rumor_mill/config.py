@@ -34,7 +34,7 @@ class Config:
     jev_output_per_mtok: float = 0.0
     suspicion_whisper_bump: float = 0.12
     suspicion_hear_max: float = 0.25
-    suspicion_decay_per_day: float = 0.03
+    suspicion_decay_per_day: float = 0.05
     warn_threshold: float = 0.4
     refuse_threshold: float = 0.7
     # Weighted town suspicion at which villagers start moving to run the newcomer out.
