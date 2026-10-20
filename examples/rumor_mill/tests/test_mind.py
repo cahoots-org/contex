@@ -4,7 +4,7 @@ from examples.rumor_mill import mind as mind_mod
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match, SubscriptionGone
-from examples.rumor_mill.mind import Mind, mind_project
+from examples.rumor_mill.mind import WAKE_THRESHOLD, Mind, mind_project
 from examples.rumor_mill.models import Villager
 
 
@@ -70,12 +70,12 @@ async def test_forgotten_then_returned_item_is_new_again():
 @pytest.mark.asyncio
 async def test_subscribe_passes_memory_window():
     client = StubClient([{}])
-    config = Config(day_seconds=100, memory_days=2, top_k=7, threshold=0.4)
+    config = Config(day_seconds=100, memory_days=2, top_k=7)
     await Mind(client, villager(), config).open()
     project, needs, kwargs = client.subscribes[0]
     assert project == mind_project(config.session, "v1")
     assert needs == ["bread prices"]
-    assert kwargs == {"max_age_seconds": 200, "top_k": 7, "threshold": 0.4}
+    assert kwargs == {"max_age_seconds": 200, "top_k": 7, "threshold": WAKE_THRESHOLD}
 
 
 @pytest.mark.asyncio

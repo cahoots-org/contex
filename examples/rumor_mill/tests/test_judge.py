@@ -6,7 +6,7 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.goals import Goal
-from examples.rumor_mill.judge import Judge
+from examples.rumor_mill.judge import EVIDENCE_THRESHOLD, Judge
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.town import Town
@@ -68,7 +68,7 @@ async def test_villagers_without_matches_cost_no_jev_calls():
     judge, contex, jev, _, _ = make(n=4, believers=1)
     await judge.check(BELIEF)
     assert len(jev.calls) == 1
-    assert contex.thresholds == [CONFIG.judge_threshold] * 4
+    assert contex.thresholds == [EVIDENCE_THRESHOLD] * 4
 
 
 @pytest.mark.asyncio

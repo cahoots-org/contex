@@ -19,11 +19,12 @@ class Config:
     arrival_delay_seconds: float = 60.0
     judge_every_days: float = 1.0
     judge_concurrency: int = 10
-    judge_threshold: float = 0.75
     turn_concurrency: int = 20
     top_k: int = 5
-    # Cosine similarity a memory needs to one of a villager's needs to wake them.
-    threshold: float = 0.815
+    # How far above a need's ordinary-talk similarity a whisper must score to match it.
+    match_margin: float = 0.03
+    # Where need baselines are cached; empty means the seed path plus .baselines.json.
+    calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"
     seed_path: str = "rumor_mill_seed.json"
     web_port: int = 8765

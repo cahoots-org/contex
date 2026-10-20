@@ -9,6 +9,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match, SubscriptionG
 from examples.rumor_mill.models import Villager
 
 REOPEN_PAUSE_SECONDS = 1
+WAKE_THRESHOLD = 0.815
 
 
 def mind_project(session: str, villager_id: str) -> str:
@@ -35,7 +36,7 @@ class Mind:
         self.uri = await self.contex.subscribe(
             self.project, self.villager.needs,
             max_age_seconds=self.config.memory_seconds,
-            top_k=self.config.top_k, threshold=self.config.threshold,
+            top_k=self.config.top_k, threshold=WAKE_THRESHOLD,
         )
 
     async def hear(self, key: str, data: dict) -> None:

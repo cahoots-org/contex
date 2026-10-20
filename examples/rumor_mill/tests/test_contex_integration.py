@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
+from examples.rumor_mill import mind as mind_mod
 from examples.rumor_mill.actions import IGNORE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
@@ -91,8 +92,9 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
 
     monkeypatch.setattr(engine_mod, "decide", decide)
     monkeypatch.setattr(engine_mod, "act", act)
+    monkeypatch.setattr(mind_mod, "WAKE_THRESHOLD", 0.5)
     async with ContexClient(URL) as client:
-        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1, threshold=0.5)
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1)
         engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed())
         ann = Villager("v1", "Ann", "baker", "kind", "none", ["anything about my bakery"], {})
         early = Mind(client, ann, config)

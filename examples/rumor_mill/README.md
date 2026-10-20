@@ -20,7 +20,7 @@ backwards-flying birds can end up as a ploughman's doomsday watch society.
 | `subscriptions/listen` | one stream per villager; a push is the only thing that wakes them |
 | reading the subscription resource | the villager's memories each turn, and lease renewal for quiet villagers |
 | `contex_query` | the judge reads minds and group records to score goals |
-| semantic matching | a whisper wakes a villager only if it is within `threshold` of one of their needs, and a rumor still reaches people after it is retold in other words |
+| semantic matching | a whisper wakes a villager only if it scores clearly above ordinary village talk for one of their needs, and a rumor still reaches people after it is retold in other words |
 | scale | 100 projects, 100 subscriptions, and 100 listen streams at once |
 
 A villager never hears their own words, so speaking never wakes the speaker.
@@ -189,13 +189,12 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_POPULATION` | `100` | village size; newcomers arrive to keep it there |
 | `RUMOR_MILL_DAY_SECONDS` | `120` | length of a game day |
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
-| `RUMOR_MILL_THRESHOLD` | `0.815` | cosine similarity to a need that wakes a villager |
+| `RUMOR_MILL_MATCH_MARGIN` | `0.03` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
 | `RUMOR_MILL_SHRUG_SECONDS` | `20` | extra seconds after the cooldown before a whisper that woke no one is reported |
 | `RUMOR_MILL_ARRIVAL_DELAY_SECONDS` | `60` | wait after a departure before newcomers arrive |
 | `RUMOR_MILL_JUDGE_EVERY_DAYS` | `1` | days between goal checks |
-| `RUMOR_MILL_JUDGE_THRESHOLD` | `0.75` | similarity a memory needs to a goal's evidence to be judged |
 | `RUMOR_MILL_JUDGE_CONCURRENCY` | `10` | goal-check calls in flight |
 | `RUMOR_MILL_TURN_CONCURRENCY` | `20` | villager turns in flight |
 | `RUMOR_MILL_RENEW_SECONDS` | `1200` | read quiet villagers' subscriptions this often so they don't expire |
@@ -211,12 +210,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_RUN_OUT_CHECKS` | `3` | checks in a row at that level before you are run out |
 | `RUMOR_MILL_SUSPICION_CHECK_DAYS` | `0.25` | game days between mood checks |
 
-`THRESHOLD` matters most. The embedding model scores most pairs of sentences
-between 0.74 and 0.86. In two generated 25-villager towns, whispers written to
-touch a villager's needs scored a median of 0.834 against their closest need and
-unrelated ones 0.794. At 0.815, 21 of 25 on-topic whispers landed and unrelated
-ones such as "the tide tables were misprinted" landed on nobody. Lower it and
-villagers react to more of what they hear; raise it and the village goes quiet.
+`MATCH_MARGIN` matters most. The embedding model scores most pairs of sentences between 0.74 and 0.86, and each need sits at its own level, so a need matches a whisper only when it scores the margin above that need's average against ordinary village sentences. Lower it and villagers react to more of what they hear; raise it and the village goes quiet.
 
 The mood is a mean over the whole village, so the same whispers count for more
 in a small one. In a village of 100, a player who whispered to someone

@@ -16,6 +16,7 @@ from examples.rumor_mill.town import Town
 log = logging.getLogger(__name__)
 
 NO_QUALIFYING_GROUP_CAP = 0.99
+EVIDENCE_THRESHOLD = 0.75
 
 
 def _text(match: Match) -> str:
@@ -47,7 +48,7 @@ class Judge:
             try:
                 project = mind_project(self.config.session, villager.id)
                 matches = await self.contex.query(
-                    project, goal.evidence[0], top_k=3, threshold=self.config.judge_threshold,
+                    project, goal.evidence[0], top_k=3, threshold=EVIDENCE_THRESHOLD,
                     max_age_seconds=self.config.memory_seconds,
                 )
                 if not matches:
@@ -72,7 +73,7 @@ class Judge:
             try:
                 matches = await self.contex.query(
                     group_project(self.config.session, gid), goal.evidence[0], top_k=1,
-                    threshold=self.config.judge_threshold,
+                    threshold=EVIDENCE_THRESHOLD,
                 )
                 record = next((m for m in matches if m.data_key == f"group:{gid}"), None)
                 return record is not None and await _yes(self.jev, {"group": record.data}, goal.creed_question)
