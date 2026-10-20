@@ -95,7 +95,7 @@ to guess what someone cares about, but not their needs.
 A shrug is a hint. The villager brushes you off in their own voice and grumbles
 about something they care about, a different concern each time until they run
 out and start over, so a miss tells you where to aim next. If the line can't be
-written, the feed falls back to the plain shrug.
+written, the whisper just says it was brushed off.
 
 The feed shows each hop of a rumor you started, who told whom and in what
 words, and a line when a goal's percent changes. Goals are checked once a game
@@ -136,9 +136,38 @@ whispers are refused, and you restart the program to play again.
 
 ## The browser page
 
-The page has the feed, a whisper box with a villager picker, your goals, and
-the villagers grouped by where they are. Click a villager to see their card and
-whisper to them. Each hop of your rumor is indented once per retelling, says
+The page has the feed, a whisper box, your goals, and the village.
+
+The village is one tile per place, each with how many villagers are there and
+their faces. One tile is open at a time and lists everyone there: face, name,
+trade, what you know about them, and the last line they brushed you off with.
+The page remembers which tile you opened. The search box above the tiles finds
+villagers by name, trade, or place: it highlights matching faces and opens the
+place where the best match is. Escape clears it. The whisper box offers the
+same matches as you type; arrow keys and Enter pick one.
+
+Click a face, or press Enter on a name, to open the villager's card: occupation,
+personality, grudge, relationships, and what you know. "Whisper to" fills the
+whisper box with their name. Escape closes the card.
+
+A face is generated from the villager's id and trade, so the same villager has
+the same face every game. A badge on the face says what you know:
+
+| Badge | Means |
+|---|---|
+| ✓ | took the bait: passed your whisper on |
+| ○ | kept it quiet: heard you and told no one |
+| – | brushed you off: your whisper missed what they care about |
+| ! | wary of you: turned you away or warned others about you |
+| … | listening: you whispered to them and nothing has come of it yet |
+
+The open tile and the card say the same in words. Each whisper in the feed
+shows where it stands, updated as it changes: checking, busy (with the seconds
+until they hear you), heard, took the bait (and how many people they told),
+kept it quiet, warned others, brushed you off (with their line once it is
+written), or didn't carry (the game couldn't deliver or check it).
+
+Each hop of your rumor is indented once per retelling, says
 whom the speaker heard it from, and highlights the words that differ from what
 they heard. When most of it was reworded, it underlines the words that
 survived instead. Hover or click a hop to light up its path back to your whisper;

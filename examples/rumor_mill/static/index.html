@@ -26,6 +26,12 @@
   --accent: var(--woad);
   --mark: var(--weld);
   --on-accent: #ffffff;
+  --face-edge: rgb(35 48 46 / .3);
+  --bait: #3f7d37;
+  --off: #8a5f0f;
+  --wary: #a33b3b;
+  --wait: #2b5d8a;
+  --kept: #5a6152;
   --rumor: "Alegreya", Georgia, "Times New Roman", serif;
   --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
@@ -42,6 +48,7 @@
     --edge: #6b7a7c;
     --danger: #f19a9a;
     --on-accent: #10202f;
+    --face-edge: rgb(255 255 255 / .3);
   }
 }
 * { box-sizing: border-box; }
@@ -164,7 +171,7 @@ mark.kept {
   padding: .75rem 1.25rem 1rem;
   background: var(--bg);
 }
-.composer form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.composer form { position: relative; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .composer label { font-size: .875rem; color: var(--muted); }
 input[type="text"], input[type="search"] {
   background: var(--panel);
@@ -206,20 +213,62 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .met .bar { color: var(--accent); font-weight: 700; }
 .heat { margin: 0; font: italic 1rem/1.4 var(--rumor); }
 #search { width: 100%; }
-.people { list-style: none; margin: 0; padding: 0; }
-.people button {
-  display: block; width: 100%; text-align: left;
-  background: none; border: 0; border-radius: 4px; padding: .2rem .35rem; margin: 0 -.35rem;
-  cursor: pointer;
+.find-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .5rem; margin-top: .25rem; }
+.tile { background: var(--bg); border: 1px solid var(--rail); border-radius: 6px; padding: .35rem .5rem .45rem; min-width: 0; }
+.tile.open { grid-column: 1 / -1; }
+.place {
+  display: flex; justify-content: space-between; gap: .5rem; width: 100%;
+  background: none; border: 0; padding: 0; text-align: left; font-size: .875rem; font-weight: 700; cursor: pointer;
 }
-.people button:hover, .people button[aria-current="true"] { background: var(--bg); }
-.people small { color: var(--muted); }
+.place span { color: var(--muted); font-weight: 400; }
+.faces { display: flex; flex-wrap: wrap; gap: 5px; margin-top: .3rem; }
+.pick, .more { background: none; border: 0; padding: 0; border-radius: 5px; cursor: pointer; }
+.more { font-size: .75rem; color: var(--muted); padding: 0 .2rem; }
+.face { position: relative; display: inline-block; flex: none; line-height: 0; }
+.face canvas {
+  width: 24px; height: 24px; border-radius: 5px; image-rendering: pixelated;
+  outline: 1px solid var(--face-edge); outline-offset: -1px;
+}
+.face.big canvas { width: 32px; height: 32px; border-radius: 6px; }
+.badge {
+  position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; border-radius: 50%;
+  display: inline-grid; place-items: center; font: 700 10px/1 var(--ui); color: #fff;
+  border: 2px solid var(--bg); box-sizing: content-box;
+}
+.badge[data-s="took_the_bait"] { background: var(--bait); }
+.badge[data-s="brushed_off"] { background: var(--off); }
+.badge[data-s="wary"] { background: var(--wary); }
+.badge[data-s="listening"] { background: var(--wait); font-size: 13px; letter-spacing: -1px; line-height: .5; }
+.badge[data-s="kept"] { background: var(--kept); }
+.searching .pick:not(.hit) { opacity: .35; }
+.pick.hit canvas { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rows { list-style: none; margin: .3rem 0 0; padding: 0; max-height: min(18rem, 40dvh); overflow-y: auto; }
+.row {
+  display: flex; gap: .6rem; align-items: flex-start; width: 100%; text-align: left;
+  background: none; border: 0; border-top: 1px solid var(--rail); padding: .4rem .25rem; cursor: pointer;
+}
+.row:hover, .row[aria-current="true"] { background: var(--panel); }
+.who { min-width: 0; font-size: .875rem; line-height: 1.35; overflow-wrap: anywhere; }
+.who small { color: var(--muted); }
+.who .st { font-size: .8rem; color: var(--muted); }
+.scroll-more { margin: .2rem 0 0; min-height: 1rem; font-size: .75rem; color: var(--muted); text-align: center; }
+.who .hint { display: block; font: italic .95rem/1.35 var(--rumor); color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: .25rem .75rem; margin: .6rem 0 0; font-size: .75rem; color: var(--muted); }
+.legend .badge, .chip .badge { position: static; vertical-align: -.2rem; margin-right: .2rem; }
+.chip {
+  display: inline-block; margin: .3rem 0 0; padding: .1rem .6rem .1rem .3rem; border-radius: 1rem;
+  background: var(--panel); font-size: .85rem; overflow-wrap: anywhere;
+}
+.chip .badge { border-color: var(--panel); }
+.chip[data-state="checking"], .chip[data-state="not_carried"] { padding-left: .6rem; color: var(--muted); }
 .card {
-  background: var(--bg);
-  border-radius: 6px;
-  padding: .75rem .9rem;
-  margin: .75rem 0;
+  position: fixed; top: var(--top, 4rem); right: calc(20rem + .75rem); z-index: 3;
+  width: 19rem; max-height: calc(100dvh - 2rem); overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--edge); border-radius: 8px; padding: .75rem .9rem;
+  box-shadow: 0 6px 24px rgb(0 0 0 / .2);
 }
+.card[hidden] { display: none; }
 .card h3 { color: var(--ink); font-size: 1.05rem; font-weight: 700; margin: 0; }
 .card p { margin: .35rem 0; font-size: .9rem; }
 .card dl { margin: .35rem 0; font-size: .9rem; }
@@ -227,6 +276,15 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dd { margin: 0 0 .35rem; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.suggest {
+  position: absolute; bottom: 100%; left: 0; z-index: 3; width: min(26rem, 100%); max-height: 18rem; overflow-y: auto;
+  list-style: none; margin: 0 0 .3rem; padding: .25rem; background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .15);
+}
+.suggest[hidden] { display: none; }
+.suggest li { display: flex; gap: .6rem; align-items: flex-start; padding: .3rem .4rem; border-radius: 4px; cursor: pointer; }
+.suggest li:hover, .suggest li[aria-selected="true"] { background: var(--bg); }
+.suggest li[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
 .usage { margin: 1.5rem 0 0; font-size: .8rem; color: var(--muted); }
 .linkish { background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; padding: 0; font-size: .875rem; }
 
@@ -252,6 +310,10 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   #target { flex: 1 1 100%; width: auto; }
   #text { flex-basis: 10rem; }
   .rails { width: calc(min(var(--d, 0), 4) * .75rem); background-size: .75rem 100%; }
+  .card {
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 60dvh;
+    border-radius: 10px 10px 0 0; border-width: 1px 0 0;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .fresh mark, .gameover { animation: none; }
@@ -284,8 +346,9 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <div class="composer">
       <form id="whisper">
         <label for="target">Whisper to</label>
-        <input type="text" id="target" list="names" autocomplete="off" placeholder="a villager" required>
-        <datalist id="names"></datalist>
+        <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+        <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
         <label for="text" class="visually-hidden">What to whisper</label>
         <input type="text" id="text" maxlength="500" autocomplete="off" placeholder="the miller waters his flour" required>
         <button class="primary" type="submit">Whisper</button>
@@ -298,11 +361,19 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <h2>Goals</h2>
     <ul class="goals" id="goals"></ul>
     <p class="heat" id="heat" aria-live="polite"></p>
-    <h2 id="people-heading">Villagers</h2>
+    <h2 id="people-heading">Village</h2>
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
-    <div id="card"></div>
-    <div id="people"></div>
+    <p class="find-status" id="find-status" role="status"></p>
+    <div class="tiles" id="people"></div>
+    <p class="legend">
+      <span><span class="badge" data-s="took_the_bait" aria-hidden="true">✓</span>took the bait</span>
+      <span><span class="badge" data-s="kept" aria-hidden="true">○</span>kept it quiet</span>
+      <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
+      <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
+      <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
+    </p>
+    <section class="card" id="card" role="dialog" aria-labelledby="card-title" hidden></section>
     <p class="usage" id="usage"></p>
   </aside>
 </div>
@@ -324,9 +395,15 @@ let lastId = 0;
 let pinned = null;
 let selected = null;
 let rover = null;
-let pointerDown = false;
+let pointing = false;
 let peopleStale = false;
 let over = false;
+let notes = {};
+let lastTarget = null;
+let cardOpener = null;
+const statuses = new Map();
+const OPEN_KEY = "rumor-mill-open-place";
+const FACES_SHOWN = 11;
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -427,11 +504,13 @@ function render(e, fresh) {
   switch (e.kind) {
     case "whisper": {
       spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
+      lastTarget = e.target_id;
+      const status = statuses.get(e.uid);
       return el("li", { className: "ev whisper", tabIndex: -1, dataset: { uid: e.uid } },
         el("span", { className: "rails", style: "--d:0" }),
         el("div", { className: "body" },
           el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: e.target }), ` at the ${e.place}`),
-          ...quoted(e.text)));
+          ...quoted(e.text), status && chip(status)));
     }
     case "hop": {
       const parent = spoken.get(e.parent);
@@ -444,6 +523,7 @@ function render(e, fresh) {
       return el("li", { className: "note against" },
         el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
     case "refusal":
+      learn(e);
       if (!e.line) return el("li", { className: "note against" }, el("b", { textContent: e.name }), " turns away from you.");
       return el("li", { className: "note against" },
         el("b", { textContent: e.name }), " turns away from you: ", el("span", { className: "brush", textContent: `“${e.line}”` }));
@@ -454,10 +534,9 @@ function render(e, fresh) {
       showGameOver(e, fresh);
       return null;
     case "whisper_status":
-      if (e.state !== "brushed_off" || !("hint" in e)) return null;
-      if (!e.hint) return el("li", { className: "note", dataset: { uid: e.whisper_id } }, `${e.name} shrugs it off.`);
-      return el("li", { className: "note", dataset: { uid: e.whisper_id } },
-        `${e.name} brushes you off: `, el("span", { className: "brush", textContent: `“${e.hint}”` }));
+      learn(e);
+      showStatus(e);
+      return null;
     case "announcement":
       return el("li", { className: "note" }, e.text);
     case "goal":
@@ -470,6 +549,162 @@ function render(e, fresh) {
     default:
       return null;
   }
+}
+
+// What a whisper's status chip says, by state.
+const SAID = {
+  heard: (e) => `${e.name} heard you.`,
+  took_the_bait: (e) => `Took the bait. Told ${e.told} ${e.told === 1 ? "person" : "people"}.`,
+  kept: () => "Heard you, but kept it quiet.",
+  warned: () => "Heard you, and warned others about you.",
+  not_carried: () => "Didn't carry.",
+};
+
+function secondsLeft(until) {
+  return Math.max(0, Math.ceil(until - Date.now() / 1000));
+}
+
+function waitText(until) {
+  const left = secondsLeft(until);
+  return left ? `Hears you in about ${left}s.` : "Hearing you now.";
+}
+
+function chip(e) {
+  const node = el("p", { className: "chip", dataset: { state: e.state } });
+  const tone = STATUS_OF[e.state];
+  if (e.state !== "checking" && BADGES[tone]) node.append(badge(tone));
+  if (e.state === "checking") {
+    node.append(el("span", { ariaHidden: "true", textContent: "…" }), el("span", { className: "visually-hidden", textContent: "Checking." }));
+  } else if (e.state === "busy") {
+    // The countdown ticks out of the screen reader's hearing; it hears the wait once.
+    node.append(`${e.name} is busy. `,
+      el("span", { ariaHidden: "true", dataset: { until: e.until }, textContent: waitText(e.until) }),
+      el("span", { className: "visually-hidden wait", textContent: waitText(e.until) }));
+  } else if (e.state === "brushed_off") {
+    if (e.hint) node.append("Brushed you off: ", el("span", { className: "brush", textContent: `“${e.hint}”` }));
+    else node.append("Brushed you off.");
+  } else if (SAID[e.state]) {
+    node.append(SAID[e.state](e));
+  }
+  return node;
+}
+
+function showStatus(e) {
+  statuses.set(e.whisper_id, e);
+  const item = feed.querySelector(`.whisper[data-uid="${CSS.escape(e.whisper_id)}"]`);
+  if (!item) return;
+  const old = item.querySelector(".chip");
+  if (old) old.replaceWith(chip(e));
+  else item.querySelector(".body").append(chip(e));
+}
+
+setInterval(() => {
+  for (const node of feed.querySelectorAll("[data-until]")) {
+    const until = Number(node.dataset.until);
+    node.textContent = waitText(until);
+    if (secondsLeft(until)) continue;
+    delete node.dataset.until;
+    node.parentNode.querySelector(".wait").textContent = waitText(until);
+  }
+}, 1000);
+
+// The player's notes, kept by the same rule as the server's: a note only moves up, except that wary overrides anything.
+const RANK = ["none", "listening", "brushed_off", "kept", "wary", "took_the_bait"];
+const STATUS_OF = {
+  checking: "listening", busy: "listening", heard: "listening", brushed_off: "brushed_off",
+  kept: "kept", took_the_bait: "took_the_bait", warned: "wary",
+};
+const BADGES = {
+  took_the_bait: ["✓", "took the bait"],
+  kept: ["○", "kept it quiet"],
+  brushed_off: ["–", "brushed you off"],
+  wary: ["!", "wary of you"],
+  listening: ["…", "listening"],
+};
+let learned = false;
+
+function noteOf(id) {
+  return notes[id] || { status: "none", hint: null };
+}
+
+function learn(e) {
+  const status = e.kind === "refusal" ? "wary" : STATUS_OF[e.state];
+  if (!status) return;
+  const note = notes[e.villager_id] = { ...noteOf(e.villager_id) };
+  if (status === "wary" || RANK.indexOf(status) > RANK.indexOf(note.status)) note.status = status;
+  if (e.hint) note.hint = e.hint;
+  learned = true;
+}
+
+function badge(status) {
+  return el("span", { className: "badge", ariaHidden: "true", textContent: BADGES[status][0], dataset: { s: status } });
+}
+
+// Pixel faces: a 12x12 head and shoulders drawn from the villager's id, with clothes by trade.
+const SKIN = ["#f1d3b3", "#e2b48f", "#c98f63", "#9c6644", "#6e4630", "#f3dcc8"];
+const HAIR = ["#2b2118", "#5a3a22", "#8a5a2b", "#b88a4a", "#d9c7a3", "#9a9a9a", "#6b2f1f"];
+const TINT = ["#dfe6d6", "#e6dfd2", "#d9e0e8", "#e8dcdc", "#dde4df"];
+const CLOTHES = [
+  [/priest|brother|chapel|friar|nun/i, "#4a4a5e"], [/smith|forge/i, "#5b4a3f"], [/mill/i, "#c9b98f"],
+  [/wine|vintner|merchant/i, "#7a2f3b"], [/dye/i, "#3d5f8a"], [/mayor|reeve|steward|bailiff/i, "#2f5d4a"],
+  [/thatch|carpent|joiner/i, "#8a6a3a"], [/herb|heal|apothec|midwife/i, "#5e7a3e"],
+];
+const PLAIN = ["#6b5b4a", "#4f6a5a", "#7a6250", "#5a5f7a"];
+const faces = new Map();
+
+function seeded(seed) {
+  let h = 2166136261;
+  for (const ch of seed) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
+}
+
+function drawFace(id, trade) {
+  const canvas = el("canvas", { width: 12, height: 12 });
+  const g = canvas.getContext("2d");
+  const r = seeded(id);
+  const pick = (list) => list[Math.floor(r() * list.length)];
+  const px = (i, j, color) => { g.fillStyle = color; g.fillRect(i, j, 1, 1); };
+  const rect = (i0, i1, j0, j1, color) => { for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) px(i, j, color); };
+  g.fillStyle = pick(TINT);
+  g.fillRect(0, 0, 12, 12);
+  const skin = pick(SKIN), hair = pick(HAIR);
+  const clothes = (CLOTHES.find(([re]) => re.test(trade)) || [])[1] || pick(PLAIN);
+  rect(2, 10, 9, 12, clothes);
+  rect(1, 11, 11, 12, clothes);
+  rect(4, 8, 8, 9, skin);
+  rect(3, 9, 3, 8, skin);
+  const style = Math.floor(r() * 4);
+  rect(3, 9, 2, 3, hair);
+  rect(2, 10, 3, 4, hair);
+  if (style >= 1) { px(2, 4, hair); px(9, 4, hair); }
+  if (style >= 2) { rect(2, 3, 5, 7, hair); rect(9, 10, 5, 7, hair); }
+  if (style === 3) rect(4, 8, 1, 2, hair);
+  px(4, 5, "#2a2a2a");
+  px(7, 5, "#2a2a2a");
+  if (r() < 0.35) { rect(4, 8, 7, 8, hair); px(3, 6, hair); px(8, 6, hair); }
+  else { px(5, 7, "#a5584a"); px(6, 7, "#a5584a"); }
+  if (/priest|brother|chapel|friar|nun/i.test(trade)) rect(3, 9, 2, 3, clothes);
+  if (/smith/i.test(trade)) { px(3, 10, "#3a3a3a"); px(8, 10, "#3a3a3a"); }
+  return canvas;
+}
+
+// A copy of the villager's face; each is drawn once and then copied.
+function faceFor(id, occupation) {
+  if (!faces.has(id)) faces.set(id, drawFace(id, occupation));
+  const canvas = el("canvas", { width: 12, height: 12, ariaHidden: "true" });
+  canvas.getContext("2d").drawImage(faces.get(id), 0, 0);
+  return canvas;
+}
+
+function faceWith(v, big = false) {
+  const status = noteOf(v.id).status;
+  return el("span", { className: big ? "face big" : "face", ariaHidden: "true" }, faceFor(v.id, v.occupation), BADGES[status] && badge(status));
+}
+
+// The villager's name and, when the player knows something, the status in words.
+function knownAs(v) {
+  const b = BADGES[noteOf(v.id).status];
+  return b ? `${v.name}, ${b[1]}` : v.name;
 }
 
 const OUTCOMES = { won: "Every goal is met. You won.", lost: "The village ran you out of town." };
@@ -530,6 +765,10 @@ function addEvents(events, fresh) {
     feed.append(node);
   }
   prune();
+  if (learned) {
+    learned = false;
+    refreshVillagers();
+  }
   if (!rover) setRover(threadItems()[0] || null);
   $("empty").hidden = feed.children.length > 0;
   if (stick) feed.scrollTop = feed.scrollHeight;
@@ -578,7 +817,9 @@ feed.addEventListener("keydown", (ev) => {
   }
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && pinned != null) { pinned = null; trace(null); }
+  if (ev.key !== "Escape" || ev.defaultPrevented) return;
+  if (!$("card").hidden) closeCard();
+  else if (pinned != null) { pinned = null; trace(null); }
 });
 
 function renderGoals() {
@@ -591,77 +832,286 @@ function renderGoals() {
       el("span", { textContent: g.met ? "Met" : `${g.percent}%` })))));
 }
 
-function renderVillagers() {
-  const people = $("people");
-  const focused = people.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-  const q = $("search").value.trim().toLowerCase();
-  const shown = villagers.filter((v) => !q || `${v.name} ${v.occupation} ${v.place}`.toLowerCase().includes(q));
-  $("people-heading").textContent = `Villagers (${villagers.length})`;
-  const order = [...places, ...[...new Set(villagers.map((v) => v.place))].filter((p) => !places.includes(p)).sort()];
-  const groups = order.map((place) => [place, shown.filter((v) => v.place === place)]).filter(([, vs]) => vs.length);
-  people.replaceChildren(...groups.map(([place, vs]) => el("section", {},
-    el("h3", { textContent: `${place[0].toUpperCase()}${place.slice(1)} (${vs.length})` }),
-    el("ul", { className: "people" }, ...vs.map((v) => el("li", {},
-      el("button", { type: "button", dataset: { id: v.id }, onclick: () => inspect(v.id), ariaCurrent: String(v.id === selected) },
-        v.name, " ", el("small", { textContent: v.occupation }))))))));
-  if (!groups.length) people.replaceChildren(el("p", { className: "meta", textContent: q ? "No one matches. Try part of a name or a trade." : "No one is in town yet." }));
-  $("names").replaceChildren(...villagers.map((v) => el("option", { value: v.name })));
-  if (focused) {
-    const again = people.querySelector(`[data-id="${CSS.escape(focused)}"]`);
-    if (again) again.focus();
-  }
+function capital(word) {
+  return `${word[0].toUpperCase()}${word.slice(1)}`;
 }
 
-// Moves arrive every second; hold them while someone is pointing at or tabbing through the list.
+// Villagers matching a search, best first: name, then trade, then place; ties keep name order.
+function matches(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const scored = [];
+  for (const v of villagers) {
+    const name = v.name.toLowerCase();
+    const score = name.startsWith(q) || name.includes(` ${q}`) ? 4
+      : name.includes(q) ? 3 : v.occupation.toLowerCase().includes(q) ? 2 : v.place.includes(q) ? 1 : 0;
+    if (score) scored.push([score, v]);
+  }
+  return scored.sort((x, y) => y[0] - x[0]).map(([, v]) => v);
+}
+
+function storedPlace() {
+  try { return localStorage.getItem(OPEN_KEY); } catch { return null; }
+}
+
+function choosePlace(place) {
+  try { localStorage.setItem(OPEN_KEY, place); } catch { /* the choice lasts until reload */ }
+  chosenPlace = place;
+  searchPlace = null;
+  renderVillagers();
+}
+
+// The open tile: the place a search opened, else the player's choice, else where they last whispered, else the square.
+function openPlace(order) {
+  const last = villagers.find((v) => v.id === lastTarget);
+  const want = searchPlace || chosenPlace || (last && last.place) || "square";
+  return order.includes(want) ? want : order[0];
+}
+let chosenPlace = storedPlace();
+let searchPlace = null;
+
+function faceButton(v, hits) {
+  return el("button", {
+    type: "button", tabIndex: -1, className: hits.has(v.id) ? "pick hit" : "pick", title: `${v.name}, ${v.occupation}`,
+    dataset: { id: v.id }, onclick: (ev) => inspect(v.id, ev.currentTarget),
+  }, faceWith(v), el("span", { className: "visually-hidden", textContent: knownAs(v) }));
+}
+
+function closedTile(place, here, hits) {
+  const first = hits.size ? [...here.filter((v) => hits.has(v.id)), ...here.filter((v) => !hits.has(v.id))] : here;
+  const shown = first.slice(0, FACES_SHOWN);
+  const more = here.length - shown.length;
+  return el("div", { className: "faces" }, ...shown.map((v) => faceButton(v, hits)),
+    more > 0 ? el("button", { type: "button", tabIndex: -1, className: "more", textContent: `+${more}`, onclick: () => choosePlace(place) }) : null);
+}
+
+function openTile(here, hits) {
+  const list = hits.size ? here.filter((v) => hits.has(v.id)) : here;
+  if (!list.length) return el("p", { className: "meta", textContent: hits.size ? "No one here matches." : "No one is here." });
+  const rows = el("ul", { className: "rows" }, ...list.map((v) => el("li", {}, el("button", {
+    type: "button", className: "row", dataset: { id: v.id }, ariaCurrent: String(v.id === selected),
+    onclick: (ev) => inspect(v.id, ev.currentTarget),
+  }, faceWith(v, true), who(v, v.occupation)))));
+  const more = el("p", { className: "scroll-more", ariaHidden: "true" });
+  // Says how many rows are below the fold, so the list never looks cut off.
+  const cue = () => {
+    const rowHeight = rows.firstElementChild.offsetHeight || 1;
+    const below = Math.round((rows.scrollHeight - rows.scrollTop - rows.clientHeight) / rowHeight);
+    more.textContent = below > 0 ? `+${below} more, scroll` : "";
+  };
+  rows.addEventListener("scroll", cue);
+  requestAnimationFrame(cue);
+  return el("div", {}, rows, more);
+}
+
+// Name, then the status as its own words, then trade or place and the hint.
+function who(v, detail) {
+  const note = noteOf(v.id);
+  const known = BADGES[note.status];
+  return el("span", { className: "who" },
+    el("b", { textContent: v.name }), known ? el("span", { className: "st", textContent: `, ${known[1]}` }) : null,
+    " ", el("small", { textContent: detail }),
+    note.hint ? el("span", { className: "hint", textContent: `“${note.hint}”` }) : null);
+}
+
+function focusKey(node) {
+  if (node.dataset.id) return `[data-id="${CSS.escape(node.dataset.id)}"]`;
+  if (node.dataset.place) return `[data-place="${CSS.escape(node.dataset.place)}"]`;
+  return null;
+}
+
+function renderVillagers() {
+  const people = $("people");
+  const key = people.contains(document.activeElement) ? focusKey(document.activeElement) : null;
+  const query = $("search").value;
+  const found = matches(query);
+  const hits = new Set(found.map((v) => v.id));
+  const order = [...places, ...[...new Set(villagers.map((v) => v.place))].filter((p) => !places.includes(p)).sort()];
+  const open = openPlace(order);
+  $("people-heading").textContent = `Village (${villagers.length})`;
+  people.classList.toggle("searching", hits.size > 0);
+  people.replaceChildren(...order.map((place) => {
+    const here = villagers.filter((v) => v.place === place);
+    const count = hits.size ? `${here.filter((v) => hits.has(v.id)).length} of ${here.length}` : String(here.length);
+    return el("section", { className: place === open ? "tile open" : "tile" },
+      el("button", {
+        type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open),
+        ariaLabel: hits.size ? `${capital(place)}, ${count} villagers match` : `${capital(place)}, ${count} villagers`,
+        onclick: () => choosePlace(place),
+      },
+        capital(place), el("span", { textContent: count })),
+      place === open ? openTile(here, hits) : closedTile(place, here, hits));
+  }));
+  const said = !query.trim() ? ""
+    : found.length ? `${found.length} found. Best match: ${found[0].name}, at the ${found[0].place}.`
+    : "No one matches. Try part of a name or a trade.";
+  if ($("find-status").textContent !== said) $("find-status").textContent = said;
+  const again = key && people.querySelector(key);
+  if (again) again.focus();
+}
+
+// Moves and notes arrive every second; hold them while someone is pointing at or tabbing through the tiles.
+function refreshVillagers() {
+  if (pointing || $("people").contains(document.activeElement)) peopleStale = true;
+  else renderVillagers();
+}
 function setVillagers(list) {
   const key = list.map((v) => `${v.id}:${v.place}`).join("|");
   if (key === villagersKey) return;
   villagers = list;
   villagersKey = key;
-  if (pointerDown || $("people").contains(document.activeElement)) peopleStale = true;
-  else renderVillagers();
+  refreshVillagers();
 }
 function flushVillagers() {
-  if (peopleStale && !pointerDown && !$("people").contains(document.activeElement)) {
+  if (peopleStale && !pointing && !$("people").contains(document.activeElement)) {
     peopleStale = false;
     renderVillagers();
   }
 }
-$("people").addEventListener("pointerdown", () => { pointerDown = true; });
-document.addEventListener("pointerup", () => { pointerDown = false; setTimeout(flushVillagers); });
+$("people").addEventListener("pointerenter", () => { pointing = true; });
+$("people").addEventListener("pointerleave", () => { pointing = false; setTimeout(flushVillagers); });
 $("people").addEventListener("focusout", () => setTimeout(flushVillagers));
-$("search").addEventListener("input", renderVillagers);
-
-async function inspect(id) {
-  selected = id;
+$("search").addEventListener("input", () => {
+  const best = matches($("search").value)[0];
+  searchPlace = best ? best.place : null;
   renderVillagers();
-  const res = await fetch(`/api/villagers/${encodeURIComponent(id)}`);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    $("card").replaceChildren(el("div", { className: "card" }, el("p", { textContent: body.error || "Couldn't load that villager. Try again." })));
-    return;
+});
+$("search").addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && $("search").value) {
+    ev.preventDefault();
+    $("search").value = "";
+    searchPlace = null;
+    renderVillagers();
+  } else if (ev.key === "Enter") {
+    const best = $("people").querySelector(".open .row");
+    if (best) best.focus();
   }
+});
+
+// The villager card: a popover beside the tiles, or a sheet inside the drawer on a phone.
+let cardRequest = 0;
+async function inspect(id, opener) {
+  const request = ++cardRequest;
+  if (opener) cardOpener = { id: opener.dataset.id, node: opener, top: opener.getBoundingClientRect().top };
+  selected = id;
+  $("people").querySelectorAll(".row").forEach((row) => { row.ariaCurrent = String(row.dataset.id === id); });
+  const card = $("card");
+  const res = await fetch(`/api/villagers/${encodeURIComponent(id)}`).catch(() => null);
+  const body = res ? await res.json().catch(() => ({})) : {};
+  if (request !== cardRequest) return;
+  if (!res || !res.ok) {
+    card.replaceChildren(el("h3", { id: "card-title", tabIndex: -1, textContent: "Not here" }),
+      el("p", { textContent: body.error || "Couldn't load that villager. Try again." }),
+      el("div", { className: "actions" }, el("button", { className: "linkish", type: "button", textContent: "Close", onclick: closeCard })));
+  } else {
+    card.replaceChildren(...cardBody(body));
+  }
+  card.hidden = false;
+  const top = cardOpener ? cardOpener.top - 8 : 8;
+  card.style.setProperty("--top", `${Math.max(8, Math.min(top, innerHeight - card.offsetHeight - 8))}px`);
+  $("card-title").focus({ preventScroll: true });
+}
+
+function cardBody(body) {
   const rels = body.relationships.length
-    ? body.relationships.map((r, i) => [i ? ", " : "", el("button", { className: "rel", type: "button", textContent: r.name, onclick: () => inspect(r.id) }), ` (${r.kind})`]).flat()
+    ? body.relationships.flatMap((r, i) => [i ? ", " : "", el("button", { className: "rel", type: "button", textContent: r.name, onclick: () => inspect(r.id) }), ` (${r.kind})`])
     : ["none"];
-  $("card").replaceChildren(el("div", { className: "card" },
-    el("h3", { textContent: body.name }),
+  const note = notes[body.id] || body.note;
+  const known = BADGES[note.status];
+  return [
+    el("h3", { id: "card-title", tabIndex: -1, textContent: body.name }),
     el("p", { className: "meta", textContent: `${body.occupation}, at the ${body.place}` }),
     el("dl", {},
       el("dt", { textContent: "Personality" }), el("dd", { textContent: body.personality }),
       el("dt", { textContent: "Grudge" }), el("dd", { textContent: body.grudge }),
-      el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels)),
+      el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels),
+      el("dt", { textContent: "What you know" }), el("dd", {},
+        known ? known[1] : "Nothing yet.",
+        note.hint ? el("span", { className: "brush", textContent: ` “${note.hint}”` }) : null)),
     el("div", { className: "actions" },
-      el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name.split(" ")[0]}`, onclick: () => whisperTo(body.name) }),
-      el("button", { className: "linkish", type: "button", textContent: "Close", onclick: () => { selected = null; $("card").replaceChildren(); renderVillagers(); } }))));
-  $("card").scrollIntoView({ block: "nearest" });
+      el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name}`, onclick: () => whisperTo(body.name) }),
+      el("button", { className: "linkish", type: "button", textContent: "Close", onclick: closeCard })),
+  ];
+}
+
+function closeCard() {
+  const opener = cardOpener;
+  const inside = $("card").contains(document.activeElement);
+  cardRequest++;
+  $("card").hidden = true;
+  selected = null;
+  cardOpener = null;
+  $("people").querySelectorAll(".row[aria-current='true']").forEach((row) => { row.ariaCurrent = "false"; });
+  if (!opener || !inside) return;
+  const node = opener.node.isConnected ? opener.node : $("people").querySelector(`[data-id="${CSS.escape(opener.id)}"]`);
+  if (node) node.focus();
 }
 
 function whisperTo(name) {
+  cardRequest++;
+  $("card").hidden = true;
+  selected = null;
+  cardOpener = null;
   $("target").value = name;
   setDrawer(false);
   $("text").focus();
 }
+
+// The To box typeahead: the same matches as the search, with face, trade, place, and what you know.
+let suggestions = [];
+let active = -1;
+
+function setActive(i) {
+  active = i;
+  [...$("suggest").children].forEach((li, j) => { li.ariaSelected = String(j === i); });
+  const li = $("suggest").children[i];
+  if (li) {
+    $("target").setAttribute("aria-activedescendant", li.id);
+    li.scrollIntoView({ block: "nearest" });
+  } else {
+    $("target").removeAttribute("aria-activedescendant");
+  }
+}
+
+function showSuggestions(list) {
+  suggestions = list;
+  $("suggest").replaceChildren(...list.map((v, i) => {
+    return el("li", { id: `suggest-${i}`, role: "option", ariaSelected: "false", onmousedown: (ev) => { ev.preventDefault(); pickTarget(v); } },
+      faceWith(v), who(v, `${v.occupation}, at the ${v.place}`));
+  }));
+  $("suggest").hidden = !list.length;
+  $("target").ariaExpanded = String(list.length > 0);
+  setActive(-1);
+}
+
+function pickTarget(v) {
+  $("target").value = v.name;
+  showSuggestions([]);
+  $("text").focus();
+}
+
+$("target").addEventListener("input", () => {
+  const found = matches($("target").value);
+  const exact = found.length === 1 && found[0].name.toLowerCase() === $("target").value.trim().toLowerCase();
+  showSuggestions(exact ? [] : found.slice(0, 8));
+});
+$("target").addEventListener("keydown", (ev) => {
+  const open = suggestions.length > 0;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    if (!open) return showSuggestions(matches($("target").value).slice(0, 8));
+    ev.preventDefault();
+    const n = suggestions.length;
+    const step = ev.key === "ArrowDown" ? 1 : -1;
+    setActive(active < 0 ? (step > 0 ? 0 : n - 1) : (active + step + n) % n);
+  } else if (ev.key === "Enter" && open && active >= 0) {
+    ev.preventDefault();
+    pickTarget(suggestions[active]);
+  } else if (ev.key === "Escape" && open) {
+    ev.preventDefault();
+    showSuggestions([]);
+  }
+});
+$("target").addEventListener("blur", () => showSuggestions([]));
 
 function setStatus(text, error = false) {
   $("status").textContent = text;
@@ -712,9 +1162,13 @@ function setConn(state, text) {
 // A new boot means the game restarted and numbers its events from 1 again.
 function reset() {
   feed.replaceChildren();
+  closeCard();
   spoken.clear();
   goals.clear();
   noted.clear();
+  statuses.clear();
+  faces.clear();
+  lastTarget = null;
   lastId = 0;
   pinned = null;
   rover = null;
@@ -736,14 +1190,15 @@ async function loadState() {
   places = state.places;
   for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met });
   renderGoals();
-  villagersKey = "";
-  setVillagers(state.villagers);
+  notes = state.notes;
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
   // The replay goes in before the log is live, so a reload doesn't read it all out.
   feed.setAttribute("aria-live", "off");
   addEvents(state.events, false);
   setTimeout(() => feed.setAttribute("aria-live", "polite"));
+  villagersKey = "";
+  setVillagers(state.villagers);
   $("heat").textContent = state.heat_line;
 }
 
