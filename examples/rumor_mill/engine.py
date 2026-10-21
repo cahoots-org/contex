@@ -86,6 +86,8 @@ class Engine:
         self._pending: dict[str, list[Match]] = {}
         self._last_turn: dict[str, float] = {}
         self._turning: set[str] = set()
+        # Villagers on a routine move, whose carried news counts as said like a turn's.
+        self._strolling: set[str] = set()
         self._consumed: dict[str, dict[str, None]] = {}
         self._listen_failed: set[str] = set()
         self._said: dict[str, list[tuple[str, int]]] = {}
@@ -183,7 +185,7 @@ class Engine:
         if listeners and not heard:
             raise next(r for r in results if isinstance(r, Exception))
         on_topic = await self._carries_rumor(utterance, heard)
-        if heard and on_topic and utterance.speaker in self._turning:
+        if heard and on_topic and (utterance.speaker in self._turning or utterance.speaker in self._strolling):
             self._said.setdefault(utterance.speaker, []).append((utterance.id, len(heard)))
         if scene is not None:
             if self.lineage.root(utterance.id) != scene.rumor:
@@ -626,15 +628,20 @@ class Engine:
         latest = self._latest.pop(vid, None)
         if latest is not None and not self._fresh(latest):
             latest = None
+        v = self.town.get(vid)
+        self._strolling.add(vid)
         try:
             await act(
-                Decision(MOVE, latest, place, None), self.town.get(vid), town=self.town, writer=self.writer,
+                Decision(MOVE, latest, place, None), v, town=self.town, writer=self.writer,
                 hub=self, lineage=self.lineage, ids=self.ids, facts=self.facts,
                 suspicion_hear_max=self.config.suspicion_hear_max,
                 share_chance=self.share_chance(vid, latest) if latest else 0.0,
             )
+            self._report(v, [], MOVE, self._said.pop(vid, []))
         except Exception:
             log.exception("routine move failed for %s", vid)
+        finally:
+            self._strolling.discard(vid)
 
     async def _suspicion_loop(self) -> None:
         """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""

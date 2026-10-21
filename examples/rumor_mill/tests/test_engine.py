@@ -600,6 +600,26 @@ async def test_turn_that_ignores_reports_kept_then_later_relay_upgrades(relays):
 
 
 @pytest.mark.asyncio
+async def test_a_routine_move_that_carries_a_kept_whisper_takes_the_bait(relays, monkeypatch):
+    engine, minds, feed = await setup("v1", "v2")
+    minds["v1"].results = [[]]
+    relays.plan = [(IGNORE, None)]
+    whisper(engine, "v1")
+    await wait_for(lambda: statuses(feed))
+
+    async def carry(decision, villager, *, hub, lineage, **kw):
+        lineage.record("u-c", decision.source.data["id"])
+        line = Utterance("u-c", villager.id, villager.name, "square", "did you hear", decision.source.data["id"])
+        await hub.deliver(line, ["v2"])
+
+    monkeypatch.setattr(engine_mod, "act", carry)
+    await engine._stroll("v1", "mill")
+    assert statuses(feed) == [("w-1", "v1", "kept", None), ("w-1", "v1", "took_the_bait", 1)]
+    assert "v1" not in engine._said
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_departure_resolves_whispers_still_being_heard(relays):
     engine, _, feed = await setup("v1", "v2")
     feed.on_whisper_status("w-1", "v1", "V1", "heard")
