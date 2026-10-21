@@ -180,7 +180,11 @@ mark.kept {
 .tally:empty { display: none; }
 .rumor:not(.open) .thread { display: none; }
 .reuse { margin-left: .5rem; font-size: .75rem; }
-.thread, .talk, .vt-lines { list-style: none; margin: 0; padding: 0; }
+.thread, .talk, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
+.scene { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
+.scene-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 .75rem; margin: 0; font-size: .85rem; color: var(--muted); }
+.scene:not(.open) .scene-lines { display: none; }
+.scene-end { margin: .1rem 0 0; font-size: .85rem; font-style: italic; color: var(--muted); }
 .drift { padding: .2rem 0 0 .35rem; font-size: .85rem; font-style: italic; color: var(--muted); }
 .talk:not(:empty) { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
 .talk .mine { margin-top: .2rem; }
@@ -492,7 +496,7 @@ const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
-const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more";
+const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const FACES_SHOWN = 11;
@@ -605,6 +609,7 @@ function newCard(uid, target, place, text) {
           reuseButton(text, target)),
         ...quoted(text), status && chip(status))),
     el("p", { className: "tally" }),
+    el("ol", { className: "scenes" }),
     el("button", { type: "button", className: "linkish thread-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
       onclick: () => toggleThread(card) }),
     el("ol", { className: "thread" }), el("ol", { className: "talk" }));
@@ -629,6 +634,69 @@ function countThread(card) {
   const toggle = card.querySelector(".thread-more");
   toggle.hidden = n === 0;
   toggle.textContent = card.classList.contains("open") ? "Hide retellings" : `Show ${n} ${n === 1 ? "retelling" : "retellings"}`;
+}
+
+function sceneWords(tone, place) {
+  return `${tone === "argument" ? "An argument" : "A conversation"} at the ${place}`;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function sceneEnd(node, ended) {
+  if (ended && !node.querySelector(".scene-end")) node.append(el("p", { className: "scene-end", textContent: ended }));
+}
+
+// A scene on a rumor card: its lines start collapsed behind a toggle, and the opening retelling moves into them.
+function cardScene(e, fresh) {
+  const card = cards.get(cardOf.get(e.rumor));
+  if (!card) return;
+  let item = card.querySelector(`.scene[data-scene="${CSS.escape(e.scene_id)}"]`);
+  if (!item) {
+    const toggle = el("button", { type: "button", className: "linkish scene-more", tabIndex: -1, ariaExpanded: "false",
+      textContent: "Show lines", onclick: () => toggleScene(item) });
+    item = el("li", { className: "scene", dataset: { scene: e.scene_id } },
+      el("p", { className: "scene-head" }, el("span"), toggle), el("ol", { className: "scene-lines" }));
+    addTo(card, ".scenes", item, fresh);
+    const opening = card.querySelector(`.thread .hop[data-uid="${CSS.escape(e.opening)}"]`);
+    if (opening) {
+      item.querySelector(".scene-lines").append(opening);
+      countThread(card);
+      if (rover === opening) setRover(toggle);
+    }
+  }
+  item.querySelector(".scene-head span").textContent =
+    `${sceneWords(e.tone, e.place)}: ${e.people} ${e.people === 1 ? "person" : "people"}, ${plural(e.lines, "line")}`;
+  sceneEnd(item, e.ended);
+}
+
+function toggleScene(item) {
+  const toggle = item.querySelector(".scene-more");
+  const open = item.classList.toggle("open");
+  toggle.ariaExpanded = String(open);
+  toggle.textContent = open ? "Hide lines" : "Show lines";
+  if (rover && item.querySelector(".scene-lines").contains(rover)) {
+    setRover(toggle);
+    toggle.focus();
+  }
+}
+
+// A scene in village talk gets its own block; returns it when it is new, or null.
+function villageScene(e) {
+  const block = sceneBlock(e.scene_id, e.place);
+  block.dataset.tone = e.tone;
+  countTalk(block);
+  sceneEnd(block, e.ended);
+  return block.isConnected ? null : block;
+}
+
+function sceneBlock(id, place) {
+  const block = feed.querySelector(`.vt[data-scene="${CSS.escape(id)}"]`);
+  if (block) return block;
+  const made = talkBlock(place);
+  made.dataset.scene = id;
+  return made;
 }
 
 // Puts one of your earlier lines back in the composer.
@@ -702,11 +770,12 @@ function restoredCard(c, replayed) {
   return card;
 }
 
-// Overheard lines join the village talk block at the end of the feed when it is for the same place;
-// returns a new block to append, or null.
+// Overheard lines join their scene's block, or else the village talk block at the end of the feed when it is for the
+// same place; returns a new block to append, or null.
 function overheard(e, fresh) {
   const last = feed.lastElementChild;
-  const block = last && last.matches(".vt") && last.dataset.place === e.place ? last : talkBlock(e.place);
+  const block = e.scene ? sceneBlock(e.scene, e.place)
+    : last && last.matches(".vt:not([data-scene])") && last.dataset.place === e.place ? last : talkBlock(e.place);
   const why = REASONS[e.reason];
   const id = `talk-line-${++talkLines}`;
   block.querySelector(".vt-lines").append(el("li", { className: fresh ? "fresh" : "" },
@@ -722,7 +791,7 @@ function overheard(e, fresh) {
     setRover(block.querySelector(".vt-more"));
     if (had) rover.focus();
   }
-  return block === last ? null : block;
+  return block.isConnected ? null : block;
 }
 
 function talkBlock(place) {
@@ -738,7 +807,8 @@ function talkBlock(place) {
 function countTalk(block) {
   const n = block.querySelector(".vt-lines").children.length;
   const toggle = block.querySelector(".vt-more");
-  block.querySelector(".vt-head span").textContent = `Village talk at the ${block.dataset.place} · ${n} ${n === 1 ? "line" : "lines"}`;
+  const words = block.dataset.tone ? sceneWords(block.dataset.tone, block.dataset.place) : `Village talk at the ${block.dataset.place}`;
+  block.querySelector(".vt-head span").textContent = n ? `${words} · ${plural(n, "line")}` : words;
   toggle.hidden = n <= 2;
   toggle.textContent = block.classList.contains("open") ? "Show fewer" : `Show all ${n}`;
 }
@@ -794,12 +864,22 @@ function render(e, fresh) {
       const node = el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: e.uid } },
         el("span", { className: "rails", style: `--d:${Math.min(e.depth, 8)}` }),
         el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
+      const scene = e.scene && feed.querySelector(`.scene[data-scene="${CSS.escape(e.scene)}"]`);
+      if (scene) {
+        shown.add(e.uid);
+        addTo(scene, ".scene-lines", node, fresh);
+        return null;
+      }
       const card = cards.get(cardOf.get(e.root));
       if (!card) return node;
       shown.add(e.uid);
       addTo(card, ".thread", node, fresh);
       return null;
     }
+    case "scene":
+      if (!e.rumor) return villageScene(e);
+      cardScene(e, fresh);
+      return null;
     case "drift": {
       const card = cards.get(cardOf.get(e.whisper_id));
       if (card && !card.querySelector(".drift")) addTo(card, ".thread", el("li", { className: "drift", textContent: DRIFT }), fresh);
