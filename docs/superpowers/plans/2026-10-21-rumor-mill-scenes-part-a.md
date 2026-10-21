@@ -149,6 +149,26 @@
 
 ---
 
+### Task 10 (runs after Task 6): Villagers remember what they heard
+
+Rob: "If I go to talk to someone who has heard the rumor later, they're a blank slate." Two causes: a whisper only lands on a need match, so a holder who doesn't care about the subject brushes the player off; and `Writer.reply` sees only what the villager said, never what they heard.
+
+**Files:** Modify `engine.py`, `player.py`, `decide.py`, `writer.py`; `tests/test_engine.py`, `tests/test_player.py`, `tests/test_decide.py`, `tests/test_writer.py`.
+
+**Interfaces:**
+- Produces in `engine.py`: `async Engine.recall_heard(vid: str, text: str, exclude: str) -> list[Match]` — query the villager's mind project with `text` (whisper framing stripped), `top_k=3`, `since=self.game and self.game.memory_since()`, `threshold=0`; keep hits with similarity `>= config.said_floor` whose `data["id"] != exclude`, best first, at most 3. Failures log ids only and return `[]`.
+- `Player.whisper_to`: when `check` finds no need hit (and no near miss), `await engine.recall_heard(target.id, text, uid)`; any result makes it a hit: `hear_directly` with the whisper's `Match` at `clearance=0.0`, status as for a need hit. A familiar whisper never opens a brush-off thread.
+- `TurnView.heard: list[Match] = []`; `_turn` fills it for whispers with `recall_heard(v.id, whisper text, whisper id)` merged across the turn's whispers (dedupe by key); `decide._state` adds `"things_i_heard_before"` (at most `MAX_SAID`) when non-empty.
+- `Writer.reply(villager, newcomer_line, said, heard: list[str] = ())`: adds the line `"What you heard earlier: " + " / ".join(heard)` and one system sentence: `"If you already heard about this, say so and what you heard, in your own words."` `act(..., heard=...)` passes the texts on `ANSWER`.
+
+- [ ] **Step 1: Write the failing tests:** `test_recall_heard_skips_the_whisper_itself_and_weak_matches`; `test_recall_heard_looks_back_over_the_remembered_moves` (`since` equals `game.memory_since()`); `test_a_whisper_about_a_story_they_heard_lands_without_a_need_match` (needs miss, `recall_heard` returns one line: status `heard`, `engine.direct` has the whisper with clearance 0.0, no brush-off); `test_an_unfamiliar_miss_still_brushes_off`; `test_the_turn_view_and_state_carry_what_they_heard`; `test_reply_mentions_what_they_heard_only_when_there_is_something`.
+- [ ] **Step 2: Run** the four test files. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** the full suite and ruff. Expected: PASS.
+- [ ] **Step 5: Commit** `Let villagers remember what they heard when the newcomer asks`.
+
+---
+
 ### Task 7: Each villager's work and leisure place
 
 **Files:**
