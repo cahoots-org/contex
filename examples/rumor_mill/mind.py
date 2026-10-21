@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import aclosing
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
@@ -47,9 +48,13 @@ class Mind:
         await self.contex.publish(self.project, key, data)
 
     async def _read(self) -> Bundle:
-        """Read every need's bundle into one, re-subscribing only the subscriptions that expired."""
+        """Read every need's bundle into one, re-subscribing only the subscriptions that expired.
+
+        Each match carries its best clearance across the needs whose bundle holds it.
+        """
         bundles = await asyncio.gather(*(self.contex.read(uri) for uri in self.uris), return_exceptions=True)
         merged: Bundle = {}
+        best: dict[str, float] = {}
         for i, bundle in enumerate(bundles):
             if isinstance(bundle, SubscriptionGone):
                 self.uris[i] = await self._subscribe(self.villager.needs[i])
@@ -57,8 +62,12 @@ class Mind:
                 bundle = await self.contex.read(self.uris[i])
             elif isinstance(bundle, BaseException):
                 raise bundle
+            threshold = self.baselines.threshold(self.villager.needs[i])
+            for match in (m for ms in bundle.values() for m in ms if m.similarity is not None):
+                clearance = match.similarity - threshold
+                best[match.data_key] = max(clearance, best.get(match.data_key, clearance))
             merged.update(bundle)
-        return merged
+        return {need: [replace(m, clearance=best.get(m.data_key)) for m in ms] for need, ms in merged.items()}
 
     async def poll(self) -> list[Match]:
         """Matches not in the previous poll; forgotten items count as new if they return."""

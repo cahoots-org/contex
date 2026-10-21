@@ -10,6 +10,7 @@ from examples.rumor_mill.actions import (
 )
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.decide import Decision
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.town import Town
@@ -18,6 +19,8 @@ from examples.rumor_mill.writer import Writer
 log = logging.getLogger(__name__)
 
 DIRECT = (RETELL, DENY, CONFRONT)
+ROOM = "room"
+ONE = "one"
 # Share of the most one hearing can add that a warning adds to its target.
 WARNED_SHARE = 0.5
 
@@ -39,6 +42,7 @@ async def act(
     hub: Hub,
     lineage: Lineage,
     ids: Ids,
+    facts: Facts,
     inspiration: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
 ) -> None:
@@ -50,13 +54,19 @@ async def act(
     source_text = decision.source.data.get("text") if decision.source else None
 
     async def say(
-        text: str, listeners: list[str], verb: str = "said", addressed: bool = False, root: bool = False,
+        text: str, listeners: list[str], audience: str, verb: str = "said", addressed: bool = False,
+        root: bool = False,
     ) -> str:
-        """Deliver an utterance descended from the decision's source, or starting a new line if root."""
+        """Record and deliver an utterance descended from the decision's source, or starting a new line if root."""
         parent = None if root else source_id
         uid = ids.next("u")
         lineage.record(uid, parent)
-        utterance = Utterance(uid, vid, villager.name, place, text, parent, verb)
+        heard_from = facts.get(parent) if parent else None
+        utterance = Utterance(
+            uid, vid, villager.name, place, text, parent, verb,
+            depth=heard_from.depth + 1 if heard_from else 0, audience=audience, action=action, style=decision.style,
+        )
+        facts.record(utterance)
         await hub.deliver(utterance, [i for i in listeners if i != vid], addressed=addressed)
         return uid
 
@@ -71,35 +81,35 @@ async def act(
         if decision.target in others():
             audience = town.get(decision.target).name
             text = await writer.say(villager, decision, source_text, audience)
-            await say(text, [decision.target])
+            await say(text, [decision.target], ONE)
     elif action == WARN:
         if decision.target in others():
             text = await writer.warn(villager, town.get(decision.target))
-            uid = await say(text, [decision.target], "warned", addressed=True, root=True)
+            uid = await say(text, [decision.target], ONE, "warned", addressed=True, root=True)
             try:
                 hub.suspect(decision.target, WARNED_SHARE * suspicion_hear_max, "was warned about the newcomer", uid)
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
     elif action == SPEAK:
         text = await writer.say(villager, decision, source_text, place)
-        await say(text, others())
+        await say(text, others(), ROOM)
     elif action == FOUND_GROUP:
         name, creed = await writer.describe_group(villager, list(inspiration))
         group = town.found_group(vid, name, creed)
         await hub.publish_group(group)
-        await say(f"{villager.name} founded {name}: {creed}", others(), "announced")
+        await say(f"{villager.name} founded {name}: {creed}", others(), ROOM, "announced")
     elif action == JOIN_GROUP:
         group = next(g for g in town.visible_groups(vid) if g.id == decision.target)
         town.join(vid, group.id)
-        await say(f"{villager.name} joined {group.name}", others(), "announced")
+        await say(f"{villager.name} joined {group.name}", others(), ROOM, "announced")
     elif action == LEAVE_GROUP:
         town.leave(vid, decision.target)
     elif action == PREACH:
         group = next(g for g in town.member_groups(vid) if g.id == decision.target)
         text = await writer.say(villager, decision, source_text, group.name)
-        await say(text, list(group.members), "preached")
+        await say(text, list(group.members), ROOM, "preached")
     elif action == LEAVE_TOWN:
         farewell = await writer.say(villager, decision, source_text, "the square")
         town.remove(vid)
         listeners = [v.id for v in town.present("square")]
-        await say(f"{villager.name} is leaving town for good: {farewell}", listeners, "announced")
+        await say(f"{villager.name} is leaving town for good: {farewell}", listeners, ROOM, "announced")

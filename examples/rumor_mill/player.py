@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 import time
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from examples.rumor_mill.config import Config
@@ -94,6 +95,7 @@ class Player:
         utterance = Utterance(
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
         )
+        self.engine.facts.record(utterance)
         since = (datetime.now(UTC) - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
         try:
             await self.engine.deliver(utterance, [target.id])
@@ -107,7 +109,11 @@ class Player:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
         if hits:
-            if not self.engine.hear_directly(target.id, Match(f"utt:{uid}", utterance.to_data(), max(hits))):
+            hit = Match(
+                f"utt:{uid}", utterance.to_data(),
+                max(h.similarity for h in hits), clearance=max(h.clearance for h in hits),
+            )
+            if not self.engine.hear_directly(target.id, hit):
                 return None
             until = self.engine.cooldown_ends(target.id)
             if until > time.time():
@@ -121,8 +127,8 @@ class Player:
             task.add_done_callback(self._brush_offs.discard)
         return None
 
-    async def check(self, target: Villager, utterance: Utterance, since: str) -> list[float] | None:
-        """The similarities with which the whisper clears the target's needs; empty for a miss, None on error."""
+    async def check(self, target: Villager, utterance: Utterance, since: str) -> list[Match] | None:
+        """The whisper's hits on the target's needs, each with its clearance; empty for a miss, None on error."""
         key = f"utt:{utterance.id}"
         project = mind_project(self.config.session, target.id)
         try:
@@ -135,9 +141,11 @@ class Player:
         except Exception:
             log.exception("whisper check for %s failed", target.id)
             return None
+        baselines = self.engine.baselines
         return [
-            m.similarity for need, matches in zip(target.needs, found) for m in matches
-            if m.data_key == key and m.similarity is not None and self.engine.baselines.matches(need, m.similarity)
+            replace(m, clearance=m.similarity - baselines.threshold(need))
+            for need, matches in zip(target.needs, found) for m in matches
+            if m.data_key == key and m.similarity is not None and baselines.matches(need, m.similarity)
         ]
 
     def _over(self) -> bool:

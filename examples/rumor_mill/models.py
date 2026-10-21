@@ -23,6 +23,11 @@ class Utterance:
     text: str
     parent: str | None
     verb: str = "said"
+    depth: int = 0
+    names_newcomer: bool = False
+    audience: str = "one"
+    action: str | None = None
+    style: str | None = None
 
     def to_data(self) -> dict:
         """Payload for Contex, which embeds every field, so it holds only what the game reads back."""

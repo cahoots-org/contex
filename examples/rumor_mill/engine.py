@@ -12,6 +12,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.decide import TurnView, decide
 from examples.rumor_mill.effects import act
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project
@@ -54,6 +55,7 @@ class Engine:
         self.lineage = lineage
         self.ids = ids
         self.feed = feed
+        self.facts = Facts()
         self.suspicion = Suspicion(config, town)
         self.baselines = baselines
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
@@ -261,7 +263,7 @@ class Engine:
                         log.exception("suspicion rating failed for %s", v.id)
                 await act(
                     decision, v, town=self.town, writer=self.writer, hub=self,
-                    lineage=self.lineage, ids=self.ids,
+                    lineage=self.lineage, ids=self.ids, facts=self.facts,
                     inspiration=[m.data.get("text", "") for m in new],
                     suspicion_hear_max=self.config.suspicion_hear_max,
                 )

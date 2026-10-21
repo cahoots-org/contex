@@ -199,3 +199,14 @@ async def test_mind_without_needs_never_listens():
         async with asyncio.timeout(0.05):
             await anext(mind.pushes())
     assert client.listened == []
+
+
+@pytest.mark.asyncio
+async def test_poll_reports_best_clearance_across_needs():
+    client = StubClient({
+        "bread": [{"bread": [Match("a", {}, 0.80), Match("b", {}, 0.90)]}],
+        "omens": [{"omens": [Match("a", {}, 0.95)]}],
+    })
+    mind = await opened(client, ("bread", "omens"), bread=0.70, omens=0.80)
+    got = {x.data_key: x.clearance for x in await mind.poll()}
+    assert got == {"a": pytest.approx(0.10), "b": pytest.approx(0.15)}

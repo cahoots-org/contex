@@ -4,6 +4,7 @@ import asyncio
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
@@ -95,6 +96,7 @@ class FakeEngine:
         self.contex = contex or StubContex()
         self.baselines = baselines or StubBaselines(0.5)
         self.direct = []
+        self.facts = Facts()
         self.free_at = 0.0
 
     async def deliver(self, utterance, listener_ids):

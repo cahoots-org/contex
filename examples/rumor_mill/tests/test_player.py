@@ -400,3 +400,18 @@ async def test_check_queries_each_need_at_its_threshold():
     await player.whisper_to("v1", "the oven is cold")
     assert {q: kwargs["threshold"] for _, q, kwargs in engine.contex.queries} == {"bread": 0.5, "flour": 0.9}
     player.close()
+
+
+@pytest.mark.asyncio
+async def test_direct_hit_carries_clearance():
+    player, _, _, engine, _ = make("Marta")
+    player.town.get("v1").needs.extend(["bread", "flour"])
+    engine.baselines = StubBaselines(0.5, flour=0.6)
+    engine.contex = StubContex({"bread": landing(0.7), "flour": landing(0.9)})
+    assert await player.whisper_to("v1", "the oven is cold") is None
+    (_, match), = engine.direct
+    assert match.similarity == 0.9
+    assert match.clearance == pytest.approx(0.3)
+    fact = engine.facts.get("w-1")
+    assert (fact.depth, fact.audience) == (0, "one")
+    player.close()

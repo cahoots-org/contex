@@ -15,6 +15,8 @@ class Match:
     data_key: str
     data: dict
     similarity: float | None = None
+    # How far the similarity clears the matching need's threshold, at its best.
+    clearance: float | None = None
 
 
 Bundle = dict[str, list[Match]]

@@ -7,8 +7,9 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.effects import act
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.models import Villager
+from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import Town
 
 
@@ -62,11 +63,12 @@ class Setup:
         self.hub = RecordingHub()
         self.lineage = Lineage()
         self.ids = Ids()
+        self.facts = Facts()
 
     async def act(self, who, decision, **kw):
         await act(
             decision, self.town.get(who), town=self.town, writer=self.writer,
-            hub=self.hub, lineage=self.lineage, ids=self.ids, **kw,
+            hub=self.hub, lineage=self.lineage, ids=self.ids, facts=self.facts, **kw,
         )
 
 
@@ -184,3 +186,34 @@ async def test_warn_raises_the_targets_suspicion():
     s.hub.suspect = broken
     await s.act("v1", Decision(WARN, None, "v2", None))
     assert len(s.hub.delivered) == 2
+
+
+@pytest.mark.asyncio
+async def test_act_records_depth_audience_action_style():
+    s = Setup()
+    s.facts.record(Utterance("u-0", "v3", "Cy", "square", "Bert stole bread", None, depth=2))
+    recorded_first = []
+
+    async def deliver(utterance, listener_ids, addressed=False):
+        recorded_first.append(s.facts.get(utterance.id) is utterance)
+        s.hub.delivered.append((utterance, listener_ids))
+
+    s.hub.deliver = deliver
+    await s.act("v1", Decision(RETELL, source("u-0"), "v2", "faithful"))
+    await s.act("v1", Decision(SPEAK, source("u-unknown"), None, "angry"))
+    await s.act("v1", Decision(WARN, source("u-0"), "v2", None))
+    await s.act("v1", Decision(FOUND_GROUP, source("u-0"), None, None))
+    got = [(u.depth, u.audience, u.action, u.style, u.names_newcomer) for u, _ in s.hub.delivered]
+    assert got == [
+        (3, "one", RETELL, "faithful", False),
+        (0, "room", SPEAK, "angry", False),
+        (0, "one", WARN, None, False),
+        (3, "room", FOUND_GROUP, None, False),
+    ]
+    assert recorded_first == [True] * 4
+
+
+def test_payload_unchanged():
+    u = Utterance("u-1", "v1", "Bert", "square", "hi", None, depth=4, names_newcomer=True,
+                  audience="room", action=SPEAK, style="sly")
+    assert u.to_data() == {"id": "u-1", "text": "Bert said at the square: hi"}
