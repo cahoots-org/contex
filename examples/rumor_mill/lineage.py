@@ -36,3 +36,7 @@ class Lineage:
 
     def is_player_rooted(self, uid: str) -> bool:
         return self.root(uid) in self._player
+
+    def is_whisper(self, uid: str) -> bool:
+        """Whether uid is one of the newcomer's own whispers."""
+        return self.is_player_rooted(uid) and self.root(uid) == uid

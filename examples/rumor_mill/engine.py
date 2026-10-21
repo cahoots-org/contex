@@ -231,6 +231,8 @@ class Engine:
         if not new:
             return False
         keys = {m.data_key for m in new}
+        # The newcomer's own whispers among the new items, for whisper outcomes.
+        whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
         place = self.town.place_of(v.id)
         view = TurnView(
             villager=v,
@@ -242,9 +244,8 @@ class Engine:
             recent=[m for m in mind.matches if m.data_key not in keys],
             suspicion=self.suspicion.score(v.id),
             warn_threshold=self.config.warn_threshold,
-            player_rooted=[m for m in new if self.lineage.is_player_rooted(m.data.get("id"))],
+            names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
         )
-        whispers = [m.data["id"] for m in view.player_rooted if self.lineage.root(m.data["id"]) == m.data["id"]]
         action = None
         try:
             async with self._turns:
@@ -257,7 +258,7 @@ class Engine:
                     try:
                         self.suspicion.rate(
                             v.id, decision.suspicion_strength, "heard the newcomer named",
-                            view.player_rooted[0].data.get("id"),
+                            view.names_newcomer[0].data.get("id"),
                         )
                     except Exception:
                         log.exception("suspicion rating failed for %s", v.id)
@@ -268,8 +269,14 @@ class Engine:
                     suspicion_hear_max=self.config.suspicion_hear_max,
                 )
         finally:
-            self._report(v, whispers, action, self._said.pop(v.id, []))
+            self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []))
         return True
+
+    def _names_newcomer(self, m: Match) -> bool:
+        """Whether the item names the newcomer; a direct warning already raised suspicion when it was given."""
+        # ponytail: Facts evicts after 5000 lines, so very old named lines stop raising suspicion.
+        fact = self.facts.get(m.data.get("id"))
+        return fact is not None and fact.names_newcomer and fact.action != WARN
 
     def _report(self, v: Villager, whispers: list[str], action: str | None, said: list[tuple[str, int]]) -> None:
         """Tell the feed what the villager did with the whispers this turn heard and any they kept before.

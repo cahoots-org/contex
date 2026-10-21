@@ -35,8 +35,7 @@ ACTION_INSTRUCTIONS = (
 SUSPICION_LEVELS = ["not at all", "a little", "quite a bit", "convinced"]
 SUSPICION_INSTRUCTIONS = (
     "How strongly does what this villager just heard make them suspect the newcomer is "
-    "behind these rumors, given their personality? Count it when the newcomer is named or "
-    "implied, and also when a rumor is sensational or hurtful to someone this villager knows."
+    "behind the rumors going around, given their personality?"
 )
 
 
@@ -51,8 +50,8 @@ class TurnView:
     recent: list[Match]
     suspicion: float
     warn_threshold: float
-    # New items whose utterance traces back to the newcomer.
-    player_rooted: list[Match]
+    # New items that name the newcomer: the newcomer's own whispers and lines that say who started them.
+    names_newcomer: list[Match]
 
 
 @dataclass(frozen=True)
@@ -111,7 +110,7 @@ def _action_criteria(view: TurnView) -> dict:
 
 def _questions(view: TurnView) -> dict[str, Choice | Score]:
     qs = {"action": Choice(instructions=ACTION_INSTRUCTIONS, criteria=_action_criteria(view))}
-    if view.player_rooted:
+    if view.names_newcomer:
         qs["suspicion"] = Score(instructions=SUSPICION_INSTRUCTIONS, criteria=SUSPICION_LEVELS)
     if len(view.new) > 1:
         qs["source"] = Choice(
@@ -171,7 +170,7 @@ async def decide(jev, view: TurnView) -> Decision:
     else:
         action = max(odds, key=odds.get)
     log.debug("%s: action odds %s, drew %s", view.villager.id, odds, action)
-    strength = _strength(resp) if view.player_rooted else None
+    strength = _strength(resp) if view.names_newcomer else None
     if action == IGNORE:
         return Decision(IGNORE, None, None, None, strength)
     if len(view.new) > 1:

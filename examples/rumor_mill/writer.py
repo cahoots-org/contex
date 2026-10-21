@@ -1,6 +1,7 @@
 """Haiku writes the words; it never decides what anyone does."""
 
 import json
+import re
 
 from examples.rumor_mill.actions import STYLES
 from examples.rumor_mill.decide import Decision
@@ -9,6 +10,8 @@ from examples.rumor_mill.models import Villager
 SAY_MAX_TOKENS = 80
 TURN_AWAY_MAX_TOKENS = 60
 WARN_MAX_TOKENS = 60
+# How a player whisper reads when it reaches a villager.
+WHISPER_FRAMING = re.compile(r"^The newcomer whispered to you at the [^:]*: ")
 
 
 def first_line(text: str) -> str:
@@ -48,8 +51,12 @@ class Writer:
 
     async def say(
         self, villager: Villager, decision: Decision, source_text: str | None, audience: str,
+        names_newcomer: bool = False,
     ) -> str:
-        """The villager's words for this decision, in their voice and chosen style."""
+        """The villager's words for this decision, in their voice and chosen style.
+
+        Unless names_newcomer, the newcomer's whisper framing is removed and the villager keeps the source unnamed.
+        """
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
             f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
@@ -61,8 +68,12 @@ class Writer:
         lines = [f"Action: {decision.action}.", f"Listening: {audience}."]
         if decision.style:
             lines.append(f"Manner: {STYLES[decision.style]}")
-        if source_text:
+        if source_text and names_newcomer:
             lines.append(f"What you heard: {source_text}")
+            lines.append("This story names the newcomer; keep that in.")
+        elif source_text:
+            lines.append(f"What you heard: {WHISPER_FRAMING.sub('', source_text)}")
+            lines.append("Do not say or hint who started this story.")
         return await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS)
 
     async def brush_off(self, villager: Villager, concern: str) -> str:

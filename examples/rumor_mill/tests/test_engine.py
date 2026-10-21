@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
-from examples.rumor_mill.actions import IGNORE, SPEAK
+from examples.rumor_mill.actions import IGNORE, SPEAK, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -360,11 +361,12 @@ async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fai
     engine, minds, _ = await setup("v1")
     engine.lineage.record("w-1", None, player=True)
     engine.lineage.record("u-0", "w-1")
+    engine.facts.record(Utterance("u-0", "v2", "V2", "square", "news", "w-1", names_newcomer=True))
     turns.strength = 1.0
     push(minds["v1"])
     await wait_for(lambda: len(turns.acts) == 1)
     view = turns.views[0]
-    assert view.player_rooted == view.new
+    assert view.names_newcomer == view.new
     assert (view.suspicion, view.warn_threshold) == (0.0, engine.config.warn_threshold)
     assert engine.suspicion.score("v1") == engine.config.suspicion_hear_max
 
@@ -603,4 +605,54 @@ async def test_departure_resolves_whispers_still_being_heard(relays):
     assert statuses(feed)[4:] == [("w-1", "v1", "kept", None), ("w-2", "v1", "kept", None)]
     feed.on_whisper_status("w-1", "v1", "V1", "heard")
     assert len(statuses(feed)) == 6
+    await engine.stop()
+
+
+class Rater:
+    """A Jev that always ignores and is convinced the newcomer is behind it, when asked."""
+
+    def __init__(self):
+        self.asked = []
+
+    async def system_one(self, state, questions):
+        self.asked.append("suspicion" in questions)
+        choices = {"action": SimpleNamespace(choice=IGNORE, probabilities={IGNORE: 1.0})}
+        scores = {"suspicion": SimpleNamespace(score=3.0)} if "suspicion" in questions else {}
+        return SimpleNamespace(choices=choices, scores=scores)
+
+
+@pytest.mark.asyncio
+async def test_hurtful_gossip_raises_no_suspicion(monkeypatch):
+    async def no_act(*args, **kw):
+        pass
+
+    monkeypatch.setattr(engine_mod, "act", no_act)
+    engine, minds, _ = await setup("v1")
+    engine.jev = Rater()
+    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("u-0", "w-1")
+    engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Drogo drinks", "w-1", style="exaggerated"))
+    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V2 said at the square: Drogo drinks"})]]
+    push(minds["v1"])
+    await wait_for(lambda: engine.jev.asked)
+    assert engine.jev.asked == [False]
+    assert engine.suspicion.score("v1") == 0.0
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_warning_asks_no_score_question(monkeypatch):
+    async def no_act(*args, **kw):
+        pass
+
+    monkeypatch.setattr(engine_mod, "act", no_act)
+    engine, minds, _ = await setup("v1")
+    engine.jev = Rater()
+    engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Mind the newcomer", None, "warned",
+                                  names_newcomer=True, action=WARN))
+    engine.suspect("v1", 0.1, "was warned about the newcomer", "u-0")
+    engine.hear_directly("v1", Match("utt:u-0", {"id": "u-0", "text": "V2 warned at the square: Mind the newcomer"}))
+    await wait_for(lambda: engine.jev.asked)
+    assert engine.jev.asked == [False]
+    assert engine.suspicion.score("v1") == pytest.approx(0.1)
     await engine.stop()

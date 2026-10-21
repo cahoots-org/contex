@@ -120,3 +120,20 @@ def make_player(*names, cooldown=0.0):
     feed = Feed(lineage, town, out=lines.append)
     player = Player(engine, town, lineage, Ids(), feed, config)
     return player, town, lines, engine, lineage
+
+
+class StubMessages:
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        block = type("Block", (), {"text": self.texts.pop(0)})()
+        usage = type("Usage", (), {"input_tokens": 120, "output_tokens": 30})()
+        return type("Response", (), {"content": [block], "usage": usage})()
+
+
+class StubClient:
+    def __init__(self, *texts):
+        self.messages = StubMessages(texts)

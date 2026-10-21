@@ -45,7 +45,7 @@ def view(**kw):
     base = dict(
         villager=villager(), place="square", present=[villager("v2", "Bo")],
         member_groups=[], visible_groups=[], new=[match("m1")], recent=[],
-        suspicion=0.0, warn_threshold=0.4, player_rooted=[],
+        suspicion=0.0, warn_threshold=0.4, names_newcomer=[],
     )
     return TurnView(**{**base, **kw})
 
@@ -225,22 +225,24 @@ async def test_odds_and_drawn_action_are_logged_at_debug(caplog):
 
 
 @pytest.mark.asyncio
-async def test_suspicion_question_only_when_a_player_rooted_item_is_new():
+async def test_score_question_only_when_a_line_names_the_newcomer():
     jev = StubJev({"action": IGNORE}, scores={"suspicion": 2.0})
     d = await decide(jev, view())
     assert "suspicion" not in jev.questions
     assert d.suspicion_strength is None
-    d = await decide(jev, view(player_rooted=[match("m1")]))
+    d = await decide(jev, view(names_newcomer=[match("m1")]))
     question = jev.questions["suspicion"]
     assert list(question.criteria) == SUSPICION_LEVELS == ["not at all", "a little", "quite a bit", "convinced"]
-    assert all(s in question.instructions for s in ("newcomer", "personality", "hurtful"))
+    assert all(s in question.instructions for s in ("newcomer", "personality", "rumors going around"))
+    assert "hurtful" not in question.instructions
+    assert "sensational" not in question.instructions
     assert d.action == IGNORE
     assert d.suspicion_strength == pytest.approx(2 / 3)
 
 
 @pytest.mark.asyncio
 async def test_missing_suspicion_answer_leaves_strength_none():
-    rooted = view(player_rooted=[match("m1")])
+    rooted = view(names_newcomer=[match("m1")])
     assert (await decide(StubJev({"action": IGNORE}), rooted)).suspicion_strength is None
     assert (await decide(StubJev({"action": IGNORE}, scores={}), rooted)).suspicion_strength is None
     assert (await decide(StubJev({"action": IGNORE}, scores={"suspicion": "high"}), rooted)).suspicion_strength is None

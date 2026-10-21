@@ -6,24 +6,8 @@ from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.usage import Usage
+from examples.rumor_mill.tests.helpers import StubClient
 from examples.rumor_mill.writer import Writer
-
-
-class StubMessages:
-    def __init__(self, texts):
-        self.texts = list(texts)
-        self.calls = []
-
-    async def create(self, **kwargs):
-        self.calls.append(kwargs)
-        block = type("Block", (), {"text": self.texts.pop(0)})()
-        usage = type("Usage", (), {"input_tokens": 120, "output_tokens": 30})()
-        return type("Response", (), {"content": [block], "usage": usage})()
-
-
-class StubClient:
-    def __init__(self, *texts):
-        self.messages = StubMessages(texts)
 
 
 def villager():
