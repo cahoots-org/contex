@@ -24,6 +24,10 @@ class Config:
     check_lookback_seconds: float = 5.0
     # How far above a need's ordinary-talk similarity a whisper must score to match it.
     match_margin: float = 0.02
+    # How much more clearance each retelling hop needs before it wakes a listener.
+    fatigue_per_hop: float = 0.01
+    # How much more clearance overheard room talk needs than a line told to the listener.
+    overheard_margin: float = 0.01
     # Where need baselines are cached; empty means the seed path plus .baselines.json.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"

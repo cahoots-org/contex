@@ -656,3 +656,85 @@ async def test_a_warning_asks_no_score_question(monkeypatch):
     assert engine.jev.asked == [False]
     assert engine.suspicion.score("v1") == pytest.approx(0.1)
     await engine.stop()
+
+
+def told(engine, uid, depth=0, audience="one", action=None):
+    engine.facts.record(Utterance(uid, "v9", "V9", "tavern", "news", None, depth=depth, audience=audience, action=action))
+
+
+@pytest.mark.asyncio
+async def test_deep_retelling_does_not_wake(turns):
+    engine, minds, _ = await setup("v1")
+    told(engine, "u-deep", depth=3)
+    minds["v1"].results = [[Match("k-deep", {"id": "u-deep", "text": "old news"}, 0.9, 0.025)]]
+    push(minds["v1"])
+    await wait_for(lambda: minds["v1"].polls == 1)
+    await asyncio.sleep(SETTLE)
+    assert turns.views == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_room_talk_needs_the_overheard_margin(turns):
+    engine, minds, _ = await setup("v1", cooldown=0.0)
+    told(engine, "u-room", audience="room")
+    told(engine, "u-loud", audience="room")
+    minds["v1"].results = [
+        [Match("k-room", {"id": "u-room", "text": "murmur"}, 0.9, 0.005)],
+        [Match("k-loud", {"id": "u-loud", "text": "shout"}, 0.9, 0.015)],
+    ]
+    push(minds["v1"])
+    await wait_for(lambda: minds["v1"].polls == 1)
+    await asyncio.sleep(SETTLE)
+    assert turns.views == []
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    assert [m.data_key for m in turns.views[0].new] == ["k-loud"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_stale_items_become_memories(turns):
+    engine, minds, _ = await setup("v1")
+    told(engine, "u-stale", depth=5)
+    fresh = Match("k-fresh", {"id": "u-fresh", "text": "hot news"}, 0.9, 0.05)
+    stale = Match("k-stale", {"id": "u-stale", "text": "old news"}, 0.9, 0.01)
+    minds["v1"].results = [[fresh, stale]]
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.acts) == 1)
+    view = turns.views[0]
+    assert view.new == [fresh]
+    assert stale in view.recent
+    assert turns.acts[0][1] == ["hot news"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_no_turn_without_a_fresh_item(turns):
+    engine, minds, _ = await setup("v1", cooldown=0.0)
+    told(engine, "u-stale", depth=5)
+    stale = Match("k-stale", {"id": "u-stale", "text": "old news"}, 0.9, 0.01)
+    fresh = Match("k-fresh", {"id": "u-fresh", "text": "hot news"}, 0.9, 0.05)
+    minds["v1"].results = [[stale], [stale, fresh]]
+    push(minds["v1"])
+    await wait_for(lambda: minds["v1"].polls == 1)
+    await asyncio.sleep(SETTLE)
+    assert turns.views == []
+    assert "v1" not in engine._last_turn
+    assert "k-stale" in engine._consumed["v1"]
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    assert turns.views[0].new == [fresh]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_warnings_always_fresh(turns):
+    engine, minds, _ = await setup("v1")
+    warning = Utterance("u-warn", "v2", "V2", "tavern", "watch the newcomer", None, depth=4, action=WARN)
+    engine.facts.record(warning)
+    minds["v1"].results = [[]]
+    await engine.deliver(warning, ["v1"], addressed=True)
+    await wait_for(lambda: len(turns.views) == 1)
+    assert [m.data_key for m in turns.views[0].new] == ["utt:u-warn"]
+    await engine.stop()

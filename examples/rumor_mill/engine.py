@@ -211,7 +211,7 @@ class Engine:
                 return
 
     async def _turn(self, mind: Mind) -> bool:
-        """Poll the mind, add addressed messages, and if anything is new, decide and act.
+        """Poll the mind, add addressed messages, and if anything fresh is new, decide and act.
 
         Returns whether a turn ran.
         """
@@ -228,6 +228,9 @@ class Engine:
             consumed[m.data_key] = None
         while len(consumed) > CONSUMED_KEYS:
             del consumed[next(iter(consumed))]
+        stale = [m for m in new if not self._fresh(m)]
+        stale_keys = {m.data_key for m in stale}
+        new = [m for m in new if m.data_key not in stale_keys]
         if not new:
             return False
         keys = {m.data_key for m in new}
@@ -241,7 +244,7 @@ class Engine:
             member_groups=self.town.member_groups(v.id),
             visible_groups=self.town.visible_groups(v.id),
             new=new,
-            recent=[m for m in mind.matches if m.data_key not in keys],
+            recent=stale + [m for m in mind.matches if m.data_key not in keys | stale_keys],
             suspicion=self.suspicion.score(v.id),
             warn_threshold=self.config.warn_threshold,
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
@@ -271,6 +274,15 @@ class Engine:
         finally:
             self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []))
         return True
+
+    def _fresh(self, m: Match) -> bool:
+        """Whether the item clears its need by enough to wake the villager, given how often it was retold."""
+        if m.clearance is None:
+            return True
+        fact = self.facts.get(m.data.get("id"))
+        depth = fact.depth if fact else 0
+        room = self.config.overheard_margin if fact and fact.audience == "room" else 0.0
+        return m.clearance >= self.config.fatigue_per_hop * depth + room
 
     def _names_newcomer(self, m: Match) -> bool:
         """Whether the item names the newcomer; a direct warning already raised suspicion when it was given."""
