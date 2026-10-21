@@ -1,6 +1,9 @@
+import re
+from pathlib import Path
+
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Lineage
-from examples.rumor_mill.notes import Notes
+from examples.rumor_mill.notes import RANK, Notes
 from examples.rumor_mill.town import Town
 
 
@@ -50,3 +53,17 @@ def test_replay_rebuilds_the_same_notes():
         "v2": {"status": "took_the_bait", "hint": None},
         "v3": {"status": "wary", "hint": None},
     }
+
+
+def test_notes_rank_answered():
+    feed, notes = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "heard")
+    feed.on_whisper_status("w-1", "v1", "Bert", "answered")
+    assert notes.get("v1")["status"] == "answered"
+    feed.on_whisper_status("w-1", "v1", "Bert", "moved_on")
+    assert notes.get("v1")["status"] == "kept"
+    feed.on_whisper_status("w-2", "v1", "Bert", "answered")
+    assert notes.get("v1")["status"] == "kept"
+    assert RANK.index("listening") < RANK.index("answered") < RANK.index("kept")
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    assert re.search(r"const RANK = \[(.*?)\];", page).group(1) == ", ".join(f'"{r}"' for r in RANK)

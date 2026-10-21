@@ -646,13 +646,14 @@ setInterval(() => {
 }, 1000);
 
 // The player's notes, kept by the same rule as the server's: a note only moves up, except that wary overrides anything.
-const RANK = ["none", "listening", "brushed_off", "kept", "wary", "took_the_bait"];
+const RANK = ["none", "listening", "brushed_off", "answered", "kept", "wary", "took_the_bait"];
 const STATUS_OF = {
   checking: "listening", busy: "listening", heard: "listening", brushed_off: "brushed_off",
-  kept: "kept", took_the_bait: "took_the_bait", warned: "wary",
+  answered: "answered", kept: "kept", moved_on: "kept", took_the_bait: "took_the_bait", warned: "wary",
 };
 const BADGES = {
   took_the_bait: ["✓", "took the bait"],
+  answered: ["↩", "answered you"],
   kept: ["○", "kept it quiet"],
   brushed_off: ["–", "brushed you off"],
   wary: ["!", "wary of you"],

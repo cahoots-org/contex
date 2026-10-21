@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from contextlib import aclosing, suppress
 
-from examples.rumor_mill.actions import WARN
+from examples.rumor_mill.actions import ANSWER, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -80,6 +80,8 @@ class Engine:
         self._listen_failed: set[str] = set()
         self._said: dict[str, list[tuple[str, int]]] = {}
         self._kept: dict[str, dict[str, None]] = {}
+        # Each villager's open conversation with the newcomer: its first whisper and the whispers answered so far.
+        self.conversations: dict[str, dict] = {}
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
@@ -109,6 +111,7 @@ class Engine:
         self._listen_failed.discard(vid)
         self._said.pop(vid, None)
         self._kept.pop(vid, None)
+        self.end_conversation(vid)
         for wid, name in self.feed.listening(vid):
             self.feed.on_whisper_status(wid, vid, name, "kept")
         with suppress(KeyError):
@@ -160,6 +163,23 @@ class Engine:
             hop = on_topic and self.lineage.is_player_rooted(utterance.id)
             if reason := await self.overhear.keep(utterance, self.player_place(), hop):
                 self.feed.on_overheard(utterance, reason)
+
+    async def reply(self, utterance: Utterance) -> None:
+        """Remember a villager's answer to the newcomer and show it on its conversation; no mind hears it."""
+        await self._remember_said(utterance.speaker, f"said:{utterance.id}", utterance.to_data())
+        whisper = self.facts.get(utterance.parent)
+        conversation = (whisper and whisper.conversation) or utterance.parent
+        if self.rumors is not None:
+            self.rumors.add_line(conversation, utterance)
+        self.feed.on_reply(conversation, utterance)
+
+    def end_conversation(self, vid: str) -> None:
+        """Close the villager's conversation with the newcomer; every answered whisper in it has moved on."""
+        conversation = self.conversations.pop(vid, None)
+        if conversation is not None:
+            name = self.town.name_of(vid) or vid
+            for wid in conversation["answered"]:
+                self.feed.on_whisper_status(wid, vid, name, "moved_on")
 
     async def _remember_said(self, vid: str, key: str, data: dict) -> None:
         """Keep a line the villager spoke in their said project, which nothing subscribes to."""
@@ -287,6 +307,8 @@ class Engine:
         # The newcomer's own whispers among the new items, for whisper outcomes.
         whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
         said = await self._recall_said(v.id, whispers) if whispers else []
+        talking = self.conversations.get(v.id, {"answered": []})
+        answerable = whispers if len(talking["answered"]) < self.config.talk_turns else []
         place = self.town.place_of(v.id)
         view = TurnView(
             villager=v,
@@ -300,8 +322,9 @@ class Engine:
             warn_threshold=self.config.warn_threshold,
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
             said=said,
+            answerable=answerable,
         )
-        action = None
+        action = answered = None
         try:
             async with self._turns:
                 decision = await decide(self.jev, view)
@@ -321,10 +344,13 @@ class Engine:
                     decision, v, town=self.town, writer=self.writer, hub=self,
                     lineage=self.lineage, ids=self.ids, facts=self.facts,
                     inspiration=[m.data.get("text", "") for m in new],
+                    said=[m.data.get("text", "") for m in said],
                     suspicion_hear_max=self.config.suspicion_hear_max,
                 )
+                if action == ANSWER:
+                    answered = decision.source.data["id"]
         finally:
-            self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []))
+            self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
         return True
 
     def _fresh(self, m: Match) -> bool:
@@ -342,10 +368,14 @@ class Engine:
         fact = self.facts.get(m.data.get("id"))
         return fact is not None and fact.names_newcomer and fact.action != WARN
 
-    def _report(self, v: Villager, whispers: list[str], action: str | None, said: list[tuple[str, int]]) -> None:
+    def _report(
+        self, v: Villager, whispers: list[str], action: str | None, said: list[tuple[str, int]],
+        answered: str | None = None,
+    ) -> None:
         """Tell the feed what the villager did with the whispers this turn heard and any they kept before.
 
-        said holds (utterance id, listeners who heard it) for what this turn said, in order.
+        said holds (utterance id, listeners who heard it) for what this turn said, in order; answered is the
+        whisper the villager answered, if any. A reply in an open conversation ends it unless the turn answered.
         """
         told: dict[str, int] = {}
         for uid, heard in said:
@@ -355,15 +385,33 @@ class Engine:
             del kept[wid]
             self.feed.on_whisper_status(wid, v.id, v.name, "took_the_bait", told=told[wid])
         for wid in whispers:
+            if wid == answered:
+                self._answered(v, wid)
+                continue
+            fact = self.facts.get(wid)
+            talking = fact is not None and fact.conversation is not None and (
+                self.conversations.get(v.id, {}).get("id") == fact.conversation
+            )
             if wid in told:
                 self.feed.on_whisper_status(wid, v.id, v.name, "took_the_bait", told=told[wid])
             elif action == WARN:
                 self.feed.on_whisper_status(wid, v.id, v.name, "warned")
             else:
                 kept[wid] = None
-                self.feed.on_whisper_status(wid, v.id, v.name, "kept")
+                self.feed.on_whisper_status(wid, v.id, v.name, "moved_on" if talking else "kept")
+            if talking and answered is None:
+                self.end_conversation(v.id)
         while len(kept) > KEPT_WHISPERS:
             del kept[next(iter(kept))]
+
+    def _answered(self, v: Villager, wid: str) -> None:
+        """Open or extend the villager's conversation on the card the whisper belongs to; the cap ends it."""
+        fact = self.facts.get(wid)
+        conversation = self.conversations.setdefault(v.id, {"id": (fact and fact.conversation) or wid, "answered": []})
+        conversation["answered"].append(wid)
+        self.feed.on_whisper_status(wid, v.id, v.name, "answered")
+        if len(conversation["answered"]) >= self.config.talk_turns:
+            self.end_conversation(v.id)
 
     async def _suspicion_loop(self) -> None:
         """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""

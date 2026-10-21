@@ -28,6 +28,8 @@ class Utterance:
     audience: str = "one"
     action: str | None = None
     style: str | None = None
+    # The first whisper of the conversation a newcomer's reply belongs to.
+    conversation: str | None = None
 
     def to_data(self) -> dict:
         """Payload for Contex, which embeds every field, so it holds only what the game reads back."""

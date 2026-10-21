@@ -120,6 +120,21 @@ class Writer:
         user = f"You are talking to {target.name}, a {target.occupation}."
         return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
+    async def reply(self, villager: Villager, newcomer_line: str, said: list[str]) -> str:
+        """The villager answering what the newcomer just said to them, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
+            "The newcomer in town just said something to you that you care about. Answer them "
+            "in one short sentence, under 30 words, in your own voice, responding to what they said. "
+            "Never mention suspicion. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        lines = [f"The newcomer said: {WHISPER_FRAMING.sub('', newcomer_line)}"]
+        if said:
+            lines.append("What you said earlier: " + " / ".join(said))
+        return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
+
     async def describe_group(
         self, villager: Villager, inspiration: list[str],
     ) -> tuple[str, str]:

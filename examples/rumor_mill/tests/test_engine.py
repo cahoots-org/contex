@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
-from examples.rumor_mill.actions import IGNORE, SPEAK, WARN
+from examples.rumor_mill.actions import ANSWER, IGNORE, SPEAK, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -961,3 +961,138 @@ async def test_said_project_has_no_subscription(turns):
     await engine.deliver(utt, [])
     assert contex.queries and contex.published
     assert not any(p == said_project(engine.config.session, "v1") for p in subscribed)
+
+
+class Talks:
+    """Each turn takes the next planned action, answering the newcomer's line; a planned None fails the turn."""
+
+    def __init__(self):
+        self.plan = []
+        self.views = []
+
+    async def decide(self, jev, view):
+        self.views.append(view)
+        action = self.plan.pop(0)
+        if action is None:
+            raise RuntimeError("jev down")
+        return Decision(action, view.answerable[-1] if action == ANSWER else view.new[0], None, None)
+
+    async def act(self, decision, villager, **kw):
+        pass
+
+
+@pytest.fixture
+def talks(monkeypatch):
+    t = Talks()
+    monkeypatch.setattr(engine_mod, "decide", t.decide)
+    monkeypatch.setattr(engine_mod, "act", t.act)
+    return t
+
+
+def reply_whisper(engine, vid, wid, conversation):
+    engine.facts.record(Utterance(wid, PLAYER_ID, "The newcomer", "square", "psst", None, conversation=conversation))
+    whisper(engine, vid, wid)
+
+
+def states(feed):
+    return [(wid, state) for wid, _, state, _ in statuses(feed)]
+
+
+async def answered_once(talks, then, **config):
+    engine, minds, feed = await setup("v1", config=Config(cooldown_seconds=0.05, **config))
+    minds["v1"].results = [[], []]
+    talks.plan = [ANSWER, then]
+    whisper(engine, "v1", "w-1")
+    await wait_for(lambda: statuses(feed))
+    assert [m.data_key for m in talks.views[0].answerable] == ["utt:w-1"]
+    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-1"]}
+    reply_whisper(engine, "v1", "w-2", "w-1")
+    await wait_for(lambda: len(statuses(feed)) >= 3)
+    await engine.stop()
+    return engine, feed
+
+
+@pytest.mark.asyncio
+async def test_cap_ends_with_moved_on(talks):
+    engine, feed = await answered_once(talks, ANSWER, talk_turns=2)
+    assert states(feed) == [("w-1", "answered"), ("w-2", "answered"), ("w-1", "moved_on"), ("w-2", "moved_on")]
+    assert "v1" not in engine.conversations
+
+
+@pytest.mark.asyncio
+async def test_other_action_ends_with_moved_on(talks):
+    engine, feed = await answered_once(talks, IGNORE)
+    assert states(feed) == [("w-1", "answered"), ("w-2", "moved_on"), ("w-1", "moved_on")]
+    assert "v1" not in engine.conversations
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_ends_with_moved_on(talks):
+    engine, feed = await answered_once(talks, None)
+    assert states(feed) == [("w-1", "answered"), ("w-2", "moved_on"), ("w-1", "moved_on")]
+    assert "v1" not in engine.conversations
+
+
+@pytest.mark.asyncio
+async def test_no_answer_is_offered_without_a_newcomer_line(talks):
+    engine, minds, _ = await setup("v1")
+    talks.plan = [IGNORE]
+    push(minds["v1"])
+    await wait_for(lambda: talks.views)
+    assert talks.views[0].answerable == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_departure_ends_the_conversation(talks):
+    engine, _, feed = await setup("v1")
+    engine.conversations["v1"] = {"id": "w-1", "answered": ["w-1"]}
+    await engine.remove_villager("v1")
+    assert states(feed) == [("w-1", "moved_on")]
+    assert "v1" not in engine.conversations
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_reply_is_remembered_and_reaches_the_feed_not_minds(turns):
+    contex = StubContex()
+    engine, minds, _ = await setup("v1", "v2", contex=contex)
+    lines = []
+    engine.feed = Feed(engine.lineage, engine.town, out=lines.append)
+    engine.facts.record(Utterance("w-2", PLAYER_ID, "The newcomer", "square", "psst", None, conversation="w-1"))
+    utt = Utterance("u-5", "v1", "V1", "square", "Aye, the well.", "w-2", "answered", action=ANSWER)
+    await engine.reply(utt)
+    assert minds["v2"].heard == [] and minds["v1"].heard == []
+    assert contex.published == [(said_project(engine.config.session, "v1"), "said:u-5", utt.to_data())]
+    event = engine.feed.recent[-1]
+    assert event.kind == "reply"
+    assert {k: event.data[k] for k in ("conversation", "villager_id", "name", "text", "uid")} == {
+        "conversation": "w-1", "villager_id": "v1", "name": "V1", "text": "Aye, the well.", "uid": "u-5",
+    }
+    assert lines == ['V1 answers you: "Aye, the well."']
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_two_replies_in_one_turn_keep_the_conversation_when_one_is_answered(talks):
+    engine, minds, feed = await setup("v1")
+    minds["v1"].results = [[]]
+    talks.plan = [ANSWER]
+    engine.conversations["v1"] = {"id": "w-1", "answered": ["w-1"]}
+    reply_whisper(engine, "v1", "w-2", "w-1")
+    reply_whisper(engine, "v1", "w-3", "w-1")
+    await wait_for(lambda: len(statuses(feed)) == 2)
+    await engine.stop()
+    assert states(feed) == [("w-2", "moved_on"), ("w-3", "answered")]
+    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-1", "w-3"]}
+
+
+@pytest.mark.asyncio
+async def test_an_answer_after_the_conversation_closed_reopens_it_on_its_card(talks):
+    engine, minds, feed = await setup("v1")
+    minds["v1"].results = [[]]
+    talks.plan = [ANSWER]
+    reply_whisper(engine, "v1", "w-3", "w-1")
+    await wait_for(lambda: statuses(feed))
+    await engine.stop()
+    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-3"]}

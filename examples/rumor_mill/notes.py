@@ -3,13 +3,15 @@
 from examples.rumor_mill.feed import Event, Feed
 
 # Lowest to highest; a note only moves up, except that wary overrides anything.
-RANK = ("none", "listening", "brushed_off", "kept", "wary", "took_the_bait")
+RANK = ("none", "listening", "brushed_off", "answered", "kept", "wary", "took_the_bait")
 STATUS_OF = {
     "checking": "listening",
     "busy": "listening",
     "heard": "listening",
     "brushed_off": "brushed_off",
+    "answered": "answered",
     "kept": "kept",
+    "moved_on": "kept",
     "took_the_bait": "took_the_bait",
     "warned": "wary",
 }

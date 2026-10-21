@@ -13,6 +13,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.tests.helpers import StubBaselines, StubContex
+from examples.rumor_mill.town import PLAYER_ID
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
 AT = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
@@ -146,6 +147,22 @@ async def test_tallies(monkeypatch):
         "uid": "u-2", "speaker": "Ann", "listeners": ["Cal", "Dee"], "text": "the miller waters his flour",
     }
     assert (card["heard"], card["still"], card["drifted"]) == (4, 2, True)
+
+
+@pytest.mark.asyncio
+async def test_a_reply_joins_its_conversation_card():
+    rumors, _ = await make({"close": [Match("rumor:w-2", {}, 0.9)]})
+    rumors.add_line("w-1", Utterance("u-1", "v1", "Marta", "tavern", "Who told you that?", "w-1"))
+    await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1")
+    assert rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True) is False
+    card, = rumors.cards()
+    assert card["uid"] == "w-1"
+    assert card["conversation"] == [
+        {"uid": "u-1", "speaker_id": "v1", "speaker": "Marta", "text": "Who told you that?"},
+        {"uid": "w-2", "speaker_id": PLAYER_ID, "speaker": "The newcomer", "text": "the baker"},
+    ]
+    assert [h["uid"] for h in card["hops"]] == ["u-2"]
+    assert await rumors.on_topic("w-2", "close")
 
 
 @pytest.mark.skipif(not URL, reason="RUMOR_MILL_CONTEX_URL not set")

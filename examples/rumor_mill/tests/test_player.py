@@ -440,3 +440,53 @@ async def test_place_stays_when_the_whisper_fails():
     engine.deliver = fail
     await player.whisper_to("v1", "psst")
     assert player.place == "square"
+
+
+@pytest.mark.asyncio
+async def test_reply_threads_onto_the_first_whisper():
+    player, _, _, engine, lineage = make("Marta")
+    assert await player.whisper("Marta", "the well tastes odd") is None
+    engine.conversations["v1"] = {"id": "w-1", "answered": ["w-1"]}
+    assert await player.whisper("Marta", "odd since the frost, too") is None
+    first, reply = (u for u, _ in engine.delivered)
+    assert first.conversation is None
+    assert (reply.id, reply.parent, reply.depth, reply.conversation) == ("w-2", None, 0, "w-1")
+    assert lineage.is_whisper("w-2") and engine.facts.get("w-2").conversation == "w-1"
+    player.feed.on_delivery(reply, ["v1"])
+    assert player.feed.recent[-1].data["conversation"] == "w-1"
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_a_missed_reply_ends_the_conversation():
+    player, _ = make_hinting(StubWriter("Wheel's groaning."))
+    player.engine.conversations["v1"] = {"id": "w-0", "answered": ["w-0"]}
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    assert "v1" not in player.engine.conversations
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_ends_the_conversation():
+    player, _, _, engine, _ = make("Marta")
+    engine.conversations["v1"] = {"id": "w-0", "answered": ["w-0"]}
+    suspect(player)
+    assert isinstance(await player.whisper("Marta", "hello"), Refusal)
+    assert "v1" not in engine.conversations
+
+
+@pytest.mark.asyncio
+async def test_a_missed_reply_leaves_a_newer_conversation_open():
+    player, _ = make_hinting(StubWriter("Wheel's groaning."))
+    conversations = player.engine.conversations
+    conversations["v1"] = {"id": "w-0", "answered": ["w-0"]}
+
+    async def miss_after_a_new_conversation_opens(target, utterance, since):
+        conversations["v1"] = {"id": "w-9", "answered": ["w-9"]}
+        return []
+
+    player.check = miss_after_a_new_conversation_opens
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    assert player.engine.delivered[0][0].conversation == "w-0"
+    assert conversations["v1"]["id"] == "w-9"
+    player.close()

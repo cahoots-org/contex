@@ -10,6 +10,7 @@ from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.town import PLAYER_ID
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ class Card:
     # When each listener last heard an on-topic hop.
     told_at: dict[str, float] = field(default_factory=dict)
     drifted: bool = False
+    # The newcomer's replies and the villager's answers after the first whisper, in order.
+    conversation: list[dict] = field(default_factory=list)
+    # For a reply whisper, the first whisper whose card shows it.
+    part_of: str | None = None
 
 
 class Rumors:
@@ -42,9 +47,18 @@ class Rumors:
         self.project = f"rumor-mill:{config.session}:rumors"
         self._cards: dict[str, Card] = {}
 
-    async def add(self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str) -> None:
-        """Start the whisper's card and its baseline measurement, then publish its words; failures are logged."""
+    async def add(
+        self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
+        conversation: str | None = None,
+    ) -> None:
+        """Start the whisper's card and its baseline measurement, then publish its words; failures are logged.
+
+        A reply in a conversation is shown on the conversation's card instead of its own.
+        """
         card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at)
+        if conversation in self._cards:
+            card.part_of = conversation
+            self.add_line(conversation, Utterance(whisper_uid, PLAYER_ID, "The newcomer", "", text, None))
         card.heard.add(target_id)
         card.measuring = asyncio.ensure_future(self._measure(whisper_uid, text))
         try:
@@ -84,6 +98,13 @@ class Rumors:
         log.debug("topic check for %s: %s against %.3f", root_uid, similarity, bar)
         return similarity is not None and similarity >= bar
 
+    def add_line(self, conversation: str, utterance: Utterance) -> None:
+        """Append a line to the conversation shown on that whisper's card."""
+        if card := self._cards.get(conversation):
+            card.conversation.append(
+                {"uid": utterance.id, "speaker_id": utterance.speaker, "speaker": utterance.speaker_name, "text": utterance.text}
+            )
+
     def record(self, root_uid: str, hop: Utterance, listeners: dict[str, str], on_topic: bool) -> bool:
         """Note a retelling of root_uid heard by listeners (id to name); True when it first turns the card."""
         card = self._cards.get(root_uid)
@@ -92,11 +113,11 @@ class Rumors:
         if not on_topic:
             drifted, card.drifted = card.drifted, True
             return not drifted
-        card.hops.append({"uid": hop.id, "speaker": hop.speaker_name, "listeners": list(listeners.values()),
-                          "text": hop.text})
-        card.heard.update(listeners)
-        now = time.time()
-        card.told_at.update(dict.fromkeys(listeners, now))
+        shown = self._cards.get(card.part_of, card)
+        shown.hops.append({"uid": hop.id, "speaker": hop.speaker_name, "listeners": list(listeners.values()),
+                           "text": hop.text})
+        shown.heard.update(listeners)
+        shown.told_at.update(dict.fromkeys(listeners, time.time()))
         return False
 
     def close(self) -> None:
@@ -105,10 +126,11 @@ class Rumors:
             card.measuring.cancel()
 
     def cards(self) -> list[dict]:
-        """Every card, oldest first, with how many heard it and how many heard it in the last game day."""
+        """Every card but replies, oldest first, with how many heard it and how many heard it in the last game day."""
         cutoff = time.time() - self.config.day_seconds
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
-             "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted}
-            for c in self._cards.values()
+             "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
+             "conversation": c.conversation}
+            for c in self._cards.values() if c.part_of is None
         ]

@@ -34,6 +34,8 @@ class Config:
     overheard_margin: float = 0.01
     # The share of ordinary talk at the player's place that the player overhears.
     overhear_rate: float = 0.125
+    # How many times a villager answers the newcomer in one conversation.
+    talk_turns: int = 4
     # Where need baselines are cached; empty means the seed path plus .baselines.json.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"

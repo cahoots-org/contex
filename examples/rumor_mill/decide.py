@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typesafe_sdk import Choice, Score
 
 from examples.rumor_mill.actions import (
-    ACTION_NOT_FOR, ACTIONS, IGNORE, JOIN_GROUP, STYLED, STYLES, TARGET_KIND,
+    ACTION_NOT_FOR, ACTIONS, ANSWER, IGNORE, JOIN_GROUP, STYLED, STYLES, TARGET_KIND,
     available_actions,
 )
 from examples.rumor_mill.contex_client import Match
@@ -55,6 +55,8 @@ class TurnView:
     names_newcomer: list[Match]
     # The villager's own earlier lines that the newcomer's words bring back.
     said: list[Match] = field(default_factory=list)
+    # The newcomer's lines that landed this turn and that the villager may still answer.
+    answerable: list[Match] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,8 @@ async def decide(jev, view: TurnView) -> Decision:
     strength = _strength(resp) if view.names_newcomer else None
     if action == IGNORE:
         return Decision(IGNORE, None, None, None, strength)
+    if action == ANSWER:
+        return Decision(ANSWER, view.answerable[-1], None, None, strength)
     if len(view.new) > 1:
         source = next(m for m in view.new if m.data_key == pick["source"])
     else:

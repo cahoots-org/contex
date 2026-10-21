@@ -104,3 +104,16 @@ async def test_say_shows_what_the_villager_said_before_only_when_given():
     plain, with_said = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
     assert "the well is fine" not in plain
     assert "the well is fine" in with_said
+
+
+@pytest.mark.asyncio
+async def test_reply_answers_the_newcomer_in_one_line():
+    client = StubClient('"Aye, the well has been off since spring."\nShe wipes her hands.', "Hm.")
+    writer = Writer(client, "haiku-test")
+    line = "The newcomer whispered to you at the square: the well water tastes odd"
+    assert await writer.reply(villager(), line, []) == "Aye, the well has been off since spring."
+    await writer.reply(villager(), line, ["Ada said at the square: the well is fine"])
+    plain, with_said = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
+    assert "the well water tastes odd" in plain and "whispered to you" not in plain
+    assert "the well is fine" not in plain and "the well is fine" in with_said
+    assert "suspic" in plain.lower()

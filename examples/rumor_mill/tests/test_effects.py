@@ -1,7 +1,7 @@
 import pytest
 
 from examples.rumor_mill.actions import (
-    FOUND_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK, WARN,
+    ANSWER, FOUND_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -20,6 +20,7 @@ class StubWriter:
         self.say_calls = []
         self.group_calls = []
         self.warn_calls = []
+        self.reply_calls = []
         self.names_newcomer = []
 
     async def say(self, villager, decision, source_text, audience, names_newcomer=False):
@@ -30,6 +31,10 @@ class StubWriter:
     async def warn(self, villager, target):
         self.warn_calls.append((villager.id, target.id))
         return "Mind the newcomer."
+
+    async def reply(self, villager, newcomer_line, said):
+        self.reply_calls.append((villager.id, newcomer_line, said))
+        return "Aye, I heard that too."
 
     async def describe_group(self, villager, inspiration):
         self.group_calls.append(list(inspiration))
@@ -42,6 +47,10 @@ class RecordingHub:
         self.addressed = []
         self.groups = []
         self.suspects = []
+        self.replies = []
+
+    async def reply(self, utterance):
+        self.replies.append(utterance)
 
     async def deliver(self, utterance, listener_ids, addressed=False):
         self.delivered.append((utterance, listener_ids))
@@ -268,3 +277,18 @@ async def test_shift_blame_drops_the_newcomer():
     await s.act("v1", Decision(SPEAK, whispered(s, "w-2"), None, "shift_blame"))
     assert [u.names_newcomer for u, _ in s.hub.delivered] == [False, False]
     assert s.writer.names_newcomer == [False, False]
+
+
+@pytest.mark.asyncio
+async def test_answer_emits_a_reply_and_records_it():
+    s = Setup()
+    s.lineage.record("w-1", None, player=True)
+    whisper = Match("utt:w-1", {"id": "w-1", "text": "The newcomer whispered to you at the square: psst"})
+    await s.act("v1", Decision(ANSWER, whisper, None, None), said=["Bert said at the square: the well is fine"])
+    assert s.writer.reply_calls == [("v1", whisper.data["text"], ["Bert said at the square: the well is fine"])]
+    assert s.hub.delivered == [] and s.writer.say_calls == []
+    utt, = s.hub.replies
+    assert (utt.speaker, utt.parent, utt.text, utt.verb) == ("v1", "w-1", "Aye, I heard that too.", "answered")
+    assert s.lineage.root(utt.id) == "w-1"
+    fact = s.facts.get(utt.id)
+    assert (fact.action, fact.audience, fact.depth, fact.names_newcomer) == (ANSWER, "one", 0, False)

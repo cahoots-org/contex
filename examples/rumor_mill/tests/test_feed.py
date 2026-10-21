@@ -131,3 +131,13 @@ def test_a_brush_off_takes_its_hint_and_can_be_upgraded():
     feed.on_whisper_status("w-1", "v1", "Bert", "took_the_bait", told=1)
     assert [e.data["state"] for e in feed.recent] == ["brushed_off", "brushed_off", "took_the_bait"]
     assert lines == ['Bert brushes you off: "Not now."']
+
+
+def test_an_answered_whisper_never_moves_back_to_listening_or_brushed_off():
+    feed, _ = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "answered")
+    feed.on_whisper_status("w-1", "v1", "Bert", "heard")
+    feed.on_whisper_status("w-1", "v1", "Bert", "busy", until=1.0)
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Not now.")
+    feed.on_whisper_status("w-1", "v1", "Bert", "moved_on")
+    assert [e.data["state"] for e in feed.recent] == ["answered", "moved_on"]

@@ -15,7 +15,7 @@ from examples.rumor_mill.town import PLAYER_ID, Town
 
 REPLAY_EVENTS = 500
 LISTENING = ("checking", "busy", "heard")
-RESOLVED = ("kept", "took_the_bait", "warned")
+RESOLVED = ("kept", "took_the_bait", "warned", "moved_on")
 GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
 
 
@@ -54,6 +54,7 @@ class Feed:
         self._listening: dict[str, tuple[str, str]] = {}
         # ponytail: grows by one id per whisper the player sends; a session sends far fewer than would matter.
         self._resolved: set[str] = set()
+        self._answered: set[str] = set()
 
     def emit(self, kind: str, line: str = "", /, **data) -> Event | None:
         """Send an event to every sink; once the feed is closed, drop it and return None."""
@@ -87,13 +88,19 @@ class Feed:
 
     def on_whisper_status(self, whisper_id: str, villager_id: str, name: str, state: str, **extra) -> None:
         """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint),
-        not_carried, or what the villager did with it: kept, took_the_bait (with told) or warned.
+        not_carried, or what the villager did with it: kept, took_the_bait (with told), warned, answered
+        (not final), or moved_on once a conversation ends.
 
         A whisper already resolved only takes another outcome: a late heard, brush-off or not-carried is dropped.
+        An answered whisper drops a late listening state or brush-off.
         The terminal prints only a brush-off once its hint is settled.
         """
         if whisper_id in self._resolved and state not in RESOLVED:
             return
+        if whisper_id in self._answered and (state in LISTENING or state == "brushed_off"):
+            return
+        if state == "answered":
+            self._answered.add(whisper_id)
         if state in LISTENING:
             self._listening[whisper_id] = (villager_id, name)
         else:
@@ -120,6 +127,12 @@ class Feed:
             speaker_id=speaker_id, speaker=speaker_name, target_id=target_id, target=target_name,
         )
 
+    def on_reply(self, conversation: str, utterance: Utterance) -> None:
+        """A villager answered the newcomer in the conversation started by that whisper."""
+        u = utterance
+        self.emit("reply", f'{u.speaker_name} answers you: "{u.text}"', conversation=conversation,
+                  villager_id=u.speaker, name=u.speaker_name, text=u.text, uid=u.id)
+
     def on_drift(self, whisper_id: str) -> None:
         """The whisper's story turned to other things; the terminal prints nothing."""
         self.emit("drift", whisper_id=whisper_id)
@@ -141,7 +154,7 @@ class Feed:
         if u.speaker == PLAYER_ID:
             if listener_ids:
                 self.emit("whisper", uid=u.id, target_id=listener_ids[0], target=names[0] if names else "",
-                          place=u.place, text=u.text)
+                          place=u.place, text=u.text, conversation=u.conversation)
             return
         if u.verb == "warned":
             if listener_ids:

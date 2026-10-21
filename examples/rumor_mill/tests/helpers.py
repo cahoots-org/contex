@@ -106,6 +106,10 @@ class FakeEngine:
         self.rumors = None
         self.facts = Facts()
         self.free_at = 0.0
+        self.conversations = {}
+
+    def end_conversation(self, vid):
+        self.conversations.pop(vid, None)
 
     async def deliver(self, utterance, listener_ids):
         self.delivered.append((utterance, listener_ids))

@@ -90,12 +90,15 @@ class Player:
         target = self.town.get(villager_id)
         if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
             self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
+            self.engine.end_conversation(target.id)
             self.feed.on_refusal(target.id, target.name, await self._turn_away(target))
             return Refusal(f"{target.name} turns away from you.")
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
+        conversation = self.engine.conversations.get(target.id)
         utterance = Utterance(
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
+            conversation=conversation and conversation["id"],
         )
         self.engine.facts.record(utterance)
         published_at = datetime.now(UTC)
@@ -128,6 +131,9 @@ class Player:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
             self.feed.on_whisper_status(uid, target.id, target.name, "brushed_off")
+            open_now = self.engine.conversations.get(target.id)
+            if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
+                self.engine.end_conversation(target.id)
             task = asyncio.create_task(self._hint(target.id, target.name, uid))
             self._brush_offs.add(task)
             task.add_done_callback(self._brush_offs.discard)
@@ -156,7 +162,9 @@ class Player:
 
     async def _card(self, utterance: Utterance, target: Villager, published_at: datetime) -> None:
         if self.engine.rumors is not None:
-            await self.engine.rumors.add(utterance.id, utterance.text, published_at, target.id, target.name)
+            await self.engine.rumors.add(
+                utterance.id, utterance.text, published_at, target.id, target.name, utterance.conversation,
+            )
 
     def _over(self) -> bool:
         return self.game is not None and self.game.finished.is_set()

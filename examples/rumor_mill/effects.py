@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from examples.rumor_mill.actions import (
-    CONFRONT, DENY, FOUND_GROUP, IGNORE, JOIN_GROUP, LEAVE_GROUP, LEAVE_TOWN, MOVE,
+    ANSWER, CONFRONT, DENY, FOUND_GROUP, IGNORE, JOIN_GROUP, LEAVE_GROUP, LEAVE_TOWN, MOVE,
     PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.config import Config
@@ -32,6 +32,8 @@ class Hub(Protocol):
 
     def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None: ...
 
+    async def reply(self, utterance: Utterance) -> None: ...
+
 
 async def act(
     decision: Decision,
@@ -44,6 +46,7 @@ async def act(
     ids: Ids,
     facts: Facts,
     inspiration: Sequence[str] = (),
+    said: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
 ) -> None:
     """Apply the decision to the town and deliver any speech it produces."""
@@ -96,6 +99,13 @@ async def act(
                 hub.suspect(decision.target, WARNED_SHARE * suspicion_hear_max, "was warned about the newcomer", uid)
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
+    elif action == ANSWER:
+        text = await writer.reply(villager, source_text, list(said))
+        uid = ids.next("u")
+        lineage.record(uid, source_id)
+        utterance = Utterance(uid, vid, villager.name, place, text, source_id, "answered", audience=ONE, action=action)
+        facts.record(utterance)
+        await hub.reply(utterance)
     elif action == SPEAK:
         text = await writer.say(villager, decision, source_text, place, names)
         await say(text, others(), ROOM, names_newcomer=names)
