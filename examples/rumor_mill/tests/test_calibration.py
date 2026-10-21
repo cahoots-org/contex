@@ -167,3 +167,16 @@ async def test_live_calibration_writes_cache(tmp_path):
     for text in texts:
         assert 0.5 < baselines.get(text) < 0.95
     assert set(cached(tmp_path / "seed.json.baselines.json")) == set(texts)
+
+
+@pytest.mark.asyncio
+async def test_whisper_baseline_is_not_cached_to_disk(tmp_path):
+    contex = FakeContex()
+    baselines = Baselines(contex, config(tmp_path))
+    assert await baselines.measure("the miller waters his flour") == pytest.approx(0.75)
+    assert len(contex.published) == len(CALIBRATION)
+    assert baselines.values == {}
+    assert not (tmp_path / "seed.json.baselines.json").exists()
+    await baselines.load(["a need"])
+    assert set(cached(tmp_path / "seed.json.baselines.json")) == {"a need"}
+    assert len(contex.published) == len(CALIBRATION)

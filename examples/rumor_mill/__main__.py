@@ -24,6 +24,7 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.population import Replenisher
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.town import GATE, PLACES, Town
 from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate
 from examples.rumor_mill.usage import CountingJev, Usage
@@ -47,7 +48,7 @@ async def play(web: bool) -> None:
         judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
-            baselines=baselines,
+            baselines=baselines, rumors=Rumors(contex, baselines, config),
         )
         player = Player(engine, town, lineage, ids, feed, config, writer, game)
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
@@ -65,7 +66,7 @@ async def play(web: bool) -> None:
             if web:
                 app = create_app(
                     player=player, town=town, feed=feed, judge=judge, goals=goals, usage=usage, port=config.web_port,
-                    suspicion=engine.suspicion, game=game,
+                    suspicion=engine.suspicion, game=game, rumors=engine.rumors,
                 )
                 server = uvicorn.Server(uvicorn.Config(
                     app, host="127.0.0.1", port=config.web_port, log_level="warning", timeout_graceful_shutdown=1,

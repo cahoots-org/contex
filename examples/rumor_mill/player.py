@@ -96,7 +96,8 @@ class Player:
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
         )
         self.engine.facts.record(utterance)
-        since = (datetime.now(UTC) - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
+        published_at = datetime.now(UTC)
+        since = (published_at - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
         try:
             await self.engine.deliver(utterance, [target.id])
         except Exception:
@@ -104,7 +105,7 @@ class Player:
             return NOT_CARRIED
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
-        hits = await self.check(target, utterance, since)
+        hits, _ = await asyncio.gather(self.check(target, utterance, since), self._card(utterance, target, published_at))
         if hits is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
@@ -147,6 +148,10 @@ class Player:
             for need, matches in zip(target.needs, found) for m in matches
             if m.data_key == key and m.similarity is not None and baselines.matches(need, m.similarity)
         ]
+
+    async def _card(self, utterance: Utterance, target: Villager, published_at: datetime) -> None:
+        if self.engine.rumors is not None:
+            await self.engine.rumors.add(utterance.id, utterance.text, published_at, target.id, target.name)
 
     def _over(self) -> bool:
         return self.game is not None and self.game.finished.is_set()

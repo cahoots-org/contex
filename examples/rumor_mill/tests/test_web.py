@@ -2,6 +2,7 @@ import json
 import re
 import threading
 import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -10,12 +11,13 @@ from fastapi.testclient import TestClient
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.models import Villager
+from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.tests import helpers
@@ -63,13 +65,15 @@ def game(monkeypatch):
     player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game)
     judge = SimpleNamespace(progress={"cat": 0.42}, met=set())
     usage = Usage(Config())
+    rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
         player=player, town=town, feed=feed, judge=judge, goals=[GOAL], usage=usage, port=PORT,
-        suspicion=suspicion, game=game,
+        suspicion=suspicion, game=game, rumors=rumors,
     )
     with TestClient(app, base_url=BASE) as client:
         yield SimpleNamespace(
             client=client, town=town, feed=feed, app=app, usage=usage, suspicion=suspicion, game=game, config=config,
+            rumors=rumors,
         )
     player.close()
 
@@ -294,3 +298,14 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
             if any(word in key for word in SUSPICION_KEYS):
                 assert not isinstance(value, int | float) or isinstance(value, bool) or key == "goals", (key, value)
                 assert value not in scores, (key, value)
+
+
+def test_state_carries_cards_beyond_the_replay_window(game):
+    game.client.portal.call(game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale")
+    hop = Utterance("u-1", "v1", "Marta Hale", "well", "the miller cheats", "w-1")
+    game.rumors.record("w-1", hop, {"v2": "Bert Cole"}, True)
+    for i in range(REPLAY_EVENTS + 1):
+        game.feed.say(f"line {i}")
+    card, = game.client.get("/api/state").json()["rumors"]
+    assert (card["uid"], card["target_name"], card["heard"], card["still"]) == ("w-1", "Marta Hale", 2, 1)
+    assert [h["uid"] for h in card["hops"]] == ["u-1"]

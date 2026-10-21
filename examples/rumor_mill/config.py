@@ -24,6 +24,8 @@ class Config:
     check_lookback_seconds: float = 5.0
     # How far above a need's ordinary-talk similarity a whisper must score to match it.
     match_margin: float = 0.02
+    # How far above a whisper's ordinary-talk similarity a retelling must score to stay on its rumor card.
+    on_topic_margin: float = 0.02
     # How much more clearance each retelling hop needs before it wakes a listener.
     fatigue_per_hop: float = 0.01
     # How much more clearance overheard room talk needs than a line told to the listener.

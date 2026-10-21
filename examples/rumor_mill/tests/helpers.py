@@ -72,6 +72,9 @@ class StubBaselines:
     async def load(self, texts):
         pass
 
+    async def measure(self, text):
+        return self.default
+
 
 class StubContex:
     """Answers each query from results keyed by query text; records every call."""
@@ -81,6 +84,10 @@ class StubContex:
         self.error = error
         self.default = []
         self.queries = []
+        self.published = []
+
+    async def publish(self, project_id, data_key, data):
+        self.published.append((project_id, data_key, data))
 
     async def query(self, project_id, query, **kwargs):
         self.queries.append((project_id, query, kwargs))
@@ -96,6 +103,7 @@ class FakeEngine:
         self.contex = contex or StubContex()
         self.baselines = baselines or StubBaselines(0.5)
         self.direct = []
+        self.rumors = None
         self.facts = Facts()
         self.free_at = 0.0
 

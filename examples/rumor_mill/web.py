@@ -18,6 +18,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import Player, Refusal
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.usage import Usage
@@ -82,7 +83,7 @@ def _error(status: int, message: str) -> JSONResponse:
 
 def create_app(
     *, player: Player, town: Town, feed: Feed, judge, goals: Sequence[Goal], usage: Usage, port: int,
-    suspicion: Suspicion, game: Game,
+    suspicion: Suspicion, game: Game, rumors: Rumors,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
     clients: set[asyncio.Queue] = set()
@@ -141,6 +142,7 @@ def create_app(
             ],
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.recent],
+            "rumors": rumors.cards(),
             "notes": notes.all(),
             "usage": usage.to_json(),
             "heat": (label := suspicion.label()),

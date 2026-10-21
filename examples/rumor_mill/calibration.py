@@ -87,18 +87,12 @@ class Baselines:
                 log.info("calibration: %d computed, %d cached", len(missing), len(unique) - len(missing))
             if not missing:
                 return
-            project = f"rumor-mill:{self.config.session}:calibration"
-            if not self._published:
-                for i, sentence in enumerate(CALIBRATION):
-                    await self.contex.publish(project, f"cal:{i}", _calibration_data(i, sentence))
-                self._published = True
+            await self._publish()
             slots = asyncio.Semaphore(CONCURRENT_QUERIES)
 
             async def baseline(text: str) -> float | None:
                 async with slots:
-                    found = await self.contex.query(project, text, top_k=len(CALIBRATION), threshold=0)
-                scores = [m.similarity for m in found if m.similarity is not None]
-                return sum(scores) / len(scores) if scores else None
+                    return await self._baseline(text)
 
             computed = await asyncio.gather(*(baseline(t) for t in missing))
             fresh = {t: v for t, v in zip(missing, computed, strict=True) if v is not None}
@@ -114,6 +108,31 @@ class Baselines:
                     self.values[text] = fallback
                     self._fallback.add(text)
             self._write({t: v for t, v in self.values.items() if t not in self._fallback})
+
+    async def measure(self, text: str) -> float:
+        """The text's baseline, computed fresh and kept neither in values nor on disk."""
+        async with self._lock:
+            await self._publish()
+        baseline = await self._baseline(text)
+        if baseline is None:
+            raise ValueError("no calibration scores")
+        return baseline
+
+    @property
+    def _project(self) -> str:
+        return f"rumor-mill:{self.config.session}:calibration"
+
+    async def _publish(self) -> None:
+        """Publish the calibration sentences once per session; callers hold the lock."""
+        if not self._published:
+            for i, sentence in enumerate(CALIBRATION):
+                await self.contex.publish(self._project, f"cal:{i}", _calibration_data(i, sentence))
+            self._published = True
+
+    async def _baseline(self, text: str) -> float | None:
+        found = await self.contex.query(self._project, text, top_k=len(CALIBRATION), threshold=0)
+        scores = [m.similarity for m in found if m.similarity is not None]
+        return sum(scores) / len(scores) if scores else None
 
     def _read(self) -> dict[str, float]:
         try:

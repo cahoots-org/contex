@@ -17,6 +17,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project
 from examples.rumor_mill.models import Group, Utterance, Villager
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
 from examples.rumor_mill.writer import Writer
@@ -46,6 +47,7 @@ class Engine:
         game: Game | None = None,
         summary_source: Callable[[], list[tuple[str, int]]] = list,
         baselines: Baselines | None = None,
+        rumors: Rumors | None = None,
     ):
         self.config = config
         self.town = town
@@ -58,6 +60,7 @@ class Engine:
         self.facts = Facts()
         self.suspicion = Suspicion(config, town)
         self.baselines = baselines
+        self.rumors = rumors
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source
@@ -121,6 +124,8 @@ class Engine:
         tasks += [t for t in (self._renewal, self._checks) if t]
         self._tasks.clear()
         self._renewal = self._checks = None
+        if self.rumors is not None:
+            self.rumors.close()
         await _cancel(tasks)
 
     async def deliver(self, utterance: Utterance, listener_ids: list[str], addressed: bool = False) -> None:
@@ -142,9 +147,20 @@ class Engine:
                 self.hear_directly(vid, Match(f"utt:{utterance.id}", data))
         if listeners and not heard:
             raise next(r for r in results if isinstance(r, Exception))
-        if heard and utterance.speaker in self._turning:
+        on_topic = await self._carries_rumor(utterance, heard)
+        if heard and on_topic and utterance.speaker in self._turning:
             self._said.setdefault(utterance.speaker, []).append((utterance.id, len(heard)))
-        self.feed.on_delivery(utterance, heard)
+        self.feed.on_delivery(utterance, heard, on_topic)
+
+    async def _carries_rumor(self, utterance: Utterance, heard: list[str]) -> bool:
+        """Whether a retelling of a whisper still carries it, recorded on its card; True for any other line."""
+        root = self.lineage.root(utterance.id)
+        if not heard or self.rumors is None or root == utterance.id or not self.lineage.is_whisper(root):
+            return True
+        on_topic = await self.rumors.on_topic(root, utterance.text)
+        if self.rumors.record(root, utterance, {i: self.town.name_of(i) or i for i in heard}, on_topic):
+            self.feed.on_drift(root)
+        return on_topic
 
     def hear_directly(self, vid: str, match: Match) -> bool:
         """Add the match to the villager's next turn and wake them; False once they have left."""

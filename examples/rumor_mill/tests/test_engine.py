@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +19,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, StubBaselines, StubContex, make, wait_for
 from examples.rumor_mill.town import Town
 
@@ -29,7 +31,7 @@ class RecordingFeed(Feed):
         super().__init__(Lineage(), Town(), out=None)
         self.deliveries = []
 
-    def on_delivery(self, utterance, listener_ids):
+    def on_delivery(self, utterance, listener_ids, on_topic=True):
         self.deliveries.append((utterance.id, listener_ids))
 
 
@@ -61,7 +63,7 @@ def turns(monkeypatch):
     return t
 
 
-async def setup(*vids, cooldown=0.05, game=None):
+async def setup(*vids, cooldown=0.05, game=None, rumors=None):
     minds = {}
 
     def factory(v):
@@ -71,7 +73,7 @@ async def setup(*vids, cooldown=0.05, game=None):
     feed = RecordingFeed()
     engine = Engine(
         Config(cooldown_seconds=cooldown), Town(), None, None, None, Lineage(), Ids(), feed,
-        mind_factory=factory, game=game,
+        mind_factory=factory, game=game, rumors=rumors,
     )
     for vid in vids:
         await engine.add_villager(make(vid))
@@ -737,4 +739,74 @@ async def test_warnings_always_fresh(turns):
     await engine.deliver(warning, ["v1"], addressed=True)
     await wait_for(lambda: len(turns.views) == 1)
     assert [m.data_key for m in turns.views[0].new] == ["utt:u-warn"]
+    await engine.stop()
+
+
+async def stub_rumors(similarity):
+    """Rumors whose check scores every line at similarity against a 0.5 baseline."""
+    contex = StubContex()
+    contex.default = [Match("rumor:w-1", {}, similarity)]
+    rumors = Rumors(contex, StubBaselines(0.5), Config())
+    await rumors.add("w-1", "psst", datetime.now(UTC), "v1", "V1")
+    return rumors
+
+
+@pytest.mark.asyncio
+async def test_off_topic_descendant_is_not_a_hop_and_marks_drift(turns):
+    rumors = await stub_rumors(0.9)
+    lines = []
+    lineage = Lineage()
+    town = Town()
+    minds = {}
+
+    def factory(v):
+        minds[v.id] = FakeMind(v)
+        return minds[v.id]
+
+    feed = Feed(lineage, town, out=lines.append)
+    engine = Engine(Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=factory, rumors=rumors)
+    for vid in ("v1", "v2", "v3"):
+        await engine.add_villager(make(vid))
+    lineage.record("w-1", None, player=True)
+    for uid, parent in (("u-1", "w-1"), ("u-2", "u-1"), ("u-3", "u-2")):
+        lineage.record(uid, parent)
+    await engine.deliver(Utterance("u-1", "v1", "V1", "square", "psst again", "w-1"), ["v2"])
+    rumors.contex.default = [Match("rumor:w-1", {}, 0.4)]
+    await engine.deliver(Utterance("u-2", "v2", "V2", "square", "the weather", "u-1"), ["v3"])
+    await engine.deliver(Utterance("u-3", "v3", "V3", "square", "more weather", "u-2"), ["v1"])
+    assert [(e.kind, e.data.get("uid") or e.data.get("whisper_id")) for e in feed.recent] == [
+        ("hop", "u-1"), ("drift", "w-1"),
+    ]
+    assert lines == ['V1 told V2: "psst again"']
+    assert [k for k, _ in minds["v3"].heard] == ["utt:u-2"] and [k for k, _ in minds["v1"].heard] == ["utt:u-3"]
+    card, = rumors.cards()
+    assert ([h["uid"] for h in card["hops"]], card["drifted"]) == (["u-1"], True)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_took_the_bait_needs_an_on_topic_relay(relays):
+    engine, minds, feed = await setup("v1", "v2", rumors=await stub_rumors(0.4))
+    minds["v1"].results = [[]]
+    relays.plan = [(SPEAK, ["v2"])]
+    whisper(engine, "v1")
+    await wait_for(lambda: statuses(feed))
+    assert statuses(feed) == [("w-1", "v1", "kept", None)]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_kept_after_an_off_topic_relay_upgrades_on_a_later_on_topic_relay(relays):
+    rumors = await stub_rumors(0.4)
+    engine, minds, feed = await setup("v1", "v2", rumors=rumors)
+    minds["v1"].results = [[], [Match("utt:u-9", {"id": "u-9", "text": "the well"})]]
+    engine.lineage.record("u-9", "w-1")
+    relays.plan = [(SPEAK, ["v2"]), (SPEAK, ["v2"])]
+    whisper(engine, "v1")
+    await wait_for(lambda: statuses(feed))
+    assert statuses(feed) == [("w-1", "v1", "kept", None)]
+    rumors.contex.default = [Match("rumor:w-1", {}, 0.9)]
+    push(minds["v1"])
+    await wait_for(lambda: len(statuses(feed)) == 2)
+    assert statuses(feed)[1] == ("w-1", "v1", "took_the_bait", 1)
     await engine.stop()

@@ -120,8 +120,12 @@ class Feed:
             speaker_id=speaker_id, speaker=speaker_name, target_id=target_id, target=target_name,
         )
 
-    def on_delivery(self, utterance: Utterance, listener_ids: list[str]) -> None:
-        """Emit the player's whisper, a warning, a hop of a player-rooted rumor, or a town announcement."""
+    def on_drift(self, whisper_id: str) -> None:
+        """The whisper's story turned to other things; the terminal prints nothing."""
+        self.emit("drift", whisper_id=whisper_id)
+
+    def on_delivery(self, utterance: Utterance, listener_ids: list[str], on_topic: bool = True) -> None:
+        """Emit the player's whisper, a warning, an on-topic hop of a player-rooted rumor, or a town announcement."""
         u = utterance
         names = [self.town.get(i).name for i in listener_ids if i in self.town]
         if u.speaker == PLAYER_ID:
@@ -134,6 +138,8 @@ class Feed:
                 self.on_warning(u.speaker, u.speaker_name, listener_ids[0], names[0] if names else listener_ids[0])
             return
         if listener_ids and self.lineage.is_player_rooted(u.id):
+            if not on_topic:
+                return
             if len(listener_ids) == 1:
                 line = f'{u.speaker_name} told {names[0] if names else listener_ids[0]}: "{u.text}"'
             else:
