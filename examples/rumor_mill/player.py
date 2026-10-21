@@ -235,7 +235,7 @@ class Player:
         self._brush_offs.clear()
 
     async def _hint(
-        self, villager_id: str, name: str, uid: str, concern: str | None, state: str = "brushed_off", text: str = "",
+        self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str,
     ) -> None:
         """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
         if self._over():

@@ -108,9 +108,9 @@ class Feed:
         not_carried, or what the villager did with it: kept, took_the_bait (with told), warned, answered
         (not final), or moved_on once a conversation ends.
 
-        A whisper already resolved only takes another outcome: a late heard, brush-off or not-carried is dropped.
-        An answered whisper drops a late listening state or brush-off.
-        The terminal prints only a brush-off once its hint is settled.
+        A whisper already resolved only takes another outcome: a late heard, brush-off, near miss or not-carried is
+        dropped. An answered whisper drops a late listening state, brush-off or near miss.
+        The terminal prints only a brush-off or near miss once its hint is settled.
         """
         if whisper_id in self._resolved and state not in RESOLVED:
             return

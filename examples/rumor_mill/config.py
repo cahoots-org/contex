@@ -64,7 +64,7 @@ class Config:
     suspicion_check_days: float = 0.25
     # How many scenes run at once.
     max_scenes: int = 3
-    # How long a villager who left a scene waits before it can start another.
+    # How long a villager in a scene waits between turns.
     scene_cooldown_seconds: float = 5.0
     # The share of a scene's momentum that becomes the chance a bystander is drawn in.
     join_rate: float = 0.3

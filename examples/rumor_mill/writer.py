@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Sequence
 
 from examples.rumor_mill.actions import STYLES
 from examples.rumor_mill.decide import Decision
@@ -143,7 +144,7 @@ class Writer:
         user = f"You are talking to {target.name}, a {target.occupation}."
         return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
-    async def reply(self, villager: Villager, newcomer_line: str, said: list[str], heard: list[str] = ()) -> str:
+    async def reply(self, villager: Villager, newcomer_line: str, said: list[str], heard: Sequence[str] = ()) -> str:
         """The villager answering what the newcomer just said to them, in one line."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
