@@ -64,7 +64,7 @@ interested.
   new item mentions the newcomer. *(My call.)* "Mentions" is decided in code: the
   utterance carries a `names_newcomer` flag set when it is written. The writer sets it
   when the speaker's source line came from the newcomer directly (a whisper) or itself
-  carried the flag and the speaker chose a faithful or blame-shifting retelling; Haiku
+  carried the flag and the speaker chose a faithful retelling; Haiku
   is told whether the speaker knows the newcomer was the source and to say so when the
   style is faithful. Every other retelling drops the source.
 - The "sensational or hurtful to someone they know" clause is removed from the rating

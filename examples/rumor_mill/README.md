@@ -154,8 +154,8 @@ day and are met after they hold at 100% for three checks in a row.
 Each villager keeps their own suspicion of the newcomer. It goes up when:
 
 - you whisper to them: every whisper tells them it came from you;
-- they hear the newcomer named or hinted at in a rumor, or hear a rumor that is
-  hurtful to someone they know;
+- they hear a line that names the newcomer: only a faithful retelling of your
+  whisper keeps your part in it, so talk that has drifted from it never does;
 - someone warns them about you.
 
 A villager who suspects you enough may warn someone else about you. The feed
@@ -273,6 +273,13 @@ Where the tokens go:
 - The judge: one Jev request per villager whose memories match a belief goal,
   once a game day. Verdicts are cached until the villager's matching memories
   change.
+- An answer to you: the turn's Jev request plus one short Haiku line, at
+  most `TALK_TURNS` per conversation.
+
+Following, overhearing, and talking add no model calls of their own, only
+Contex queries. On the 100-villager seed with the defaults, the haunting
+whisper and the talk it started cost about $0.002 in five minutes; four
+whispers and a three-reply conversation, under $0.004.
 
 | Variable | Default (dollars per million tokens) |
 |---|---|
@@ -295,6 +302,12 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_MATCH_MARGIN` | `0.02` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_CALIBRATION_PATH` | seed path plus `.baselines.json` | where need baselines are cached |
+| `RUMOR_MILL_ON_TOPIC_MARGIN` | `0.035` | how far above a whisper's score against ordinary village talk a retelling must score to stay on its rumor card |
+| `RUMOR_MILL_FATIGUE_PER_HOP` | `0.003` | extra clearance over a need's threshold each retelling hop needs before it wakes a listener |
+| `RUMOR_MILL_OVERHEARD_MARGIN` | `0.01` | extra clearance a line said to the room needs over one told to the listener |
+| `RUMOR_MILL_OVERHEAR_RATE` | `0.125` | share of ordinary talk at your place that you overhear |
+| `RUMOR_MILL_SAID_FLOOR` | `0.8` | how similar a villager's earlier line must be to what you say to them for them to recall it |
+| `RUMOR_MILL_TALK_TURNS` | `3` | most times a villager answers you in one conversation |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
 | `RUMOR_MILL_CHECK_LOOKBACK_SECONDS` | `5` | how far before a whisper the check that it landed looks, to absorb clock skew with Contex |
 | `RUMOR_MILL_ARRIVAL_DELAY_SECONDS` | `60` | wait after a departure before newcomers arrive |
@@ -315,6 +328,25 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_SUSPICION_CHECK_DAYS` | `0.25` | game days between mood checks |
 
 `MATCH_MARGIN` matters most; see [How a whisper lands](#how-a-whisper-lands). Lower it and villagers react to more of what they hear; raise it and the village goes quiet.
+
+Stories wear out. A line wakes a listener only if it clears one of their
+needs by `FATIGUE_PER_HOP` for each time it was retold, plus
+`OVERHEARD_MARGIN` when it was said to the room. Before these, one whisper
+at the tavern on the 100-villager seed set its 15 villagers trading about a
+hundred insults in a few minutes: a line said to the room cleared the needs
+of 6 to 9 of them. With the defaults, replays of that whisper gave 1 to 4
+retellings, each over within a minute, and the village stayed quiet. Raise
+the fatigue for a quieter village; lower the overheard margin and room talk
+runs on.
+
+`ON_TOPIC_MARGIN` decides what stays on a rumor card. Measured as similarity
+above the whisper's own baseline, 15 real retellings scored +0.039 to +0.119
+and 14 lines of other tavern talk -0.008 to +0.048; at 0.035, 2 of the 14
+reach the card and no retelling is lost.
+
+A conversation costs suspicion like whispering does. Three messages to one
+villager left them at about 0.73, past the 0.7 at which they turn you away,
+which is why `TALK_TURNS` is 3.
 
 The mood is a mean over the whole village, so the same whispers count for more
 in a small one. In a village of 100, a player who whispered to someone
