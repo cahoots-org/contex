@@ -733,6 +733,17 @@ async def test_no_turn_without_a_fresh_item(turns):
 
 
 @pytest.mark.asyncio
+async def test_the_newcomers_whisper_is_fresh_even_with_negative_clearance(turns):
+    engine, minds, _ = await setup("v1")
+    engine.lineage.record("w-1", None, player=True)
+    minds["v1"].results = [[Match("k-w", {"id": "w-1", "text": "psst"}, 0.4, -0.01)]]
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    assert [m.data_key for m in turns.views[0].new] == ["k-w"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_warnings_always_fresh(turns):
     engine, minds, _ = await setup("v1")
     warning = Utterance("u-warn", "v2", "V2", "tavern", "watch the newcomer", None, depth=4, action=WARN)

@@ -360,8 +360,11 @@ class Engine:
         return True
 
     def _fresh(self, m: Match) -> bool:
-        """Whether the item clears its need by enough to wake the villager, given how often it was retold."""
-        if m.clearance is None:
+        """Whether the item clears its need by enough to wake the villager, given how often it was retold.
+
+        The newcomer's own whisper is always fresh.
+        """
+        if m.clearance is None or self.lineage.is_whisper(m.data.get("id")):
             return True
         fact = self.facts.get(m.data.get("id"))
         depth = fact.depth if fact else 0
