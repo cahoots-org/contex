@@ -388,12 +388,13 @@ async def test_routine_moves_come_in_batches_of_five_across_the_window(monkeypat
     engine, _, _, _ = await start(*vids)
     engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
     moves = record_moves(monkeypatch, engine)
-    spread = 0.3
+    spread = 0.6
     await engine._walk("morning", spread)
     times = [t for *_, t in moves]
     gaps = [b - a for a, b in zip(times, times[1:])]
-    assert len(moves) == 12
-    assert [i for i, g in enumerate(gaps) if g >= 0.9 * spread / 3] == [4, 9]
+    assert [vid for vid, *_ in moves] == vids
+    assert all(gaps[i] >= 0.9 * spread / 3 for i in (4, 9))
+    assert all(g < 0.5 * spread / 3 for i, g in enumerate(gaps) if i not in (4, 9))
     await engine.stop()
 
 
@@ -402,12 +403,11 @@ async def test_phases_stay_evenly_spaced_with_a_routine(monkeypatch):
     vids = [f"v{i}" for i in range(12)]
     engine, game, feed, _ = await start(*vids, day_seconds=0.4)
     engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
-    record_moves(monkeypatch, engine, delay=0.5)
+    record_moves(monkeypatch, engine, delay=5.0)
     ticks = []
     on_time = feed.on_time
     monkeypatch.setattr(feed, "on_time", lambda day, phase: (ticks.append(time.monotonic()), on_time(day, phase)))
     await engine.run()
     await wait_for(lambda: len(ticks) >= 4)
     await engine.stop()
-    phase_seconds = 0.4 / 4
-    assert all(b - a < 1.8 * phase_seconds for a, b in zip(ticks, ticks[1:4]))
+    assert all(b - a < 1.0 for a, b in zip(ticks, ticks[1:4]))

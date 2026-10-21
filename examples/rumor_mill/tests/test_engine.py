@@ -1419,7 +1419,7 @@ async def test_a_participant_leaving_town_ends_the_scene(talkers):
 
 @pytest.mark.asyncio
 async def test_answering_the_newcomer_leaves_the_scene(talkers):
-    engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=0.3)
+    engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=1)
     engine._last_turn["v1"] = time.monotonic()
     talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [(ANSWER, 1.0)]}
     said_by(engine, "o-1", "v1")
