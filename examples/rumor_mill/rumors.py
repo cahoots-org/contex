@@ -37,6 +37,8 @@ class Card:
     conversation: list[dict] = field(default_factory=list)
     # For a reply whisper, the first whisper whose card shows it.
     part_of: str | None = None
+    # A topic is measured and checked against like a whisper but never listed.
+    topic_only: bool = False
 
 
 class Rumors:
@@ -60,11 +62,19 @@ class Rumors:
             card.part_of = conversation
             self.add_line(conversation, Utterance(whisper_uid, PLAYER_ID, "The newcomer", "", text, None))
         card.heard.add(target_id)
-        card.measuring = asyncio.ensure_future(self._measure(whisper_uid, text))
+        await self._start(card)
+
+    async def add_topic(self, uid: str, text: str, published_at: datetime) -> None:
+        """Measure and publish a topic so on_topic can check lines against it; it is never listed in cards."""
+        card = self._cards[uid] = Card(uid, text, "", "", published_at, topic_only=True)
+        await self._start(card)
+
+    async def _start(self, card: Card) -> None:
+        card.measuring = asyncio.ensure_future(self._measure(card.uid, card.text))
         try:
-            await self.contex.publish(self.project, f"rumor:{whisper_uid}", {"id": whisper_uid, "text": text})
+            await self.contex.publish(self.project, f"rumor:{card.uid}", {"id": card.uid, "text": card.text})
         except Exception:
-            log.warning("rumor words for %s were not published", whisper_uid)
+            log.warning("rumor words for %s were not published", card.uid)
             log.debug("rumor publish failure", exc_info=True)
 
     async def _measure(self, whisper_uid: str, text: str) -> float | None:
@@ -120,6 +130,14 @@ class Rumors:
         shown.told_at.update(dict.fromkeys(listeners, time.time()))
         return False
 
+    def carries(self, root_uid: str, uid: str) -> bool:
+        """Whether uid is an on-topic hop shown on the card that root_uid belongs to."""
+        card = self._cards.get(root_uid)
+        if card is None:
+            return False
+        shown = self._cards.get(card.part_of, card)
+        return any(hop["uid"] == uid for hop in shown.hops)
+
     def close(self) -> None:
         """Cancel any baseline measurement still running."""
         for card in self._cards.values():
@@ -132,5 +150,5 @@ class Rumors:
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
              "conversation": c.conversation}
-            for c in self._cards.values() if c.part_of is None
+            for c in self._cards.values() if c.part_of is None and not c.topic_only
         ]

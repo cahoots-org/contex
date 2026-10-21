@@ -9,7 +9,7 @@ from examples.rumor_mill.actions import (
     PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.decide import GOSSIP_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide
+from examples.rumor_mill.decide import GOSSIP_LEVELS, KEEN_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide
 from examples.rumor_mill.models import Group, Villager
 
 
@@ -324,3 +324,13 @@ async def test_a_move_keeps_its_manner_for_sharing_on_arrival():
     jev = StubJev({"action": MOVE, "place_target": "tavern", "style": "worried"})
     d = await decide(jev, view())
     assert (d.action, d.target, d.style) == (MOVE, "tavern", "worried")
+
+
+@pytest.mark.asyncio
+async def test_keen_is_asked_only_when_requested_and_scaled():
+    jev = StubJev({"action": IGNORE}, scores={"keen": 2})
+    d = await decide(jev, view())
+    assert "keen" not in jev.questions and d.keen is None
+    d = await decide(jev, view(ask_keen=True))
+    assert list(jev.questions["keen"].criteria) == KEEN_LEVELS
+    assert d.keen == pytest.approx(2 / 3)

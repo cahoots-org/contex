@@ -12,7 +12,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.goals import DECK
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
-from examples.rumor_mill.tests.helpers import StubBaselines, StubContex
+from examples.rumor_mill.tests.helpers import Always, StubBaselines, StubContex
 from examples.rumor_mill.town import PLAYER_ID
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
@@ -22,14 +22,6 @@ WELL = GOALS["well-cursed"]
 
 def line(text="nice weather", place="tavern", action=SPEAK, style="faithful", speaker="v1", verb="said"):
     return Utterance("u-1", speaker, "Bert", place, text, None, verb, action=action, style=style)
-
-
-class Always:
-    def __init__(self, value):
-        self.value = value
-
-    def random(self):
-        return self.value
 
 
 async def make(results=None, error=None, rate=0.0, goals=(WELL,), roll=0.99):

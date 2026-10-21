@@ -62,6 +62,18 @@ class Config:
     run_out_level: float = 0.08
     run_out_checks: int = 3
     suspicion_check_days: float = 0.25
+    # How many scenes run at once.
+    max_scenes: int = 3
+    # How long a villager who left a scene waits before it can start another.
+    scene_cooldown_seconds: float = 5.0
+    # The share of a scene's momentum that becomes the chance a bystander is drawn in.
+    join_rate: float = 0.3
+    # How many lines a scene runs before it ends.
+    scene_max_lines: int = 12
+    # How far above a need's ordinary-talk similarity a line must score to count as a hint.
+    hint_margin: float = 0.0
+    # How close under a threshold a line must fall to count as a near miss.
+    near_miss_band: float = 0.01
 
     @property
     def memory_seconds(self) -> int:

@@ -189,3 +189,24 @@ async def test_live_paraphrase_stays_on_topic_and_a_reply_does_not(tmp_path, cap
             assert await rumors.on_topic("w-1", paraphrase)
             assert not await rumors.on_topic("w-1", reply)
     print("\n".join(r.getMessage() for r in caplog.records))
+
+
+@pytest.mark.asyncio
+async def test_a_topic_is_checked_but_never_shown():
+    rumors, contex = await make({"close": [Match("rumor:u-5", {}, 0.53)]})
+    await rumors.add_topic("u-5", "the baker skims the till", AT)
+    assert await rumors.on_topic("u-5", "close")
+    assert contex.published[-1] == ("rumor-mill:s1:rumors", "rumor:u-5", {"id": "u-5", "text": "the baker skims the till"})
+    assert [c["uid"] for c in rumors.cards()] == ["w-1"]
+
+
+@pytest.mark.asyncio
+async def test_carries_names_only_on_topic_hops():
+    rumors, _ = await make()
+    await rumors.add("w-2", "reply", AT, "v1", "Marta", conversation="w-1")
+    rumors.record("w-1", hop("u-1"), {"v2": "Ann"}, True)
+    rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True)
+    rumors.record("w-1", hop("u-3"), {"v2": "Ann"}, False)
+    assert rumors.carries("w-1", "u-1") and rumors.carries("w-2", "u-2") and rumors.carries("w-2", "u-1")
+    assert not rumors.carries("w-1", "u-3")
+    assert not rumors.carries("missing", "u-1")

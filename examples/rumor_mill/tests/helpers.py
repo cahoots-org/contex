@@ -15,6 +15,16 @@ from examples.rumor_mill.town import Town
 TIMEOUT = 2.0
 
 
+class Always:
+    """A stand-in for random.Random whose random() is always the same value."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def random(self):
+        return self.value
+
+
 class FakeMind:
     def __init__(self, villager):
         self.villager = villager

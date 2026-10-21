@@ -59,3 +59,13 @@ def test_suspicion_defaults_and_env_overrides(monkeypatch):
     assert (cfg.suspicion_whisper_bump, cfg.suspicion_hear_max, cfg.suspicion_decay_per_day) == (0.1, 0.5, 0.01)
     assert (cfg.warn_threshold, cfg.refuse_threshold, cfg.run_out_level) == (0.3, 0.6, 0.2)
     assert (cfg.run_out_checks, cfg.suspicion_check_days) == (5, 0.5)
+
+
+def test_scene_defaults_and_env_overrides(monkeypatch):
+    cfg = Config()
+    assert (cfg.max_scenes, cfg.scene_cooldown_seconds, cfg.join_rate) == (3, 5.0, 0.3)
+    assert (cfg.scene_max_lines, cfg.hint_margin, cfg.near_miss_band) == (12, 0.0, 0.01)
+    monkeypatch.setenv("RUMOR_MILL_MAX_SCENES", "2")
+    monkeypatch.setenv("RUMOR_MILL_JOIN_RATE", "0.5")
+    cfg = Config.from_env()
+    assert (cfg.max_scenes, cfg.join_rate) == (2, 0.5)

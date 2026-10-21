@@ -36,6 +36,8 @@ ACTION_INSTRUCTIONS = (
 SUSPICION_LEVELS = ["not at all", "a little", "quite a bit", "convinced"]
 GOSSIP_LEVELS = ["keeps news to themselves", "shares now and then", "loves to share", "can't hold anything in"]
 GOSSIP_INSTRUCTIONS = "Given their personality, how readily does this villager pass news on to whoever they meet?"
+KEEN_LEVELS = ["not at all", "a little", "quite a bit", "can't stop"]
+KEEN_INSTRUCTIONS = "How much does this villager want to keep talking about this?"
 SUSPICION_INSTRUCTIONS = (
     "How strongly does what this villager just heard make them suspect the newcomer is "
     "behind the rumors going around, given their personality?"
@@ -61,6 +63,8 @@ class TurnView:
     answerable: list[Match] = field(default_factory=list)
     # Whether to ask how much of a gossip the villager is, which is asked once per villager.
     ask_gossip: bool = False
+    # Whether to ask how keen the villager is to keep a scene going.
+    ask_keen: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,8 @@ class Decision:
     suspicion_strength: float | None = None
     # How readily the villager passes news on, in [0, 1], when it was asked.
     gossip: float | None = None
+    # How keen the villager is to keep talking, in [0, 1], when it was asked.
+    keen: float | None = None
 
 
 def _text(m: Match) -> str:
@@ -128,6 +134,8 @@ def _questions(view: TurnView) -> dict[str, Choice | Score]:
         qs["suspicion"] = Score(instructions=SUSPICION_INSTRUCTIONS, criteria=SUSPICION_LEVELS)
     if view.ask_gossip:
         qs["gossip"] = Score(instructions=GOSSIP_INSTRUCTIONS, criteria=GOSSIP_LEVELS)
+    if view.ask_keen:
+        qs["keen"] = Score(instructions=KEEN_INSTRUCTIONS, criteria=KEEN_LEVELS)
     if len(view.new) > 1:
         qs["source"] = Choice(
             instructions="Which of the things this villager just heard does the action respond to? "
@@ -188,10 +196,11 @@ async def decide(jev, view: TurnView) -> Decision:
     log.debug("%s: action odds %s, drew %s", view.villager.id, odds, action)
     strength = _scaled(resp, "suspicion", SUSPICION_LEVELS) if view.names_newcomer else None
     gossip = _scaled(resp, "gossip", GOSSIP_LEVELS) if view.ask_gossip else None
+    keen = _scaled(resp, "keen", KEEN_LEVELS) if view.ask_keen else None
     if action == IGNORE:
-        return Decision(IGNORE, None, None, None, strength, gossip)
+        return Decision(IGNORE, None, None, None, strength, gossip, keen)
     if action == ANSWER:
-        return Decision(ANSWER, view.answerable[-1], None, None, strength, gossip)
+        return Decision(ANSWER, view.answerable[-1], None, None, strength, gossip, keen)
     if len(view.new) > 1:
         source = next(m for m in view.new if m.data_key == pick["source"])
     else:
@@ -205,4 +214,4 @@ async def decide(jev, view: TurnView) -> Decision:
     target = pick.get(target_key) if target_key else None
     # A move keeps a manner in case the villager shares the news where they arrive.
     style = pick.get("style") if action in STYLED or action == MOVE else None
-    return Decision(action, source, target, style, strength, gossip)
+    return Decision(action, source, target, style, strength, gossip, keen)
