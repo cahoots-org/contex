@@ -31,6 +31,11 @@ def extract_json(text: str):
     raise ValueError(f"no JSON in model output: {text[:200]!r}")
 
 
+def _grudge(villager: Villager, aside: str = "") -> str:
+    """The villager's grudge for a prompt, then aside, or nothing when they hold none."""
+    return f"Your grudge: {villager.grudge}. {aside}" if villager.grudge else ""
+
+
 class Writer:
     def __init__(self, client, model: str, usage=None):
         self.client = client
@@ -59,10 +64,12 @@ class Writer:
         """
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
-            f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
-            "Reply with one or two short sentences, under 30 words, in your own voice, the way people gossip. "
-            "Keep to what you heard, changed only as your manner says; bring up your grudge "
-            "only when it fits. If what you heard is about you, answer as yourself. "
+            f"Your personality: {villager.personality}. "
+            + _grudge(villager, "Bring it up only when it fits. ")
+            + "Reply with one or two short sentences, under 30 words, in your own voice, the way people gossip. "
+            "You gossip with relish and curiosity, not malice, unless your manner says otherwise. "
+            "Keep to what you heard, changed only as your manner says. "
+            "If what you heard is about you, answer as yourself. "
             "No stage directions, no quotation marks around the reply, no preamble."
         )
         lines = [f"Action: {decision.action}.", f"Listening: {audience}."]
@@ -122,8 +129,9 @@ class Writer:
         """The villager answering what the newcomer just said to them, in one line."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
-            f"Your personality: {villager.personality}. Your grudge: {villager.grudge}. "
-            "The newcomer in town just said something to you that you care about. Answer them "
+            f"Your personality: {villager.personality}. "
+            + _grudge(villager)
+            + "The newcomer in town just said something to you that you care about. Answer them "
             "in one short sentence, under 30 words, in your own voice, responding to what they said. "
             "Never mention suspicion. "
             "No stage directions, no quotation marks, no preamble."

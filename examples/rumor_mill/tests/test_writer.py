@@ -105,3 +105,21 @@ async def test_reply_answers_the_newcomer_in_one_line():
     assert "the well water tastes odd" in plain and "whispered to you" not in plain
     assert "the well is fine" not in plain and "the well is fine" in with_said
     assert "suspic" in plain.lower()
+
+
+@pytest.mark.asyncio
+async def test_say_and_reply_mention_a_grudge_only_when_there_is_one():
+    client = StubClient("Hm.", "Hm.", "Hm.", "Hm.")
+    writer = Writer(client, "haiku-test")
+    kindly = Villager("v002", "Bea", "weaver", "warm", "", ["cloth"], {})
+    decision = Decision("speak", None, None, None)
+
+    await writer.say(kindly, decision, "Bob stole a loaf", "all")
+    await writer.reply(kindly, "the well water tastes odd", [])
+    await writer.say(villager(), decision, "Bob stole a loaf", "all")
+    await writer.reply(villager(), "the well water tastes odd", [])
+
+    kind_say, kind_reply, sour_say, sour_reply = (c["system"] for c in client.messages.calls)
+    assert "grudge" not in (kind_say + kind_reply).lower()
+    assert "Your grudge: owes me flour." in sour_say and "Your grudge: owes me flour." in sour_reply
+    assert all("relish and curiosity, not malice" in s for s in (kind_say, sour_say))
