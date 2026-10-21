@@ -73,7 +73,9 @@ async def test_brush_off_prompts_with_profile_and_concern_and_returns_one_line()
     line = await Writer(client, "haiku-test").brush_off(villager(), "my oven needs a new hearthstone")
     assert line == "Not now, my oven is cracked."
     call = client.messages.calls[0]
-    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued", "Allude to it"))
+    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued", "Allude to it", "Never repeat its wording"))
+    assert "in keeping with your temperament: a kindly villager is busy and apologetic, a sour one curt" in call["system"]
+    assert "grumbl" not in call["system"]
     assert "owes me flour" not in call["system"]
     assert "my oven needs a new hearthstone" in call["messages"][0]["content"]
     assert call["max_tokens"] == 80

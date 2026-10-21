@@ -146,9 +146,10 @@ touches nothing the villager cares about does nothing, and the feed says at
 once whether it caught their ear or they shrug it off. `inspect` shows enough
 to guess what someone cares about, but not their needs.
 
-A shrug is a hint. The villager brushes you off in their own voice and grumbles
-about something they care about, a different concern each time until they run
-out and start over, so a miss tells you where to aim next. If the line can't be
+A shrug is a hint. The villager brushes you off in their own voice, kindly or
+curtly as their temperament goes, and alludes to something they care about, a
+different concern each time until they run out and start over, so a miss tells
+you where to aim next. If the line can't be
 written, the whisper just says it was brushed off.
 
 The feed shows each hop of a rumor you started, who told whom and in what
