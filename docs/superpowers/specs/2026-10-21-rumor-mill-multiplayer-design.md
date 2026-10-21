@@ -92,9 +92,10 @@ same way now and then.
   whisper. A trophy for your case."). Then three new goals are dealt and play goes on in the same
   world, suspicion and notes intact (Rob).
 - **The trophy case.** Each player has a trophy case: a panel listing their trophies, each with the
-  goals it was for and the game day it was won. When the world goal is met, every player active in
-  the world gets a world trophy too, since no one's share can be told apart. Trophies are stored
-  with the player and survive restarts. *(My call: world trophies go to all active players.)*
+  goals it was for and the game day it was won. When the world goal is met, every player who was
+  active (whispered at least once) while that world goal was in play gets a world trophy, since no
+  one's share can be told apart (Rob). The world records who whispered under each world goal.
+  Trophies are stored with the player and survive restarts.
 - **Judging cost** is bounded by the deck, not the players: the judge checks each claim that is in
   play (any player's goal or the world goal) once per check, and every player with that claim reads
   the same result. At most 15 claims × the village per check, with the existing verdict cache.
