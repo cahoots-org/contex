@@ -9,7 +9,7 @@ from examples.rumor_mill.actions import (
     PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.decide import SUSPICION_LEVELS, Decision, TurnView, decide
+from examples.rumor_mill.decide import GOSSIP_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide
 from examples.rumor_mill.models import Group, Villager
 
 
@@ -131,7 +131,7 @@ async def test_style_kept_for_speech_actions(action):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action", [MOVE, JOIN_GROUP, LEAVE_TOWN, FOUND_GROUP, IGNORE])
+@pytest.mark.parametrize("action", [JOIN_GROUP, LEAVE_TOWN, FOUND_GROUP, IGNORE])
 async def test_style_none_for_non_speech(action):
     g = Group("g-1", "Circle", "pray", "v9", {"v9"})
     jev = StubJev({"action": action, "place_target": "well", "join_target": "g-1", "style": "mock"})
@@ -308,3 +308,19 @@ async def test_warm_styles_are_offered_and_kept():
     d = await decide(jev, view())
     assert {"delighted", "worried", "conspiratorial"} <= set(jev.questions["style"].criteria)
     assert d.style == "conspiratorial"
+
+
+@pytest.mark.asyncio
+async def test_gossip_is_asked_only_when_requested_and_scaled():
+    jev = StubJev({"action": IGNORE}, scores={"gossip": 3.0})
+    assert (await decide(jev, view())).gossip is None and "gossip" not in jev.questions
+    d = await decide(jev, view(ask_gossip=True))
+    assert list(jev.questions["gossip"].criteria) == GOSSIP_LEVELS
+    assert d.gossip == 1.0
+
+
+@pytest.mark.asyncio
+async def test_a_move_keeps_its_manner_for_sharing_on_arrival():
+    jev = StubJev({"action": MOVE, "place_target": "tavern", "style": "worried"})
+    d = await decide(jev, view())
+    assert (d.action, d.target, d.style) == (MOVE, "tavern", "worried")

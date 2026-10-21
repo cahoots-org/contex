@@ -39,6 +39,8 @@ class Config:
     overhear_rate: float = 0.125
     # The share of lively talk at the player's place that the player overhears.
     lively_rate: float = 0.4
+    # How far news must clear a need for a villager who walks off to share it wherever their nature lets them.
+    share_clearance: float = 0.02
     # How many times a villager answers the newcomer in one conversation.
     talk_turns: int = 3
     # Where need baselines are cached; empty means the seed path plus .baselines.json.

@@ -174,6 +174,26 @@ async def test_move_changes_place_without_delivery():
 
 
 @pytest.mark.asyncio
+async def test_a_villager_who_moves_may_share_the_news_where_they_arrive():
+    s = Setup()
+    s.town.move("v2", "tavern")
+    await s.act("v1", Decision(MOVE, source(), "tavern", "worried"), share_chance=1.0)
+    utt, listeners = s.hub.delivered[0]
+    assert listeners == ["v2"] and utt.place == "tavern" and utt.parent == "u-0" and utt.action == RETELL
+    assert s.writer.say_calls == [(RETELL, "Bert stole bread", "Ada")]
+
+
+@pytest.mark.asyncio
+async def test_a_move_shares_nothing_without_luck_news_or_company():
+    s = Setup()
+    s.town.move("v2", "tavern")
+    await s.act("v1", Decision(MOVE, source(), "tavern", None), share_chance=0.0)
+    await s.act("v1", Decision(MOVE, None, "square", None), share_chance=1.0)
+    await s.act("v1", Decision(MOVE, source(), "mill", None), share_chance=1.0)
+    assert s.hub.delivered == []
+
+
+@pytest.mark.asyncio
 async def test_warn_is_addressed_to_the_target_only():
     s = Setup()
     await s.act("v1", Decision(WARN, source(), "v2", "faithful"))

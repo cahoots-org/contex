@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from contextlib import aclosing, suppress
 
-from examples.rumor_mill.actions import ANSWER, WARN
+from examples.rumor_mill.actions import ANSWER, MOVE, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -80,6 +80,8 @@ class Engine:
         self._listen_failed: set[str] = set()
         self._said: dict[str, list[tuple[str, int]]] = {}
         self._kept: dict[str, dict[str, None]] = {}
+        # How readily each villager passes news on, asked once per villager.
+        self._gossip: dict[str, float] = {}
         # Each villager's open conversation with the newcomer: its first whisper and the whispers answered so far.
         self.conversations: dict[str, dict] = {}
         self._renewal: asyncio.Task | None = None
@@ -329,6 +331,7 @@ class Engine:
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
             said=said,
             answerable=answerable,
+            ask_gossip=v.id not in self._gossip,
         )
         action = answered = None
         try:
@@ -346,18 +349,26 @@ class Engine:
                         )
                     except Exception:
                         log.exception("suspicion rating failed for %s", v.id)
+                if decision.gossip is not None:
+                    self._gossip[v.id] = decision.gossip
                 await act(
                     decision, v, town=self.town, writer=self.writer, hub=self,
                     lineage=self.lineage, ids=self.ids, facts=self.facts,
                     inspiration=[m.data.get("text", "") for m in new],
                     said=[m.data.get("text", "") for m in said],
                     suspicion_hear_max=self.config.suspicion_hear_max,
+                    share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                 )
                 if action == ANSWER:
                     answered = decision.source.data["id"]
         finally:
             self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
         return True
+
+    def share_chance(self, vid: str, source: Match | None) -> float:
+        """How likely a villager who walks off is to share source where they arrive: their nature times its pull."""
+        pull = 0.5 if source is None or source.clearance is None else source.clearance / self.config.share_clearance
+        return self._gossip.get(vid, 0.5) * min(1.0, max(0.0, pull))
 
     def _fresh(self, m: Match) -> bool:
         """Whether the item clears its need by enough to wake the villager, given how often it was retold.

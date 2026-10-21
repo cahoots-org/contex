@@ -20,7 +20,7 @@ ACTIONS = {
     DENY: "Tell one specific person nearby that something being said is false.",
     CONFRONT: "Challenge one specific person nearby about what they said or did.",
     SPEAK: "Tell everyone nearby: spread what you just heard, or say what is on your mind.",
-    MOVE: "Walk off to a different place in town, keeping the news to yourself for now.",
+    MOVE: "Walk off to a different place in town, taking the news with you.",
     FOUND_GROUP: "Start a new group around a belief, fear, or cause you feel strongly about: a cult, a watch, a guild, a protest.",
     JOIN_GROUP: "Join a group that has members nearby and a cause you share.",
     LEAVE_GROUP: "Quit a group you belong to that you no longer believe in.",

@@ -1,6 +1,7 @@
 """Turn a villager's decision into town changes and speech."""
 
 import logging
+import random
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -48,8 +49,12 @@ async def act(
     inspiration: Sequence[str] = (),
     said: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
+    share_chance: float = 0.0,
 ) -> None:
-    """Apply the decision to the town and deliver any speech it produces."""
+    """Apply the decision to the town and deliver any speech it produces.
+
+    A villager who moves shares the news with someone where they arrive with share_chance.
+    """
     action = decision.action
     vid = villager.id
     place = town.place_of(vid)
@@ -86,6 +91,13 @@ async def act(
         return
     if action == MOVE:
         town.move(vid, decision.target)
+        arrived = [v.id for v in town.present(decision.target, exclude=vid)]
+        if decision.source and arrived and random.random() < share_chance:
+            shared = Decision(RETELL, decision.source, random.choice(arrived), decision.style or "faithful")
+            await act(
+                shared, villager, town=town, writer=writer, hub=hub, lineage=lineage, ids=ids, facts=facts,
+                inspiration=inspiration, said=said, suspicion_hear_max=suspicion_hear_max,
+            )
     elif action in DIRECT:
         if decision.target in others():
             audience = town.get(decision.target).name

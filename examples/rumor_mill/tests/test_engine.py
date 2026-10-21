@@ -1148,3 +1148,15 @@ async def test_an_answer_after_the_conversation_closed_reopens_it_on_its_card(ta
     await wait_for(lambda: statuses(feed))
     await engine.stop()
     assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-3"]}
+
+
+@pytest.mark.asyncio
+async def test_share_chance_is_nature_times_how_close_the_news_came():
+    engine, _, _ = await setup("v1")
+    engine._gossip["v1"] = 0.8
+    news = lambda clearance: Match("k", {"id": "u"}, 0.9, clearance)  # noqa: E731
+    assert engine.share_chance("v1", news(0.01)) == pytest.approx(0.4)
+    assert engine.share_chance("v1", news(0.05)) == pytest.approx(0.8)
+    assert engine.share_chance("v1", news(None)) == pytest.approx(0.4)
+    assert engine.share_chance("v2", news(-0.01)) == 0.0
+    await engine.stop()

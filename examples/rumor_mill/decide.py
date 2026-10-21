@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typesafe_sdk import Choice, Score
 
 from examples.rumor_mill.actions import (
-    ACTION_NOT_FOR, ACTIONS, ANSWER, IGNORE, JOIN_GROUP, STYLED, STYLES, TARGET_KIND,
+    ACTION_NOT_FOR, ACTIONS, ANSWER, IGNORE, JOIN_GROUP, MOVE, STYLED, STYLES, TARGET_KIND,
     available_actions,
 )
 from examples.rumor_mill.contex_client import Match
@@ -34,6 +34,8 @@ ACTION_INSTRUCTIONS = (
 )
 
 SUSPICION_LEVELS = ["not at all", "a little", "quite a bit", "convinced"]
+GOSSIP_LEVELS = ["keeps news to themselves", "shares now and then", "loves to share", "can't hold anything in"]
+GOSSIP_INSTRUCTIONS = "Given their personality, how readily does this villager pass news on to whoever they meet?"
 SUSPICION_INSTRUCTIONS = (
     "How strongly does what this villager just heard make them suspect the newcomer is "
     "behind the rumors going around, given their personality?"
@@ -57,6 +59,8 @@ class TurnView:
     said: list[Match] = field(default_factory=list)
     # The newcomer's lines that landed this turn and that the villager may still answer.
     answerable: list[Match] = field(default_factory=list)
+    # Whether to ask how much of a gossip the villager is, which is asked once per villager.
+    ask_gossip: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,6 +71,8 @@ class Decision:
     style: str | None
     # How much this turn's news raised suspicion of the newcomer, in [0, 1].
     suspicion_strength: float | None = None
+    # How readily the villager passes news on, in [0, 1], when it was asked.
+    gossip: float | None = None
 
 
 def _text(m: Match) -> str:
@@ -120,6 +126,8 @@ def _questions(view: TurnView) -> dict[str, Choice | Score]:
     qs = {"action": Choice(instructions=ACTION_INSTRUCTIONS, criteria=_action_criteria(view))}
     if view.names_newcomer:
         qs["suspicion"] = Score(instructions=SUSPICION_INSTRUCTIONS, criteria=SUSPICION_LEVELS)
+    if view.ask_gossip:
+        qs["gossip"] = Score(instructions=GOSSIP_INSTRUCTIONS, criteria=GOSSIP_LEVELS)
     if len(view.new) > 1:
         qs["source"] = Choice(
             instructions="Which of the things this villager just heard does the action respond to? "
@@ -154,12 +162,12 @@ def _questions(view: TurnView) -> dict[str, Choice | Score]:
     return qs
 
 
-def _strength(resp) -> float | None:
-    """The suspicion score scaled from its levels to [0, 1], or None when it is missing."""
-    score = getattr(getattr(resp, "scores", {}).get("suspicion"), "score", None)
+def _scaled(resp, key: str, levels: list[str]) -> float | None:
+    """A score scaled from its levels to [0, 1], or None when it is missing."""
+    score = getattr(getattr(resp, "scores", {}).get(key), "score", None)
     if not isinstance(score, (int, float)):
         return None
-    return min(1.0, max(0.0, score / (len(SUSPICION_LEVELS) - 1)))
+    return min(1.0, max(0.0, score / (len(levels) - 1)))
 
 
 async def decide(jev, view: TurnView) -> Decision:
@@ -178,11 +186,12 @@ async def decide(jev, view: TurnView) -> Decision:
     else:
         action = max(odds, key=odds.get)
     log.debug("%s: action odds %s, drew %s", view.villager.id, odds, action)
-    strength = _strength(resp) if view.names_newcomer else None
+    strength = _scaled(resp, "suspicion", SUSPICION_LEVELS) if view.names_newcomer else None
+    gossip = _scaled(resp, "gossip", GOSSIP_LEVELS) if view.ask_gossip else None
     if action == IGNORE:
-        return Decision(IGNORE, None, None, None, strength)
+        return Decision(IGNORE, None, None, None, strength, gossip)
     if action == ANSWER:
-        return Decision(ANSWER, view.answerable[-1], None, None, strength)
+        return Decision(ANSWER, view.answerable[-1], None, None, strength, gossip)
     if len(view.new) > 1:
         source = next(m for m in view.new if m.data_key == pick["source"])
     else:
@@ -194,5 +203,6 @@ async def decide(jev, view: TurnView) -> Decision:
         "group": "join_target" if action == JOIN_GROUP else "group_target",
     }.get(kind)
     target = pick.get(target_key) if target_key else None
-    style = pick.get("style") if action in STYLED else None
-    return Decision(action, source, target, style, strength)
+    # A move keeps a manner in case the villager shares the news where they arrive.
+    style = pick.get("style") if action in STYLED or action == MOVE else None
+    return Decision(action, source, target, style, strength, gossip)
