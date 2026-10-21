@@ -1,6 +1,5 @@
 import logging
 import random
-from types import SimpleNamespace
 
 import pytest
 
@@ -11,26 +10,7 @@ from examples.rumor_mill.actions import (
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import GOSSIP_LEVELS, KEEN_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide
 from examples.rumor_mill.models import Group, Villager
-
-
-class StubJev:
-    def __init__(self, answers, scores=None):
-        self.answers = answers
-        self.scores = scores
-        self.questions = {}
-        self.state = None
-
-    async def system_one(self, state, questions):
-        self.state = state
-        self.questions = questions
-        choices = {
-            k: SimpleNamespace(choice=v, probabilities={v: 1.0})
-            for k, v in self.answers.items() if k in questions
-        }
-        if self.scores is None:
-            return SimpleNamespace(choices=choices)
-        scores = {k: SimpleNamespace(score=v, confidence=0.9) for k, v in self.scores.items() if k in questions}
-        return SimpleNamespace(choices=choices, scores=scores)
+from examples.rumor_mill.tests.helpers import StubJev
 
 
 def villager(vid="v1", name="Ada"):

@@ -20,6 +20,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
+from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
 from examples.rumor_mill.suspicion import Suspicion
@@ -53,6 +54,7 @@ class Engine:
         baselines: Baselines | None = None,
         rumors: Rumors | None = None,
         overhear: Overhear | None = None,
+        routine: Routine | None = None,
     ):
         self.config = config
         self.town = town
@@ -68,6 +70,7 @@ class Engine:
         self.baselines = baselines
         self.rumors = rumors
         self.overhear = overhear
+        self.routine = routine
         self.player_place: Callable[[], str] = lambda: START_PLACE
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game

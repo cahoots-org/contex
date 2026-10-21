@@ -25,6 +25,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.population import Replenisher
+from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.town import GATE, PLACES, Town
 from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate
@@ -48,9 +49,11 @@ async def play(web: bool) -> None:
         baselines = Baselines(contex, config)
         judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
         overhear = Overhear(contex, baselines, config, rng)
+        routine = Routine(jev, config.seed_path + ".places.json")
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
+            routine=routine,
         )
         player = Player(engine, town, lineage, ids, feed, config, writer, game)
         engine.player_place = lambda: player.place
@@ -65,7 +68,10 @@ async def play(web: bool) -> None:
             await baselines.load([g.evidence[0] for g in goals if g.evidence])
             await overhear.publish(goals)
             judging = asyncio.create_task(judge.run(goals))
-            await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
+            await routine.load(villagers)
+            await asyncio.gather(*(
+                engine.add_villager(v, routine.place(v.id, "morning") or rng.choice(places)) for v in villagers
+            ))
             await engine.run()
             if web:
                 app = create_app(

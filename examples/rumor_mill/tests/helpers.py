@@ -1,6 +1,7 @@
 """Test doubles and helpers shared by the Rumor Mill tests."""
 
 import asyncio
+from types import SimpleNamespace
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -64,6 +65,26 @@ async def wait_for(predicate, timeout=TIMEOUT):
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(0.005)
+
+
+class StubJev:
+    def __init__(self, answers, scores=None):
+        self.answers = answers
+        self.scores = scores
+        self.questions = {}
+        self.state = None
+
+    async def system_one(self, state, questions):
+        self.state = state
+        self.questions = questions
+        choices = {
+            k: SimpleNamespace(choice=v, probabilities={v: 1.0})
+            for k, v in self.answers.items() if k in questions
+        }
+        if self.scores is None:
+            return SimpleNamespace(choices=choices)
+        scores = {k: SimpleNamespace(score=v, confidence=0.9) for k, v in self.scores.items() if k in questions}
+        return SimpleNamespace(choices=choices, scores=scores)
 
 
 class StubBaselines:

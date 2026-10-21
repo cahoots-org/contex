@@ -39,8 +39,11 @@ class StubEngine:
         self.added: list[tuple[str, str]] = []
         self.delivered = []
         self.fail_add = False
+        self.routine = None
 
     async def add_villager(self, v, place):
+        if self.routine:
+            assert v.id in self.routine.added
         if self.fail_add:
             raise RuntimeError("contex down")
         self.town.add(v, place)
@@ -185,4 +188,22 @@ async def test_newcomer_needs_are_calibrated_before_joining(newcomers):
     engine.leave("v0")
     await wait_for(lambda: engine.added)
     assert engine.baselines.loaded == [(["bread"], 0)]
+    await stop(task)
+
+
+class StubRoutine:
+    def __init__(self):
+        self.added = []
+
+    async def add(self, v):
+        self.added.append(v.id)
+
+
+@pytest.mark.asyncio
+async def test_a_newcomer_gets_a_routine_on_arrival(newcomers):
+    engine, town, task = await start(3, 3)
+    engine.routine = StubRoutine()
+    engine.leave("v0")
+    await wait_for(lambda: engine.added)
+    assert engine.routine.added == ["n1"]
     await stop(task)
