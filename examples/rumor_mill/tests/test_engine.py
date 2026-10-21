@@ -1404,3 +1404,29 @@ async def test_keen_is_asked_only_when_a_scene_could_follow(talkers):
     await wait_for(lambda: len(talkers.views) == 3)
     assert [(v.villager.id, v.ask_keen) for v in talkers.views] == [("v2", False), ("v2", True), ("v1", True)]
     await engine.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stays_on_topic", [True, False])
+async def test_a_scene_that_ends_while_a_line_is_checked_is_not_ended_again_or_addressed(talkers, stays_on_topic):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    said_by(engine, "o-1", "v1")
+    scene = engine.scenes.start(engine.facts.get("o-1"), "v2", "o-1", None)
+    checking, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_on_topic(topic, text):
+        checking.set()
+        await release.wait()
+        return stays_on_topic
+
+    engine.rumors.on_topic = slow_on_topic
+    line = Utterance("u-1", "v2", "V2", "square", "more", "o-1", action=SPEAK)
+    delivery = asyncio.create_task(engine.deliver(line, ["v1"]))
+    await checking.wait()
+    engine._leave_scene("v1")
+    release.set()
+    await delivery
+    assert [e["ended"] for e in scene_events(feed)] == ["The conversation broke up."]
+    assert scene.lines == ["o-1"]
+    assert "v1" not in engine._pending
+    await engine.stop()

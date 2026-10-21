@@ -176,7 +176,9 @@ class Engine:
                 in_scene = await self.rumors.on_topic(scene.topic, utterance.text)
             else:
                 in_scene = on_topic
-            if in_scene:
+            if scene.ended:
+                scene = None
+            elif in_scene:
                 self.scenes.said(scene, utterance.id)
                 for vid in drawn:
                     if vid in heard:
@@ -448,6 +450,9 @@ class Engine:
             self._end_scene(scene, reason)
 
     def _end_scene(self, scene: Scene, reason: str) -> None:
+        """End the scene and report it; a scene that already ended stays as it ended."""
+        if scene.ended:
+            return
         self.scenes.end(scene, reason)
         self.feed.on_scene(scene)
 
