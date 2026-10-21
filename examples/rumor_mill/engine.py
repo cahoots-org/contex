@@ -17,6 +17,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project
 from examples.rumor_mill.models import Group, Utterance, Villager
+from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
@@ -48,6 +49,7 @@ class Engine:
         summary_source: Callable[[], list[tuple[str, int]]] = list,
         baselines: Baselines | None = None,
         rumors: Rumors | None = None,
+        overhear: Overhear | None = None,
     ):
         self.config = config
         self.town = town
@@ -61,6 +63,8 @@ class Engine:
         self.suspicion = Suspicion(config, town)
         self.baselines = baselines
         self.rumors = rumors
+        self.overhear = overhear
+        self.player_place: Callable[[], str] = lambda: START_PLACE
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source
@@ -151,6 +155,10 @@ class Engine:
         if heard and on_topic and utterance.speaker in self._turning:
             self._said.setdefault(utterance.speaker, []).append((utterance.id, len(heard)))
         self.feed.on_delivery(utterance, heard, on_topic)
+        if self.overhear is not None:
+            hop = on_topic and self.lineage.is_player_rooted(utterance.id)
+            if reason := await self.overhear.keep(utterance, self.player_place(), hop):
+                self.feed.on_overheard(utterance, reason)
 
     async def _carries_rumor(self, utterance: Utterance, heard: list[str]) -> bool:
         """Whether a retelling of a whisper still carries it, recorded on its card; True for any other line."""

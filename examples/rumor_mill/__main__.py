@@ -22,6 +22,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import deal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
+from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.rumors import Rumors
@@ -46,11 +47,13 @@ async def play(web: bool) -> None:
         goals = deal(rng)
         baselines = Baselines(contex, config)
         judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
+        overhear = Overhear(contex, baselines, config, rng)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
-            baselines=baselines, rumors=Rumors(contex, baselines, config),
+            baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
         )
         player = Player(engine, town, lineage, ids, feed, config, writer, game)
+        engine.player_place = lambda: player.place
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         if not web:
             for goal in goals:
@@ -60,6 +63,7 @@ async def play(web: bool) -> None:
         try:
             await baselines.load([need for v in villagers for need in v.needs])
             await baselines.load([g.evidence[0] for g in goals if g.evidence])
+            await overhear.publish(goals)
             judging = asyncio.create_task(judge.run(goals))
             await asyncio.gather(*(engine.add_villager(v, rng.choice(places)) for v in villagers))
             await engine.run()

@@ -30,6 +30,8 @@ class Config:
     fatigue_per_hop: float = 0.01
     # How much more clearance overheard room talk needs than a line told to the listener.
     overheard_margin: float = 0.01
+    # The share of ordinary talk at the player's place that the player overhears.
+    overhear_rate: float = 0.125
     # Where need baselines are cached; empty means the seed path plus .baselines.json.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"

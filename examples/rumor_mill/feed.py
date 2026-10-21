@@ -124,6 +124,16 @@ class Feed:
         """The whisper's story turned to other things; the terminal prints nothing."""
         self.emit("drift", whisper_id=whisper_id)
 
+    def on_place(self, place: str) -> None:
+        """The player is now at place; the terminal prints nothing."""
+        self.emit("place", place=place)
+
+    def on_overheard(self, utterance: Utterance, reason: str) -> None:
+        """A line the player overheard at their place; the terminal prints nothing."""
+        u = utterance
+        self.emit("overheard", speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
+                  reason=reason, uid=u.id)
+
     def on_delivery(self, utterance: Utterance, listener_ids: list[str], on_topic: bool = True) -> None:
         """Emit the player's whisper, a warning, an on-topic hop of a player-rooted rumor, or a town announcement."""
         u = utterance

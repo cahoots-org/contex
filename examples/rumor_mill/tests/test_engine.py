@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, StubBaselines, StubContex, make, wait_for
@@ -809,4 +811,33 @@ async def test_kept_after_an_off_topic_relay_upgrades_on_a_later_on_topic_relay(
     push(minds["v1"])
     await wait_for(lambda: len(statuses(feed)) == 2)
     assert statuses(feed)[1] == ("w-1", "v1", "took_the_bait", 1)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
+    rumors = await stub_rumors(0.9)
+    lineage, town, lines = Lineage(), Town(), []
+    feed = Feed(lineage, town, out=lines.append)
+    overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=1.0), random.Random(1))
+    engine = Engine(
+        Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=FakeMind, rumors=rumors, overhear=overhear,
+    )
+    for vid in ("v1", "v2"):
+        await engine.add_villager(make(vid), "tavern")
+    engine.player_place = lambda: "tavern"
+    lineage.record("w-1", None, player=True)
+    lineage.record("u-1", "w-1")
+    lineage.record("u-2", None)
+    await engine.deliver(Utterance("u-1", "v1", "V1", "tavern", "psst again", "w-1", action=SPEAK), ["v2"])
+    await engine.deliver(Utterance("u-2", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
+    await engine.deliver(Utterance("u-3", "v2", "V2", "tavern", "V2 joined the Watch", None, "announced",
+                                   action="join_group"), ["v1"])
+    assert [(e.kind, e.data.get("uid")) for e in feed.recent] == [
+        ("hop", "u-1"), ("overheard", "u-2"), ("announcement", None),
+    ]
+    assert feed.recent[1].data == {
+        "speaker": "v2", "speaker_name": "V2", "place": "tavern", "text": "the weather", "reason": "random", "uid": "u-2",
+    }
+    assert lines == ['V1 told V2: "psst again"']
     await engine.stop()

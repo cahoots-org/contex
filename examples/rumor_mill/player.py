@@ -13,7 +13,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.town import PLAYER_ID, START_PLACE, Town
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +49,8 @@ class Player:
         self.config = config
         self.writer = writer
         self.game = game
+        # Where the player last whispered.
+        self.place = START_PLACE
         self._brush_offs: set[asyncio.Task] = set()
         self._hinted: dict[str, set[int]] = {}
 
@@ -103,6 +105,9 @@ class Player:
         except Exception:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
+        if utterance.place != self.place:
+            self.place = utterance.place
+            self.feed.on_place(self.place)
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
         hits, _ = await asyncio.gather(self.check(target, utterance, since), self._card(utterance, target, published_at))

@@ -85,6 +85,7 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
     assert state["events"][-1]["text"] == "hello"
+    assert state["place"] == "square"
     assert "NEED" not in game.client.get("/api/state").text
 
 
@@ -283,8 +284,8 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
         game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale")
         game.feed.on_heat(game.suspicion.label())
         game.game.lose(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
-        events = [receive(ws) for _ in range(7)]
-    kinds = ["whisper", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
+        events = [receive(ws) for _ in range(8)]
+    kinds = ["whisper", "place", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
     assert [e["kind"] for e in events] == kinds
     assert events[-1]["reasons"][:2] == ["Marta Hale grew wary of the rumors going around.", "Bert Cole grew wary of the rumors going around."]
     responses += [game.client.get("/api/state").json(), *(game.client.get(f"/api/villagers/{v}").json() for v in scores)]

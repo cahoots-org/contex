@@ -415,3 +415,28 @@ async def test_direct_hit_carries_clearance():
     fact = engine.facts.get("w-1")
     assert (fact.depth, fact.audience) == (0, "one")
     player.close()
+
+
+@pytest.mark.asyncio
+async def test_place_follows_the_last_whisper():
+    player, town, lines, engine, _ = make("Marta", "Bert")
+    town.move("v2", "mill")
+    assert player.place == "square"
+    await player.whisper_to("v1", "psst")
+    await player.whisper_to("v1", "psst again")
+    await player.whisper_to("v2", "psst")
+    places = [e for e in player.feed.recent if e.kind == "place"]
+    assert (player.place, [e.data["place"] for e in places]) == ("mill", ["tavern", "mill"])
+    assert all(e.line == "" for e in places) and not any("mill" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_place_stays_when_the_whisper_fails():
+    player, _, _, engine, _ = make("Marta")
+
+    async def fail(utterance, listener_ids):
+        raise RuntimeError("down")
+
+    engine.deliver = fail
+    await player.whisper_to("v1", "psst")
+    assert player.place == "square"

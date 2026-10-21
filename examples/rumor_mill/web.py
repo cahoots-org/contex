@@ -135,6 +135,7 @@ def create_app(
         return {
             "boot": boot,
             "places": list(PLACES),
+            "place": player.place,
             "goals": [
                 {"id": g.id, "text": g.text, "percent": int(judge.progress.get(g.id, 0.0) * 100),
                  "met": g.id in judge.met}
