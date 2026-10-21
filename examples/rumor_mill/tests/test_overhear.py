@@ -65,11 +65,19 @@ async def test_card_hops_are_not_overheard():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("action", "style"), [
-    (CONFRONT, "faithful"), (DENY, "soften"), (RETELL, "exaggerated"), (SPEAK, "mock"), (SPEAK, "shift_blame"),
+    (CONFRONT, "faithful"), (DENY, "delighted"), (SPEAK, "mock"), (SPEAK, "shift_blame"),
 ])
-async def test_inflammatory_kept(action, style):
+async def test_heated_kept(action, style):
     overhear, contex = await make()
-    assert await overhear.keep(line(action=action, style=style), "tavern") == "inflammatory"
+    assert await overhear.keep(line(action=action, style=style), "tavern") == "heated"
+    assert contex.queries == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("style", ["exaggerated", "delighted", "worried", "conspiratorial", "add_detail"])
+async def test_lively_kept(style):
+    overhear, contex = await make()
+    assert await overhear.keep(line(action=RETELL, style=style), "tavern") == "lively"
     assert contex.queries == []
 
 

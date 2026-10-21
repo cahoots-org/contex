@@ -237,9 +237,11 @@ Warnings, refusals, the mood line, and goal changes stay outside the cards.
 
 Between the cards is village talk: lines you overhear where you are, which is
 where you last whispered ("You're at the tavern" above the feed). You don't
-hear everything, only three kinds of line: heated ones (someone mocking,
-blaming, exaggerating, confronting, or denying), ones about one of your goals,
-and one in eight of the rest, picked at random. A block of village talk shows
+hear everything, only four kinds of line: heated ones (someone mocking,
+blaming, confronting, or denying), lively ones (someone telling it with
+relish, worry, or a lowered voice, or exaggerating or embellishing it), ones
+about one of your goals, and one in eight of the rest, picked at random.
+Heated and lively lines are marked as such. A block of village talk shows
 the place, how many lines it holds, and the two newest; "Show all" opens the
 rest. Each line ends with "Talk", which puts the speaker's name in the
 To box and starts your message with what they said.
