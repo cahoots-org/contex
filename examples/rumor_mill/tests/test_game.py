@@ -313,6 +313,31 @@ async def test_a_villager_in_a_turn_a_scene_or_a_chosen_move_stays_put(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_no_one_walks_once_the_game_is_over():
+    engine, game, _, _ = await start("v1")
+    engine.routine = StubRoutine({"v1": "mill"})
+    game.lose(Summary("lost", GOALS, []))
+    await engine._walk("morning", 0.0)
+    assert engine.town.place_of("v1") == "square"
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_round_is_logged(caplog):
+    engine, _, _, _ = await start("v1")
+
+    class Broken:
+        def place(self, vid, phase):
+            raise RuntimeError("no places")
+
+    engine.routine = Broken()
+    with caplog.at_level(logging.ERROR):
+        await engine._walk("morning", 0.0)
+    assert "routine round failed" in caplog.text
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_a_departed_villager_is_not_moved(caplog):
     vids = ("v2", "v3", "v4", "v5", "v6", "v1")
     engine, _, _, _ = await start(*vids)

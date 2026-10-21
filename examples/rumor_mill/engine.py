@@ -608,16 +608,24 @@ class Engine:
 
     async def _walk(self, phase: str, spread: float) -> None:
         """Send villagers who are not at their routine place there, a batch at a time across spread seconds."""
-        due = [v.id for v in self.town.villagers if self.routine.place(v.id, phase) not in (None, self.town.place_of(v.id))]
-        batches = [due[i:i + ROUTINE_BATCH] for i in range(0, len(due), ROUTINE_BATCH)]
-        for i, batch in enumerate(batches):
-            if i:
-                await asyncio.sleep(spread / len(batches))
-            free = [vid for vid in batch if self._free_to_walk(vid)]
-            await asyncio.gather(*(self._stroll(vid, self.routine.place(vid, phase)) for vid in free))
+        try:
+            due = [
+                v.id for v in self.town.villagers
+                if self.routine.place(v.id, phase) not in (None, self.town.place_of(v.id))
+            ]
+            batches = [due[i:i + ROUTINE_BATCH] for i in range(0, len(due), ROUTINE_BATCH)]
+            for i, batch in enumerate(batches):
+                if i:
+                    await asyncio.sleep(spread / len(batches))
+                free = [vid for vid in batch if self._free_to_walk(vid)]
+                await asyncio.gather(*(self._stroll(vid, self.routine.place(vid, phase)) for vid in free))
+        except Exception:
+            log.exception("routine round failed")
 
     def _free_to_walk(self, vid: str) -> bool:
-        """Whether the villager is still in town and not busy with a turn, a scene, or a move of their own."""
+        """Whether the game goes on and the villager is in town, free of a turn, a scene, or a move of their own."""
+        if self.game is not None and self.game.finished.is_set():
+            return False
         return vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
             vid not in self._chose_move
         )
