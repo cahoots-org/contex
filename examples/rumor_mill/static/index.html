@@ -142,6 +142,8 @@ mark.kept {
 }
 .diffnote { margin: .1rem 0 0; font-size: .8rem; color: var(--muted); }
 .fresh mark:not(.kept) { animation: ink 900ms ease-out; }
+.fresh { animation: arrive 280ms ease-out; }
+@keyframes arrive { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
 @keyframes ink { from { background-size: 0 100%; } to { background-size: 100% 100%; } }
 .note { font-size: .875rem; color: var(--muted); padding: .2rem 0; max-width: 46rem; }
 .note.goal { color: var(--ink); }
@@ -380,7 +382,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fresh mark, .gameover { animation: none; }
+  .fresh, .fresh mark, .gameover { animation: none; }
 }
 </style>
 </head>
@@ -482,6 +484,7 @@ const talks = new Map();
 const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
@@ -694,12 +697,12 @@ function restoredCard(c, replayed) {
 
 // Overheard lines join the village talk block at the end of the feed when it is for the same place;
 // returns a new block to append, or null.
-function overheard(e) {
+function overheard(e, fresh) {
   const last = feed.lastElementChild;
   const block = last && last.matches(".vt") && last.dataset.place === e.place ? last : talkBlock(e.place);
   const why = REASONS[e.reason];
   const id = `talk-line-${++talkLines}`;
-  block.querySelector(".vt-lines").append(el("li", {},
+  block.querySelector(".vt-lines").append(el("li", { className: fresh ? "fresh" : "" },
     el("span", { className: "vt-line", id }, el("b", { textContent: e.speaker_name }),
       why ? el("span", { className: "vt-why", textContent: ` · ${why}` }) : null, ": ", e.text),
     el("button", { type: "button", className: "linkish vt-talk", tabIndex: -1, textContent: "Talk", dataset: { line: id },
@@ -804,7 +807,7 @@ function render(e, fresh) {
       return null;
     }
     case "overheard":
-      return overheard(e);
+      return overheard(e, fresh);
     case "place":
       $("where").textContent = `You're at the ${e.place}`;
       return null;
@@ -1031,6 +1034,16 @@ function showGameOver(summary, live) {
   if (live && wasHidden) $("gameover-title").focus({ preventScroll: true });
 }
 
+// A smooth scroll to new lines; lines arriving mid-scroll keep following even though the feed isn't at the bottom yet.
+let following = 0;
+function followFeed(fresh) {
+  const smooth = fresh && !REDUCED_MOTION.matches;
+  feed.scrollTo({ top: feed.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  if (!smooth) return;
+  clearTimeout(following);
+  following = setTimeout(() => { following = 0; }, 600);
+}
+
 function nearBottom() {
   return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
 }
@@ -1063,7 +1076,7 @@ function prune() {
 }
 
 function addEvents(events, fresh) {
-  const stick = feed.children.length === 0 || nearBottom();
+  const stick = feed.children.length === 0 || nearBottom() || following !== 0;
   for (const e of events) {
     if (e.id <= lastId) continue;
     lastId = e.id;
@@ -1079,7 +1092,7 @@ function addEvents(events, fresh) {
   }
   if (!rover) setRover(threadItems()[0] || null);
   $("empty").hidden = feed.children.length > 0;
-  if (stick) feed.scrollTop = feed.scrollHeight;
+  if (stick) followFeed(fresh);
 }
 
 // Thread tracing: light a hop and every hop back to your whisper.
