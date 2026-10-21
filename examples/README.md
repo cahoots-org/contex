@@ -54,7 +54,7 @@ python examples/query.py
 
 ### [`rumor_mill/`](rumor_mill/README.md)
 
-A gossip game with 100 villagers, played in the terminal or a browser. Each villager's mind is a project
+A gossip game with 50 villagers, played in the terminal or a browser. Each villager's mind is a project
 with one subscription on their needs, they wake only on push, and they forget
 through `max_age_seconds`. You whisper rumors and watch them spread and change
 by meaning. Needs `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY`. An

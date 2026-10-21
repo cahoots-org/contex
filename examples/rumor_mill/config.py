@@ -14,7 +14,7 @@ class Config:
     memory_days: float = 2.0
     cooldown_seconds: float = 30.0
     renew_seconds: float = 1200.0
-    population: int = 100
+    population: int = 50
     arrival_delay_seconds: float = 60.0
     judge_every_days: float = 1.0
     judge_concurrency: int = 10

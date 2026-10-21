@@ -1,6 +1,6 @@
 # Rumor Mill
 
-A gossip game you play in the terminal or a browser. A village of 100 villagers runs on Contex. You are the
+A gossip game you play in the terminal or a browser. A village of 50 villagers runs on Contex. You are the
 newcomer, and all you can do is whisper. You get three goals, such as "a third
 of the village believes the well is cursed", and you win by spreading rumors
 until the village matches them.
@@ -295,7 +295,7 @@ Every field of `Config` can be set with an environment variable.
 |---|---|---|
 | `RUMOR_MILL_CONTEX_URL` (or `CONTEX_MCP_URL`) | `http://localhost:8001/mcp` | Contex MCP endpoint |
 | `RUMOR_MILL_SESSION` | random per run | prefix for this run's Contex projects |
-| `RUMOR_MILL_POPULATION` | `100` | village size; newcomers arrive to keep it there |
+| `RUMOR_MILL_POPULATION` | `50` | village size; newcomers arrive to keep it there |
 | `RUMOR_MILL_DAY_SECONDS` | `120` | length of a game day |
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
 | `RUMOR_MILL_MATCH_MARGIN` | `0.02` | how far above a need's score against ordinary village talk a whisper must score to match that need |
