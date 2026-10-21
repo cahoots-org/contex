@@ -17,7 +17,7 @@ from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import PHASES, Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind, group_project, said_project
+from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.rumors import Rumors
@@ -243,6 +243,34 @@ class Engine:
                     found.setdefault(hit.data_key, hit)
         return sorted(found.values(), key=lambda h: h.similarity, reverse=True)[:3]
 
+    async def recall_heard(self, vid: str, text: str, exclude: str) -> list[Match]:
+        """Lines the villager heard earlier that the newcomer's words match, best first.
+
+        The newcomer's own whispers, this one (exclude) and any before it, are left out.
+        """
+        try:
+            hits = await self.contex.query(
+                mind_project(self.config.session, vid), WHISPER_FRAMING.sub("", text),
+                top_k=3, since=self.game and self.game.memory_since(), threshold=0,
+            )
+        except Exception as e:
+            log.warning("searching what %s heard failed: %s", vid, type(e).__name__)
+            return []
+        found = [
+            h for h in hits
+            if h.similarity is not None and h.similarity >= self.config.said_floor
+            and h.data.get("id") != exclude and not self.lineage.is_whisper(h.data.get("id"))
+        ]
+        return sorted(found, key=lambda h: h.similarity, reverse=True)[:3]
+
+    async def _recall_heard_all(self, vid: str, whispers: list[Match]) -> list[Match]:
+        """What the villager heard before that any of the newcomer's whispers this turn bring back, best first."""
+        found: dict[str, Match] = {}
+        for m in whispers:
+            for hit in await self.recall_heard(vid, m.data.get("text", ""), m.data.get("id")):
+                found.setdefault(hit.data_key, hit)
+        return sorted(found.values(), key=lambda h: h.similarity, reverse=True)
+
     async def _carries_rumor(self, utterance: Utterance, heard: list[str]) -> bool:
         """Whether a retelling of a whisper still carries it, recorded on its card; True for any other line."""
         root = self.lineage.root(utterance.id)
@@ -349,6 +377,7 @@ class Engine:
         # The newcomer's own whispers among the new items, for whisper outcomes.
         whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
         said = await self._recall_said(v.id, whispers) if whispers else []
+        heard = await self._recall_heard_all(v.id, whispers)
         talking = self.conversations.get(v.id, {"answered": []})
         answerable = whispers if len(talking["answered"]) < self.config.talk_turns else []
         place = self.town.place_of(v.id)
@@ -364,6 +393,7 @@ class Engine:
             warn_threshold=self.config.warn_threshold,
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
             said=said,
+            heard=heard,
             answerable=answerable,
             ask_gossip=v.id not in self._gossip,
             ask_keen=self.scenes.of(v.id) is not None or any(self._exchange(m, v.id, place) for m in new),
@@ -392,6 +422,7 @@ class Engine:
                     lineage=self.lineage, ids=self.ids, facts=self.facts,
                     inspiration=[m.data.get("text", "") for m in new],
                     said=[m.data.get("text", "") for m in said],
+                    heard=[m.data.get("text", "") for m in heard],
                     suspicion_hear_max=self.config.suspicion_hear_max,
                     share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                 )

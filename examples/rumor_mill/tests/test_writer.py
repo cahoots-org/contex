@@ -122,6 +122,19 @@ async def test_reply_answers_the_newcomer_in_one_line():
 
 
 @pytest.mark.asyncio
+async def test_reply_mentions_what_they_heard_only_when_there_is_something():
+    client = StubClient("Hm.", "Hm.")
+    writer = Writer(client, "haiku-test")
+    line = "The newcomer whispered to you at the square: the miller waters his flour"
+    await writer.reply(villager(), line, [])
+    await writer.reply(villager(), line, [], ["Bo said at the well: the miller waters his flour", "Cy said: flour is thin"])
+    plain, with_heard = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
+    assert "What you heard earlier" not in plain and "If you already heard" not in plain
+    assert "What you heard earlier: Bo said at the well: the miller waters his flour / Cy said: flour is thin" in with_heard
+    assert "If you already heard about this, say so and what you heard, in your own words." in with_heard
+
+
+@pytest.mark.asyncio
 async def test_say_and_reply_mention_a_grudge_only_when_there_is_one():
     client = StubClient("Hm.", "Hm.", "Hm.", "Hm.")
     writer = Writer(client, "haiku-test")

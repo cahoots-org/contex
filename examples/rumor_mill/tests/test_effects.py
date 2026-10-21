@@ -32,8 +32,8 @@ class StubWriter:
         self.warn_calls.append((villager.id, target.id))
         return "Mind the newcomer."
 
-    async def reply(self, villager, newcomer_line, said):
-        self.reply_calls.append((villager.id, newcomer_line, said))
+    async def reply(self, villager, newcomer_line, said, heard=()):
+        self.reply_calls.append((villager.id, newcomer_line, said, heard))
         return "Aye, I heard that too."
 
     async def describe_group(self, villager, inspiration):
@@ -304,8 +304,13 @@ async def test_answer_emits_a_reply_and_records_it():
     s = Setup()
     s.lineage.record("w-1", None, player=True)
     whisper = Match("utt:w-1", {"id": "w-1", "text": "The newcomer whispered to you at the square: psst"})
-    await s.act("v1", Decision(ANSWER, whisper, None, None), said=["Bert said at the square: the well is fine"])
-    assert s.writer.reply_calls == [("v1", whisper.data["text"], ["Bert said at the square: the well is fine"])]
+    await s.act(
+        "v1", Decision(ANSWER, whisper, None, None),
+        said=["Bert said at the square: the well is fine"], heard=["Cy said at the well: the well is dry"],
+    )
+    assert s.writer.reply_calls == [
+        ("v1", whisper.data["text"], ["Bert said at the square: the well is fine"], ["Cy said at the well: the well is dry"]),
+    ]
     assert s.hub.delivered == [] and s.writer.say_calls == []
     utt, = s.hub.replies
     assert (utt.speaker, utt.parent, utt.text, utt.verb) == ("v1", "w-1", "Aye, I heard that too.", "answered")

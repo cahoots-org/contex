@@ -143,7 +143,7 @@ class Writer:
         user = f"You are talking to {target.name}, a {target.occupation}."
         return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
-    async def reply(self, villager: Villager, newcomer_line: str, said: list[str]) -> str:
+    async def reply(self, villager: Villager, newcomer_line: str, said: list[str], heard: list[str] = ()) -> str:
         """The villager answering what the newcomer just said to them, in one line."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
@@ -157,6 +157,9 @@ class Writer:
         lines = [f"The newcomer said: {WHISPER_FRAMING.sub('', newcomer_line)}"]
         if said:
             lines.append("What you said earlier: " + " / ".join(said))
+        if heard:
+            system += " If you already heard about this, say so and what you heard, in your own words."
+            lines.append("What you heard earlier: " + " / ".join(heard))
         return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
 
     async def describe_group(

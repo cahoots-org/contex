@@ -284,6 +284,15 @@ async def test_said_lines_reach_the_jev_state_at_most_three():
 
 
 @pytest.mark.asyncio
+async def test_heard_lines_reach_the_jev_state_at_most_three():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view(heard=[match(f"h{i}", f"heard {i}") for i in range(5)]))
+    assert jev.state["things_i_heard_before"] == ["heard 0", "heard 1", "heard 2"]
+    await decide(jev, view())
+    assert "things_i_heard_before" not in jev.state
+
+
+@pytest.mark.asyncio
 async def test_no_said_lines_leave_the_key_out_of_the_state():
     jev = StubJev({"action": IGNORE})
     await decide(jev, view())

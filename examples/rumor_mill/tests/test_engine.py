@@ -12,12 +12,12 @@ from examples.rumor_mill.actions import ANSWER, IGNORE, SPEAK, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.decide import Decision
+from examples.rumor_mill.decide import Decision, _state
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind, said_project
+from examples.rumor_mill.mind import Mind, mind_project, said_project
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
@@ -965,8 +965,7 @@ async def test_newcomer_line_retrieves_related_said_lines(turns):
     contex.default = [said_line("u-1"), Match("said:u-2", {"id": "u-2", "text": "unrelated"}, 0.5)]
     engine, view = await whisper_turn(turns, contex)
     assert [m.data_key for m in view.said] == ["said:u-1"]
-    [(project, query, kwargs)] = contex.queries
-    assert project == said_project(engine.config.session, "v1")
+    [(project, query, kwargs)] = [q for q in contex.queries if q[0] == said_project(engine.config.session, "v1")]
     assert query == "psst"
     assert kwargs == {"top_k": 3, "since": None, "threshold": 0}
 
@@ -1513,4 +1512,73 @@ async def test_a_player_rooted_scene_line_is_a_hop_not_overheard(talkers):
     await asyncio.sleep(SETTLE)
     assert scene_events(feed)[0]["rumor"] == "w-1"
     assert overheard(feed) == []
+    await engine.stop()
+
+
+def heard_line(uid, similarity, text="Bo said at the well: the miller waters his flour"):
+    return Match(f"utt:{uid}", {"id": uid, "text": text}, similarity)
+
+
+@pytest.mark.asyncio
+async def test_recall_heard_skips_the_whisper_itself_and_weak_matches():
+    contex = StubContex()
+    contex.default = [heard_line("w-1", 0.99), heard_line("u-3", 0.85), heard_line("u-2", 0.9), heard_line("u-4", 0.5)]
+    engine, _, _ = await setup("v1", contex=contex)
+    found = await engine.recall_heard("v1", "The newcomer whispered to you at the square: psst", "w-1")
+    assert [m.data_key for m in found] == ["utt:u-2", "utt:u-3"]
+    [(project, query, kwargs)] = contex.queries
+    assert (project, query) == (mind_project(engine.config.session, "v1"), "psst")
+    assert kwargs == {"top_k": 3, "since": None, "threshold": 0}
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_recall_heard_looks_back_over_the_remembered_moves():
+    contex = StubContex()
+    game = Game(RecordingFeed(), memory_moves=2)
+    game.moved()
+    game.moved()
+    engine, _, _ = await setup("v1", contex=contex, game=game)
+    await engine.recall_heard("v1", "psst", "w-1")
+    assert contex.queries[0][2]["since"] == game.memory_since() is not None
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_heard_search_returns_nothing_and_logs_ids_only(caplog):
+    engine, _, _ = await setup("v1", contex=StubContex(error=RuntimeError("down 0.93")))
+    with caplog.at_level(logging.WARNING):
+        assert await engine.recall_heard("v1", "psst", "w-1") == []
+    warning = next(r for r in caplog.records if r.levelno == logging.WARNING)
+    assert "v1" in warning.getMessage() and "0.93" not in warning.getMessage()
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_turn_view_and_state_carry_what_they_heard(turns):
+    contex = StubContex()
+    contex.default = [heard_line("w-1", 0.99), heard_line("u-2", 0.9)]
+    engine, view = await whisper_turn(turns, contex)
+    assert [m.data_key for m in view.heard] == ["utt:u-2"]
+    assert _state(view)["things_i_heard_before"] == ["Bo said at the well: the miller waters his flour"]
+
+
+@pytest.mark.asyncio
+async def test_a_turn_without_a_newcomer_line_recalls_nothing_heard(turns):
+    engine, minds, _ = await setup("v1")
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    assert turns.views[0].heard == []
+    assert "things_i_heard_before" not in _state(turns.views[0])
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_recall_heard_leaves_out_the_newcomers_earlier_whispers():
+    contex = StubContex()
+    contex.default = [heard_line("w-1", 0.99), heard_line("u-2", 0.9)]
+    engine, _, _ = await setup("v1", contex=contex)
+    engine.lineage.record("w-1", None, player=True)
+    found = await engine.recall_heard("v1", "psst", "w-2")
+    assert [m.data_key for m in found] == ["utt:u-2"]
     await engine.stop()

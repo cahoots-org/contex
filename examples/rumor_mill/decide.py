@@ -59,6 +59,8 @@ class TurnView:
     names_newcomer: list[Match]
     # The villager's own earlier lines that the newcomer's words bring back.
     said: list[Match] = field(default_factory=list)
+    # What the villager heard before that the newcomer's words bring back.
+    heard: list[Match] = field(default_factory=list)
     # The newcomer's lines that landed this turn and that the villager may still answer.
     answerable: list[Match] = field(default_factory=list)
     # Whether to ask how much of a gossip the villager is, which is asked once per villager.
@@ -117,6 +119,8 @@ def _state(view: TurnView) -> dict:
     }
     if view.said:
         state["things_i_said_recently"] = [_text(m) for m in view.said[:MAX_SAID]]
+    if view.heard:
+        state["things_i_heard_before"] = [_text(m) for m in view.heard[:MAX_SAID]]
     return state
 
 

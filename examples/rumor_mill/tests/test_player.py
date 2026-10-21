@@ -303,6 +303,7 @@ async def test_hit_hands_the_whisper_to_the_engine_and_reports_heard():
     assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
     assert "until" not in statuses(player)[-1]
     assert lines == [] and player._brush_offs == set()
+    assert engine.recalls == []
 
 
 @pytest.mark.asyncio
@@ -606,3 +607,34 @@ async def test_a_near_miss_on_the_last_try_is_a_brush_off():
     await miss(player)
     assert [s["state"] for s in statuses(player)] == ["checking", "near_miss", "near_miss", "checking", "brushed_off", "brushed_off"]
     assert "v1" not in player._threads
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_about_a_story_they_heard_lands_without_a_need_match():
+    player = hinted_player("Wheel's groaning.")
+    player.engine.heard = [Match("utt:u-3", {"id": "u-3", "text": "Bo said at the well: the miller waters his flour"}, 0.9)]
+    assert await player.whisper_to("v1", "the miller waters his flour") is None
+    assert player.engine.recalls == [("v1", "the miller waters his flour", "w-1")]
+    (vid, match), = player.engine.direct
+    assert (vid, match.data_key, match.clearance) == ("v1", "utt:w-1", 0.0)
+    assert match.data == player.engine.delivered[0][0].to_data()
+    assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
+    assert player._brush_offs == set() and "v1" not in player._threads
+
+
+@pytest.mark.asyncio
+async def test_a_familiar_near_miss_lands_and_drops_the_thread():
+    player = near_missing_player()
+    player.engine.heard = [Match("utt:u-3", {"id": "u-3", "text": "Bo said: the wheel"}, 0.9)]
+    assert await player.whisper_to("v1", "the wheel looks tired") is None
+    assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
+    assert len(player.engine.direct) == 1 and "v1" not in player._threads
+
+
+@pytest.mark.asyncio
+async def test_an_unfamiliar_miss_still_brushes_off():
+    player = hinted_player("Wheel's groaning.")
+    await miss(player)
+    assert player.engine.recalls == [("v1", "the tide tables were misprinted", "w-1")]
+    assert player.engine.direct == []
+    assert [s["state"] for s in statuses(player)] == ["checking", "brushed_off", "brushed_off"]

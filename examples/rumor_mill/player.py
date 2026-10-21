@@ -132,11 +132,16 @@ class Player:
         hits = [m for _, m in found if m.clearance >= 0]
         near_misses = [(need, m) for need, m in found if m.clearance < 0]
         if hits:
-            self._threads.pop(target.id, None)
             hit = Match(
                 f"utt:{uid}", utterance.to_data(),
                 max(h.similarity for h in hits), clearance=max(h.clearance for h in hits),
             )
+        else:
+            # A story the villager already heard lands whatever their needs.
+            familiar = await self.engine.recall_heard(target.id, text, uid)
+            hit = Match(f"utt:{uid}", utterance.to_data(), familiar[0].similarity, clearance=0.0) if familiar else None
+        if hit:
+            self._threads.pop(target.id, None)
             if not self.engine.hear_directly(target.id, hit):
                 return None
             until = self.engine.cooldown_ends(target.id)

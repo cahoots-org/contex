@@ -48,6 +48,7 @@ async def act(
     facts: Facts,
     inspiration: Sequence[str] = (),
     said: Sequence[str] = (),
+    heard: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
     share_chance: float = 0.0,
 ) -> None:
@@ -112,7 +113,7 @@ async def act(
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
     elif action == ANSWER:
-        text = await writer.reply(villager, source_text, list(said))
+        text = await writer.reply(villager, source_text, list(said), list(heard))
         uid = ids.next("u")
         lineage.record(uid, source_id)
         utterance = Utterance(uid, vid, villager.name, place, text, source_id, "answered", audience=ONE, action=action)

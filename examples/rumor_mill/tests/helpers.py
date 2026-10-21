@@ -117,6 +117,12 @@ class FakeEngine:
         self.facts = Facts()
         self.free_at = 0.0
         self.conversations = {}
+        self.heard = []
+        self.recalls = []
+
+    async def recall_heard(self, vid, text, exclude):
+        self.recalls.append((vid, text, exclude))
+        return self.heard
 
     def end_conversation(self, vid):
         self.conversations.pop(vid, None)
