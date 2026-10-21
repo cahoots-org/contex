@@ -670,7 +670,7 @@ def told(engine, uid, depth=0, audience="one", action=None):
 async def test_deep_retelling_does_not_wake(turns):
     engine, minds, _ = await setup("v1")
     told(engine, "u-deep", depth=3)
-    minds["v1"].results = [[Match("k-deep", {"id": "u-deep", "text": "old news"}, 0.9, 0.025)]]
+    minds["v1"].results = [[Match("k-deep", {"id": "u-deep", "text": "old news"}, 0.9, 0.005)]]
     push(minds["v1"])
     await wait_for(lambda: minds["v1"].polls == 1)
     await asyncio.sleep(SETTLE)
