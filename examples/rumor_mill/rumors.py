@@ -110,10 +110,10 @@ class Rumors:
         card = self._cards.get(root_uid)
         if card is None:
             return False
-        if not on_topic:
-            drifted, card.drifted = card.drifted, True
-            return not drifted
         shown = self._cards.get(card.part_of, card)
+        if not on_topic:
+            drifted, shown.drifted = shown.drifted, True
+            return not drifted
         shown.hops.append({"uid": hop.id, "speaker": hop.speaker_name, "listeners": list(listeners.values()),
                            "text": hop.text})
         shown.heard.update(listeners)

@@ -129,6 +129,16 @@ async def test_a_failed_baseline_is_measured_again_by_the_next_check():
 
 
 @pytest.mark.asyncio
+async def test_a_drift_on_a_reply_thread_shows_on_the_conversation_card():
+    rumors, _ = await make()
+    await rumors.add("w-2", "and the baker too", AT, "v1", "Marta", conversation="w-1")
+    assert rumors.record("w-2", hop("u-1", "Ann", "the weather"), {"v2": "Ann"}, False)
+    assert not rumors.record("w-2", hop("u-2", "Ann", "the weather"), {"v3": "Cal"}, False)
+    card, = rumors.cards()
+    assert card["drifted"] is True
+
+
+@pytest.mark.asyncio
 async def test_tallies(monkeypatch):
     now = [1000.0]
     monkeypatch.setattr(rumors_mod.time, "time", lambda: now[0])
