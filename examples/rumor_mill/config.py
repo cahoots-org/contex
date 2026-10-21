@@ -11,7 +11,10 @@ class Config:
     # Names this run's Contex projects; a fresh one per run starts every mind empty.
     session: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     day_seconds: float = 120.0
+    # How long a subscription keeps talk for a villager to react to.
     memory_days: float = 2.0
+    # How many of the newcomer's moves the village remembers a line for when judging belief.
+    memory_moves: int = 20
     cooldown_seconds: float = 30.0
     renew_seconds: float = 1200.0
     population: int = 50

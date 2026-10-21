@@ -108,6 +108,8 @@ class Player:
         except Exception:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
+        if self.game is not None:
+            self.game.moved()
         if utterance.place != self.place:
             self.place = utterance.place
             self.feed.on_place(self.place)

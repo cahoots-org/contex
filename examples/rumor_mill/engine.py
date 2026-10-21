@@ -202,7 +202,7 @@ class Engine:
             try:
                 hits = await self.contex.query(
                     said_project(self.config.session, vid), words,
-                    top_k=3, max_age_seconds=self.config.memory_seconds, threshold=0,
+                    top_k=3, since=self.game and self.game.memory_since(), threshold=0,
                 )
             except Exception as e:
                 log.warning("searching what %s said failed: %s", vid, type(e).__name__)

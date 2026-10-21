@@ -41,7 +41,7 @@ async def play(web: bool) -> None:
     villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town, out=None if web else print)
-    game = Game(feed)
+    game = Game(feed, config.memory_moves)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         goals = deal(rng)

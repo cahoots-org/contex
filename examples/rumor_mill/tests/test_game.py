@@ -226,3 +226,13 @@ def test_first_finish_wins_the_race():
     game.win(Summary("won", GOALS, []))
     assert (game.state, game.summary) == ("lost", lost)
     assert [e.data["outcome"] for e in kinds(feed, "gameover")] == ["lost"]
+
+
+def test_memory_starts_at_the_oldest_remembered_move():
+    game = Game(None, memory_moves=2)
+    game.moved()
+    assert game.memory_since() is None
+    game.moved()
+    first = game.memory_since()
+    game.moved()
+    assert first is not None and game.memory_since() >= first

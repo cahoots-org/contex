@@ -51,7 +51,7 @@ class Judge:
                 project = mind_project(self.config.session, villager.id)
                 matches = await self.contex.query(
                     project, goal.evidence[0], top_k=3, threshold=self.baselines.threshold(goal.evidence[0]),
-                    max_age_seconds=self.config.memory_seconds,
+                    since=self.game and self.game.memory_since(),
                 )
                 if not matches:
                     return False

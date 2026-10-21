@@ -16,7 +16,8 @@ backwards-flying birds can end up as a ploughman's doomsday watch society.
 |---|---|
 | `contex_publish` | every line a villager hears (one publish per listener), whispers, group records |
 | `contex_create_subscription` | one per need (each villager has 3 to 5) on the villager's mind project, at that need's threshold |
-| `max_age_seconds` | forgetting: memories older than `memory_days` drop out of the subscription |
+| `max_age_seconds` | noticing: a subscription only carries talk from the last `memory_days`, for a villager to react to |
+| `since` | forgetting: the judge counts only lines heard since your last `memory_moves` moves, so idling never costs belief |
 | `subscriptions/listen` | one stream per villager over all their subscriptions; a push is what wakes them |
 | reading the subscription resource | the villager's memories each turn, and lease renewal for quiet villagers |
 | `contex_query` | the check right after a whisper of whether it matched the target's needs; calibrating needs; the judge reading minds and group records to score goals |

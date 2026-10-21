@@ -5,6 +5,7 @@ import pytest
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
+from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.mind import group_project, mind_project
@@ -29,12 +30,12 @@ class StubContex:
         self.groups: dict[str, list[Match]] = {}
         self.thresholds: list[float | None] = []
         self.thresholds_by_project: dict[str, float | None] = {}
-        self.max_ages: dict[str, int | None] = {}
+        self.sinces: dict[str, str | None] = {}
 
-    async def query(self, project_id, query, top_k=3, threshold=None, max_age_seconds=None):
+    async def query(self, project_id, query, top_k=3, threshold=None, max_age_seconds=None, since=None):
         self.thresholds.append(threshold)
         self.thresholds_by_project[project_id] = threshold
-        self.max_ages[project_id] = max_age_seconds
+        self.sinces[project_id] = since
         found = self.minds.get(project_id) or self.groups.get(project_id) or []
         return [m for m in found if threshold is None or m.similarity is None or m.similarity >= threshold]
 
@@ -100,14 +101,19 @@ async def test_villager_below_the_margin_costs_no_jev_call():
 
 
 @pytest.mark.asyncio
-async def test_mind_queries_ignore_forgotten_memories():
+async def test_mind_queries_ignore_lines_older_than_the_remembered_moves():
     judge, contex, _, _, _ = make(n=2, believers=2)
+    judge.game = Game(Lines(), memory_moves=2)
     g = judge.town.found_group("v0", "Order", "worship")
     judge.town.join("v1", g.id)
     creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
     await judge.check(creed)
-    assert contex.max_ages[mind_project(CONFIG.session, "v0")] == CONFIG.memory_seconds
-    assert contex.max_ages[group_project(CONFIG.session, g.id)] is None
+    assert contex.sinces[mind_project(CONFIG.session, "v0")] is None
+    for _ in range(3):
+        judge.game.moved()
+    await judge.check(creed)
+    assert contex.sinces[mind_project(CONFIG.session, "v0")] == judge.game.memory_since() is not None
+    assert contex.sinces[group_project(CONFIG.session, g.id)] is None
 
 
 @pytest.mark.asyncio

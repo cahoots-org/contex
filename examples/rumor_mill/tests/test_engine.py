@@ -966,7 +966,7 @@ async def test_newcomer_line_retrieves_related_said_lines(turns):
     [(project, query, kwargs)] = contex.queries
     assert project == said_project(engine.config.session, "v1")
     assert query == "psst"
-    assert kwargs == {"top_k": 3, "max_age_seconds": engine.config.memory_seconds, "threshold": 0}
+    assert kwargs == {"top_k": 3, "since": None, "threshold": 0}
 
 
 @pytest.mark.asyncio
