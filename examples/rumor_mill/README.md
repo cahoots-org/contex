@@ -219,8 +219,8 @@ their line once it is written), or didn't carry (the game couldn't check it; a
 delivery failure shows no chip).
 
 Each whisper starts a rumor card: your words as its title, the chip, and a
-tally, "heard by N · still told by M", where M counts the people who heard it
-in the last game day. A retelling goes on the card while it still carries what
+tally, "heard by N · still told by M", where M counts the people a retelling
+reached in the last game day (the target is not counted). A retelling goes on the card while it still carries what
 you whispered. Each one is indented once per retelling, says whom the speaker
 heard it from, and highlights the words that differ from what they heard. When
 most of it was reworded, it underlines the words that survived instead. Hover
@@ -276,8 +276,7 @@ Where the tokens go:
 - An answer to you: the turn's Jev request plus one short Haiku line, at
   most `TALK_TURNS` per conversation.
 
-Following, overhearing, and talking add no model calls of their own, only
-Contex queries. On the 100-villager seed with the defaults, the haunting
+Following and overhearing add no model calls, only Contex queries. On the 100-villager seed with the defaults, the haunting
 whisper and the talk it started cost about $0.002 in five minutes; four
 whispers and a three-reply conversation, under $0.004.
 
