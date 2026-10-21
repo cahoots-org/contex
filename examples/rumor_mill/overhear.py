@@ -57,12 +57,12 @@ class Overhear:
             return False
         try:
             found = await self.contex.query(self.project, u.text, top_k=len(self._evidence), threshold=0)
+            return any(
+                m.data_key in self._evidence and m.similarity is not None
+                and self.baselines.matches(self._evidence[m.data_key], m.similarity)
+                for m in found
+            )
         except Exception:
             log.warning("goal check for %s failed", u.id)
             log.debug("goal check failure", exc_info=True)
             return False
-        return any(
-            m.data_key in self._evidence and m.similarity is not None
-            and self.baselines.matches(self._evidence[m.data_key], m.similarity)
-            for m in found
-        )

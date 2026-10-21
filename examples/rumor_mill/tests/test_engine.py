@@ -814,6 +814,47 @@ async def test_kept_after_an_off_topic_relay_upgrades_on_a_later_on_topic_relay(
     await engine.stop()
 
 
+class RaisingBaselines:
+    def matches(self, need, similarity):
+        raise RuntimeError("no baseline")
+
+
+async def overhearing_engine(overhear):
+    lineage, town = Lineage(), Town()
+    feed = Feed(lineage, town, out=lambda line: None)
+    engine = Engine(Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=FakeMind, overhear=overhear)
+    await engine.add_villager(make("v1"), "tavern")
+    engine.player_place = lambda: "tavern"
+    return engine, feed
+
+
+@pytest.mark.asyncio
+async def test_a_failing_goal_check_still_lets_the_line_be_overheard(turns):
+    contex = StubContex()
+    contex.default = [Match("goal:g", {}, 0.9)]
+    overhear = Overhear(contex, RaisingBaselines(), Config(overhear_rate=1.0), random.Random(1))
+    overhear._evidence = {"goal:g": "the well"}
+    engine, feed = await overhearing_engine(overhear)
+    await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
+    assert [(e.kind, e.data["reason"]) for e in feed.recent] == [("overheard", "random")]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_overhear_does_not_fail_the_delivery(turns):
+    overhear = Overhear(StubContex(), StubBaselines(0.5), Config(), random.Random(1))
+
+    async def broken(*args):
+        raise RuntimeError("keep failed")
+
+    overhear.keep = broken
+    engine, feed = await overhearing_engine(overhear)
+    await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
+    assert engine.minds["v1"].heard
+    assert not feed.recent
+    await engine.stop()
+
+
 @pytest.mark.asyncio
 async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     rumors = await stub_rumors(0.9)

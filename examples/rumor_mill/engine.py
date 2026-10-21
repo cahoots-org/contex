@@ -161,8 +161,14 @@ class Engine:
         self.feed.on_delivery(utterance, heard, on_topic)
         if self.overhear is not None:
             hop = on_topic and self.lineage.is_player_rooted(utterance.id)
-            if reason := await self.overhear.keep(utterance, self.player_place(), hop):
-                self.feed.on_overheard(utterance, reason)
+            try:
+                reason = await self.overhear.keep(utterance, self.player_place(), hop)
+            except Exception:
+                log.warning("overhearing %s failed", utterance.id)
+                log.debug("overhearing failure", exc_info=True)
+            else:
+                if reason:
+                    self.feed.on_overheard(utterance, reason)
 
     async def reply(self, utterance: Utterance) -> None:
         """Remember a villager's answer to the newcomer and show it on its conversation; no mind hears it."""
