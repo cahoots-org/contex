@@ -481,7 +481,7 @@ async def test_a_missed_reply_leaves_a_newer_conversation_open():
     conversations = player.engine.conversations
     conversations["v1"] = {"id": "w-0", "answered": ["w-0"]}
 
-    async def miss_after_a_new_conversation_opens(target, utterance, since):
+    async def miss_after_a_new_conversation_opens(target, utterance, since, hint_need=None):
         conversations["v1"] = {"id": "w-9", "answered": ["w-9"]}
         return []
 
@@ -490,3 +490,81 @@ async def test_a_missed_reply_leaves_a_newer_conversation_open():
     assert player.engine.delivered[0][0].conversation == "w-0"
     assert conversations["v1"]["id"] == "w-9"
     player.close()
+
+
+def hinted_player(*lines):
+    """A player whose misses are brushed off with these lines."""
+    player, _ = make_hinting(StubWriter(*lines))
+    player.engine.baselines = StubBaselines(0.5)
+    return player
+
+
+async def miss(player):
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    await wait_for(lambda: player._brush_offs == set())
+
+
+def conversations(player):
+    return [u.conversation for u, _ in player.engine.delivered]
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_after_a_brush_off_is_a_reply_on_the_same_card():
+    player = hinted_player("Wheel's groaning.")
+    await miss(player)
+    await player.whisper_to("v1", "I could look at the wheel")
+    assert conversations(player) == [None, "w-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_reply_lands_on_the_hinted_need_at_its_baseline():
+    player = hinted_player("Wheel's groaning.")
+    await miss(player)
+    player.engine.contex = StubContex({n: landing(0.49, "utt:w-2") for n in NEEDS})
+    await player.whisper_to("v1", "I could look at the wheel")
+    (vid, match), = player.engine.direct
+    assert (vid, match.data_key) == ("v1", "utt:w-2")
+
+
+@pytest.mark.asyncio
+async def test_the_same_score_misses_a_need_that_was_not_hinted():
+    player = hinted_player("Wheel's groaning.")
+    await miss(player)
+    player.engine.contex = StubContex({n: landing(0.49, "utt:w-2") for n in NEEDS[1:]})
+    await player.whisper_to("v1", "I could look at the wheel")
+    assert player.engine.direct == []
+
+
+@pytest.mark.asyncio
+async def test_a_thread_takes_two_whispers_then_starts_a_new_card():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.", "Rats again.")
+    for _ in range(3):
+        await miss(player)
+    assert conversations(player) == [None, "w-1", None]
+
+
+@pytest.mark.asyncio
+async def test_a_thread_closes_at_the_next_part_of_the_day():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    player.game = Game(player.feed)
+    await miss(player)
+    player.game.tick()
+    await miss(player)
+    assert conversations(player) == [None, None]
+
+
+@pytest.mark.asyncio
+async def test_a_reply_raises_suspicion_like_any_whisper():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    await miss(player)
+    await miss(player)
+    assert player.engine.suspicion.score("v1") == pytest.approx(2 * player.config.suspicion_whisper_bump)
+
+
+@pytest.mark.asyncio
+async def test_an_open_conversation_takes_precedence_over_a_thread():
+    player = hinted_player("Wheel's groaning.")
+    await miss(player)
+    player.engine.conversations["v1"] = {"id": "w-9", "answered": False}
+    await player.whisper_to("v1", "I could look at the wheel")
+    assert conversations(player) == [None, "w-9"]

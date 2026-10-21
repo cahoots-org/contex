@@ -97,9 +97,8 @@ class Writer:
             "in one short sentence, under 25 words, in your own voice and in keeping with your "
             "temperament: a kindly villager is busy and apologetic, a sour one curt. Mention only "
             "what is really on your mind and nothing else. "
-            "Allude to it rather than state it plainly, so the listener has to guess the real "
-            "problem: mention a symptom or a related worry, and don't name the specific "
-            "thing, number, or person it is about. Never repeat its wording. "
+            "You may name the subject itself, such as strange lights or the vines, but never a "
+            "name, a number, or any particular. Never repeat its wording. "
             "No stage directions, no quotation marks, no preamble."
         )
         return first_line(await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS))

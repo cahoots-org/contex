@@ -21,6 +21,7 @@ MAX_WHISPER_CHARS = 500
 ECHO_WORDS = 4
 GAME_OVER = "The game is over."
 NOT_CARRIED = "The whisper didn't carry; try again."
+THREAD_WHISPERS = 2
 
 
 class Refusal(str):
@@ -53,6 +54,7 @@ class Player:
         self.place = START_PLACE
         self._brush_offs: set[asyncio.Task] = set()
         self._hinted: dict[str, set[int]] = {}
+        self._threads: dict[str, dict] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
@@ -96,9 +98,17 @@ class Player:
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=True)
         conversation = self.engine.conversations.get(target.id)
+        thread = self._thread(target.id)
+        hint_need = None
+        if conversation:
+            thread_id = conversation["id"]
+        elif thread:
+            thread_id, hint_need = thread["id"], thread["need"]
+        else:
+            thread_id = None
         utterance = Utterance(
             uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
-            conversation=conversation and conversation["id"],
+            conversation=thread_id,
         )
         self.engine.facts.record(utterance)
         published_at = datetime.now(UTC)
@@ -115,11 +125,12 @@ class Player:
             self.feed.on_place(self.place)
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
-        hits, _ = await asyncio.gather(self.check(target, utterance, since), self._card(utterance, target, published_at))
+        hits, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))
         if hits is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
         if hits:
+            self._threads.pop(target.id, None)
             hit = Match(
                 f"utt:{uid}", utterance.to_data(),
                 max(h.similarity for h in hits), clearance=max(h.clearance for h in hits),
@@ -136,31 +147,64 @@ class Player:
             open_now = self.engine.conversations.get(target.id)
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
                 self.engine.end_conversation(target.id)
-            task = asyncio.create_task(self._hint(target.id, target.name, uid))
+            concern = self._next_concern(target.id)
+            self._extend_thread(target.id, uid, concern)
+            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern))
             self._brush_offs.add(task)
             task.add_done_callback(self._brush_offs.discard)
         return None
 
-    async def check(self, target: Villager, utterance: Utterance, since: str) -> list[Match] | None:
-        """The whisper's hits on the target's needs, each with its clearance; empty for a miss, None on error."""
+    def _now(self) -> tuple[int, str] | None:
+        return (self.game.day, self.game.phase) if self.game is not None else None
+
+    def _thread(self, villager_id: str) -> dict | None:
+        """The villager's open thread, dropped once the day has moved on to its next part."""
+        thread = self._threads.get(villager_id)
+        if thread and thread["at"] != self._now():
+            del self._threads[villager_id]
+            return None
+        return thread
+
+    def _extend_thread(self, villager_id: str, uid: str, concern: str | None) -> None:
+        """Open a thread on a missed whisper, or count one more on it, closing it at THREAD_WHISPERS."""
+        thread = self._thread(villager_id)
+        if thread is None:
+            self._threads[villager_id] = {"id": uid, "need": concern, "whispers": 1, "at": self._now()}
+            return
+        thread["whispers"] += 1
+        thread["need"] = concern
+        if thread["whispers"] >= THREAD_WHISPERS:
+            del self._threads[villager_id]
+
+    async def check(
+        self, target: Villager, utterance: Utterance, since: str, hint_need: str | None = None,
+    ) -> list[Match] | None:
+        """The whisper's hits on the target's needs, each with its clearance; empty for a miss, None on error.
+
+        The hinted need is held to its bare baseline plus the hint margin; the rest to their full threshold.
+        """
         key = f"utt:{utterance.id}"
         project = mind_project(self.config.session, target.id)
+        bars = {need: self._bar(need, need == hint_need) for need in target.needs}
         try:
             found = await asyncio.gather(*(
-                self.engine.contex.query(
-                    project, need, top_k=self.config.top_k, since=since, threshold=self.engine.baselines.threshold(need),
-                )
+                self.engine.contex.query(project, need, top_k=self.config.top_k, since=since, threshold=bars[need])
                 for need in target.needs
             ))
         except Exception:
             log.exception("whisper check for %s failed", target.id)
             return None
-        baselines = self.engine.baselines
         return [
-            replace(m, clearance=m.similarity - baselines.threshold(need))
+            replace(m, clearance=m.similarity - bars[need])
             for need, matches in zip(target.needs, found) for m in matches
-            if m.data_key == key and m.similarity is not None and baselines.matches(need, m.similarity)
+            if m.data_key == key and m.similarity is not None and m.similarity >= bars[need]
         ]
+
+    def _bar(self, need: str, hinted: bool) -> float:
+        threshold = self.engine.baselines.threshold(need)
+        if not hinted:
+            return threshold
+        return threshold - self.config.match_margin + self.config.hint_margin
 
     async def _card(self, utterance: Utterance, target: Villager, published_at: datetime) -> None:
         if self.engine.rumors is not None:
@@ -176,12 +220,12 @@ class Player:
             task.cancel()
         self._brush_offs.clear()
 
-    async def _hint(self, villager_id: str, name: str, uid: str) -> None:
+    async def _hint(self, villager_id: str, name: str, uid: str, concern: str | None) -> None:
         """Add the brush-off line, or a plain shrug, to a missed whisper's status."""
         if self._over():
             return
         try:
-            line = await self._brush_off(villager_id)
+            line = await self._brush_off(villager_id, concern)
         except Exception:
             log.exception("brush-off for %s failed", villager_id)
             line = None
@@ -210,12 +254,9 @@ class Player:
             log.exception("turn-away for %s failed", villager.id)
             return None
 
-    async def _brush_off(self, villager_id: str) -> str | None:
+    async def _brush_off(self, villager_id: str, concern: str | None) -> str | None:
         """An in-character line hinting at a concern, or None for a plain shrug."""
-        if self.writer is None or villager_id not in self.town:
-            return None
-        concern = self._next_concern(villager_id)
-        if concern is None:
+        if self.writer is None or concern is None or villager_id not in self.town:
             return None
         for _ in range(2):
             try:
