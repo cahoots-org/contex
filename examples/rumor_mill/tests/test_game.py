@@ -1,8 +1,13 @@
 import asyncio
+import logging
+import time
 
 import pytest
 
+from examples.rumor_mill import engine as engine_mod
+from examples.rumor_mill.actions import MOVE
 from examples.rumor_mill.config import Config
+from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game, Summary
@@ -11,7 +16,7 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.tests.helpers import FakeMind, make, make_player, wait_for
-from examples.rumor_mill.town import Town
+from examples.rumor_mill.town import PLACES, Town
 
 GOALS = [("cat is a spy", 40)]
 MEETING = "The village meets in the square and runs the newcomer out of town."
@@ -47,6 +52,29 @@ def script(engine, scores):
 
     suspicion.decay = scripted
     return seen
+
+
+class StubRoutine:
+    """Sends each villager to one place at every part of the day."""
+
+    def __init__(self, places):
+        self.places = places
+
+    def place(self, vid, phase):
+        return self.places.get(vid)
+
+
+def record_moves(monkeypatch, engine, delay=0.0):
+    """Replace act with one that moves the villager after delay and records (vid, decision, share_chance, time)."""
+    moves = []
+
+    async def act(decision, v, *, town, share_chance=0.0, **_):
+        moves.append((v.id, decision, share_chance, time.monotonic()))
+        await asyncio.sleep(delay)
+        town.move(v.id, decision.target)
+
+    monkeypatch.setattr(engine_mod, "act", act)
+    return moves
 
 
 def kinds(feed, kind):
@@ -260,3 +288,85 @@ async def test_the_engine_announces_each_part_of_the_day():
         (1, "afternoon"), (1, "evening"), (1, "night"),
     ]
     assert (game.day, game.phase) != (1, "morning")
+
+
+@pytest.mark.asyncio
+async def test_the_clock_walks_villagers_to_their_routine_place():
+    engine, _, _, _ = await start("v1", "v2", day_seconds=0.2)
+    engine.routine = StubRoutine({"v1": "mill", "v2": "tavern"})
+    await engine.run()
+    await wait_for(lambda: (engine.town.place_of("v1"), engine.town.place_of("v2")) == ("mill", "tavern"))
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_villager_in_a_turn_a_scene_or_a_chosen_move_stays_put(monkeypatch):
+    vids = ("v1", "v2", "v3", "v4")
+    engine, _, _, _ = await start(*vids)
+    engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
+    engine._turning.add("v1")
+    monkeypatch.setattr(engine.scenes, "of", lambda vid: object() if vid == "v2" else None)
+    engine._chose_move.add("v3")
+    await engine._walk("morning", 0.0)
+    assert [engine.town.place_of(v) for v in vids] == ["square", "square", "square", "mill"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_departed_villager_is_not_moved(caplog):
+    vids = ("v2", "v3", "v4", "v5", "v6", "v1")
+    engine, _, _, _ = await start(*vids)
+    engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
+    walk = asyncio.create_task(engine._walk("morning", 0.4))
+    await wait_for(lambda: engine.town.place_of("v2") == "mill")
+    engine.town.remove("v1")
+    with caplog.at_level(logging.ERROR):
+        await walk
+    assert not any("v1" in [v.id for v in engine.town.present(p)] for p in PLACES)
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_routine_move_may_carry_the_latest_news(monkeypatch):
+    engine, _, _, _ = await start("v1")
+    engine.routine = StubRoutine({"v1": "mill"})
+    moves = record_moves(monkeypatch, engine)
+    latest = Match("k1", {"id": "u-1", "text": "the miller cheats"}, clearance=0.05)
+    engine._latest["v1"] = latest
+    await engine._walk("morning", 0.0)
+    [(vid, decision, share, _)] = moves
+    assert (vid, decision.action, decision.source, decision.target) == ("v1", MOVE, latest, "mill")
+    assert share == engine.share_chance("v1", latest)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_routine_moves_come_in_batches_of_five_across_the_window(monkeypatch):
+    vids = [f"v{i}" for i in range(12)]
+    engine, _, _, _ = await start(*vids)
+    engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
+    moves = record_moves(monkeypatch, engine)
+    spread = 0.3
+    await engine._walk("morning", spread)
+    times = [t for *_, t in moves]
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert len(moves) == 12
+    assert [i for i, g in enumerate(gaps) if g >= 0.9 * spread / 3] == [4, 9]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_phases_stay_evenly_spaced_with_a_routine(monkeypatch):
+    vids = [f"v{i}" for i in range(12)]
+    engine, game, feed, _ = await start(*vids, day_seconds=0.4)
+    engine.routine = StubRoutine(dict.fromkeys(vids, "mill"))
+    record_moves(monkeypatch, engine, delay=0.5)
+    ticks = []
+    on_time = feed.on_time
+    monkeypatch.setattr(feed, "on_time", lambda day, phase: (ticks.append(time.monotonic()), on_time(day, phase)))
+    await engine.run()
+    await wait_for(lambda: len(ticks) >= 4)
+    await engine.stop()
+    phase_seconds = 0.4 / 4
+    assert all(b - a < 1.8 * phase_seconds for a, b in zip(ticks, ticks[1:4]))

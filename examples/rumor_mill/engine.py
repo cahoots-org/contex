@@ -34,6 +34,9 @@ LISTEN_RETRY_SECONDS = 1
 CONSUMED_KEYS = 500
 # How many whispers a villager kept to themselves are watched for a later relay.
 KEPT_WHISPERS = 50
+# How many villagers set off together on their daily round, and how much of each part of the day the round spans.
+ROUTINE_BATCH = 5
+ROUTINE_SPREAD = 0.5
 MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
@@ -94,6 +97,11 @@ class Engine:
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
         self._clock: asyncio.Task | None = None
+        self._walking: asyncio.Task | None = None
+        # The last new item of each villager's last turn, which a routine move may carry.
+        self._latest: dict[str, Match] = {}
+        # Villagers whose own turn moved them this part of the day, so the round leaves them be.
+        self._chose_move: set[str] = set()
         self._turns = asyncio.Semaphore(config.turn_concurrency)
 
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
@@ -121,6 +129,8 @@ class Engine:
         self._listen_failed.discard(vid)
         self._said.pop(vid, None)
         self._kept.pop(vid, None)
+        self._latest.pop(vid, None)
+        self._chose_move.discard(vid)
         self._leave_scene(vid)
         self.end_conversation(vid)
         for wid, name in self.feed.listening(vid):
@@ -140,9 +150,9 @@ class Engine:
 
     async def stop(self) -> None:
         tasks = [t for ts in self._tasks.values() for t in ts]
-        tasks += [t for t in (self._renewal, self._checks, self._clock) if t]
+        tasks += [t for t in (self._renewal, self._checks, self._clock, self._walking) if t]
         self._tasks.clear()
-        self._renewal = self._checks = self._clock = None
+        self._renewal = self._checks = self._clock = self._walking = None
         if self.rumors is not None:
             self.rumors.close()
         await _cancel(tasks)
@@ -376,6 +386,7 @@ class Engine:
         new = [m for m in new if m.data_key not in stale_keys]
         if not new:
             return False
+        self._latest[v.id] = new[-1]
         keys = {m.data_key for m in new}
         # The newcomer's own whispers among the new items, for whisper outcomes.
         whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
@@ -429,6 +440,8 @@ class Engine:
                     suspicion_hear_max=self.config.suspicion_hear_max,
                     share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                 )
+                if action == MOVE:
+                    self._chose_move.add(v.id)
                 if scene is not None:
                     self._scene_turn(scene, v.id, decision, joined)
                 if action == ANSWER:
@@ -569,13 +582,50 @@ class Engine:
             self.end_conversation(v.id)
 
     async def _clock_loop(self) -> None:
-        """Move the village through the parts of each day and announce each one."""
+        """Move the village through the parts of each day, announce each one, and walk its daily round."""
+        phase_seconds = self.config.day_seconds / len(PHASES)
         while not self.game.finished.is_set():
-            await asyncio.sleep(self.config.day_seconds / len(PHASES))
+            await asyncio.sleep(phase_seconds)
             if self.game.finished.is_set():
                 return
             self.game.tick()
             self.feed.on_time(self.game.day, self.game.phase)
+            self._chose_move.clear()
+            if self.routine is not None:
+                if self._walking is not None:
+                    self._walking.cancel()
+                self._walking = asyncio.create_task(self._walk(self.game.phase, phase_seconds * ROUTINE_SPREAD))
+
+    async def _walk(self, phase: str, spread: float) -> None:
+        """Send villagers who are not at their routine place there, a batch at a time across spread seconds."""
+        due = [v.id for v in self.town.villagers if self.routine.place(v.id, phase) not in (None, self.town.place_of(v.id))]
+        batches = [due[i:i + ROUTINE_BATCH] for i in range(0, len(due), ROUTINE_BATCH)]
+        for i, batch in enumerate(batches):
+            if i:
+                await asyncio.sleep(spread / len(batches))
+            free = [vid for vid in batch if self._free_to_walk(vid)]
+            await asyncio.gather(*(self._stroll(vid, self.routine.place(vid, phase)) for vid in free))
+
+    def _free_to_walk(self, vid: str) -> bool:
+        """Whether the villager is still in town and not busy with a turn, a scene, or a move of their own."""
+        return vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
+            vid not in self._chose_move
+        )
+
+    async def _stroll(self, vid: str, place: str) -> None:
+        """Move the villager to place, perhaps sharing their latest news with someone there."""
+        if vid not in self.town:
+            return
+        latest = self._latest.get(vid)
+        try:
+            await act(
+                Decision(MOVE, latest, place, None), self.town.get(vid), town=self.town, writer=self.writer,
+                hub=self, lineage=self.lineage, ids=self.ids, facts=self.facts,
+                suspicion_hear_max=self.config.suspicion_hear_max,
+                share_chance=self.share_chance(vid, latest) if latest else 0.0,
+            )
+        except Exception:
+            log.exception("routine move failed for %s", vid)
 
     async def _suspicion_loop(self) -> None:
         """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""
