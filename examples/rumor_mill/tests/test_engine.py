@@ -1394,6 +1394,34 @@ async def test_answering_the_newcomer_leaves_the_scene(talkers):
 
 
 @pytest.mark.asyncio
+async def test_a_scene_line_that_also_matches_a_need_still_reaches_the_turn(talkers):
+    engine, minds, feed = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [(SPEAK, 1.0)]}
+    minds["v1"].results = [[Match("utt:u-1", {"id": "u-1", "text": "more"}, 0.9, -0.01)]] + [[]] * 50
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(talkers.views) == 2)
+    assert [(m.data_key, m.clearance) for m in talkers.views[1].new] == [("utt:u-1", None)]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_scene_cools_and_frees_its_slot(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", "v3", "v4", max_scenes=1, scene_cooldown_seconds=0.05)
+    said_by(engine, "o-1", "v1")
+    stalled = engine.scenes.start(engine.facts.get("o-1"), "v2", "o-1", None)
+    stalled.last_line -= 1.0
+    talkers.plan = {"v4": [(SPEAK, 1.0)]}
+    said_by(engine, "o-2", "v3")
+    hand(engine, "v4", "o-2")
+    await wait_for(lambda: feed.deliveries)
+    assert stalled.ended == "cooled"
+    assert scene_events(feed)[0]["ended"] == "The conversation died down."
+    assert scene_events(feed)[1]["scene_id"] == "s-2"
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_keen_is_asked_only_when_a_scene_could_follow(talkers):
     engine, _, _ = await talk(talkers, "v1", "v2")
     talkers.plan = {"v2": [(IGNORE, None), (SPEAK, 1.0)], "v1": [(SPEAK, 1.0)]}

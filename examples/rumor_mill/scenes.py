@@ -1,6 +1,7 @@
 """Scenes: conversations that keep going while their momentum holds."""
 
 import random
+import time
 from dataclasses import dataclass, field
 
 from examples.rumor_mill.actions import CONFRONT, DENY, RETELL, SPEAK, WARN
@@ -21,6 +22,8 @@ LEAVE_DROP = 0.2
 JOIN_BONUS = 0.1
 OPENING_HEAT = {"heated": 0.6, "lively": 0.45, "plain": 0.3}
 STYLE_BONUS = {"heated": 0.15, "lively": 0.05, "plain": 0.0}
+# A scene with no new line for this many scene cooldowns has cooled.
+STALL_COOLDOWNS = 4
 
 
 def heat(action: str | None, style: str | None) -> str:
@@ -49,6 +52,8 @@ class Scene:
     momentum: float
     # Why it ended: veered, cooled, long, or alone.
     ended: str | None = None
+    # When its last line was said, on the monotonic clock.
+    last_line: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -100,6 +105,12 @@ class Scenes:
 
     def said(self, scene: Scene, uid: str) -> None:
         scene.lines.append(uid)
+        scene.last_line = time.monotonic()
+
+    def stalled(self) -> list[Scene]:
+        """The scenes with no new line for STALL_COOLDOWNS scene cooldowns."""
+        cutoff = time.monotonic() - STALL_COOLDOWNS * self.config.scene_cooldown_seconds
+        return [s for s in self._active.values() if s.last_line < cutoff]
 
     def addressed(self, scene: Scene, speaker: str) -> list[str]:
         """Who hears the speaker: the other participants here, then bystanders drawn by momentum."""

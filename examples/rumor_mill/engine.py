@@ -375,8 +375,9 @@ class Engine:
         self._read_at[v.id] = time.monotonic()
         consumed = self._consumed.setdefault(v.id, {})
         pending = self._pending.pop(v.id, [])
-        new = [m for m in new if m.data_key not in consumed]
-        new += [m for m in pending if m.data_key not in consumed and m.data_key not in mind.seen]
+        pending_keys = {m.data_key for m in pending}
+        new = [m for m in new if m.data_key not in consumed and m.data_key not in pending_keys]
+        new += [m for m in pending if m.data_key not in consumed]
         for m in new:
             consumed[m.data_key] = None
         while len(consumed) > CONSUMED_KEYS:
@@ -466,6 +467,7 @@ class Engine:
         A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is. An answer
         to a full scene's line is ordinary talk.
         """
+        self._end_stalled_scenes()
         scene = self.scenes.of(v.id)
         if scene is not None or self.rumors is None or decision.action not in SCENE_SPEECH or decision.source is None:
             return scene, False
@@ -505,6 +507,10 @@ class Engine:
         reason = self.scenes.turned(scene, vid, None, None, None, False)
         if reason:
             self._end_scene(scene, reason)
+
+    def _end_stalled_scenes(self) -> None:
+        for scene in self.scenes.stalled():
+            self._end_scene(scene, "cooled")
 
     def _end_scene(self, scene: Scene, reason: str) -> None:
         """End the scene and report it; a scene that already ended stays as it ended."""
@@ -591,6 +597,7 @@ class Engine:
             self.game.tick()
             self.feed.on_time(self.game.day, self.game.phase)
             self._chose_move.clear()
+            self._end_stalled_scenes()
             if self.routine is not None:
                 if self._walking is not None:
                     self._walking.cancel()
