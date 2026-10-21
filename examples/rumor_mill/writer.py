@@ -14,9 +14,14 @@ WARN_MAX_TOKENS = 60
 WHISPER_FRAMING = re.compile(r"^The newcomer whispered to you at the [^:]*: ")
 
 
+STAGE_DIRECTION = re.compile(r"\*[^*]*\*")
+
+
 def first_line(text: str) -> str:
-    """The first line of a reply, without surrounding quotes."""
-    return text.strip().split("\n")[0].strip().strip('"\u201c\u201d').strip()
+    """The first line of a reply, without stage directions or surrounding quotes."""
+    line = text.strip().split("\n")[0]
+    line = re.sub(r"\s{2,}", " ", STAGE_DIRECTION.sub("", line))
+    return line.strip().strip('"\u201c\u201d').strip()
 
 
 def extract_json(text: str):
@@ -81,7 +86,7 @@ class Writer:
         elif source_text:
             lines.append(f"What you heard: {WHISPER_FRAMING.sub('', source_text)}")
             lines.append("Do not say or hint who started this story.")
-        return await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS)
+        return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
 
     async def brush_off(self, villager: Villager, concern: str) -> str:
         """The villager waving off the newcomer in character, alluding to their concern, in one line."""

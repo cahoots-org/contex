@@ -7,7 +7,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill.tests.helpers import StubClient
-from examples.rumor_mill.writer import Writer
+from examples.rumor_mill.writer import Writer, first_line
 
 
 def villager():
@@ -131,4 +131,9 @@ async def test_say_and_reply_mention_a_grudge_only_when_there_is_one():
 async def test_say_tells_it_as_a_juicy_secret_in_the_conspiratorial_manner():
     client = StubClient("Between us, he did it.")
     await Writer(client, "haiku-test").say(villager(), Decision("speak", None, None, "conspiratorial"), "Bob stole a loaf", "all")
-    assert "Manner: Lower your voice and share it as a juicy secret." in client.messages.calls[0]["messages"][0]["content"]
+    assert "Manner: Share it as a juicy secret, in a hushed, confiding way, using words only." in client.messages.calls[0]["messages"][0]["content"]
+
+
+def test_first_line_drops_stage_directions():
+    raw = "*lowers voice conspiratorially* Mark my words, the taxes are *really* climbing."
+    assert first_line(raw) == "Mark my words, the taxes are climbing."
