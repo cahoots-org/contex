@@ -176,6 +176,8 @@ mark.kept {
 .rumor > .whisper { margin-top: 0; }
 .tally { margin: .1rem 0 .2rem; font-size: .8rem; color: var(--muted); }
 .tally:empty { display: none; }
+.rumor:not(.open) .thread { display: none; }
+.reuse { margin-left: .5rem; font-size: .75rem; }
 .thread, .talk, .vt-lines { list-style: none; margin: 0; padding: 0; }
 .drift { padding: .2rem 0 0 .35rem; font-size: .85rem; font-style: italic; color: var(--muted); }
 .talk:not(:empty) { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
@@ -480,7 +482,7 @@ const talks = new Map();
 const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
-const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk";
+const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const FACES_SHOWN = 11;
@@ -589,12 +591,48 @@ function newCard(uid, target, place, text) {
     el("div", { className: "ev whisper", tabIndex: -1, dataset: { uid } },
       el("span", { className: "rails", style: "--d:0" }),
       el("div", { className: "body" },
-        el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : ""),
+        el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
+          reuseButton(text, target)),
         ...quoted(text), status && chip(status))),
-    el("p", { className: "tally" }), el("ol", { className: "thread" }), el("ol", { className: "talk" }));
+    el("p", { className: "tally" }),
+    el("button", { type: "button", className: "linkish thread-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
+      onclick: () => toggleThread(card) }),
+    el("ol", { className: "thread" }), el("ol", { className: "talk" }));
   cards.set(uid, card);
   setTally(uid);
   return card;
+}
+
+// Retellings start collapsed behind a toggle that counts them.
+function toggleThread(card) {
+  const toggle = card.querySelector(".thread-more");
+  toggle.ariaExpanded = String(card.classList.toggle("open"));
+  countThread(card);
+  if (rover && card.querySelector(".thread").contains(rover)) {
+    setRover(toggle);
+    toggle.focus();
+  }
+}
+
+function countThread(card) {
+  const n = card.querySelectorAll(".thread .hop").length;
+  const toggle = card.querySelector(".thread-more");
+  toggle.hidden = n === 0;
+  toggle.textContent = card.classList.contains("open") ? "Hide retellings" : `Show ${n} ${n === 1 ? "retelling" : "retellings"}`;
+}
+
+// Puts one of your earlier lines back in the composer.
+function reuseButton(text, target) {
+  return el("button", { type: "button", className: "linkish reuse", tabIndex: -1, textContent: "Reuse",
+    ariaLabel: "Put this back in the whisper box", onclick: () => reuse(text, target) });
+}
+
+function reuse(text, target) {
+  if (over) return;
+  if (target) $("target").value = target;
+  $("text").value = text;
+  setComposer();
+  $("text").focus();
 }
 
 function setTally(uid) {
@@ -613,6 +651,7 @@ function setTallies(list) {
 function addTo(card, where, node, fresh) {
   if (fresh) node.classList.add("fresh");
   card.querySelector(where).append(node);
+  if (where === ".thread") countThread(card);
 }
 
 // The newcomer's line in a conversation, with its own chip.
@@ -621,7 +660,7 @@ function mine(uid, text) {
   const status = statuses.get(uid);
   return el("li", { className: "ev whisper mine", tabIndex: -1, dataset: { uid } },
     el("span", { className: "rails", style: "--d:0" }),
-    el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: "You" })),
+    el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: "You" }), reuseButton(text)),
       ...quoted(text), status && chip(status)));
 }
 
@@ -1417,6 +1456,7 @@ $("whisper").addEventListener("submit", async (ev) => {
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       $("text").value = "";
+      recalled = -1;
       const who = match ? match.name : name;
       setStatus(reply ? `Said to ${who}.` : `Whispered to ${who}. If it touches what they care about, they'll pass it on.`);
     } else {
@@ -1427,6 +1467,19 @@ $("whisper").addEventListener("submit", async (ev) => {
   } finally {
     button.disabled = over;
   }
+});
+
+// ArrowUp and ArrowDown in the whisper box step through what you have said, newest first.
+let recalled = -1;
+$("text").addEventListener("input", () => { recalled = -1; });
+$("text").addEventListener("keydown", (ev) => {
+  if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
+  const said = [...spoken.values()].filter((s) => s.speaker === "you").map((s) => s.text).reverse();
+  const next = recalled + (ev.key === "ArrowUp" ? 1 : -1);
+  if (next < -1 || next >= said.length) return;
+  ev.preventDefault();
+  recalled = next;
+  $("text").value = next === -1 ? "" : said[next];
 });
 
 function setDrawer(open) {
