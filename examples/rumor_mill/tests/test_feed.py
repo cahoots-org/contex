@@ -144,3 +144,11 @@ def test_an_answered_whisper_never_moves_back_to_listening_or_brushed_off():
     feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Not now.")
     feed.on_whisper_status("w-1", "v1", "Bert", "moved_on")
     assert [e.data["state"] for e in feed.recent] == ["answered", "moved_on"]
+
+
+def test_time_lines_name_the_day_at_dawn():
+    feed, lines = make()
+    feed.on_time(2, "morning")
+    feed.on_time(2, "evening")
+    assert lines == ["Day 2 dawns over the village.", "Evening falls, and lamps are lit."]
+    assert [(e.kind, e.data["day"], e.data["phase"]) for e in feed.recent] == [("time", 2, "morning"), ("time", 2, "evening")]

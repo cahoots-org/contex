@@ -13,7 +13,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.decide import TurnView, decide
 from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
-from examples.rumor_mill.game import Game, Summary
+from examples.rumor_mill.game import PHASES, Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
@@ -86,6 +86,7 @@ class Engine:
         self.conversations: dict[str, dict] = {}
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
+        self._clock: asyncio.Task | None = None
         self._turns = asyncio.Semaphore(config.turn_concurrency)
 
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
@@ -127,12 +128,13 @@ class Engine:
         self._renewal = asyncio.create_task(self._renew_loop())
         if self.game is not None:
             self._checks = asyncio.create_task(self._suspicion_loop())
+            self._clock = asyncio.create_task(self._clock_loop())
 
     async def stop(self) -> None:
         tasks = [t for ts in self._tasks.values() for t in ts]
-        tasks += [t for t in (self._renewal, self._checks) if t]
+        tasks += [t for t in (self._renewal, self._checks, self._clock) if t]
         self._tasks.clear()
-        self._renewal = self._checks = None
+        self._renewal = self._checks = self._clock = None
         if self.rumors is not None:
             self.rumors.close()
         await _cancel(tasks)
@@ -432,6 +434,15 @@ class Engine:
         self.feed.on_whisper_status(wid, v.id, v.name, "answered")
         if len(conversation["answered"]) >= self.config.talk_turns:
             self.end_conversation(v.id)
+
+    async def _clock_loop(self) -> None:
+        """Move the village through the parts of each day and announce each one."""
+        while not self.game.finished.is_set():
+            await asyncio.sleep(self.config.day_seconds / len(PHASES))
+            if self.game.finished.is_set():
+                return
+            self.game.tick()
+            self.feed.on_time(self.game.day, self.game.phase)
 
     async def _suspicion_loop(self) -> None:
         """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""

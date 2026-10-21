@@ -85,7 +85,9 @@ async def test_label_event_only_when_it_changes():
     await engine.stop()
     heat = kinds(feed, "heat")
     assert [e.data for e in heat] == [{"label": "hunted"}, {"label": "quiet"}]
-    assert lines == ["The village is hunting for you.", "Folk are not talking about you."]
+    assert [e.line for e in heat] == ["The village is hunting for you.", "Folk are not talking about you."]
+    clock = {e.line for e in kinds(feed, "time")}
+    assert [line for line in lines if line not in clock] == [e.line for e in heat]
     assert game.state == "playing"
 
 
@@ -236,3 +238,25 @@ def test_memory_starts_at_the_oldest_remembered_move():
     first = game.memory_since()
     game.moved()
     assert first is not None and game.memory_since() >= first
+
+
+def test_the_clock_runs_through_the_day_and_into_the_next():
+    game = Game(None)
+    assert (game.day, game.phase) == (1, "morning")
+    seen = []
+    for _ in range(4):
+        game.tick()
+        seen.append((game.day, game.phase))
+    assert seen == [(1, "afternoon"), (1, "evening"), (1, "night"), (2, "morning")]
+
+
+@pytest.mark.asyncio
+async def test_the_engine_announces_each_part_of_the_day():
+    engine, game, feed, _ = await start("v1", day_seconds=0.04)
+    await engine.run()
+    await asyncio.sleep(0.05)
+    await engine.stop()
+    assert [(e.data["day"], e.data["phase"]) for e in kinds(feed, "time")][:3] == [
+        (1, "afternoon"), (1, "evening"), (1, "night"),
+    ]
+    assert (game.day, game.phase) != (1, "morning")

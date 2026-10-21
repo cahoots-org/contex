@@ -86,6 +86,7 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert state["places"] == list(PLACES) and state["boot"]
     assert state["events"][-1]["text"] == "hello"
     assert state["place"] == "square"
+    assert state["time"] == {"day": 1, "phase": "morning"}
     assert "NEED" not in game.client.get("/api/state").text
 
 

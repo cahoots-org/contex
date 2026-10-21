@@ -142,6 +142,7 @@ def create_app(
             "boot": boot,
             "places": list(PLACES),
             "place": player.place,
+            "time": {"day": game.day, "phase": game.phase},
             "goals": [
                 {"id": g.id, "text": g.text, "percent": int(judge.progress.get(g.id, 0.0) * 100),
                  "met": g.id in judge.met, **dict(zip(("believers", "needed"), judge.counts.get(g.id, (None, None))))}

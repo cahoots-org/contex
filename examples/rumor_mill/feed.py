@@ -16,6 +16,12 @@ from examples.rumor_mill.town import PLAYER_ID, Town
 REPLAY_EVENTS = 500
 LISTENING = ("checking", "busy", "heard")
 RESOLVED = ("kept", "took_the_bait", "warned", "moved_on")
+TIME_LINES = {
+    "morning": "Day {day} dawns over the village.",
+    "afternoon": "The sun is high over the village.",
+    "evening": "Evening falls, and lamps are lit.",
+    "night": "Night settles over the village.",
+}
 GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
 
 
@@ -139,6 +145,10 @@ class Feed:
     def on_drift(self, whisper_id: str) -> None:
         """The whisper's story turned to other things; the terminal prints nothing."""
         self.emit("drift", whisper_id=whisper_id)
+
+    def on_time(self, day: int, phase: str) -> None:
+        line = TIME_LINES[phase].format(day=day)
+        self.emit("time", line, text=line, day=day, phase=phase)
 
     def on_place(self, place: str) -> None:
         """The player is now at place; the terminal prints nothing."""

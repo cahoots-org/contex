@@ -195,7 +195,13 @@ mark.kept {
 .vt-why { font-size: .75rem; font-style: italic; }
 .vt-talk { flex: none; }
 .vt:not(.open) .vt-lines > li:nth-last-child(n+3) { display: none; }
-.where { margin: 0; font-size: .85rem; color: var(--muted); }
+.where, .clock { margin: 0; font-size: .85rem; color: var(--muted); }
+.clock { color: var(--ink); }
+.daybreak {
+  display: flex; align-items: center; gap: .75rem; max-width: 46rem; margin: 1rem 0 .5rem;
+  font: italic .9rem/1.3 var(--rumor); color: var(--muted);
+}
+.daybreak::before, .daybreak::after { content: ""; flex: 1; border-top: 1px solid var(--rail); }
 
 .composer {
   border-top: 1px solid var(--rail);
@@ -366,7 +372,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .strip.open .goals { display: grid; }
   .strip-side { display: contents; }
   .heat { flex: 1; min-width: 0; text-align: right; font-size: .95rem; }
-  .where { order: 2; flex: 1 0 100%; text-align: right; }
+  .where, .clock { order: 2; flex: 1 0 100%; text-align: right; }
   .usage { order: 4; flex: 1 0 100%; text-align: left; }
   .strip:not(.open) .usage { display: none; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
@@ -401,6 +407,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <ul class="goals" id="goals"></ul>
       <div class="strip-side">
         <p class="heat" id="heat" aria-live="polite"></p>
+        <p class="clock" id="clock"></p>
         <p class="where" id="where"></p>
         <p class="usage" id="usage"></p>
       </div>
@@ -811,6 +818,9 @@ function render(e, fresh) {
     case "place":
       $("where").textContent = `You're at the ${e.place}`;
       return null;
+    case "time":
+      setClock(e);
+      return el("li", { className: "daybreak", textContent: `${PHASE_MARKS[e.phase] || ""} ${e.text}` });
     case "warning":
       return el("li", { className: "note against" },
         el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
@@ -1445,6 +1455,12 @@ $("target").addEventListener("keydown", (ev) => {
 });
 $("target").addEventListener("blur", () => showSuggestions([]));
 
+const PHASE_MARKS = { morning: "\u2600", afternoon: "\u2600", evening: "\u263E", night: "\u263E" };
+
+function setClock(t) {
+  $("clock").textContent = `Day ${t.day}, ${t.phase}`;
+}
+
 function setStatus(text, error = false) {
   $("status").textContent = text;
   $("status").classList.toggle("error", error);
@@ -1554,6 +1570,7 @@ async function loadState() {
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
   $("where").textContent = `You're at the ${state.place}`;
+  setClock(state.time);
   setTallies(state.rumors);
   // The replay goes in before the log is live, so a reload doesn't read it all out.
   feed.setAttribute("aria-live", "off");
