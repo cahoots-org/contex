@@ -310,3 +310,12 @@ def test_state_carries_cards_beyond_the_replay_window(game):
     card, = game.client.get("/api/state").json()["rumors"]
     assert (card["uid"], card["target_name"], card["heard"], card["still"]) == ("w-1", "Marta Hale", 2, 1)
     assert [h["uid"] for h in card["hops"]] == ["u-1"]
+
+
+def test_card_tallies_reach_the_websocket(game):
+    with game.client.websocket_connect(WS) as ws:
+        game.client.portal.call(game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale")
+        event = receive(ws)
+        while event["kind"] != "rumors":
+            event = receive(ws)
+    assert event["rumors"] == [{"uid": "w-1", "heard": 1, "still": 0}]

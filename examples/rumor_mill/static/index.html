@@ -32,6 +32,7 @@
   --wary: #a33b3b;
   --wait: #2b5d8a;
   --kept: #5a6152;
+  --talk: #6a4c93;
   --rumor: "Alegreya", Georgia, "Times New Roman", serif;
   --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
@@ -164,7 +165,33 @@ mark.kept {
 .gameover .restart { margin: .75rem 0 0; color: var(--muted); font-size: .875rem; }
 @keyframes settle { from { opacity: 0; } to { opacity: 1; } }
 .feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
+.feed.tracing .vt, .feed.tracing .drift, .feed.tracing .reply { opacity: .35; }
 .lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
+.rumor {
+  border: 1px solid var(--rail); border-radius: 8px; padding: .45rem .9rem .6rem; margin: .75rem 0; max-width: 46rem;
+  background: var(--panel);
+}
+.rumor .chip { background: var(--bg); }
+.rumor .chip .badge { border-color: var(--bg); }
+.rumor > .whisper { margin-top: 0; }
+.tally { margin: .1rem 0 .2rem; font-size: .8rem; color: var(--muted); }
+.tally:empty { display: none; }
+.thread, .talk, .vt-lines { list-style: none; margin: 0; padding: 0; }
+.drift { padding: .2rem 0 0 .35rem; font-size: .85rem; font-style: italic; color: var(--muted); }
+.talk:not(:empty) { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
+.talk .mine { margin-top: .2rem; }
+.reply { padding: .3rem 0 .3rem 1.5rem; }
+.vt {
+  max-width: 46rem; margin: .5rem 0; padding: .2rem 0 .2rem .6rem;
+  border-left: 2px dashed var(--rail); font-size: .875rem; color: var(--muted);
+}
+.vt-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 .75rem; margin: 0; }
+.vt-lines li { display: flex; align-items: baseline; gap: .75rem; padding: .15rem 0; }
+.vt-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.vt-why { font-size: .75rem; font-style: italic; }
+.vt-talk { flex: none; }
+.vt:not(.open) .vt-lines > li:nth-last-child(n+3) { display: none; }
+.where { margin: 0; font-size: .85rem; color: var(--muted); }
 
 .composer {
   border-top: 1px solid var(--rail);
@@ -260,6 +287,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .badge[data-s="wary"] { background: var(--wary); }
 .badge[data-s="listening"] { background: var(--wait); font-size: 13px; letter-spacing: -1px; line-height: .5; }
 .badge[data-s="kept"] { background: var(--kept); }
+.badge[data-s="answered"] { background: var(--talk); }
 .searching .pick:not(.hit) { opacity: .35; }
 .pick.hit canvas { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rows { list-style: none; margin: .3rem 0 0; padding: 0; max-height: min(18rem, 40dvh); overflow-y: auto; }
@@ -334,6 +362,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .strip.open .goals { display: grid; }
   .strip-side { display: contents; }
   .heat { flex: 1; min-width: 0; text-align: right; font-size: .95rem; }
+  .where { order: 2; flex: 1 0 100%; text-align: right; }
   .usage { order: 4; flex: 1 0 100%; text-align: left; }
   .strip:not(.open) .usage { display: none; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
@@ -368,6 +397,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <ul class="goals" id="goals"></ul>
       <div class="strip-side">
         <p class="heat" id="heat" aria-live="polite"></p>
+        <p class="where" id="where"></p>
         <p class="usage" id="usage"></p>
       </div>
     </section>
@@ -386,7 +416,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     </div>
     <div class="composer">
       <form id="whisper">
-        <label for="target">Whisper to</label>
+        <label for="target" id="to-label">Whisper to</label>
         <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
         <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
@@ -406,6 +436,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <div class="tiles" id="people"></div>
     <p class="legend">
       <span><span class="badge" data-s="took_the_bait" aria-hidden="true">✓</span>took the bait</span>
+      <span><span class="badge" data-s="answered" aria-hidden="true">↩</span>answered you</span>
       <span><span class="badge" data-s="kept" aria-hidden="true">○</span>kept it quiet</span>
       <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
       <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
@@ -439,6 +470,18 @@ let notes = {};
 let lastTarget = null;
 let cardOpener = null;
 const statuses = new Map();
+// Rumor cards by whisper id; each whisper and reply id to its card's id; hop and line ids already on a card.
+const cards = new Map();
+const cardOf = new Map();
+const shown = new Set();
+const tallies = new Map();
+// Open conversations: villager id to their name and card, newest last.
+const talks = new Map();
+const DRIFT = "The story turned to other things after this.";
+const REASONS = { inflammatory: "heated", goal: "about your goal" };
+// What the feed's arrow keys move between; the feed itself is one tab stop.
+const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk";
+let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const FACES_SHOWN = 11;
 
@@ -537,30 +580,201 @@ function hopMeta(e, parent) {
   return meta;
 }
 
+// A whisper's card: the whisper as its title, its chip and tally, then its retellings and any conversation.
+function newCard(uid, target, place, text) {
+  spoken.set(uid, { text, parent: null, speaker: "you" });
+  cardOf.set(uid, uid);
+  const status = statuses.get(uid);
+  const card = el("li", { className: "rumor", dataset: { card: uid } },
+    el("div", { className: "ev whisper", tabIndex: -1, dataset: { uid } },
+      el("span", { className: "rails", style: "--d:0" }),
+      el("div", { className: "body" },
+        el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : ""),
+        ...quoted(text), status && chip(status))),
+    el("p", { className: "tally" }), el("ol", { className: "thread" }), el("ol", { className: "talk" }));
+  cards.set(uid, card);
+  setTally(uid);
+  return card;
+}
+
+function setTally(uid) {
+  const card = cards.get(uid);
+  const t = tallies.get(uid);
+  if (card) card.querySelector(".tally").textContent = t ? `heard by ${t.heard} · still told by ${t.still}` : "";
+}
+
+function setTallies(list) {
+  for (const c of list) {
+    tallies.set(c.uid, c);
+    setTally(c.uid);
+  }
+}
+
+function addTo(card, where, node, fresh) {
+  if (fresh) node.classList.add("fresh");
+  card.querySelector(where).append(node);
+}
+
+// The newcomer's line in a conversation, with its own chip.
+function mine(uid, text) {
+  spoken.set(uid, { text, parent: null, speaker: "you" });
+  const status = statuses.get(uid);
+  return el("li", { className: "ev whisper mine", tabIndex: -1, dataset: { uid } },
+    el("span", { className: "rails", style: "--d:0" }),
+    el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: "You" })),
+      ...quoted(text), status && chip(status)));
+}
+
+function theirs(name, text) {
+  return el("li", { className: "reply", tabIndex: -1 }, el("p", { className: "meta" }, el("b", { textContent: name }), " answers you"),
+    el("p", { className: "said", textContent: `“${text}”` }));
+}
+
+// A card from /api/state, for a whisper older than the replay; its hops lack the replay's detail.
+// Hops and lines still in the replay are left to it.
+function restoredCard(c, replayed) {
+  const card = newCard(c.uid, c.target_name, null, c.text);
+  for (const h of c.hops) {
+    if (replayed.has(h.uid)) continue;
+    shown.add(h.uid);
+    spoken.set(h.uid, { text: h.text, parent: null, speaker: h.speaker });
+    const told = h.listeners.length === 1 ? [" told ", el("b", { textContent: h.listeners[0] })] : [` told ${h.listeners.length} people`];
+    addTo(card, ".thread", el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: h.uid } },
+      el("span", { className: "rails", style: "--d:1" }),
+      el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: h.speaker }), ...told), ...quoted(h.text))));
+  }
+  if (c.drifted) addTo(card, ".thread", el("li", { className: "drift", textContent: DRIFT }));
+  for (const line of c.conversation) {
+    if (replayed.has(line.uid)) continue;
+    shown.add(line.uid);
+    if (line.speaker_id === "newcomer") cardOf.set(line.uid, c.uid);
+    addTo(card, ".talk", line.speaker_id === "newcomer" ? mine(line.uid, line.text) : theirs(line.speaker, line.text));
+  }
+  return card;
+}
+
+// Overheard lines join the village talk block at the end of the feed when it is for the same place;
+// returns a new block to append, or null.
+function overheard(e) {
+  const last = feed.lastElementChild;
+  const block = last && last.matches(".vt") && last.dataset.place === e.place ? last : talkBlock(e.place);
+  const why = REASONS[e.reason];
+  const id = `talk-line-${++talkLines}`;
+  block.querySelector(".vt-lines").append(el("li", {},
+    el("span", { className: "vt-line", id }, el("b", { textContent: e.speaker_name }),
+      why ? el("span", { className: "vt-why", textContent: ` · ${why}` }) : null, ": ", e.text),
+    el("button", { type: "button", className: "linkish vt-talk", tabIndex: -1, textContent: "Talk", dataset: { line: id },
+      ariaLabel: `Talk to ${e.speaker_name} about this`, onclick: () => talkAbout(e.speaker_name, e.text) })));
+  block.querySelector(`[data-line="${id}"]`).setAttribute("aria-describedby", id);
+  countTalk(block);
+  // A new line hides the oldest of the two shown; arrow focus moves to the block's toggle.
+  if (rover && block.contains(rover) && !rover.getClientRects().length) {
+    const had = document.activeElement === rover;
+    setRover(block.querySelector(".vt-more"));
+    if (had) rover.focus();
+  }
+  return block === last ? null : block;
+}
+
+function talkBlock(place) {
+  const block = el("li", { className: "vt", dataset: { place } });
+  const toggle = el("button", { type: "button", className: "linkish vt-more", tabIndex: -1, ariaExpanded: "false", onclick: () => {
+    toggle.ariaExpanded = String(block.classList.toggle("open"));
+    countTalk(block);
+  } });
+  block.append(el("p", { className: "vt-head" }, el("span"), toggle), el("ol", { className: "vt-lines" }));
+  return block;
+}
+
+function countTalk(block) {
+  const n = block.querySelector(".vt-lines").children.length;
+  const toggle = block.querySelector(".vt-more");
+  block.querySelector(".vt-head span").textContent = `Village talk at the ${block.dataset.place} · ${n} ${n === 1 ? "line" : "lines"}`;
+  toggle.hidden = n <= 2;
+  toggle.textContent = block.classList.contains("open") ? "Show fewer" : `Show all ${n}`;
+}
+
+function talkAbout(name, text) {
+  if (over) return;
+  $("target").value = name;
+  $("text").value = `You said: "${text}" `;
+  showSuggestions([]);
+  setDrawer(false);
+  $("text").focus();
+  $("text").setSelectionRange($("text").value.length, $("text").value.length);
+  setComposer();
+}
+
+// The composer says "Talking with" while the To box names a villager in an open conversation.
+function setComposer() {
+  const name = $("target").value.trim().toLowerCase();
+  const on = [...talks.values()].some((t) => t.name.toLowerCase() === name);
+  $("to-label").textContent = on ? "Talking with" : "Whisper to";
+  $("whisper").querySelector("button").textContent = on ? "Reply" : "Whisper";
+  if (!over) $("text").placeholder = on ? "Say something back" : "the miller waters his flour";
+}
+
+// Only a live answer fills the To box; a replayed one may have been closed since.
+function startTalk(e, fresh) {
+  if (over) return;
+  talks.delete(e.villager_id);
+  talks.set(e.villager_id, { name: e.name, card: cardOf.get(e.whisper_id) });
+  if (fresh && !$("whisper").contains(document.activeElement)) $("target").value = e.name;
+  setComposer();
+}
+
+function endTalk(villagerId) {
+  if (talks.delete(villagerId)) setComposer();
+}
+
 function render(e, fresh) {
   switch (e.kind) {
     case "whisper": {
-      spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
       lastTarget = e.target_id;
-      const status = statuses.get(e.uid);
-      return el("li", { className: "ev whisper", tabIndex: -1, dataset: { uid: e.uid } },
-        el("span", { className: "rails", style: "--d:0" }),
-        el("div", { className: "body" },
-          el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: e.target }), ` at the ${e.place}`),
-          ...quoted(e.text), status && chip(status)));
+      if (cardOf.has(e.uid)) return null;
+      const home = e.conversation && cards.get(cardOf.get(e.conversation));
+      if (!home) return newCard(e.uid, e.target, e.place, e.text);
+      cardOf.set(e.uid, home.dataset.card);
+      addTo(home, ".talk", mine(e.uid, e.text), fresh);
+      return null;
     }
     case "hop": {
+      if (shown.has(e.uid)) return null;
       const parent = spoken.get(e.parent);
       spoken.set(e.uid, { text: e.text, parent: e.parent, speaker: e.speaker });
-      return el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: e.uid } },
+      const node = el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: e.uid } },
         el("span", { className: "rails", style: `--d:${Math.min(e.depth, 8)}` }),
         el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
+      const card = cards.get(cardOf.get(e.root));
+      if (!card) return node;
+      shown.add(e.uid);
+      addTo(card, ".thread", node, fresh);
+      return null;
     }
+    case "drift": {
+      const card = cards.get(cardOf.get(e.whisper_id));
+      if (card && !card.querySelector(".drift")) addTo(card, ".thread", el("li", { className: "drift", textContent: DRIFT }), fresh);
+      return null;
+    }
+    case "reply": {
+      if (shown.has(e.uid)) return null;
+      const card = cards.get(cardOf.get(e.conversation));
+      if (!card) return theirs(e.name, e.text);
+      shown.add(e.uid);
+      addTo(card, ".talk", theirs(e.name, e.text), fresh);
+      return null;
+    }
+    case "overheard":
+      return overheard(e);
+    case "place":
+      $("where").textContent = `You're at the ${e.place}`;
+      return null;
     case "warning":
       return el("li", { className: "note against" },
         el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
     case "refusal":
       learn(e);
+      endTalk(e.villager_id);
       if (!e.line) return el("li", { className: "note against" }, el("b", { textContent: e.name }), " turns away from you.");
       return el("li", { className: "note against" },
         el("b", { textContent: e.name }), " turns away from you: ", el("span", { className: "brush", textContent: `“${e.line}”` }));
@@ -572,7 +786,7 @@ function render(e, fresh) {
       return null;
     case "whisper_status":
       learn(e);
-      showStatus(e);
+      showStatus(e, fresh);
       return null;
     case "announcement":
       return el("li", { className: "note" }, e.text);
@@ -595,6 +809,8 @@ const SAID = {
   kept: () => "Heard you, but kept it quiet.",
   warned: () => "Heard you, and warned others about you.",
   not_carried: () => "Didn't carry.",
+  answered: (e) => `${e.name} answered you.`,
+  moved_on: (e) => `${e.name} moved on.`,
 };
 
 function secondsLeft(until) {
@@ -626,8 +842,10 @@ function chip(e) {
   return node;
 }
 
-function showStatus(e) {
+function showStatus(e, fresh) {
   statuses.set(e.whisper_id, e);
+  if (e.state === "answered") startTalk(e, fresh);
+  else if (e.state === "moved_on" || e.state === "brushed_off") endTalk(e.villager_id);
   const item = feed.querySelector(`.whisper[data-uid="${CSS.escape(e.whisper_id)}"]`);
   if (!item) return;
   const old = item.querySelector(".chip");
@@ -764,6 +982,12 @@ function showGameOver(summary, live) {
   for (const node of $("whisper").elements) node.disabled = true;
   $("text").value = "";
   $("text").placeholder = "The game is over.";
+  for (const t of talks.values()) {
+    const card = cards.get(t.card);
+    if (card) card.querySelector(".talk").append(el("li", { className: "drift", textContent: "The conversation ended with the game." }));
+  }
+  talks.clear();
+  setComposer();
   setStatus("The game is over.");
   if (live && wasHidden) $("gameover-title").focus({ preventScroll: true });
 }
@@ -773,7 +997,7 @@ function nearBottom() {
 }
 
 function threadItems() {
-  return [...feed.querySelectorAll(".hop, .whisper")];
+  return [...feed.querySelectorAll(ROVE)].filter((n) => n.getClientRects().length);
 }
 
 // Roving focus: the feed is one tab stop, and arrow keys move between hops.
@@ -783,11 +1007,18 @@ function setRover(node) {
   if (rover) rover.tabIndex = 0;
 }
 
+// ponytail: the cap counts top-level items, so one card or talk block can grow without limit within a game,
+// and shown, tallies and statuses are never pruned; split long cards and prune the maps if a game outgrows that.
 function prune() {
   while (feed.children.length > MAX_ITEMS) {
     const node = feed.firstElementChild;
-    if (node.matches(".hop, .whisper")) spoken.delete(node.dataset.uid);
-    if (node === rover) rover = null;
+    for (const n of node.querySelectorAll("[data-uid]")) spoken.delete(n.dataset.uid);
+    if (node.matches(".hop")) spoken.delete(node.dataset.uid);
+    if (node.dataset.card) {
+      cards.delete(node.dataset.card);
+      for (const [uid, card] of cardOf) if (card === node.dataset.card) cardOf.delete(uid);
+    }
+    if (node.contains(rover)) rover = null;
     node.remove();
   }
 }
@@ -834,24 +1065,25 @@ function togglePin(item) {
   trace(pinned);
 }
 feed.addEventListener("click", (ev) => {
-  const item = threadItem(ev.target);
+  const item = ev.target.closest(ROVE);
   if (item) setRover(item);
-  togglePin(item);
+  if (!ev.target.closest("button")) togglePin(threadItem(ev.target));
 });
 feed.addEventListener("keydown", (ev) => {
-  const item = threadItem(ev.target);
+  const item = ev.target.closest(ROVE);
   if (!item) return;
   const items = threadItems();
   const at = items.indexOf(item);
   const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[ev.key];
   if (ev.key === "Enter" || ev.key === " ") {
+    if (item.matches("button")) return;
     ev.preventDefault();
-    togglePin(item);
+    if (item.matches(".hop, .whisper")) togglePin(item);
   } else if (next != null && items[next]) {
     ev.preventDefault();
     setRover(items[next]);
     items[next].focus();
-    if (pinned != null) togglePin(items[next]);
+    if (pinned != null && items[next].matches(".hop, .whisper")) togglePin(items[next]);
   }
 });
 document.addEventListener("keydown", (ev) => {
@@ -1095,6 +1327,7 @@ function whisperTo(name) {
   $("target").value = name;
   setDrawer(false);
   $("text").focus();
+  setComposer();
 }
 
 // The To box typeahead: the same matches as the search, with face, trade, place, and what you know.
@@ -1128,9 +1361,11 @@ function pickTarget(v) {
   $("target").value = v.name;
   showSuggestions([]);
   $("text").focus();
+  setComposer();
 }
 
 $("target").addEventListener("input", () => {
+  setComposer();
   const found = matches($("target").value);
   const exact = found.length === 1 && found[0].name.toLowerCase() === $("target").value.trim().toLowerCase();
   showSuggestions(exact ? [] : found.slice(0, 8));
@@ -1165,6 +1400,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   if (!name || !text) return setStatus("Pick a villager and write what to whisper.", true);
   const match = villagers.find((v) => v.name.toLowerCase() === name.toLowerCase());
   const button = ev.submitter || $("whisper").querySelector("button");
+  const reply = [...talks.values()].some((t) => t.name.toLowerCase() === name.toLowerCase());
   button.disabled = true;
   setStatus("Whispering…");
   try {
@@ -1176,7 +1412,8 @@ $("whisper").addEventListener("submit", async (ev) => {
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       $("text").value = "";
-      setStatus(`Whispered to ${match ? match.name : name}. If it touches what they care about, they'll pass it on.`);
+      const who = match ? match.name : name;
+      setStatus(reply ? `Said to ${who}.` : `Whispered to ${who}. If it touches what they care about, they'll pass it on.`);
     } else {
       setStatus(body.error || "The whisper didn't go through. Try again.", true);
     }
@@ -1213,6 +1450,13 @@ function reset() {
   noted.clear();
   statuses.clear();
   faces.clear();
+  cards.clear();
+  cardOf.clear();
+  shown.clear();
+  tallies.clear();
+  talks.clear();
+  setComposer();
+  $("where").textContent = "";
   lastTarget = null;
   lastId = 0;
   pinned = null;
@@ -1238,9 +1482,26 @@ async function loadState() {
   notes = state.notes;
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
+  $("where").textContent = `You're at the ${state.place}`;
+  setTallies(state.rumors);
   // The replay goes in before the log is live, so a reload doesn't read it all out.
   feed.setAttribute("aria-live", "off");
+  // Cards older than the replay come back from the card state, ahead of it.
+  const stick = feed.children.length === 0 || nearBottom();
+  const replayed = new Set(state.events.map((e) => e.uid).filter(Boolean));
+  for (const c of state.rumors) if (!cards.has(c.uid) && !replayed.has(c.uid)) feed.append(restoredCard(c, replayed));
   addEvents(state.events, false);
+  const open = [...talks.values()].pop();
+  if (open && !$("target").value.trim()) $("target").value = open.name;
+  setComposer();
+  // The game-over line on conversations whose last word was the villager's, when the replay no longer holds it.
+  if (over) {
+    for (const card of cards.values()) {
+      const last = card.querySelector(".talk").lastElementChild;
+      if (last && last.matches(".reply")) card.querySelector(".talk").append(el("li", { className: "drift", textContent: "The conversation ended with the game." }));
+    }
+  }
+  if (stick) feed.scrollTop = feed.scrollHeight;
   setTimeout(() => feed.setAttribute("aria-live", "polite"));
   villagersKey = "";
   setVillagers(state.villagers);
@@ -1250,6 +1511,8 @@ async function loadState() {
 function receive(e) {
   if (e.kind === "villagers") {
     setVillagers(e.villagers);
+  } else if (e.kind === "rumors") {
+    setTallies(e.rumors);
   } else if (e.kind === "usage") {
     $("usage").textContent = e.usage.summary;
   } else {

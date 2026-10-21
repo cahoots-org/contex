@@ -205,6 +205,7 @@ the same face every game. A badge on the face says what you know:
 | Badge | Means |
 |---|---|
 | ✓ | took the bait: passed your whisper on |
+| ↩ | answered you: you are talking with them |
 | ○ | kept it quiet: heard you and told no one |
 | – | brushed you off: your whisper missed what they care about |
 | ! | wary of you: turned you away or warned others about you |
@@ -213,15 +214,40 @@ the same face every game. A badge on the face says what you know:
 The open tile and the card say the same in words. Each whisper in the feed
 shows where it stands, updated as it changes: checking, busy (with the seconds
 until they hear you), heard, took the bait (and how many people they told),
-kept it quiet, warned others, brushed you off (with their line once it is
-written), or didn't carry (the game couldn't check it; a delivery failure shows no chip).
+kept it quiet, warned others, answered you, moved on, brushed you off (with
+their line once it is written), or didn't carry (the game couldn't check it; a
+delivery failure shows no chip).
 
-Each hop of your rumor is indented once per retelling, says
-whom the speaker heard it from, and highlights the words that differ from what
-they heard. When most of it was reworded, it underlines the words that
-survived instead. Hover or click a hop to light up its path back to your whisper;
-Escape clears it. Reloading the page
-brings back the last 500 feed events.
+Each whisper starts a rumor card: your words as its title, the chip, and a
+tally, "heard by N · still told by M", where M counts the people who heard it
+in the last game day. A retelling goes on the card while it still carries what
+you whispered. Each one is indented once per retelling, says whom the speaker
+heard it from, and highlights the words that differ from what they heard. When
+most of it was reworded, it underlines the words that survived instead. Hover
+or click a hop to light up its path back to your whisper; Escape clears it.
+When the village starts telling it as something else, the card says "The story
+turned to other things after this." and shows no more of that thread.
+Warnings, refusals, the mood line, and goal changes stay outside the cards.
+
+Between the cards is village talk: lines you overhear where you are, which is
+where you last whispered ("You're at the tavern" above the feed). You don't
+hear everything, only three kinds of line: heated ones (someone mocking,
+blaming, exaggerating, confronting, or denying), ones about one of your goals,
+and one in eight of the rest, picked at random. A block of village talk shows
+the place, how many lines it holds, and the two newest; "Show all" opens the
+rest. Each line ends with "Talk", which puts the speaker's name in the
+To box and starts your message with what they said.
+
+A villager whose interest you caught may answer you. Their reply goes on that
+whisper's card, and the card shows the exchange as it goes: your lines, each
+with its own chip, and theirs. While they are talking with you, the composer
+says "Talking with" their name, and what you send them next is a reply. The
+conversation ends when they move on, brush you off, turn you away, or the game
+ends.
+
+Arrow keys move through the feed: the hops, your lines, and the buttons in
+village talk. Reloading the page brings back the last 500 feed events and
+every rumor card.
 
 The server listens on 127.0.0.1 only. It answers only requests addressed to
 `127.0.0.1` or `localhost` on its own port, and refuses whispers and WebSocket

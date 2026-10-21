@@ -62,6 +62,11 @@ def villagers(town: Town) -> list[dict]:
     )
 
 
+def tallies(rumors: Rumors) -> list[dict]:
+    """Each card's counts only, so the live snapshot changes only when a count does."""
+    return [{"uid": c["uid"], "heard": c["heard"], "still": c["still"]} for c in rumors.cards()]
+
+
 def event_json(event: Event) -> dict:
     """The event as the page gets it; a heat event also carries its sentence."""
     data = event.to_json()
@@ -113,6 +118,7 @@ def create_app(
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
+            asyncio.create_task(watch("rumors", lambda: tallies(rumors), VILLAGER_POLL_SECONDS)),
         ]
         try:
             yield
