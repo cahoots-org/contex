@@ -620,10 +620,12 @@ class Engine:
         )
 
     async def _stroll(self, vid: str, place: str) -> None:
-        """Move the villager to place, perhaps sharing their latest news with someone there."""
+        """Move the villager to place, perhaps sharing their latest news with someone there once, while it is fresh."""
         if vid not in self.town:
             return
-        latest = self._latest.get(vid)
+        latest = self._latest.pop(vid, None)
+        if latest is not None and not self._fresh(latest):
+            latest = None
         try:
             await act(
                 Decision(MOVE, latest, place, None), self.town.get(vid), town=self.town, writer=self.writer,

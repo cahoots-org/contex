@@ -291,6 +291,16 @@ async def test_faithful_retelling_of_a_whisper_names_the_newcomer():
 
 
 @pytest.mark.asyncio
+async def test_a_carried_whisper_names_the_newcomer_only_when_the_move_chose_faithful():
+    s = Setup()
+    s.town.move("v2", "tavern")
+    await s.act("v1", Decision(MOVE, whispered(s), "tavern", None), share_chance=1.0)
+    s.town.move("v2", "mill")
+    await s.act("v1", Decision(MOVE, whispered(s), "mill", "faithful"), share_chance=1.0)
+    assert [u.names_newcomer for u, _ in s.hub.delivered] == [False, True]
+
+
+@pytest.mark.asyncio
 async def test_shift_blame_drops_the_newcomer():
     s = Setup()
     await s.act("v1", Decision(RETELL, whispered(s), "v2", "shift_blame"))

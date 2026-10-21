@@ -94,7 +94,7 @@ async def act(
         town.move(vid, decision.target)
         arrived = [v.id for v in town.present(decision.target, exclude=vid)]
         if decision.source and arrived and random.random() < share_chance:
-            shared = Decision(RETELL, decision.source, random.choice(arrived), decision.style or "faithful")
+            shared = Decision(RETELL, decision.source, random.choice(arrived), decision.style)
             await act(
                 shared, villager, town=town, writer=writer, hub=hub, lineage=lineage, ids=ids, facts=facts,
                 inspiration=inspiration, said=said, suspicion_hear_max=suspicion_hear_max,

@@ -342,6 +342,22 @@ async def test_a_routine_move_may_carry_the_latest_news(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_routine_move_carries_fresh_news_once(monkeypatch):
+    engine, _, _, _ = await start("v1", "v2")
+    engine.routine = StubRoutine({"v1": "mill", "v2": "mill"})
+    moves = record_moves(monkeypatch, engine)
+    engine._latest["v1"] = Match("k1", {"id": "u-1", "text": "the miller cheats"}, clearance=0.05)
+    engine._latest["v2"] = Match("k2", {"id": "u-2", "text": "the well is dry"}, clearance=-0.01)
+    await engine._walk("morning", 0.0)
+    engine.routine = StubRoutine({"v1": "tavern", "v2": "tavern"})
+    await engine._walk("evening", 0.0)
+    assert [(vid, d.source and d.source.data_key) for vid, d, *_ in moves] == [
+        ("v1", "k1"), ("v2", None), ("v1", None), ("v2", None),
+    ]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_routine_moves_come_in_batches_of_five_across_the_window(monkeypatch):
     vids = [f"v{i}" for i in range(12)]
     engine, _, _, _ = await start(*vids)
