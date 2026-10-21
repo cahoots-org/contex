@@ -22,7 +22,8 @@ from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.rumors import Rumors
-from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, StubBaselines, StubContex, make, wait_for
+from examples.rumor_mill.scenes import SCENE_SPEECH
+from examples.rumor_mill.tests.helpers import TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, wait_for
 from examples.rumor_mill.town import PLAYER_ID, Town
 
 SETTLE = 0.1
@@ -33,7 +34,7 @@ class RecordingFeed(Feed):
         super().__init__(Lineage(), Town(), out=None)
         self.deliveries = []
 
-    def on_delivery(self, utterance, listener_ids, on_topic=True):
+    def on_delivery(self, utterance, listener_ids, on_topic=True, scene=None):
         self.deliveries.append((utterance.id, listener_ids))
 
 
@@ -947,7 +948,7 @@ async def test_a_failed_said_publish_is_logged_with_ids_only_and_delivery_goes_o
 
 
 async def whisper_turn(turns, contex, **config):
-    engine, minds, _ = await setup("v1", contex=contex, config=Config(cooldown_seconds=0.05, **config))
+    engine, minds, _ = await setup("v1", contex=contex, config=Config(**{"cooldown_seconds": 0.05, **config}))
     minds["v1"].results = [[]]
     engine.lineage.record("w-1", None, player=True)
     text = "The newcomer whispered to you at the square: psst"
@@ -1051,7 +1052,7 @@ def states(feed):
 
 
 async def answered_once(talks, then, **config):
-    engine, minds, feed = await setup("v1", config=Config(cooldown_seconds=0.05, **config))
+    engine, minds, feed = await setup("v1", config=Config(**{"cooldown_seconds": 0.05, **config}))
     minds["v1"].results = [[], []]
     talks.plan = [ANSWER, then]
     whisper(engine, "v1", "w-1")
@@ -1159,4 +1160,247 @@ async def test_share_chance_is_nature_times_how_close_the_news_came():
     assert engine.share_chance("v1", news(0.05)) == pytest.approx(0.8)
     assert engine.share_chance("v1", news(None)) == pytest.approx(0.4)
     assert engine.share_chance("v2", news(-0.01)) == 0.0
+    await engine.stop()
+
+
+class Talkers:
+    """Each villager's turn takes their next planned (action, keen), ignoring once the plan runs out; a planned None
+    fails the turn. A speech turn says "more" at the speaker's place to whoever said the source."""
+
+    def __init__(self):
+        self.plan: dict[str, list] = {}
+        self.views = []
+        self.engine = None
+        # The scene participants each turn saw when it decided.
+        self.within = []
+
+    async def decide(self, jev, view):
+        self.views.append(view)
+        scene = self.engine.scenes.of(view.villager.id)
+        self.within.append(set(scene.participants) if scene else None)
+        planned = self.plan.get(view.villager.id) or [(IGNORE, None)]
+        action, keen = planned.pop(0) or (None, None)
+        if action is None:
+            raise RuntimeError("jev down")
+        source = view.answerable[-1] if action == ANSWER else view.new[0]
+        return Decision(action, source, None, None, keen=keen)
+
+    async def act(self, decision, villager, *, town, hub, lineage, ids, facts, **kw):
+        if decision.action not in SCENE_SPEECH:
+            return
+        source_id = decision.source.data["id"]
+        uid = ids.next("u")
+        lineage.record(uid, source_id)
+        line = Utterance(uid, villager.id, villager.name, town.place_of(villager.id), "more", source_id,
+                         action=decision.action)
+        facts.record(line)
+        await hub.deliver(line, [facts.get(source_id).speaker])
+
+
+@pytest.fixture
+def talkers(monkeypatch):
+    t = Talkers()
+    monkeypatch.setattr(engine_mod, "decide", t.decide)
+    monkeypatch.setattr(engine_mod, "act", t.act)
+    return t
+
+
+def said_by(engine, uid, speaker, place="square", action=SPEAK, style=None):
+    engine.facts.record(Utterance(uid, speaker, speaker.upper(), place, "news", None, action=action, style=style))
+
+
+def hand(engine, vid, uid):
+    """Put the line uid in vid's next turn."""
+    engine.hear_directly(vid, Match(f"utt:{uid}", {"id": uid, "text": "news"}))
+
+
+async def talk(talkers, *vids, similarity=0.9, **config):
+    """An engine whose minds poll nothing, whose topics all score similarity, and that draws no bystanders."""
+    rumors = await stub_rumors(similarity)
+    rumors.contex.default = [Match(f"rumor:{uid}", {}, similarity) for uid in ("w-1", "o-1", "o-2")]
+    engine, minds, feed = await setup(*vids, rumors=rumors, config=Config(**{"cooldown_seconds": 0.05, **config}))
+    for mind in minds.values():
+        mind.results = [[]] * 50
+    engine.scenes.rng = Always(1.0)
+    talkers.engine = engine
+    return engine, minds, feed
+
+
+def scene_events(feed):
+    return [e.data for e in feed.recent if e.kind == "scene"]
+
+
+@pytest.mark.asyncio
+async def test_an_answered_line_at_the_players_place_starts_a_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(talkers.views) == 2)
+    assert talkers.within[1] == {"v1", "v2"}
+    assert talkers.views[1].villager.id == "v1"
+    assert [m.data["id"] for m in talkers.views[1].new] == ["u-1"]
+    started = scene_events(feed)
+    assert started[0] == {"scene_id": "s-1", "rumor": None, "opening": "o-1", "place": "square",
+                          "tone": "conversation", "people": 1, "lines": 1, "ended": None}
+    assert any(e["people"] == 2 for e in started)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_village_talk_away_from_the_player_starts_no_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    engine.player_place = lambda: "tavern"
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    await asyncio.sleep(SETTLE)
+    assert scene_events(feed) == [] and engine.scenes.of("v2") is None
+    assert len(talkers.views) == 1
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_on_card_hop_starts_a_scene_anywhere_and_an_off_card_one_does_not(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    engine.player_place = lambda: "tavern"
+    engine.lineage.record("w-1", None, player=True)
+    talkers.plan = {"v2": [(SPEAK, 1.0), (SPEAK, 1.0)]}
+    engine.lineage.record("o-2", "w-1")
+    said_by(engine, "o-2", "v1")
+    hand(engine, "v2", "o-2")
+    await wait_for(lambda: feed.deliveries)
+    assert scene_events(feed) == []
+    engine.lineage.record("o-1", "w-1")
+    said_by(engine, "o-1", "v1")
+    engine.rumors.record("w-1", engine.facts.get("o-1"), {"v2": "V2"}, True)
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: scene_events(feed))
+    assert (scene_events(feed)[0]["rumor"], scene_events(feed)[0]["opening"]) == ("w-1", "o-1")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_newcomers_whisper_never_opens_a_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    engine.lineage.record("w-1", None, player=True)
+    said_by(engine, "w-1", PLAYER_ID)
+    hand(engine, "v2", "w-1")
+    await wait_for(lambda: feed.deliveries)
+    assert scene_events(feed) == []
+    assert talkers.views[0].ask_keen is False
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_scene_lines_are_addressed_and_wait_only_the_scene_cooldown(talkers):
+    engine, _, _ = await talk(talkers, "v1", "v2", cooldown_seconds=5, scene_cooldown_seconds=0.05)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(talkers.views) == 2)
+    assert talkers.views[1].villager.id == "v1"
+    assert [m.data_key for m in talkers.views[1].new] == ["utt:u-1"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_max_scenes_holds_back_a_new_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", "v3", "v4", max_scenes=1, scene_cooldown_seconds=5)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v4": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(feed.deliveries) == 1)
+    said_by(engine, "o-2", "v3")
+    hand(engine, "v4", "o-2")
+    await wait_for(lambda: len(feed.deliveries) == 2)
+    assert {e["scene_id"] for e in scene_events(feed)} == {"s-1"}
+    assert engine.scenes.of("v4") is None
+    assert [k for _, k, _ in engine.rumors.contex.published] == ["rumor:w-1", "rumor:o-1"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_off_topic_line_ends_the_scene_and_is_not_addressed(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", similarity=0.4)
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    await asyncio.sleep(SETTLE)
+    assert scene_events(feed)[-1]["ended"] == "The conversation turned to other things."
+    assert "v1" not in engine._pending
+    assert len(talkers.views) == 1
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_non_speech_turn_breaks_up_a_two_person_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [(IGNORE, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: scene_events(feed) and scene_events(feed)[-1]["ended"])
+    assert scene_events(feed)[-1]["ended"] == "The conversation broke up."
+    assert engine.scenes.of("v2") is None
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_turn_leaves_the_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [None]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: scene_events(feed) and scene_events(feed)[-1]["ended"])
+    assert scene_events(feed)[-1]["ended"] == "The conversation broke up."
+    assert engine.scenes.of("v1") is None
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_participant_leaving_town_ends_the_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=5)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    assert scene_events(feed)[-1]["ended"] is None
+    await engine.remove_villager("v1")
+    assert scene_events(feed)[-1]["ended"] == "The conversation broke up."
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_answering_the_newcomer_leaves_the_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=0.3)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [(ANSWER, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: engine._pending.get("v1"))
+    whisper(engine, "v1")
+    await wait_for(lambda: len(talkers.views) == 2)
+    await wait_for(lambda: scene_events(feed)[-1]["ended"])
+    assert [m.data_key for m in talkers.views[1].new] == ["utt:u-1", "utt:w-1"]
+    assert scene_events(feed)[-1]["ended"] == "The conversation broke up."
+    assert engine.conversations["v1"]["answered"] == ["w-1"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_keen_is_asked_only_when_a_scene_could_follow(talkers):
+    engine, _, _ = await talk(talkers, "v1", "v2")
+    talkers.plan = {"v2": [(IGNORE, None), (SPEAK, 1.0)], "v1": [(SPEAK, 1.0)]}
+    hand(engine, "v2", "x-1")
+    await wait_for(lambda: len(talkers.views) == 1)
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(talkers.views) == 3)
+    assert [(v.villager.id, v.ask_keen) for v in talkers.views] == [("v2", False), ("v2", True), ("v1", True)]
     await engine.stop()

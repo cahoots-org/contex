@@ -2,15 +2,17 @@
 
 import asyncio
 import logging
+import random
 import time
 from collections.abc import Callable
 from contextlib import aclosing, suppress
+from datetime import UTC, datetime
 
 from examples.rumor_mill.actions import ANSWER, MOVE, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
-from examples.rumor_mill.decide import TurnView, decide
+from examples.rumor_mill.decide import Decision, TurnView, decide
 from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import PHASES, Game, Summary
@@ -19,6 +21,7 @@ from examples.rumor_mill.mind import Mind, group_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.rumors import Rumors
+from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
 from examples.rumor_mill.writer import WHISPER_FRAMING, Writer
@@ -61,6 +64,7 @@ class Engine:
         self.feed = feed
         self.facts = Facts()
         self.suspicion = Suspicion(config, town)
+        self.scenes = Scenes(config, town, random.Random())
         self.baselines = baselines
         self.rumors = rumors
         self.overhear = overhear
@@ -114,6 +118,7 @@ class Engine:
         self._listen_failed.discard(vid)
         self._said.pop(vid, None)
         self._kept.pop(vid, None)
+        self._leave_scene(vid)
         self.end_conversation(vid)
         for wid, name in self.feed.listening(vid):
             self.feed.on_whisper_status(wid, vid, name, "kept")
@@ -142,8 +147,12 @@ class Engine:
     async def deliver(self, utterance: Utterance, listener_ids: list[str], addressed: bool = False) -> None:
         """Publish the utterance to each listener's mind; raises only if every listener failed.
 
-        An addressed utterance also wakes each listener and joins their next turn unmatched.
+        An addressed utterance also wakes each listener and joins their next turn unmatched. A line that goes on
+        with a scene is heard by those it addresses too, and wakes them while it stays on the scene's topic.
         """
+        scene = self.scenes.speaking(utterance)
+        drawn = self.scenes.addressed(scene, utterance.speaker) if scene else []
+        listener_ids = [*listener_ids, *(i for i in drawn if i not in listener_ids)]
         listeners = [i for i in listener_ids if i in self.town and i in self.minds]
         data = utterance.to_data()
         hearing = [self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners]
@@ -162,7 +171,20 @@ class Engine:
         on_topic = await self._carries_rumor(utterance, heard)
         if heard and on_topic and utterance.speaker in self._turning:
             self._said.setdefault(utterance.speaker, []).append((utterance.id, len(heard)))
-        self.feed.on_delivery(utterance, heard, on_topic)
+        if scene is not None:
+            if self.lineage.root(utterance.id) != scene.rumor:
+                in_scene = await self.rumors.on_topic(scene.topic, utterance.text)
+            else:
+                in_scene = on_topic
+            if in_scene:
+                self.scenes.said(scene, utterance.id)
+                for vid in drawn:
+                    if vid in heard:
+                        self.hear_directly(vid, Match(f"utt:{utterance.id}", data))
+            else:
+                self._end_scene(scene, "veered")
+                scene = None
+        self.feed.on_delivery(utterance, heard, on_topic, scene=scene and scene.id)
         if self.overhear is not None:
             hop = on_topic and self.lineage.is_player_rooted(utterance.id)
             try:
@@ -237,13 +259,17 @@ class Engine:
         return True
 
     def cooldown_ends(self, vid: str) -> float:
-        """Wall-clock time when the villager can next take a turn; now or earlier when free."""
+        """Wall-clock time when the villager can next take a turn; now or earlier when free.
+
+        A villager in a scene waits only the scene cooldown.
+        """
+        cooldown = self.config.scene_cooldown_seconds if self.scenes.of(vid) else self.config.cooldown_seconds
         if vid in self._turning:
-            return time.time() + self.config.cooldown_seconds
+            return time.time() + cooldown
         last = self._last_turn.get(vid)
         if last is None:
             return time.time()
-        return time.time() + last + self.config.cooldown_seconds - time.monotonic()
+        return time.time() + last + cooldown - time.monotonic()
 
     def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None:
         self.suspicion.bump(vid, amount, reason, uid)
@@ -282,6 +308,7 @@ class Engine:
             except Exception:
                 log.exception("turn failed for %s", vid)
                 self._last_turn[vid] = time.monotonic()
+                self._leave_scene(vid)
                 if self._pending.get(vid):
                     wake.set()
             finally:
@@ -334,6 +361,7 @@ class Engine:
             said=said,
             answerable=answerable,
             ask_gossip=v.id not in self._gossip,
+            ask_keen=self.scenes.of(v.id) is not None or any(self._exchange(m, v.id, place) for m in new),
         )
         action = answered = None
         try:
@@ -353,6 +381,7 @@ class Engine:
                         log.exception("suspicion rating failed for %s", v.id)
                 if decision.gossip is not None:
                     self._gossip[v.id] = decision.gossip
+                scene, joined = await self._enter_scene(v, decision, place)
                 await act(
                     decision, v, town=self.town, writer=self.writer, hub=self,
                     lineage=self.lineage, ids=self.ids, facts=self.facts,
@@ -361,11 +390,66 @@ class Engine:
                     suspicion_hear_max=self.config.suspicion_hear_max,
                     share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                 )
+                if scene is not None:
+                    self._scene_turn(scene, v.id, decision, joined)
                 if action == ANSWER:
                     answered = decision.source.data["id"]
         finally:
             self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
         return True
+
+    def _exchange(self, m: Match, vid: str, place: str) -> Utterance | None:
+        """The line m holds when someone else still here spoke it at this place, so answering it could start a scene."""
+        line = self.facts.get(m.data.get("id"))
+        if line is None or line.speaker == vid or line.place != place or line.action not in SCENE_SPEECH:
+            return None
+        if line.speaker not in self.town or self.town.place_of(line.speaker) != place:
+            return None
+        return line
+
+    async def _enter_scene(self, v: Villager, decision: Decision, place: str) -> tuple[Scene | None, bool]:
+        """The villager's scene, or a new one when their speech answers an exchange, and whether they just joined.
+
+        A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is.
+        """
+        scene = self.scenes.of(v.id)
+        if scene is not None or self.rumors is None or decision.action not in SCENE_SPEECH or decision.source is None:
+            return scene, False
+        opening = self._exchange(decision.source, v.id, place)
+        if opening is None:
+            return None, False
+        root = self.lineage.root(opening.id)
+        if self.rumors.carries(root, opening.id):
+            scene = self.scenes.start(opening, v.id, root, root)
+        elif place == self.player_place() and not self.scenes.full():
+            await self.rumors.add_topic(opening.id, opening.text, datetime.now(UTC))
+            scene = self.scenes.start(opening, v.id, opening.id, None)
+        if scene is not None:
+            self.feed.on_scene(scene)
+        return scene, False
+
+    def _scene_turn(self, scene: Scene, vid: str, decision: Decision, joined: bool) -> None:
+        """Apply the villager's turn to a scene that has not ended, and end it or report how it stands."""
+        if scene.ended:
+            return
+        reason = self.scenes.turned(scene, vid, decision.action, decision.style, decision.keen, joined)
+        if reason:
+            self._end_scene(scene, reason)
+        else:
+            self.feed.on_scene(scene)
+
+    def _leave_scene(self, vid: str) -> None:
+        """Take the villager out of their scene, ending it if that was its last turn."""
+        scene = self.scenes.of(vid)
+        if scene is None:
+            return
+        reason = self.scenes.turned(scene, vid, None, None, None, False)
+        if reason:
+            self._end_scene(scene, reason)
+
+    def _end_scene(self, scene: Scene, reason: str) -> None:
+        self.scenes.end(scene, reason)
+        self.feed.on_scene(scene)
 
     def share_chance(self, vid: str, source: Match | None) -> float:
         """How likely a villager who walks off is to share source where they arrive: their nature times its pull."""

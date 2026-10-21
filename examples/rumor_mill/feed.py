@@ -10,6 +10,7 @@ from examples.rumor_mill.game import Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES
 from examples.rumor_mill.town import PLAYER_ID, Town
 
@@ -21,6 +22,12 @@ TIME_LINES = {
     "afternoon": "The sun is high over the village.",
     "evening": "Evening falls, and lamps are lit.",
     "night": "Night settles over the village.",
+}
+SCENE_ENDS = {
+    "veered": "The {kind} turned to other things.",
+    "cooled": "The {kind} died down.",
+    "long": "The {kind} ran its course.",
+    "alone": "The {kind} broke up.",
 }
 GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
 
@@ -160,8 +167,22 @@ class Feed:
         self.emit("overheard", speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
                   reason=reason, uid=u.id)
 
-    def on_delivery(self, utterance: Utterance, listener_ids: list[str], on_topic: bool = True) -> None:
-        """Emit the player's whisper, a warning, an on-topic hop of a player-rooted rumor, or a town announcement."""
+    def on_scene(self, scene: Scene) -> None:
+        """A scene started, went on, or ended; the terminal prints nothing."""
+        tone = "argument" if scene.heated else "conversation"
+        self.emit(
+            "scene", scene_id=scene.id, rumor=scene.rumor, opening=scene.opening, place=scene.place, tone=tone,
+            people=len(scene.people), lines=len(scene.lines),
+            ended=SCENE_ENDS[scene.ended].format(kind=tone) if scene.ended else None,
+        )
+
+    def on_delivery(
+        self, utterance: Utterance, listener_ids: list[str], on_topic: bool = True, scene: str | None = None,
+    ) -> None:
+        """Emit the player's whisper, a warning, an on-topic hop of a player-rooted rumor, or a town announcement.
+
+        scene is the id of the scene a hop belongs to, if any.
+        """
         u = utterance
         names = [self.town.get(i).name for i in listener_ids if i in self.town]
         if u.speaker == PLAYER_ID:
@@ -183,7 +204,7 @@ class Feed:
             self.emit(
                 "hop", line, uid=u.id, parent=u.parent, root=self.lineage.root(u.id),
                 depth=self.lineage.depth(u.id), speaker_id=u.speaker, speaker=u.speaker_name,
-                listeners=names, heard=len(listener_ids), place=u.place, verb=u.verb, text=u.text,
+                listeners=names, heard=len(listener_ids), place=u.place, verb=u.verb, text=u.text, scene=scene,
             )
         elif u.verb == "announced":
             self.emit("announcement", speaker=u.speaker_name, place=u.place, text=u.text)

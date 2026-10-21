@@ -67,9 +67,13 @@ class Scenes:
         """The scene that has the line uid."""
         return next((s for s in self._active.values() if uid in s.lines), None)
 
+    def full(self) -> bool:
+        """Whether the village is running as many scenes as it will."""
+        return len(self._active) >= self.config.max_scenes
+
     def start(self, opening: Utterance, answerer: str, topic: str, rumor: str | None) -> Scene | None:
         """Begin a scene from an opening line, or None when the village is running as many as it will."""
-        if len(self._active) >= self.config.max_scenes:
+        if self.full():
             return None
         self._count += 1
         kind = heat(opening.action, opening.style)

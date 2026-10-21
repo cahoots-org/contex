@@ -18,6 +18,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
 from examples.rumor_mill.rumors import Rumors
+from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.tests import helpers
@@ -300,6 +301,18 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
             if any(word in key for word in SUSPICION_KEYS):
                 assert not isinstance(value, int | float) or isinstance(value, bool) or key == "goals", (key, value)
                 assert value not in scores, (key, value)
+
+
+def test_scene_event_reaches_the_websocket(game):
+    scene = Scene("s-1", "well", "w-1", "w-1", False, "u-1", {"v1", "v2"}, {"v1", "v2"}, ["u-1", "u-2"], 0.73)
+    with game.client.websocket_connect(WS) as ws:
+        game.feed.on_scene(scene)
+        event = receive(ws)
+    assert (event["kind"], event["tone"], event["people"], event["lines"]) == ("scene", "conversation", 2, 2)
+    assert "0.73" not in json.dumps(event)
+    for key, value in walk(event):
+        if any(word in key for word in SUSPICION_KEYS):
+            assert not isinstance(value, int | float) or isinstance(value, bool), (key, value)
 
 
 def test_state_carries_cards_beyond_the_replay_window(game):

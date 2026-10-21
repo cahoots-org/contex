@@ -2,6 +2,7 @@ from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.town import Town
 
 
@@ -51,7 +52,7 @@ def test_events_carry_ids_depth_and_listener_names():
     assert (w.kind, w.data["uid"], w.data["target"], w.data["text"]) == ("whisper", "w-1", "Bert", "psst")
     assert hop.kind == "hop" and hop.id > w.id and hop.at >= w.at
     assert (hop.data["parent"], hop.data["root"], hop.data["depth"]) == ("u-1", "w-1", 2)
-    assert (hop.data["listeners"], hop.data["heard"]) == (["Bert"], 1)
+    assert (hop.data["listeners"], hop.data["heard"], hop.data["scene"]) == (["Bert"], 1, None)
     assert hop.to_json()["kind"] == "hop" and "line" not in hop.to_json()
     assert lines == ['Marta told Bert: "the miller drowns flour"']
 
@@ -152,3 +153,18 @@ def test_time_lines_name_the_day_at_dawn():
     feed.on_time(2, "evening")
     assert lines == ["Day 2 dawns over the village.", "Evening falls, and lamps are lit."]
     assert [(e.kind, e.data["day"], e.data["phase"]) for e in feed.recent] == [("time", 2, "morning"), ("time", 2, "evening")]
+
+
+def test_scene_event_carries_counts_and_no_momentum():
+    feed, lines = make()
+    scene = Scene("s-1", "tavern", "w-1", "w-1", True, "u-1", {"v1", "v2"}, {"v1", "v2"}, ["u-1", "u-2"], 0.83)
+    feed.on_scene(scene)
+    scene.ended = "cooled"
+    feed.on_scene(scene)
+    feed.on_delivery(utt("u-1"), ["v2"], scene="s-1")
+    going, ended, hop = feed.recent
+    assert going.data == {"scene_id": "s-1", "rumor": "w-1", "opening": "u-1", "place": "tavern", "tone": "argument",
+                          "people": 2, "lines": 2, "ended": None}
+    assert ended.data["ended"] == "The argument died down."
+    assert hop.data["scene"] == "s-1"
+    assert lines == ['Bert told Marta: "the miller waters his flour"']

@@ -46,10 +46,12 @@ def test_opening_heat_sets_the_starting_momentum(action, style, momentum):
 
 def test_no_more_than_max_scenes_run():
     scenes, _ = scenes_for("v1", "v2", max_scenes=1)
+    assert not scenes.full()
     scene = scenes.start(opening(), "v2", "w-1", None)
+    assert scenes.full()
     assert scenes.start(opening(speaker="v2"), "v1", "w-1", None) is None
     scenes.end(scene, "cooled")
-    assert scene.ended == "cooled" and scenes.of("v1") is None
+    assert scene.ended == "cooled" and scenes.of("v1") is None and not scenes.full()
     assert scenes.start(opening(), "v2", "w-1", None).id == "s-2"
 
 
