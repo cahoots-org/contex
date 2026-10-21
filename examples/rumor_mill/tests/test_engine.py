@@ -1345,6 +1345,27 @@ async def test_max_scenes_holds_back_a_new_scene(talkers):
 
 
 @pytest.mark.asyncio
+async def test_two_answers_to_one_exchange_open_one_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", "v3", scene_cooldown_seconds=5)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v3": [(SPEAK, 1.0)]}
+    add_topic = engine.rumors.add_topic
+
+    async def slow_add_topic(*args):
+        await asyncio.sleep(SETTLE)
+        await add_topic(*args)
+
+    engine.rumors.add_topic = slow_add_topic
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    hand(engine, "v3", "o-1")
+    await wait_for(lambda: len(feed.deliveries) == 2)
+    assert {e["scene_id"] for e in scene_events(feed)} == {"s-1"}
+    assert engine.scenes.of("v2") is engine.scenes.of("v3")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_an_off_topic_line_ends_the_scene_and_is_not_addressed(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2", similarity=0.4)
     talkers.plan = {"v2": [(SPEAK, 1.0)]}

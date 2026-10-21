@@ -467,7 +467,7 @@ class Engine:
         exchange, and whether they just joined.
 
         A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is. An answer
-        to a full scene's line is ordinary talk.
+        to a full scene's line, or to someone already in another scene, is ordinary talk.
         """
         self._end_stalled_scenes()
         scene = self.scenes.of(v.id)
@@ -479,14 +479,15 @@ class Engine:
                 return held, True
             return None, False
         opening = self._exchange(decision.source, v.id, place)
-        if opening is None:
+        if opening is None or self.scenes.of(opening.speaker) is not None:
             return None, False
         root = self.lineage.root(opening.id)
         if self.rumors.carries(root, opening.id):
             scene = self.scenes.start(opening, v.id, root, root)
-        elif place == self.player_place() and not self.scenes.full():
-            await self.rumors.add_topic(opening.id, opening.text, datetime.now(UTC))
+        elif place == self.player_place():
             scene = self.scenes.start(opening, v.id, opening.id, None)
+            if scene is not None:
+                await self.rumors.add_topic(opening.id, opening.text, datetime.now(UTC))
         if scene is not None:
             self.feed.on_scene(scene)
         return scene, False
