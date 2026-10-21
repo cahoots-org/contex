@@ -968,6 +968,9 @@ function chip(e) {
   } else if (e.state === "brushed_off") {
     if (e.hint) node.append("Brushed you off: ", el("span", { className: "brush", textContent: `“${e.hint}”` }));
     else node.append("Brushed you off.");
+  } else if (e.state === "near_miss") {
+    if (e.hint) node.append("Leaned in: ", el("span", { className: "brush", textContent: `“${e.hint}”` }));
+    else node.append("Leaned in.");
   } else if (SAID[e.state]) {
     node.append(SAID[e.state](e));
   }
@@ -977,7 +980,7 @@ function chip(e) {
 function showStatus(e, fresh) {
   statuses.set(e.whisper_id, e);
   if (e.state === "answered") startTalk(e, fresh);
-  else if (e.state === "moved_on" || e.state === "brushed_off") endTalk(e.villager_id);
+  else if (e.state === "moved_on" || e.state === "brushed_off" || e.state === "near_miss") endTalk(e.villager_id);
   const item = feed.querySelector(`.whisper[data-uid="${CSS.escape(e.whisper_id)}"]`);
   if (!item) return;
   const old = item.querySelector(".chip");

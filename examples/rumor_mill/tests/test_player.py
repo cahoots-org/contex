@@ -105,6 +105,12 @@ class StubWriter:
             raise line
         return line
 
+    async def go_on(self, villager, newcomer_line):
+        line = self.lines.pop(0)
+        if isinstance(line, Exception):
+            raise line
+        return line
+
     async def brush_off(self, villager, concern):
         self.concerns.append(concern)
         if self.gate:
@@ -398,7 +404,9 @@ async def test_check_queries_each_need_at_its_threshold():
     player.town.get("v1").needs.extend(["bread", "flour"])
     engine.baselines = StubBaselines(0.5, flour=0.9)
     await player.whisper_to("v1", "the oven is cold")
-    assert {q: kwargs["threshold"] for _, q, kwargs in engine.contex.queries} == {"bread": 0.5, "flour": 0.9}
+    assert {q: kwargs["threshold"] for _, q, kwargs in engine.contex.queries} == {
+        "bread": pytest.approx(0.49), "flour": pytest.approx(0.89),
+    }
     player.close()
 
 
@@ -568,3 +576,33 @@ async def test_an_open_conversation_takes_precedence_over_a_thread():
     player.engine.conversations["v1"] = {"id": "w-9", "answered": False}
     await player.whisper_to("v1", "I could look at the wheel")
     assert conversations(player) == [None, "w-9"]
+
+
+def near_missing_player(*lines):
+    player = hinted_player(*lines)
+    player.engine.contex = StubContex({NEEDS[0]: landing(0.495)})
+    return player
+
+
+@pytest.mark.asyncio
+async def test_a_near_miss_leans_in_and_opens_a_thread():
+    player = near_missing_player("Go on, then.")
+    assert await player.whisper_to("v1", "the wheel looks tired") is None
+    await wait_for(lambda: len(statuses(player)) == 3)
+    states = statuses(player)
+    assert [s["state"] for s in states] == ["checking", "near_miss", "near_miss"]
+    assert "hint" not in states[1] and states[2]["hint"] == "Go on, then."
+    assert player.engine.direct == []
+    assert player._threads["v1"]["need"] == NEEDS[0]
+    await player.whisper_to("v1", "I could look at the wheel")
+    assert conversations(player) == [None, "w-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_near_miss_on_the_last_try_is_a_brush_off():
+    player = near_missing_player("Wheel's groaning.", "Girl wants the city.")
+    await miss(player)
+    player.engine.contex = StubContex({NEEDS[1]: landing(0.495, "utt:w-2")})
+    await miss(player)
+    assert [s["state"] for s in statuses(player)] == ["checking", "near_miss", "near_miss", "checking", "brushed_off", "brushed_off"]
+    assert "v1" not in player._threads

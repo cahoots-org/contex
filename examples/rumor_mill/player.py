@@ -125,10 +125,12 @@ class Player:
             self.feed.on_place(self.place)
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
-        hits, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))
-        if hits is None:
+        found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))
+        if found is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
+        hits = [m for _, m in found if m.clearance >= 0]
+        near_misses = [(need, m) for need, m in found if m.clearance < 0]
         if hits:
             self._threads.pop(target.id, None)
             hit = Match(
@@ -143,13 +145,18 @@ class Player:
             else:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
-            self.feed.on_whisper_status(uid, target.id, target.name, "brushed_off")
+            leaning = bool(near_misses) and not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)
+            state = "near_miss" if leaning else "brushed_off"
+            self.feed.on_whisper_status(uid, target.id, target.name, state)
             open_now = self.engine.conversations.get(target.id)
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
                 self.engine.end_conversation(target.id)
-            concern = self._next_concern(target.id)
+            if leaning:
+                concern = max(near_misses, key=lambda n: n[1].clearance)[0]
+            else:
+                concern = self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
-            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern))
+            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text))
             self._brush_offs.add(task)
             task.add_done_callback(self._brush_offs.discard)
         return None
@@ -178,26 +185,28 @@ class Player:
 
     async def check(
         self, target: Villager, utterance: Utterance, since: str, hint_need: str | None = None,
-    ) -> list[Match] | None:
-        """The whisper's hits on the target's needs, each with its clearance; empty for a miss, None on error.
+    ) -> list[tuple[str, Match]] | None:
+        """The whisper's (need, match) pairs within the near-miss band of each need's bar, None on error.
 
+        Each match carries its clearance against the bar: below zero is a near miss.
         The hinted need is held to its bare baseline plus the hint margin; the rest to their full threshold.
         """
         key = f"utt:{utterance.id}"
         project = mind_project(self.config.session, target.id)
         bars = {need: self._bar(need, need == hint_need) for need in target.needs}
+        floor = self.config.near_miss_band
         try:
             found = await asyncio.gather(*(
-                self.engine.contex.query(project, need, top_k=self.config.top_k, since=since, threshold=bars[need])
+                self.engine.contex.query(project, need, top_k=self.config.top_k, since=since, threshold=bars[need] - floor)
                 for need in target.needs
             ))
         except Exception:
             log.exception("whisper check for %s failed", target.id)
             return None
         return [
-            replace(m, clearance=m.similarity - bars[need])
+            (need, replace(m, clearance=m.similarity - bars[need]))
             for need, matches in zip(target.needs, found) for m in matches
-            if m.data_key == key and m.similarity is not None and m.similarity >= bars[need]
+            if m.data_key == key and m.similarity is not None and m.similarity >= bars[need] - floor
         ]
 
     def _bar(self, need: str, hinted: bool) -> float:
@@ -220,17 +229,22 @@ class Player:
             task.cancel()
         self._brush_offs.clear()
 
-    async def _hint(self, villager_id: str, name: str, uid: str, concern: str | None) -> None:
-        """Add the brush-off line, or a plain shrug, to a missed whisper's status."""
+    async def _hint(
+        self, villager_id: str, name: str, uid: str, concern: str | None, state: str = "brushed_off", text: str = "",
+    ) -> None:
+        """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
         if self._over():
             return
         try:
-            line = await self._brush_off(villager_id, concern)
+            if state == "near_miss":
+                line = await self._go_on(villager_id, text)
+            else:
+                line = await self._brush_off(villager_id, concern)
         except Exception:
-            log.exception("brush-off for %s failed", villager_id)
+            log.exception("%s line for %s failed", state, villager_id)
             line = None
         if not self._over():
-            self.feed.on_whisper_status(uid, villager_id, name, "brushed_off", hint=line)
+            self.feed.on_whisper_status(uid, villager_id, name, state, hint=line)
 
     def _next_concern(self, villager_id: str) -> str | None:
         """One of the villager's needs not hinted at yet, starting over once all have been."""
@@ -267,3 +281,13 @@ class Player:
             if line and not echoes(line, concern):
                 return line
         return None
+
+    async def _go_on(self, villager_id: str, text: str) -> str | None:
+        """An in-character line urging the newcomer on, or None for a plain lean-in."""
+        if self.writer is None or villager_id not in self.town:
+            return None
+        try:
+            return await self.writer.go_on(self.town.get(villager_id), text) or None
+        except Exception:
+            log.exception("go-on for %s failed", villager_id)
+            return None

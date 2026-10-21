@@ -149,3 +149,15 @@ async def test_say_tells_it_as_a_juicy_secret_in_the_conspiratorial_manner():
 def test_first_line_drops_stage_directions():
     raw = "*lowers voice conspiratorially* Mark my words, the taxes are *really* climbing."
     assert first_line(raw) == "Mark my words, the taxes are climbing."
+
+
+@pytest.mark.asyncio
+async def test_go_on_urges_the_newcomer_on_in_one_line():
+    client = StubClient('"Go on, I am listening."\nMore.')
+    line = await Writer(client, "haiku-test").go_on(villager(), "the oven looks tired")
+    assert line == "Go on, I am listening."
+    call = client.messages.calls[0]
+    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued", "under 15 words"))
+    assert "owes me flour" not in call["system"]
+    assert "the oven looks tired" in call["messages"][0]["content"]
+    assert call["max_tokens"] == 40

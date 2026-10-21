@@ -17,6 +17,7 @@ from examples.rumor_mill.town import PLAYER_ID, Town
 REPLAY_EVENTS = 500
 LISTENING = ("checking", "busy", "heard")
 RESOLVED = ("kept", "took_the_bait", "warned", "moved_on")
+LEANING = ("brushed_off", "near_miss")
 TIME_LINES = {
     "morning": "Day {day} dawns over the village.",
     "afternoon": "The sun is high over the village.",
@@ -103,7 +104,7 @@ class Feed:
         )
 
     def on_whisper_status(self, whisper_id: str, villager_id: str, name: str, state: str, **extra) -> None:
-        """Report where a whisper stands: checking, busy (with until), heard, brushed_off (then with hint),
+        """Report where a whisper stands: checking, busy (with until), heard, brushed_off or near_miss (then with hint),
         not_carried, or what the villager did with it: kept, took_the_bait (with told), warned, answered
         (not final), or moved_on once a conversation ends.
 
@@ -113,7 +114,7 @@ class Feed:
         """
         if whisper_id in self._resolved and state not in RESOLVED:
             return
-        if whisper_id in self._answered and (state in LISTENING or state == "brushed_off"):
+        if whisper_id in self._answered and (state in LISTENING or state in LEANING):
             return
         if state == "answered":
             self._answered.add(whisper_id)
@@ -124,9 +125,12 @@ class Feed:
         if state in RESOLVED:
             self._resolved.add(whisper_id)
         text = ""
-        if state == "brushed_off" and "hint" in extra:
+        if state in LEANING and "hint" in extra:
             hint = extra["hint"]
-            text = f'{name} brushes you off: "{hint}"' if hint else f"{name} shrugs it off."
+            if state == "near_miss":
+                text = f'{name} leans in: "{hint}"' if hint else f"{name} leans in."
+            else:
+                text = f'{name} brushes you off: "{hint}"' if hint else f"{name} shrugs it off."
         self.emit("whisper_status", text, whisper_id=whisper_id, villager_id=villager_id, name=name, state=state, **extra)
 
     def listening(self, villager_id: str) -> list[tuple[str, str]]:

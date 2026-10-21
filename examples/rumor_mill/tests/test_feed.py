@@ -168,3 +168,14 @@ def test_scene_event_carries_counts_and_no_momentum():
     assert ended.data["ended"] == "The argument died down."
     assert hop.data["scene"] == "s-1"
     assert lines == ['Bert told Marta: "the miller waters his flour"']
+
+
+def test_a_near_miss_prints_once_its_line_is_settled():
+    feed, lines = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "near_miss")
+    assert lines == []
+    feed.on_whisper_status("w-1", "v1", "Bert", "near_miss", hint="Go on.")
+    feed.on_whisper_status("w-2", "v1", "Bert", "near_miss", hint=None)
+    feed.on_whisper_status("w-3", "v1", "Bert", "answered")
+    feed.on_whisper_status("w-3", "v1", "Bert", "near_miss", hint="Late.")
+    assert lines == ['Bert leans in: "Go on."', "Bert leans in."]

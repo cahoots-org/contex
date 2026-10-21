@@ -10,6 +10,7 @@ from examples.rumor_mill.models import Villager
 SAY_MAX_TOKENS = 80
 TURN_AWAY_MAX_TOKENS = 60
 WARN_MAX_TOKENS = 60
+GO_ON_MAX_TOKENS = 40
 # How a player whisper reads when it reaches a villager.
 WHISPER_FRAMING = re.compile(r"^The newcomer whispered to you at the [^:]*: ")
 
@@ -102,6 +103,18 @@ class Writer:
             "No stage directions, no quotation marks, no preamble."
         )
         return first_line(await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS))
+
+    async def go_on(self, villager: Villager, newcomer_line: str) -> str:
+        """The villager leaning in to urge the newcomer on, in one line, without saying what interests them."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "A newcomer just whispered something that nearly caught your interest. Urge them to go on "
+            "in one short sentence, under 15 words, in your own voice. "
+            "Never say what interests you or what you want to hear. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        return first_line(await self.complete(system, f"The newcomer said: {newcomer_line}", max_tokens=GO_ON_MAX_TOKENS))
 
     async def turn_away(self, villager: Villager) -> str:
         """The villager refusing to hear the newcomer any more, in one line."""
