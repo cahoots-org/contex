@@ -660,11 +660,14 @@ function cardScene(e, fresh) {
       el("p", { className: "scene-head" }, el("span"), toggle), el("ol", { className: "scene-lines" }));
     addTo(card, ".scenes", item, fresh);
     const opening = card.querySelector(`.thread .hop[data-uid="${CSS.escape(e.opening)}"]`);
-    if (opening) {
-      item.querySelector(".scene-lines").append(opening);
-      countThread(card);
-      if (rover === opening) setRover(toggle);
+    const earlier = card.querySelectorAll(`.thread .hop[data-scene="${CSS.escape(e.scene_id)}"]`);
+    const lines = item.querySelector(".scene-lines");
+    for (const hop of new Set([opening, ...earlier])) {
+      if (!hop) continue;
+      lines.append(hop);
+      if (rover === hop) setRover(toggle);
     }
+    countThread(card);
   }
   item.querySelector(".scene-head span").textContent =
     `${sceneWords(e.tone, e.place)}: ${e.people} ${e.people === 1 ? "person" : "people"}, ${plural(e.lines, "line")}`;
@@ -870,6 +873,7 @@ function render(e, fresh) {
         addTo(scene, ".scene-lines", node, fresh);
         return null;
       }
+      if (e.scene) node.dataset.scene = e.scene;
       const card = cards.get(cardOf.get(e.root));
       if (!card) return node;
       shown.add(e.uid);

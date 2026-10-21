@@ -170,6 +170,19 @@ def test_scene_event_carries_counts_and_no_momentum():
     assert lines == ['Bert told Marta: "the miller waters his flour"']
 
 
+def test_a_scene_is_silent_until_two_people_have_spoken():
+    feed, _ = make()
+    scene = Scene("s-1", "tavern", "w-1", "w-1", False, "u-1", {"v1", "v2"}, {"v1"}, ["u-1"], 0.8)
+    feed.on_scene(scene)
+    scene.ended = "cooled"
+    feed.on_scene(scene)
+    assert list(feed.recent) == []
+    scene.people.add("v2")
+    feed.on_scene(scene)
+    [event] = feed.recent
+    assert (event.kind, event.data["people"]) == ("scene", 2)
+
+
 def test_a_near_miss_prints_once_its_line_is_settled():
     feed, lines = make()
     feed.on_whisper_status("w-1", "v1", "Bert", "near_miss")

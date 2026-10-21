@@ -172,7 +172,9 @@ class Feed:
                   reason=reason, uid=u.id, scene=scene)
 
     def on_scene(self, scene: Scene) -> None:
-        """A scene started, went on, or ended; the terminal prints nothing."""
+        """A scene with at least two people went on or ended; the terminal prints nothing."""
+        if len(scene.people) < 2:
+            return
         tone = "argument" if scene.heated else "conversation"
         self.emit(
             "scene", scene_id=scene.id, rumor=scene.rumor, opening=scene.opening, place=scene.place, tone=tone,
