@@ -82,3 +82,4 @@ dmypy.json
 # Rumor Mill village cache (python -m examples.rumor_mill)
 rumor_mill_seed.json
 rumor_mill_seed.json.baselines.json
+rumor_mill_seed.json.places.json
