@@ -300,3 +300,11 @@ async def test_answer_offered_only_after_a_landed_newcomer_line():
     decision = await decide(jev, view(new=[match("m1"), line], answerable=[line]))
     assert ANSWER in jev.questions["action"].criteria
     assert decision == Decision(ANSWER, line, None, None)
+
+
+@pytest.mark.asyncio
+async def test_warm_styles_are_offered_and_kept():
+    jev = StubJev({"action": SPEAK, "style": "conspiratorial"})
+    d = await decide(jev, view())
+    assert {"delighted", "worried", "conspiratorial"} <= set(jev.questions["style"].criteria)
+    assert d.style == "conspiratorial"

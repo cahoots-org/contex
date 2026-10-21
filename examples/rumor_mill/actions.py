@@ -46,6 +46,9 @@ STYLES = {
     "add_detail": "Embellish it with an invented but plausible detail.",
     "soften": "Play it down and make it sound less serious.",
     "mock": "Retell it with scorn or ridicule.",
+    "delighted": "Tell it with relish and delight.",
+    "worried": "Tell it anxiously, worried for those involved.",
+    "conspiratorial": "Lower your voice and share it as a juicy secret.",
 }
 
 TARGET_KIND = {

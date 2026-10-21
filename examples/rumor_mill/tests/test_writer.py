@@ -123,3 +123,10 @@ async def test_say_and_reply_mention_a_grudge_only_when_there_is_one():
     assert "grudge" not in (kind_say + kind_reply).lower()
     assert "Your grudge: owes me flour." in sour_say and "Your grudge: owes me flour." in sour_reply
     assert all("relish and curiosity, not malice" in s for s in (kind_say, sour_say))
+
+
+@pytest.mark.asyncio
+async def test_say_tells_it_as_a_juicy_secret_in_the_conspiratorial_manner():
+    client = StubClient("Between us, he did it.")
+    await Writer(client, "haiku-test").say(villager(), Decision("speak", None, None, "conspiratorial"), "Bob stole a loaf", "all")
+    assert "Manner: Lower your voice and share it as a juicy secret." in client.messages.calls[0]["messages"][0]["content"]
