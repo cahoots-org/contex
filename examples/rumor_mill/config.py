@@ -31,6 +31,8 @@ class Config:
     on_topic_margin: float = 0.035
     # How similar a villager's earlier line must be to what the newcomer says to be remembered.
     said_floor: float = 0.8
+    # How similar a line the villager heard must be to what the newcomer says to be recalled.
+    heard_floor: float = 0.84
     # How much more clearance each retelling hop needs before it wakes a listener.
     fatigue_per_hop: float = 0.0015
     # How much more clearance overheard room talk needs than a line told to the listener.

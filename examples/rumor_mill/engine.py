@@ -273,7 +273,7 @@ class Engine:
             return []
         found = [
             h for h in hits
-            if h.similarity is not None and h.similarity >= self.config.said_floor
+            if h.similarity is not None and h.similarity >= self.config.heard_floor
             and h.data.get("id") != exclude and not self.lineage.is_whisper(h.data.get("id"))
         ]
         return sorted(found, key=lambda h: h.similarity, reverse=True)[:3]

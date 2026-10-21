@@ -1591,7 +1591,7 @@ def heard_line(uid, similarity, text="Bo said at the well: the miller waters his
 @pytest.mark.asyncio
 async def test_recall_heard_skips_the_whisper_itself_and_weak_matches():
     contex = StubContex()
-    contex.default = [heard_line("w-1", 0.99), heard_line("u-3", 0.85), heard_line("u-2", 0.9), heard_line("u-4", 0.5)]
+    contex.default = [heard_line("w-1", 0.99), heard_line("u-3", 0.85), heard_line("u-2", 0.9), heard_line("u-4", 0.82)]
     engine, _, _ = await setup("v1", contex=contex)
     found = await engine.recall_heard("v1", "The newcomer whispered to you at the square: psst", "w-1")
     assert [m.data_key for m in found] == ["utt:u-2", "utt:u-3"]
