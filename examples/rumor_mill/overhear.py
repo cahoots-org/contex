@@ -47,11 +47,12 @@ class Overhear:
             return None
         if u.action in HEATED_ACTIONS or u.style in HEATED_STYLES:
             return "heated"
-        if u.style in LIVELY_STYLES:
+        lively = u.style in LIVELY_STYLES
+        if lively and self.rng.random() < self.config.lively_rate:
             return "lively"
         if await self._touches_a_goal(u):
             return "goal"
-        if self.rng.random() < self.config.overhear_rate:
+        if not lively and self.rng.random() < self.config.overhear_rate:
             return "random"
         return None
 

@@ -76,9 +76,17 @@ async def test_heated_kept(action, style):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("style", ["exaggerated", "delighted", "worried", "conspiratorial", "add_detail"])
 async def test_lively_kept(style):
-    overhear, contex = await make()
+    overhear, contex = await make(roll=0.0)
     assert await overhear.keep(line(action=RETELL, style=style), "tavern") == "lively"
     assert contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_lively_rate():
+    overhear = Overhear(StubContex(), StubBaselines(0.6), Config(overhear_rate=1.0), random.Random(7))
+    kept = [await overhear.keep(line(style="delighted"), "tavern") for _ in range(4000)]
+    assert set(kept) == {"lively", None}
+    assert 0.37 < kept.count("lively") / len(kept) < 0.43
 
 
 @pytest.mark.asyncio

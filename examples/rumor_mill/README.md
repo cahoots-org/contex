@@ -239,9 +239,10 @@ Warnings, refusals, the mood line, and goal changes stay outside the cards.
 Between the cards is village talk: lines you overhear where you are, which is
 where you last whispered ("You're at the tavern" above the feed). You don't
 hear everything, only four kinds of line: heated ones (someone mocking,
-blaming, confronting, or denying), lively ones (someone telling it with
-relish, worry, or a lowered voice, or exaggerating or embellishing it), ones
-about one of your goals, and one in eight of the rest, picked at random.
+blaming, confronting, or denying), four in ten lively ones (someone telling
+it with relish, worry, or a lowered voice, or exaggerating or embellishing
+it), ones about one of your goals, and one in eight of the rest, picked at
+random.
 Heated and lively lines are marked as such. A block of village talk shows
 the place, how many lines it holds, and the two newest; "Show all" opens the
 rest. Each line ends with "Talk", which puts the speaker's name in the
@@ -314,6 +315,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_FATIGUE_PER_HOP` | `0.003` | extra clearance over a need's threshold each retelling hop needs before it wakes a listener |
 | `RUMOR_MILL_OVERHEARD_MARGIN` | `0.01` | extra clearance a line said to the room needs over one told to the listener |
 | `RUMOR_MILL_OVERHEAR_RATE` | `0.125` | share of ordinary talk at your place that you overhear |
+| `RUMOR_MILL_LIVELY_RATE` | `0.4` | share of lively talk at your place that you overhear |
 | `RUMOR_MILL_SAID_FLOOR` | `0.8` | how similar a villager's earlier line must be to what you say to them for them to recall it |
 | `RUMOR_MILL_TALK_TURNS` | `3` | most times a villager answers you in one conversation |
 | `RUMOR_MILL_COOLDOWN_SECONDS` | `30` | least time between a villager's turns |
