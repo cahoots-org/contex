@@ -96,3 +96,12 @@ async def test_an_error_in_the_session_propagates_out_of_until_over():
 
     with pytest.raises(RuntimeError, match="whisper failed"):
         await asyncio.wait_for(cli.until_over(broken(), Game(feed)), 1)
+
+
+def test_inspect_shows_a_grudge_only_when_there_is_one():
+    town = Town()
+    town.add(Villager("v1", "Marta", "baker", "calm", "", [], {}))
+    town.add(Villager("v2", "Bert", "miller", "sour", "the mayor cheated him", [], {}))
+
+    assert not any(line.startswith("Grudge") for line in cli._inspect(town, "Marta"))
+    assert "Grudge: the mayor cheated him" in cli._inspect(town, "Bert")

@@ -62,7 +62,9 @@ python -m examples.rumor_mill --web
 ```
 
 The first run asks Haiku for the village in batches of 10 and writes it to
-`rumor_mill_seed.json`; later runs reuse that file. Delete it to get a new
+`rumor_mill_seed.json`; later runs reuse that file. Most villagers are
+good-natured; about one in five is sour and holds a grudge, and those are the
+village's skeptics, quick to doubt or mock a rumor. Delete the file to get a new
 village; if its size differs from `RUMOR_MILL_POPULATION` the game exits and
 says so. Each run starts with empty minds unless you set `RUMOR_MILL_SESSION`.
 
@@ -132,7 +134,7 @@ In the terminal:
 <name>: <text>            whisper to a villager, e.g. Marta: the miller waters his flour
 whisper <name>: <text>    the same
 villagers                 everyone in town, with occupation and place
-inspect <name>            personality, grudge, and relationships
+inspect <name>            personality, any grudge, and relationships
 goals                     your goals and how close each one is
 usage                     tokens used so far and their estimated cost
 help                      these commands
@@ -200,7 +202,7 @@ place where the best match is. Escape clears it. The whisper box offers the
 same matches as you type; arrow keys and Enter pick one.
 
 Click a face, or press Enter on a name, to open the villager's card: occupation,
-personality, grudge, relationships, and what you know. "Whisper to" fills the
+personality, grudge if they have one, relationships, and what you know. "Whisper to" fills the
 whisper box with their name. Escape closes the card.
 
 A face is generated from the villager's id and trade, so the same villager has

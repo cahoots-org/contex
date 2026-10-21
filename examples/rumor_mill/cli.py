@@ -54,7 +54,7 @@ def _inspect(town: Town, name: str) -> list[str]:
     return [
         f"{v.name}, {v.occupation}",
         f"Personality: {v.personality}",
-        f"Grudge: {v.grudge}",
+        *([f"Grudge: {v.grudge}"] if v.grudge else []),
         f"Relationships: {relations or 'none'}",
     ]
 

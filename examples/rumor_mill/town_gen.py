@@ -20,6 +20,8 @@ REVERSE = {
 ROLES = ("mayor", "miller")
 # Weighted draw, so friends are commoner than spouses.
 KINDS = ["friend", "friend", "rival", "debtor", "creditor", "spouse"]
+# The share of villagers who are sour and hold a grudge.
+SOUR_SHARE = 0.2
 
 SYSTEM = (
     "You invent villagers for a small medieval village. Reply with only JSON, no prose."
@@ -27,15 +29,24 @@ SYSTEM = (
 PROMPT = (
     "Invent {n} distinct villagers as a top-level JSON array of objects, not wrapped in "
     "another object. Each item has: name (a full name), occupation, personality (one "
-    "short phrase), grudge (one sentence about someone or something they resent), and "
-    "needs: a JSON array of 3 to 5 strings, each one sentence in the villager's own voice "
+    "short phrase), grudge (a string, empty for most villagers), and needs: a JSON array of 3 to 5 strings, each one sentence in the villager's own voice "
     "about news they would prick up their ears at: one about their trade, one about a "
     "person they love or resent, one about their standing or money, and one about an odd "
     "fascination or fear of their own (omens, ghosts, the stars, the church, strangers, "
     "curses, the lord's taxes, or anything else). Make needs particular to this person and "
     "different from the other villagers', never generic topics like news or gossip. "
-    "{roles}{taken}"
+    "{temper}{roles}{taken}"
 )
+GOOD = (
+    "good-natured, with a temperament such as warm, curious, cheerful, timid, nosy, pious, "
+    'absent-minded, or kindly, and an empty grudge ""'
+)
+SOUR = (
+    "sour, with a grudge: one sentence about someone or something they resent. Sour villagers "
+    "are the village's skeptics, quick to doubt, deny, or mock the rumors they hear, and their "
+    "personality shows it"
+)
+MIX = f"Most villagers are {GOOD}; vary their temperaments. Roughly one villager in five is {SOUR}. "
 
 
 BULLET = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s*")
@@ -84,7 +95,7 @@ def _missing_roles(villagers: list[Villager]) -> str:
 def _villager(vid: str, raw: dict) -> Villager:
     return Villager(
         id=vid, name=raw["name"], occupation=raw["occupation"],
-        personality=raw["personality"], grudge=raw["grudge"],
+        personality=raw["personality"], grudge=raw["grudge"] or "",
         needs=list(raw["needs"])[:5], relationships={},
     )
 
@@ -103,7 +114,7 @@ async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> 
         if villagers:
             names = ", ".join(f"{v.name} ({v.occupation})" for v in villagers[-30:])
             taken = f"Do not reuse these names or occupations: {names}."
-        text = await writer.complete(SYSTEM, PROMPT.format(n=n, roles=_missing_roles(villagers), taken=taken), max_tokens=4000)
+        text = await writer.complete(SYSTEM, PROMPT.format(n=n, temper=MIX, roles=_missing_roles(villagers), taken=taken), max_tokens=4000)
         try:
             parsed = extract_json(text)
         except ValueError:
@@ -200,7 +211,8 @@ async def generate_newcomer(
     """A new villager related to one or two living ones; departed ones only reserve their id and name."""
     everyone = [*departed, *existing]
     taken = "Do not reuse these names: " + ", ".join(v.name for v in everyone[-30:]) + "."
-    text = await writer.complete(SYSTEM, PROMPT.format(n=1, roles="", taken=taken), max_tokens=800)
+    temper = f"Make this villager {SOUR if rng.random() < SOUR_SHARE else GOOD}. "
+    text = await writer.complete(SYSTEM, PROMPT.format(n=1, temper=temper, roles="", taken=taken), max_tokens=800)
     raw = extract_json(text)
     if isinstance(raw, list):
         raw = raw[0] if raw else None

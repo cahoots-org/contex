@@ -214,3 +214,34 @@ async def test_newcomer_relates_only_to_living_and_keeps_ids_unique():
         )
         assert newcomer.id == "v060"
         assert set(newcomer.relationships) <= {v.id for v in living}
+
+
+@pytest.mark.asyncio
+async def test_an_empty_or_null_grudge_is_a_valid_villager():
+    writer = StubWriter(json.dumps([{**entry(0), "grudge": ""}, {**entry(1), "grudge": None}]))
+
+    villagers = await generate_villagers(writer, 2, random.Random(1))
+
+    assert [v.grudge for v in villagers] == ["", ""]
+
+
+@pytest.mark.asyncio
+async def test_generation_asks_for_mostly_kindly_villagers_and_a_few_sour_ones():
+    prompts = []
+
+    class RecordingWriter:
+        async def complete(self, system, user, max_tokens=400):
+            prompts.append(user)
+            return json.dumps([entry(i) for i in range(10)])
+
+    await generate_villagers(RecordingWriter(), 10, random.Random(1))
+    for seed in range(20):
+        await generate_newcomer(RecordingWriter(), ring(3), random.Random(seed))
+
+    assert "Most villagers are good-natured" in prompts[0]
+    assert "one villager in five is sour" in prompts[0]
+    assert 'empty grudge ""' in prompts[0]
+    newcomers = prompts[1:]
+    sour = [p for p in newcomers if "Make this villager sour" in p]
+    assert sour and len(sour) < len(newcomers) / 2
+    assert all("Make this villager good-natured" in p for p in newcomers if p not in sour)
