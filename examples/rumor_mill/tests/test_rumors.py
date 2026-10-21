@@ -25,7 +25,7 @@ def hop(uid, speaker="Bert", text="the miller waters his flour"):
 
 async def make(results=None, error=None, day=100.0):
     contex = StubContex(results, error)
-    rumors = Rumors(contex, StubBaselines(0.5), Config(session="s1", day_seconds=day))
+    rumors = Rumors(contex, StubBaselines(0.5), Config(session="s1", day_seconds=day, on_topic_margin=0.02))
     await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
     return rumors, contex
 
@@ -81,7 +81,7 @@ class SlowBaselines:
 async def test_a_hop_checked_before_the_baseline_waits_for_it():
     contex = StubContex({"close": [Match("rumor:w-1", {}, 0.53)]})
     baselines = SlowBaselines()
-    rumors = Rumors(contex, baselines, Config(session="s1"))
+    rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
     await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
     check = asyncio.create_task(rumors.on_topic("w-1", "close"))
     await asyncio.sleep(0.01)
@@ -96,7 +96,7 @@ async def test_a_hop_checked_before_the_baseline_waits_for_it():
 async def test_a_cancelled_check_leaves_the_baseline_for_the_next():
     contex = StubContex({"close": [Match("rumor:w-1", {}, 0.53)]})
     baselines = SlowBaselines()
-    rumors = Rumors(contex, baselines, Config(session="s1"))
+    rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
     await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
     first = asyncio.create_task(rumors.on_topic("w-1", "close"))
     await asyncio.sleep(0.01)
@@ -109,7 +109,7 @@ async def test_a_cancelled_check_leaves_the_baseline_for_the_next():
 
 @pytest.mark.asyncio
 async def test_close_cancels_a_pending_measure():
-    rumors = Rumors(StubContex(), SlowBaselines(), Config(session="s1"))
+    rumors = Rumors(StubContex(), SlowBaselines(), Config(session="s1", on_topic_margin=0.02))
     await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
     measuring = rumors._cards["w-1"].measuring
     rumors.close()
@@ -122,7 +122,7 @@ async def test_a_failed_baseline_is_measured_again_by_the_next_check():
     contex = StubContex({"close": [Match("rumor:w-1", {}, 0.53)]})
     baselines = SlowBaselines(fail_first=True)
     baselines.release.set()
-    rumors = Rumors(contex, baselines, Config(session="s1"))
+    rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
     await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
     assert await rumors.on_topic("w-1", "close")
     assert baselines.calls == 2
