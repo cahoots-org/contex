@@ -92,3 +92,15 @@ async def test_warn_asks_for_one_line_and_never_says_how_suspicious_anyone_is():
     assert "Never say how sure" in prompt
     assert re.search(r"\d\.\d|suspicion", prompt) is None
     assert call["max_tokens"] == 60
+
+
+@pytest.mark.asyncio
+async def test_say_shows_what_the_villager_said_before_only_when_given():
+    client = StubClient("Fine.", "Fine.")
+    writer = Writer(client, "haiku-test")
+    decision = Decision("speak", None, None, None)
+    await writer.say(villager(), decision, "psst", "the square")
+    await writer.say(villager(), decision, "psst", "the square", said=["Ada said at the square: the well is fine"])
+    plain, with_said = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
+    assert "the well is fine" not in plain
+    assert "the well is fine" in with_said

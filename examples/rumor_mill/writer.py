@@ -51,7 +51,7 @@ class Writer:
 
     async def say(
         self, villager: Villager, decision: Decision, source_text: str | None, audience: str,
-        names_newcomer: bool = False,
+        names_newcomer: bool = False, said: list[str] | None = None,
     ) -> str:
         """The villager's words for this decision, in their voice and chosen style.
 
@@ -74,6 +74,8 @@ class Writer:
         elif source_text:
             lines.append(f"What you heard: {WHISPER_FRAMING.sub('', source_text)}")
             lines.append("Do not say or hint who started this story.")
+        if said:
+            lines.append("What you said earlier: " + " / ".join(said))
         return await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS)
 
     async def brush_off(self, villager: Villager, concern: str) -> str:

@@ -274,3 +274,17 @@ async def test_warn_maps_target_and_style():
     jev = StubJev({"action": WARN, "villager_target": "v2", "style": "exaggerated"})
     d = await decide(jev, view(suspicion=0.5))
     assert d == Decision(WARN, match("m1"), "v2", "exaggerated")
+
+
+@pytest.mark.asyncio
+async def test_said_lines_reach_the_jev_state_at_most_three():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view(said=[match(f"s{i}", f"line {i}") for i in range(5)]))
+    assert jev.state["things_i_said_recently"] == ["line 0", "line 1", "line 2"]
+
+
+@pytest.mark.asyncio
+async def test_no_said_lines_leave_the_key_out_of_the_state():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view())
+    assert "things_i_said_recently" not in jev.state

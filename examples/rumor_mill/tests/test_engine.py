@@ -17,13 +17,13 @@ from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind
+from examples.rumor_mill.mind import Mind, said_project
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.tests.helpers import TIMEOUT, FakeMind, StubBaselines, StubContex, make, wait_for
-from examples.rumor_mill.town import Town
+from examples.rumor_mill.town import PLAYER_ID, Town
 
 SETTLE = 0.1
 
@@ -65,7 +65,7 @@ def turns(monkeypatch):
     return t
 
 
-async def setup(*vids, cooldown=0.05, game=None, rumors=None):
+async def setup(*vids, cooldown=0.05, game=None, rumors=None, contex=None, config=None):
     minds = {}
 
     def factory(v):
@@ -74,7 +74,7 @@ async def setup(*vids, cooldown=0.05, game=None, rumors=None):
 
     feed = RecordingFeed()
     engine = Engine(
-        Config(cooldown_seconds=cooldown), Town(), None, None, None, Lineage(), Ids(), feed,
+        config or Config(cooldown_seconds=cooldown), Town(), contex or StubContex(), None, None, Lineage(), Ids(), feed,
         mind_factory=factory, game=game, rumors=rumors,
     )
     for vid in vids:
@@ -841,3 +841,123 @@ async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     }
     assert lines == ['V1 told V2: "psst again"']
     await engine.stop()
+
+
+def said_line(uid="u-9", text="Ada said at the square: the well is fine"):
+    return Match(f"said:{uid}", {"id": uid, "text": text}, 0.9)
+
+
+@pytest.mark.asyncio
+async def test_spoken_lines_go_to_the_said_project(turns):
+    contex = StubContex()
+    engine, _, _ = await setup("v1", "v2", contex=contex)
+    utt = Utterance("u-1", "v1", "V1", "square", "the well is fine", None, "announced")
+    await engine.deliver(utt, ["v2"])
+    assert contex.published == [(said_project(engine.config.session, "v1"), "said:u-1", utt.to_data())]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_town_crier_line_is_not_remembered_as_said(turns):
+    contex = StubContex()
+    engine, _, _ = await setup("v1", contex=contex)
+    await engine.deliver(Utterance("u-1", "town", "The town crier", "gate", "a newcomer arrives", None, "announced"), ["v1"])
+    assert contex.published == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_players_whispers_are_not_remembered_as_said(turns):
+    contex = StubContex()
+    engine, _, _ = await setup("v1", contex=contex)
+    utt = Utterance("w-1", PLAYER_ID, "The newcomer", "square", "psst", None, "whispered to you")
+    await engine.deliver(utt, ["v1"])
+    assert contex.published == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_said_publish_is_logged_with_ids_only_and_delivery_goes_on(turns, caplog):
+    contex = StubContex()
+
+    async def broken(*args):
+        raise RuntimeError("down 0.93")
+
+    contex.publish = broken
+    engine, minds, _ = await setup("v1", "v2", contex=contex)
+    utt = Utterance("u-1", "v1", "V1", "square", "the well is fine", None)
+    with caplog.at_level(logging.WARNING):
+        await engine.deliver(utt, ["v2"])
+    assert minds["v2"].heard
+    warning = next(r for r in caplog.records if r.levelno == logging.WARNING)
+    assert "v1" in warning.getMessage() and "0.93" not in warning.getMessage() and "well" not in warning.getMessage()
+    await engine.stop()
+
+
+async def whisper_turn(turns, contex, **config):
+    engine, minds, _ = await setup("v1", contex=contex, config=Config(cooldown_seconds=0.05, **config))
+    minds["v1"].results = [[]]
+    engine.lineage.record("w-1", None, player=True)
+    text = "The newcomer whispered to you at the square: psst"
+    engine.hear_directly("v1", Match("utt:w-1", {"id": "w-1", "text": text}, 0.8))
+    await wait_for(lambda: len(turns.views) == 1)
+    await engine.stop()
+    return engine, turns.views[0]
+
+
+@pytest.mark.asyncio
+async def test_newcomer_line_retrieves_related_said_lines(turns):
+    contex = StubContex()
+    contex.default = [said_line("u-1"), Match("said:u-2", {"id": "u-2", "text": "unrelated"}, 0.5)]
+    engine, view = await whisper_turn(turns, contex)
+    assert [m.data_key for m in view.said] == ["said:u-1"]
+    [(project, query, kwargs)] = contex.queries
+    assert project == said_project(engine.config.session, "v1")
+    assert query == "psst"
+    assert kwargs == {"top_k": 3, "max_age_seconds": engine.config.memory_seconds, "threshold": 0}
+
+
+@pytest.mark.asyncio
+async def test_a_turn_without_a_newcomer_line_does_not_search_said(turns):
+    contex = StubContex()
+    engine, minds, _ = await setup("v1", contex=contex)
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    assert contex.queries == []
+    assert turns.views[0].said == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_said_floor_is_configurable(turns):
+    contex = StubContex()
+    contex.default = [said_line()]
+    _, view = await whisper_turn(turns, contex, said_floor=0.95)
+    assert view.said == []
+
+
+@pytest.mark.asyncio
+async def test_a_failed_said_search_leaves_no_lines_and_logs_ids_only(turns, caplog):
+    contex = StubContex(error=RuntimeError("down 0.93"))
+    with caplog.at_level(logging.WARNING):
+        _, view = await whisper_turn(turns, contex)
+    assert view.said == []
+    warning = next(r for r in caplog.records if r.levelno == logging.WARNING)
+    assert "v1" in warning.getMessage() and "0.93" not in warning.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_said_project_has_no_subscription(turns):
+    contex = StubContex()
+    contex.default = [said_line()]
+    subscribed = []
+
+    async def subscribe(project_id, *args, **kwargs):
+        subscribed.append(project_id)
+
+    contex.subscribe = subscribe
+    engine, _ = await whisper_turn(turns, contex)
+    utt = Utterance("u-1", "v1", "V1", "square", "the well is fine", None)
+    await engine.deliver(utt, [])
+    assert contex.queries and contex.published
+    assert not any(p == said_project(engine.config.session, "v1") for p in subscribed)

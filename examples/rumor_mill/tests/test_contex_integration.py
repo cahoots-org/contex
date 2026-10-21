@@ -13,7 +13,7 @@ from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind, mind_project
+from examples.rumor_mill.mind import Mind, mind_project, said_project
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.suspicion import Suspicion
@@ -195,3 +195,20 @@ async def test_direct_check_hits_only_the_need_it_clears():
     assert (vid, match.data_key) == ("v1", "utt:w-1") and match.similarity >= 0.5
     states = {(e.data["whisper_id"], e.data["state"]) for e in player.feed.recent if e.kind == "whisper_status"}
     assert {("w-1", "heard"), ("w-2", "brushed_off")} <= states
+
+
+async def test_a_spoken_line_is_found_in_the_said_project_by_a_paraphrase(capsys):
+    async with ContexClient(URL) as client:
+        config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}")
+        said = Utterance("u-1", "v1", "Ada", "square", "the well water has gone bad and folks are getting sick", None)
+        pid = said_project(config.session, "v1")
+        await client.publish(pid, "said:u-1", said.to_data())
+        found = []
+        for _ in range(20):
+            found = await client.query(pid, "you told me the water in the well is spoiled", top_k=3, threshold=0)
+            if found:
+                break
+            await asyncio.sleep(0.5)
+        with capsys.disabled():
+            print(f"said similarity {found[0].similarity:.3f} vs floor {config.said_floor}")
+        assert found[0].similarity >= config.said_floor

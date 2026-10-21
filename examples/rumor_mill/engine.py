@@ -15,13 +15,13 @@ from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
-from examples.rumor_mill.mind import Mind, group_project
+from examples.rumor_mill.mind import Mind, group_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
-from examples.rumor_mill.writer import Writer
+from examples.rumor_mill.writer import WHISPER_FRAMING, Writer
 
 log = logging.getLogger(__name__)
 
@@ -139,9 +139,10 @@ class Engine:
         """
         listeners = [i for i in listener_ids if i in self.town and i in self.minds]
         data = utterance.to_data()
-        results = await asyncio.gather(
-            *(self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners), return_exceptions=True,
-        )
+        hearing = [self.minds[i].hear(f"utt:{utterance.id}", data) for i in listeners]
+        if utterance.speaker in self.minds:
+            hearing.append(self._remember_said(utterance.speaker, f"said:{utterance.id}", data))
+        results = await asyncio.gather(*hearing, return_exceptions=True)
         for vid, result in zip(listeners, results):
             if isinstance(result, Exception):
                 log.error("delivery to %s failed", vid, exc_info=result)
@@ -159,6 +160,31 @@ class Engine:
             hop = on_topic and self.lineage.is_player_rooted(utterance.id)
             if reason := await self.overhear.keep(utterance, self.player_place(), hop):
                 self.feed.on_overheard(utterance, reason)
+
+    async def _remember_said(self, vid: str, key: str, data: dict) -> None:
+        """Keep a line the villager spoke in their said project, which nothing subscribes to."""
+        try:
+            await self.contex.publish(said_project(self.config.session, vid), key, data)
+        except Exception as e:
+            log.warning("remembering a line said by %s failed: %s", vid, type(e).__name__)
+
+    async def _recall_said(self, vid: str, lines: list[Match]) -> list[Match]:
+        """The villager's earlier lines that the newcomer's words match, best first."""
+        found: dict[str, Match] = {}
+        for m in lines:
+            words = WHISPER_FRAMING.sub("", m.data.get("text", ""))
+            try:
+                hits = await self.contex.query(
+                    said_project(self.config.session, vid), words,
+                    top_k=3, max_age_seconds=self.config.memory_seconds, threshold=0,
+                )
+            except Exception as e:
+                log.warning("searching what %s said failed: %s", vid, type(e).__name__)
+                continue
+            for hit in hits:
+                if hit.similarity is not None and hit.similarity >= self.config.said_floor:
+                    found.setdefault(hit.data_key, hit)
+        return sorted(found.values(), key=lambda h: h.similarity, reverse=True)[:3]
 
     async def _carries_rumor(self, utterance: Utterance, heard: list[str]) -> bool:
         """Whether a retelling of a whisper still carries it, recorded on its card; True for any other line."""
@@ -260,6 +286,7 @@ class Engine:
         keys = {m.data_key for m in new}
         # The newcomer's own whispers among the new items, for whisper outcomes.
         whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
+        said = await self._recall_said(v.id, whispers) if whispers else []
         place = self.town.place_of(v.id)
         view = TurnView(
             villager=v,
@@ -272,6 +299,7 @@ class Engine:
             suspicion=self.suspicion.score(v.id),
             warn_threshold=self.config.warn_threshold,
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
+            said=said,
         )
         action = None
         try:

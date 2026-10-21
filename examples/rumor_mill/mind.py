@@ -17,6 +17,10 @@ def mind_project(session: str, villager_id: str) -> str:
     return f"rumor-mill:{session}:mind:{villager_id}"
 
 
+def said_project(session: str, villager_id: str) -> str:
+    return f"rumor-mill:{session}:said:{villager_id}"
+
+
 def group_project(session: str, gid: str) -> str:
     return f"rumor-mill:{session}:group:{gid}"
 

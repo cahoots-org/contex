@@ -26,6 +26,8 @@ class Config:
     match_margin: float = 0.02
     # How far above a whisper's ordinary-talk similarity a retelling must score to stay on its rumor card.
     on_topic_margin: float = 0.02
+    # How similar a villager's earlier line must be to what the newcomer says to be remembered.
+    said_floor: float = 0.8
     # How much more clearance each retelling hop needs before it wakes a listener.
     fatigue_per_hop: float = 0.01
     # How much more clearance overheard room talk needs than a line told to the listener.

@@ -2,7 +2,7 @@
 
 import logging
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from typesafe_sdk import Choice, Score
 
@@ -20,6 +20,7 @@ MAX_OPTIONS = 255
 # Actions Jev rates below this are never drawn.
 MIN_ACTION_PROBABILITY = 0.1
 MAX_RECENT = 10
+MAX_SAID = 3
 
 ACTION_INSTRUCTIONS = (
     "You are deciding what one villager does next in a small village that runs on gossip. "
@@ -52,6 +53,8 @@ class TurnView:
     warn_threshold: float
     # New items that name the newcomer: the newcomer's own whispers and lines that say who started them.
     names_newcomer: list[Match]
+    # The villager's own earlier lines that the newcomer's words bring back.
+    said: list[Match] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,7 @@ def _suspicion_words(view: TurnView) -> str:
 
 def _state(view: TurnView) -> dict:
     v = view.villager
-    return {
+    state = {
         "villager": {
             "name": v.name, "occupation": v.occupation, "personality": v.personality,
             "grudge": v.grudge,
@@ -98,6 +101,9 @@ def _state(view: TurnView) -> dict:
         "groups": [g.name for g in view.member_groups],
         "suspicion_of_the_newcomer": _suspicion_words(view),
     }
+    if view.said:
+        state["things_i_said_recently"] = [_text(m) for m in view.said[:MAX_SAID]]
+    return state
 
 
 def _action_criteria(view: TurnView) -> dict:
