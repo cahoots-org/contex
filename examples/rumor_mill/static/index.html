@@ -791,10 +791,10 @@ function render(e, fresh) {
     case "announcement":
       return el("li", { className: "note" }, e.text);
     case "goal":
-      goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met });
+      goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed });
       renderGoals();
       return el("li", { className: "note goal" },
-        e.met ? `Goal met: ${e.text}` : `${e.text}: now ${e.percent}%`);
+        e.met ? `Goal met: ${e.text}` : `${e.text}: now ${goalProgress(e)}`);
     case "system":
       return el("li", { className: "note" }, e.text);
     default:
@@ -1092,16 +1092,20 @@ document.addEventListener("keydown", (ev) => {
   else if (pinned != null) { pinned = null; trace(null); }
 });
 
+function goalProgress(g) {
+  return g.needed == null ? `${g.percent}%` : `${g.believers} of ${g.needed} believe it`;
+}
+
 function renderGoals() {
   const list = $("goals");
   const all = [...goals.values()];
-  $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : `${g.percent}%`)).join(" · ")}`;
+  $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
   list.replaceChildren(...all.map((g) => el("li", { className: g.met ? "met" : "" },
     el("div", { className: "goal-text", textContent: g.text, title: g.text }),
     el("div", { className: "bar" },
-      el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100 },
+      el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: g.met ? "Met" : goalProgress(g) },
         el("i", { style: `width:${g.percent}%` })),
-      el("span", { textContent: g.met ? "Met" : `${g.percent}%` })))));
+      el("span", { textContent: g.met ? "Met" : goalProgress(g) })))));
 }
 
 function capital(word) {
@@ -1478,7 +1482,7 @@ async function loadState() {
   if (boot !== null && state.boot !== boot) reset();
   boot = state.boot;
   places = state.places;
-  for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met });
+  for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met, believers: g.believers, needed: g.needed });
   renderGoals();
   notes = state.notes;
   $("usage").textContent = state.usage.summary;

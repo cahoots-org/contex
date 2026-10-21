@@ -144,7 +144,7 @@ def create_app(
             "place": player.place,
             "goals": [
                 {"id": g.id, "text": g.text, "percent": int(judge.progress.get(g.id, 0.0) * 100),
-                 "met": g.id in judge.met}
+                 "met": g.id in judge.met, **dict(zip(("believers", "needed"), judge.counts.get(g.id, (None, None))))}
                 for g in goals
             ],
             "villagers": villagers(town),

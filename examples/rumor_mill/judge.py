@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 
 from typesafe_sdk import Noul
 
@@ -38,6 +39,7 @@ class Judge:
         self.game = game
         self.baselines = baselines
         self.progress: dict[str, float] = {}
+        self.counts: dict[str, tuple[int, int]] = {}
         self.met: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
@@ -90,7 +92,9 @@ class Judge:
         counted = [r for r in results if r is not None]
         if not counted:
             return 0.0
-        progress = min(1.0, sum(counted) / len(counted) / goal.target_fraction)
+        believers, needed = sum(counted), math.ceil(goal.target_fraction * len(counted))
+        self.counts[goal.id] = (believers, needed)
+        progress = min(1.0, believers / needed)
         if goal.creed_question is not None:
             groups = await asyncio.gather(
                 *(self._group_qualifies(goal, g.id, len(g.members)) for g in self.town.groups)
@@ -118,7 +122,7 @@ class Judge:
                     log.exception("checking %s failed", goal.id)
                     continue
                 if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100):
-                    self.feed.on_progress(goal, progress)
+                    self.feed.on_progress(goal, progress, self.counts.get(goal.id))
                 self.progress[goal.id] = progress
                 holds[goal.id] = holds[goal.id] + 1 if progress >= 1.0 else 0
                 if holds[goal.id] >= goal.hold_checks:

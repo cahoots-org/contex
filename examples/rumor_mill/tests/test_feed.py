@@ -70,13 +70,16 @@ def test_goal_events_and_replay_is_bounded():
     feed, lines = make()
     goal = Goal("cat", "the cat is a spy", "belief")
     feed.on_progress(goal, 0.42)
+    feed.on_progress(goal, 0.6, (15, 25))
     feed.on_met(goal)
-    assert [(e.data["percent"], e.data["met"]) for e in feed.recent] == [(42, False), (100, True)]
-    assert lines == ['Goal "the cat is a spy": 42%', 'Goal met: "the cat is a spy"']
+    assert [(e.data["percent"], e.data["met"]) for e in feed.recent] == [(42, False), (60, False), (100, True)]
+    assert feed.recent[1].data["believers"] == 15 and feed.recent[1].data["needed"] == 25
+    assert lines == ['Goal "the cat is a spy": 42%', 'Goal "the cat is a spy": 15 of 25 believe it',
+                     'Goal met: "the cat is a spy"']
     for _ in range(REPLAY_EVENTS):
         feed.say("x")
     assert len(feed.recent) == REPLAY_EVENTS
-    assert feed.recent[-1].id == REPLAY_EVENTS + 2
+    assert feed.recent[-1].id == REPLAY_EVENTS + 3
 
 
 def test_refusal_event_and_terminal_lines():

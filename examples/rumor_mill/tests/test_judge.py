@@ -54,7 +54,7 @@ class Lines:
         self.progress: list[tuple[str, float]] = []
         self.said: list[str] = []
 
-    def on_progress(self, goal, fraction):
+    def on_progress(self, goal, fraction, counts=None):
         self.progress.append((goal.id, fraction))
 
     def say(self, line):
@@ -169,6 +169,15 @@ async def test_unlikely_yes_does_not_count_as_belief():
 async def test_progress_is_believer_fraction_over_target():
     judge, *_ = make(n=4, believers=1)
     assert await judge.check(BELIEF) == pytest.approx(0.5)
+    assert judge.counts["g"] == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_needed_rounds_up_to_a_whole_villager():
+    judge, *_ = make(n=50, believers=15)
+    third = Goal("t", "tavern haunted", "belief", ("ghost",), "Does it believe?", 0.33)
+    await judge.check(third)
+    assert judge.counts["t"] == (15, 17)
 
 
 @pytest.mark.asyncio

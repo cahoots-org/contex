@@ -69,9 +69,12 @@ class Feed:
     def say(self, line: str) -> None:
         self.emit("system", line, text=line)
 
-    def on_progress(self, goal: Goal, fraction: float) -> None:
+    def on_progress(self, goal: Goal, fraction: float, counts: tuple[int, int] | None = None) -> None:
         percent = int(fraction * 100)
-        self.emit("goal", f'Goal "{goal.text}": {percent}%', goal_id=goal.id, text=goal.text, percent=percent, met=False)
+        believers, needed = counts or (None, None)
+        shown = f"{believers} of {needed} believe it" if counts else f"{percent}%"
+        self.emit("goal", f'Goal "{goal.text}": {shown}', goal_id=goal.id, text=goal.text, percent=percent, met=False,
+                  believers=believers, needed=needed)
 
     def on_met(self, goal: Goal) -> None:
         self.emit("goal", f'Goal met: "{goal.text}"', goal_id=goal.id, text=goal.text, percent=100, met=True)

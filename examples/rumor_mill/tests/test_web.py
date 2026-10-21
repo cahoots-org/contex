@@ -63,7 +63,7 @@ def game(monkeypatch):
     config = Config()
     suspicion, game = Suspicion(config, town), Game(feed)
     player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game)
-    judge = SimpleNamespace(progress={"cat": 0.42}, met=set())
+    judge = SimpleNamespace(progress={"cat": 0.42}, counts={"cat": (5, 12)}, met=set())
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
@@ -81,7 +81,7 @@ def game(monkeypatch):
 def test_state_lists_goals_villagers_and_replay(game):
     game.feed.say("hello")
     state = game.client.get("/api/state").json()
-    assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False}]
+    assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12}]
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
     assert state["events"][-1]["text"] == "hello"
