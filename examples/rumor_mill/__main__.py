@@ -49,7 +49,7 @@ async def play(web: bool) -> None:
         baselines = Baselines(contex, config)
         judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
         overhear = Overhear(contex, baselines, config, rng)
-        routine = Routine(jev, config.seed_path + ".places.json")
+        routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,

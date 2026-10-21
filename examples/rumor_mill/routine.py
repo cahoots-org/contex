@@ -8,6 +8,7 @@ import tempfile
 
 from typesafe_sdk import Choice
 
+from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.town import GATE, PLACES
 
@@ -23,10 +24,11 @@ AFTERNOON_PLACE = "square"
 class Routine:
     """Where each villager is at each part of the day: work, the square, leisure, work."""
 
-    def __init__(self, jev, path: str):
+    def __init__(self, jev, path: str, config: Config):
         self.jev = jev
         self.path = path
         self.entries: dict[str, dict] = {}
+        self._asking = asyncio.Semaphore(config.judge_concurrency)
 
     async def load(self, villagers: list[Villager]) -> None:
         """Read the sidecar, then ask Jev about every villager it lacks."""
@@ -66,7 +68,8 @@ class Routine:
         }
         state = {"name": v.name, "occupation": v.occupation, "personality": v.personality}
         try:
-            resp = await self.jev.system_one(state=state, questions=questions)
+            async with self._asking:
+                resp = await self.jev.system_one(state=state, questions=questions)
             work, leisure = resp.choices["work"].choice, resp.choices["leisure"].choice
             if work not in ROUTINE_PLACES or leisure not in ROUTINE_PLACES:
                 raise ValueError("unknown place")
@@ -84,13 +87,16 @@ class Routine:
             return {}
 
     def _write(self) -> None:
+        """Save the sidecar; it is only a cache, so a failure is logged and the game goes on."""
         directory = os.path.dirname(os.path.abspath(self.path))
-        fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+        tmp = None
         try:
+            fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
             with os.fdopen(fd, "w") as f:
                 json.dump(self.entries, f)
             os.replace(tmp, self.path)
-        except BaseException:
-            if os.path.exists(tmp):
+        except OSError:
+            log.warning("saving the routine places failed")
+        finally:
+            if tmp and os.path.exists(tmp):
                 os.unlink(tmp)
-            raise
