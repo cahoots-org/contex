@@ -891,6 +891,7 @@ async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     ]
     assert feed.recent[1].data == {
         "speaker": "v2", "speaker_name": "V2", "place": "tavern", "text": "the weather", "reason": "random", "uid": "u-2",
+        "scene": None,
     }
     assert lines == ['V1 told V2: "psst again"']
     await engine.stop()
@@ -1429,4 +1430,87 @@ async def test_a_scene_that_ends_while_a_line_is_checked_is_not_ended_again_or_a
     assert [e["ended"] for e in scene_events(feed)] == ["The conversation broke up."]
     assert scene.lines == ["o-1"]
     assert "v1" not in engine._pending
+    await engine.stop()
+
+
+def overheard(feed):
+    return [(e.data["uid"], e.data["reason"], e.data["scene"]) for e in feed.recent if e.kind == "overheard"]
+
+
+@pytest.mark.asyncio
+async def test_a_drawn_bystander_who_answers_joins_the_scene(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", "v3", scene_cooldown_seconds=5)
+    engine.scenes.rng = Always(0.0)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v3": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: any(e["people"] == 3 for e in scene_events(feed)))
+    assert talkers.views[1].villager.id == "v3"
+    assert {e["scene_id"] for e in scene_events(feed)} == {"s-1"}
+    assert engine.scenes.of("v3").id == "s-1"
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_bystander_hearing_through_their_needs_joins_the_same_way(talkers):
+    engine, minds, feed = await talk(talkers, "v1", "v2", "v3", scene_cooldown_seconds=5)
+    engine._last_turn["v1"] = time.monotonic()
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v3": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    assert "v3" not in engine._pending
+    minds["v3"].results = [[Match("utt:u-1", {"id": "u-1", "text": "more"})]] + [[]] * 50
+    push(minds["v3"])
+    await wait_for(lambda: any(e["people"] == 3 for e in scene_events(feed)))
+    assert {e["scene_id"] for e in scene_events(feed)} == {"s-1"}
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_full_scene_turns_a_seventh_speaker_away(talkers):
+    vids = [f"v{i}" for i in range(1, 8)]
+    engine, _, feed = await talk(talkers, *vids)
+    said_by(engine, "o-1", "v1")
+    scene = engine.scenes.start(engine.facts.get("o-1"), "v2", "o-1", None)
+    for vid in vids[2:6]:
+        assert engine.scenes.join(scene, vid)
+    talkers.plan = {"v7": [(SPEAK, 1.0)]}
+    hand(engine, "v7", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    await asyncio.sleep(SETTLE)
+    assert engine.scenes.of("v7") is None
+    assert len(scene.participants) == 6
+    assert scene_events(feed) == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_every_line_of_a_village_scene_is_overheard(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    engine.overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=0.0), random.Random(1))
+    talkers.plan = {"v2": [(SPEAK, 1.0)], "v1": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: len(feed.deliveries) == 2)
+    await asyncio.sleep(SETTLE)
+    assert overheard(feed) == [("u-1", "scene", "s-1"), ("u-2", "scene", "s-1")]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_player_rooted_scene_line_is_a_hop_not_overheard(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    engine.overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=1.0), random.Random(1))
+    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("o-1", "w-1")
+    said_by(engine, "o-1", "v1")
+    engine.rumors.record("w-1", engine.facts.get("o-1"), {"v2": "V2"}, True)
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: feed.deliveries)
+    await asyncio.sleep(SETTLE)
+    assert scene_events(feed)[0]["rumor"] == "w-1"
+    assert overheard(feed) == []
     await engine.stop()

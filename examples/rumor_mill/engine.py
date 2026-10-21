@@ -148,7 +148,8 @@ class Engine:
         """Publish the utterance to each listener's mind; raises only if every listener failed.
 
         An addressed utterance also wakes each listener and joins their next turn unmatched. A line that goes on
-        with a scene is heard by those it addresses too, and wakes them while it stays on the scene's topic.
+        with a scene is heard by those it addresses too, and wakes them while it stays on the scene's topic. The player
+        overhears every such line of a village-talk scene where they stand.
         """
         scene = self.scenes.speaking(utterance)
         drawn = self.scenes.addressed(scene, utterance.speaker) if scene else []
@@ -187,7 +188,9 @@ class Engine:
                 self._end_scene(scene, "veered")
                 scene = None
         self.feed.on_delivery(utterance, heard, on_topic, scene=scene and scene.id)
-        if self.overhear is not None:
+        if scene is not None and scene.rumor is None and scene.place == self.player_place():
+            self.feed.on_overheard(utterance, "scene", scene.id)
+        elif self.overhear is not None:
             hop = on_topic and self.lineage.is_player_rooted(utterance.id)
             try:
                 reason = await self.overhear.keep(utterance, self.player_place(), hop)
@@ -410,13 +413,20 @@ class Engine:
         return line
 
     async def _enter_scene(self, v: Villager, decision: Decision, place: str) -> tuple[Scene | None, bool]:
-        """The villager's scene, or a new one when their speech answers an exchange, and whether they just joined.
+        """The villager's scene, the one they join by answering its line, or a new one when their speech answers an
+        exchange, and whether they just joined.
 
-        A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is.
+        A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is. An answer
+        to a full scene's line is ordinary talk.
         """
         scene = self.scenes.of(v.id)
         if scene is not None or self.rumors is None or decision.action not in SCENE_SPEECH or decision.source is None:
             return scene, False
+        held = self.scenes.holding(decision.source.data.get("id"))
+        if held is not None:
+            if held.place == place and self.scenes.join(held, v.id):
+                return held, True
+            return None, False
         opening = self._exchange(decision.source, v.id, place)
         if opening is None:
             return None, False

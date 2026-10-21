@@ -161,11 +161,11 @@ class Feed:
         """The player is now at place; the terminal prints nothing."""
         self.emit("place", place=place)
 
-    def on_overheard(self, utterance: Utterance, reason: str) -> None:
-        """A line the player overheard at their place; the terminal prints nothing."""
+    def on_overheard(self, utterance: Utterance, reason: str, scene: str | None = None) -> None:
+        """A line the player overheard at their place, and the scene it belongs to if any; the terminal prints nothing."""
         u = utterance
         self.emit("overheard", speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
-                  reason=reason, uid=u.id)
+                  reason=reason, uid=u.id, scene=scene)
 
     def on_scene(self, scene: Scene) -> None:
         """A scene started, went on, or ended; the terminal prints nothing."""
