@@ -16,7 +16,7 @@ def test_from_env_overrides(monkeypatch):
 
 def test_match_margin_default_and_override(monkeypatch):
     monkeypatch.delenv("RUMOR_MILL_CONTEX_URL", raising=False)
-    assert Config().match_margin == 0.02
+    assert Config().match_margin == 0.015
     monkeypatch.setenv("RUMOR_MILL_MATCH_MARGIN", "0.05")
     assert Config.from_env().match_margin == 0.05
 

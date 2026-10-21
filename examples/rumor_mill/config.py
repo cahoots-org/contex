@@ -23,7 +23,7 @@ class Config:
     # How far before a whisper's publish its direct check looks, absorbing clock skew with Contex's database.
     check_lookback_seconds: float = 5.0
     # How far above a need's ordinary-talk similarity a whisper must score to match it.
-    match_margin: float = 0.02
+    match_margin: float = 0.015
     # How far above a whisper's ordinary-talk similarity a retelling must score to stay on its rumor card.
     on_topic_margin: float = 0.035
     # How similar a villager's earlier line must be to what the newcomer says to be remembered.

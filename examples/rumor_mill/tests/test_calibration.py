@@ -147,13 +147,19 @@ def test_explicit_calibration_path_wins(tmp_path):
 
 
 def test_playtest_fixture(tmp_path):
-    baselines = Baselines(FakeContex(), config(tmp_path))
+    baselines = Baselines(FakeContex(), config(tmp_path, match_margin=0.02))
     for need, base in [("curse", 0.769), ("vineyards", 0.742), ("cellar", 0.784), ("mistress", 0.784)]:
         baselines.set(need, base)
     assert baselines.matches("curse", 0.807)
     assert baselines.matches("vineyards", 0.780)
     assert not baselines.matches("cellar", 0.799)
     assert not baselines.matches("mistress", 0.786)
+
+
+def test_default_margin_lets_the_playtest_tavern_whisper_reach_the_cellar(tmp_path):
+    baselines = Baselines(FakeContex(), config(tmp_path))
+    baselines.set("cellar", 0.784)
+    assert baselines.matches("cellar", 0.799)
 
 
 @pytest.mark.skipif(not URL, reason="RUMOR_MILL_CONTEX_URL not set")

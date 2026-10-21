@@ -79,7 +79,7 @@ between about 0.72 and 0.82, related or not, and each need sits at its own
 level within that band. So each need gets a baseline: its mean similarity to
 20 ordinary sentences (weather, chores, prices, a lost goat) that concern no
 one. A line matches a need when it scores at least `RUMOR_MILL_MATCH_MARGIN`
-(0.02) above that need's baseline. Each need's subscription uses that
+(0.015) above that need's baseline. Each need's subscription uses that
 threshold, so Contex pushes only real matches.
 
 Right after you whisper, the game queries each of the target's needs for your
@@ -109,6 +109,10 @@ and half unrelated, each published four times with random ids and places:
 | 0.02 | 96% | 26% |
 | 0.025 | 90% | 16% |
 | 0.03 | 82% | 5% |
+
+The default is 0.015, a little below the lowest measured margin: in play,
+aimed whispers kept missing a fitting need by less than 0.005, which felt like
+a hit that didn't count. Expect more unrelated whispers to land than at 0.0175.
 
 A line someone retells ("Bert said at the tavern: ...") matches a little more
 easily than a whisper: at 0.02, 42% of the unrelated lines matched a need of
@@ -298,7 +302,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_POPULATION` | `50` | village size; newcomers arrive to keep it there |
 | `RUMOR_MILL_DAY_SECONDS` | `120` | length of a game day |
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
-| `RUMOR_MILL_MATCH_MARGIN` | `0.02` | how far above a need's score against ordinary village talk a whisper must score to match that need |
+| `RUMOR_MILL_MATCH_MARGIN` | `0.015` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
 | `RUMOR_MILL_CALIBRATION_PATH` | seed path plus `.baselines.json` | where need baselines are cached |
 | `RUMOR_MILL_ON_TOPIC_MARGIN` | `0.035` | how far above a whisper's score against ordinary village talk a retelling must score to stay on its rumor card |
