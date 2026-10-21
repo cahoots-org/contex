@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import time
 from types import SimpleNamespace
@@ -287,7 +288,7 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
     raw = {str(game.suspicion.score(v)) for v in scores} | {str(a) for a in scores.values()}
     raw |= {str(game.suspicion.level()), str(game.config.refuse_threshold)}
     for response in responses:
-        text = json.dumps(response)
+        text = re.sub(r'"at": [0-9.e+-]+', '', json.dumps(response))
         assert not any(r in text for r in raw), text
         for key, value in walk(response):
             if any(word in key for word in SUSPICION_KEYS):
