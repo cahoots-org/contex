@@ -18,7 +18,7 @@ from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, mind_project, said_project
-from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
@@ -1971,4 +1971,82 @@ async def test_a_room_listener_who_does_not_retell_stays_in_the_crowd(turns):
     await asyncio.sleep(SETTLE)
     assert entry(rumors, "v2") is None
     assert rumors.cards(PID)[0]["stopped"] == "It stopped at the square: 2 heard it and no one passed it on."
+    await engine.stop()
+
+
+async def moment_engine(rumors, *villagers):
+    lineage, town = Lineage(), Town()
+    feed = Feed(lineage, town, out=None)
+    engine = Engine(Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=FakeMind, rumors=rumors)
+    for v in villagers:
+        await engine.add_villager(v)
+    lineage.record("w-1", None, player=PID)
+    rumors.card("w-1").place = "square"
+    return engine, feed
+
+
+def moments(feed):
+    return [(e.data["text"], e.data["tone"]) for e in feed.recent if e.kind == "moment"]
+
+
+async def retell(engine, n, ids, **kw):
+    engine.lineage.record(f"u-{n}", "w-1")
+    await engine.deliver(Utterance(f"u-{n}", "v1", "V1", "square", "psst again", "w-1", **kw), ids)
+
+
+@pytest.mark.asyncio
+async def test_moments_mark_five_and_ten_hearers_once(turns):
+    engine, feed = await moment_engine(await stub_rumors(0.9), *(make(f"v{i}") for i in range(1, 13)))
+    await retell(engine, 1, ["v2", "v3", "v4", "v5"])
+    assert [t for t, _ in moments(feed)] == ["5 people have heard your rumor now."]
+    await retell(engine, 2, [f"v{i}" for i in range(6, 12)])
+    await retell(engine, 3, ["v12"])
+    assert [t for t, _ in moments(feed)] == [
+        "5 people have heard your rumor now.", "10 people have heard your rumor now.",
+    ]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_reaching_an_influential_villager_or_a_new_place_is_a_moment(turns):
+    priest = Villager("v2", "V2", "Priest", "calm", "none", [], {})
+    engine, feed = await moment_engine(await stub_rumors(0.9), make("v1"), priest)
+    engine.lineage.record("u-1", "w-1")
+    await engine.deliver(Utterance("u-1", "v1", "V1", "tavern", "psst again", "w-1"), ["v2"])
+    await engine.deliver(Utterance("u-1", "v1", "V1", "tavern", "psst again", "w-1"), ["v2"])
+    assert moments(feed) == [
+        ("Your rumor reached V2, and folk listen to the priest.", "good"),
+        ("Your rumor has reached the tavern.", "good"),
+    ]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_retelling_that_names_the_newcomer_is_a_bad_moment(turns):
+    engine, feed = await moment_engine(await stub_rumors(0.9), make("v1"), make("v2"))
+    await retell(engine, 1, ["v2"], names_newcomer=True)
+    await retell(engine, 2, ["v2"], names_newcomer=True)
+    assert moments(feed) == [("Your rumor turned against you: V1 says a newcomer started it.", "bad")]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_rumor_scene_is_a_moment_once_two_have_spoken(turns):
+    engine, feed = await moment_engine(await stub_rumors(0.9), make("v1"), make("v2"))
+    opening = Utterance("u-1", "v1", "V1", "square", "psst again", "w-1")
+    scene = engine.scenes.start(opening, "v2", "w-1", "w-1")
+    engine._show_scene(scene)
+    assert moments(feed) == []
+    scene.people.add("v2")
+    engine._show_scene(scene)
+    engine._show_scene(scene)
+    assert moments(feed) == [("Your rumor started a conversation at the square.", "good")]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_off_topic_line_is_no_moment(turns):
+    engine, feed = await moment_engine(await stub_rumors(0.1), make("v1"), make("v2"))
+    await retell(engine, 1, ["v2"], names_newcomer=True)
+    assert moments(feed) == []
     await engine.stop()

@@ -30,6 +30,13 @@ SCENE_ENDS = {
     "long": "The {kind} ran its course.",
     "alone": "The {kind} broke up.",
 }
+MOMENTS = {
+    "size": "{n} people have heard your rumor now.",
+    "influence": "Your rumor reached {name}, and {influence}.",
+    "place": "Your rumor has reached the {place}.",
+    "scene": "Your rumor started {kind} at the {place}.",
+    "turned": "Your rumor turned against you: {name} says a newcomer started it.",
+}
 GAME_OVER = {"lost": "Game over: you were run out of town."}
 
 
@@ -210,6 +217,13 @@ class Feed:
         u = utterance
         self.emit("reply", f'{u.speaker_name} answers you: "{u.text}"', player=self.lineage.player_of(conversation),
                   conversation=conversation, villager_id=u.speaker, name=u.speaker_name, text=u.text, uid=u.id)
+
+    def on_moment(self, rumor: str, line: str, tone: str = "good") -> None:
+        """A turning point for the rumor, shown only to its player; dropped when the rumor has none."""
+        player = self.lineage.player_of(rumor)
+        if player is None:
+            return
+        self.emit("moment", line, player=player, rumor=rumor, text=line, tone=tone)
 
     def on_drift(self, whisper_id: str) -> None:
         """The whisper's story turned to other things; the terminal prints nothing."""

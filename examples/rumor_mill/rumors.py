@@ -69,6 +69,8 @@ class Card:
     place: str = ""
     # The deck goal ids its words serve, best first.
     claims: list[str] = field(default_factory=list)
+    # The moments already shown for it.
+    marked: set[str] = field(default_factory=set)
 
 
 def _entry(name: str, state: str, **extra) -> dict:
@@ -236,6 +238,14 @@ class Rumors:
         """The card that shows uid's whisper."""
         card = self._cards.get(uid)
         return card and self._cards.get(card.part_of, card)
+
+    def first(self, uid: str, key: str) -> bool:
+        """True the first time key is marked on the card that shows uid; False for an unknown uid."""
+        card = self.card(uid)
+        if card is None or key in card.marked:
+            return False
+        card.marked.add(key)
+        return True
 
     def carries(self, root_uid: str, uid: str) -> bool:
         """Whether uid is an on-topic hop shown on the card that root_uid belongs to."""

@@ -392,3 +392,11 @@ async def test_card_follows_a_reply_to_its_conversation_card():
     await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.card("w-2").uid == "w-1" and rumors.card("w-1").uid == "w-1"
     assert rumors.card("w-9") is None
+
+
+@pytest.mark.asyncio
+async def test_first_is_true_once_per_card():
+    rumors, _ = await make()
+    await rumors.add("w-2", "reply", AT, "v1", "Marta", conversation="w-1", player=PID)
+    assert rumors.first("w-1", "size:5") and not rumors.first("w-2", "size:5")
+    assert rumors.first("w-2", "size:10") and not rumors.first("u-unknown", "size:5")

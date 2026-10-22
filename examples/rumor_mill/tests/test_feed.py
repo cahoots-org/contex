@@ -301,3 +301,12 @@ def test_progress_carries_the_rumor_only_for_its_player():
     mine, everyone = list(feed.recent)[-2:]
     assert mine.data["rumor"] == "w-1" and "rumor" not in everyone.data
     assert lines == ['Goal "the cat is a spy": 42%'] * 2
+
+
+def test_a_moment_reaches_only_its_rumors_player():
+    feed, lines = make()
+    feed.on_moment("w-1", "x")
+    event, = feed.recent
+    assert (event.kind, event.player, event.data["tone"], lines) == ("moment", PID, "good", ["x"])
+    feed.on_moment("u-unknown", "x")
+    assert len(feed.recent) == 1 and lines == ["x"]

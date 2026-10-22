@@ -15,6 +15,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.decide import Decision, TurnView, decide
 from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
+from examples.rumor_mill.feed import MOMENTS
 from examples.rumor_mill.game import PHASES, Game, Summary
 from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.lineage import Ids, Lineage
@@ -26,7 +27,7 @@ from examples.rumor_mill.players import Players
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
-from examples.rumor_mill.suspicion import Suspicion
+from examples.rumor_mill.suspicion import Suspicion, influence
 from examples.rumor_mill.town import START_PLACE, Town
 from examples.rumor_mill.usage import charging
 from examples.rumor_mill.writer import WHISPER_FRAMING, Writer
@@ -37,6 +38,7 @@ LISTEN_RETRY_SECONDS = 1
 # How many keys that reached a turn are remembered per villager, so neither a poll nor a direct hit hears them again.
 CONSUMED_KEYS = 500
 # How many whispers a villager kept to themselves are watched for a later relay.
+MOMENT_SIZES = (5, 10)
 KEPT_WHISPERS = 50
 # How many villagers set off together on their daily round, and how much of each part of the day the round spans.
 ROUTINE_BATCH = 5
@@ -308,12 +310,30 @@ class Engine:
         on_topic = await self.rumors.on_topic(root, utterance.text)
         if self.rumors.record(root, utterance, {i: self.town.name_of(i) or i for i in heard}, on_topic):
             self.feed.on_drift(root)
+        if on_topic:
+            self._moments(root, utterance, heard)
         if on_topic and len(heard) == 1 and self.baselines is not None:
             since = (datetime.now(UTC) - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
             task = asyncio.create_task(self._follow(root, utterance, heard[0], since))
             self._following.add(task)
             task.add_done_callback(self._following.discard)
         return on_topic
+
+    def _moments(self, root: str, u: Utterance, heard: list[str]) -> None:
+        """Mark the turning points an on-topic retelling brought the rumor, each once."""
+        card = self.rumors.card(root)
+        if card is None:
+            return
+        for size in MOMENT_SIZES:
+            if size <= len(card.heard) and self.rumors.first(root, f"size:{size}"):
+                self.feed.on_moment(root, MOMENTS["size"].format(n=size))
+        for vid in heard:
+            if vid in self.town and (who := influence(self.town.get(vid))) and self.rumors.first(root, f"influence:{vid}"):
+                self.feed.on_moment(root, MOMENTS["influence"].format(name=self.town.get(vid).name, influence=who))
+        if card.place and u.place != card.place and self.rumors.first(root, f"place:{u.place}"):
+            self.feed.on_moment(root, MOMENTS["place"].format(place=u.place))
+        if u.names_newcomer and self.rumors.first(root, "turned"):
+            self.feed.on_moment(root, MOMENTS["turned"].format(name=u.speaker_name), "bad")
 
     async def cares(self, vid: str, uid: str, depth: int, since: str) -> str | None:
         """Whether the line uid in vid's mind touches a need: cares, worn (too retold to wake them) or uncared.
@@ -614,6 +634,9 @@ class Engine:
         if scene.rumor is not None:
             self.rumors.in_scene(scene.rumor, scene, {vid: self.town.name_of(vid) or vid for vid in scene.participants})
             self.feed.on_scene(scene, player=self.lineage.player_of(scene.rumor))
+            if len(scene.people) >= 2 and not scene.ended and self.rumors.first(scene.rumor, f"scene:{scene.id}"):
+                kind = "an argument" if scene.heated else "a conversation"
+                self.feed.on_moment(scene.rumor, MOMENTS["scene"].format(kind=kind, place=scene.place))
             return
         scene.seen_by.update(p.id for p in self.players.at(scene.place))
         for player_id in sorted(scene.seen_by):
