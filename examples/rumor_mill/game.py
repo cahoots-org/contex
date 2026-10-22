@@ -44,7 +44,7 @@ class Game:
         """
         cutoff = time.time() - self.day_seconds
         active = len({player for at, player in self._moves if at >= cutoff})
-        needed = self.memory_moves * max(1, active)
+        needed = min(self.memory_moves * max(1, active), self._moves.maxlen)
         if len(self._moves) < needed:
             return None
         return datetime.fromtimestamp(self._moves[-needed][0], UTC).isoformat()

@@ -10,7 +10,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.game import Game, Summary
+from examples.rumor_mill.game import MEMORY_PLAYERS, Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
@@ -279,6 +279,13 @@ def test_memory_spans_the_moves_of_every_active_player():
     assert game.memory_since() is None
     game.moved("p-b")
     assert game.memory_since() == first
+
+
+def test_memory_stays_capped_beyond_the_most_players_it_counts():
+    game = Game(memory_moves=2)
+    for i in range(2 * MEMORY_PLAYERS):
+        game.moved(f"p-{i % (MEMORY_PLAYERS + 1)}")
+    assert game.memory_since() is not None
 
 
 @pytest.mark.asyncio

@@ -247,8 +247,12 @@ def test_state_after_loss_carries_the_summary(game):
 
 
 def test_nothing_reaches_the_page_after_the_game_is_over(game):
-    game.player.end(LOSS)
-    game.feed.on_time(2, "morning")
+    with game.client.websocket_connect(WS) as ws:
+        game.player.end(LOSS)
+        assert receive(ws)["kind"] == "gameover"
+        game.feed.on_time(2, "morning")
+        game.usage.record("haiku", 10_000, 2_000)
+        assert receive(ws)["kind"] == "usage"
     assert game.client.get("/api/state").json()["events"][-1]["kind"] == "gameover"
 
 
