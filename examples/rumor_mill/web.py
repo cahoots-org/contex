@@ -62,9 +62,9 @@ def villagers(town: Town) -> list[dict]:
     )
 
 
-def tallies(rumors: Rumors) -> list[dict]:
+def tallies(rumors: Rumors, player: str) -> list[dict]:
     """Each card's counts only, so the live snapshot changes only when a count does."""
-    return [{"uid": c["uid"], "heard": c["heard"], "still": c["still"]} for c in rumors.cards()]
+    return [{"uid": c["uid"], "heard": c["heard"], "still": c["still"]} for c in rumors.cards(player)]
 
 
 def event_json(event: Event) -> dict:
@@ -93,7 +93,7 @@ def create_app(
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
     clients: set[asyncio.Queue] = set()
     boot = uuid.uuid4().hex
-    notes = Notes(feed)
+    notes = Notes(feed, player.id)
 
     def broadcast(message: dict) -> None:
         for queue in clients:
@@ -118,7 +118,7 @@ def create_app(
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
-            asyncio.create_task(watch("rumors", lambda: tallies(rumors), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch("rumors", lambda: tallies(rumors, player.id), VILLAGER_POLL_SECONDS)),
         ]
         try:
             yield
@@ -150,7 +150,7 @@ def create_app(
             ],
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.recent],
-            "rumors": rumors.cards(),
+            "rumors": rumors.cards(player.id),
             "notes": notes.all(),
             "usage": usage.to_json(),
             "heat": (label := suspicion.label()),

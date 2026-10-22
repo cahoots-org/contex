@@ -4,12 +4,13 @@ from pathlib import Path
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.notes import RANK, Notes
+from examples.rumor_mill.tests.helpers import PID
 from examples.rumor_mill.town import Town
 
 
 def make():
     feed = Feed(Lineage(), Town(), out=None)
-    return feed, Notes(feed)
+    return feed, Notes(feed, PID)
 
 
 def test_status_never_moves_backwards():
@@ -47,7 +48,7 @@ def test_replay_rebuilds_the_same_notes():
     feed.on_whisper_status("w-2", "v2", "Marta", "took_the_bait", told=2)
     feed.on_refusal("v3", "Ida")
     feed.say("unrelated")
-    assert Notes(feed).all() == notes.all()
+    assert Notes(feed, PID).all() == notes.all()
     assert notes.all() == {
         "v1": {"status": "brushed_off", "hint": "Bread is dear."},
         "v2": {"status": "took_the_bait", "hint": None},
@@ -67,3 +68,12 @@ def test_notes_rank_answered():
     assert RANK.index("listening") < RANK.index("answered") < RANK.index("kept")
     page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
     assert re.search(r"const RANK = \[(.*?)\];", page).group(1) == ", ".join(f'"{r}"' for r in RANK)
+
+
+def test_notes_hold_only_the_players_own_villagers():
+    feed, _ = make()
+    feed.lineage.record("w-1", None, player="p-a")
+    feed.lineage.record("w-2", None, player="p-b")
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off")
+    feed.on_whisper_status("w-2", "v2", "Marta", "took_the_bait", told=1)
+    assert list(Notes(feed, "p-a").all()) == ["v1"]

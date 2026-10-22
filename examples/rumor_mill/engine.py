@@ -95,8 +95,8 @@ class Engine:
         self._kept: dict[str, dict[str, None]] = {}
         # How readily each villager passes news on, asked once per villager.
         self._gossip: dict[str, float] = {}
-        # Each villager's open conversation with the newcomer: its first whisper and the whispers answered so far.
-        self.conversations: dict[str, dict] = {}
+        # Each open conversation, keyed by (villager id, player id): its first whisper and the whispers answered so far.
+        self.conversations: dict[tuple[str, str], dict] = {}
         self._renewal: asyncio.Task | None = None
         self._checks: asyncio.Task | None = None
         self._clock: asyncio.Task | None = None
@@ -228,12 +228,12 @@ class Engine:
             self.rumors.add_line(conversation, utterance)
         self.feed.on_reply(conversation, utterance)
 
-    def end_conversation(self, vid: str) -> None:
-        """Close the villager's conversation with the newcomer; every answered whisper in it has moved on."""
-        conversation = self.conversations.pop(vid, None)
-        if conversation is not None:
-            name = self.town.name_of(vid) or vid
-            for wid in conversation["answered"]:
+    def end_conversation(self, vid: str, player: str | None = None) -> None:
+        """Close the villager's conversation with player, or with every player when None; its answers have moved on."""
+        keys = [k for k in self.conversations if k[0] == vid and player in (None, k[1])]
+        name = self.town.name_of(vid) or vid
+        for key in keys:
+            for wid in self.conversations.pop(key)["answered"]:
                 self.feed.on_whisper_status(wid, vid, name, "moved_on")
 
     async def _remember_said(self, vid: str, key: str, data: dict) -> None:
@@ -398,8 +398,7 @@ class Engine:
         whispers = [m for m in new if self.lineage.is_whisper(m.data.get("id"))]
         said = await self._recall_said(v.id, whispers) if whispers else []
         heard = await self._recall_heard_all(v.id, whispers)
-        talking = self.conversations.get(v.id, {"answered": []})
-        answerable = whispers if len(talking["answered"]) < self.config.talk_turns else []
+        answerable = [m for m in whispers if self._can_answer(v.id, m.data["id"])]
         place = self.town.place_of(v.id)
         view = TurnView(
             villager=v,
@@ -578,8 +577,9 @@ class Engine:
                 self._answered(v, wid)
                 continue
             fact = self.facts.get(wid)
+            player = self.lineage.player_of(wid)
             talking = fact is not None and fact.conversation is not None and (
-                self.conversations.get(v.id, {}).get("id") == fact.conversation
+                self.conversations.get((v.id, player), {}).get("id") == fact.conversation
             )
             if wid in told:
                 self.feed.on_whisper_status(wid, v.id, v.name, "took_the_bait", told=told[wid])
@@ -589,18 +589,26 @@ class Engine:
                 kept[wid] = None
                 self.feed.on_whisper_status(wid, v.id, v.name, "moved_on" if talking else "kept")
             if talking and answered is None:
-                self.end_conversation(v.id)
+                self.end_conversation(v.id, player)
         while len(kept) > KEPT_WHISPERS:
             del kept[next(iter(kept))]
 
+    def _can_answer(self, vid: str, wid: str) -> bool:
+        """Whether the whisper's player has turns left in their conversation with the villager."""
+        talking = self.conversations.get((vid, self.lineage.player_of(wid)), {"answered": []})
+        return len(talking["answered"]) < self.config.talk_turns
+
     def _answered(self, v: Villager, wid: str) -> None:
-        """Open or extend the villager's conversation on the card the whisper belongs to; the cap ends it."""
+        """Open or extend the whisper's player's conversation on the card the whisper belongs to; the cap ends it."""
         fact = self.facts.get(wid)
-        conversation = self.conversations.setdefault(v.id, {"id": (fact and fact.conversation) or wid, "answered": []})
+        player = self.lineage.player_of(wid)
+        conversation = self.conversations.setdefault(
+            (v.id, player), {"id": (fact and fact.conversation) or wid, "answered": []},
+        )
         conversation["answered"].append(wid)
         self.feed.on_whisper_status(wid, v.id, v.name, "answered")
         if len(conversation["answered"]) >= self.config.talk_turns:
-            self.end_conversation(v.id)
+            self.end_conversation(v.id, player)
 
     async def _clock_loop(self) -> None:
         """Move the village through the parts of each day, announce each one, and walk its daily round."""

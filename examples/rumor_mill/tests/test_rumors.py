@@ -12,7 +12,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.rumors import Rumors
-from examples.rumor_mill.tests.helpers import StubBaselines, StubContex
+from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex
 from examples.rumor_mill.town import NEWCOMER
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
@@ -26,7 +26,7 @@ def hop(uid, speaker="Bert", text="the miller waters his flour"):
 async def make(results=None, error=None, day=100.0):
     contex = StubContex(results, error)
     rumors = Rumors(contex, StubBaselines(0.5), Config(session="s1", day_seconds=day, on_topic_margin=0.02))
-    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player=PID)
     return rumors, contex
 
 
@@ -82,14 +82,14 @@ async def test_a_hop_checked_before_the_baseline_waits_for_it():
     contex = StubContex({"close": [Match("rumor:w-1", {}, 0.53)]})
     baselines = SlowBaselines()
     rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
-    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player=PID)
     check = asyncio.create_task(rumors.on_topic("w-1", "close"))
     await asyncio.sleep(0.01)
     assert not check.done()
     baselines.release.set()
     assert await check
     assert not rumors.record("w-1", hop("u-1"), {"v2": "Ann"}, True)
-    assert rumors.cards()[0]["drifted"] is False
+    assert rumors.cards(PID)[0]["drifted"] is False
 
 
 @pytest.mark.asyncio
@@ -97,7 +97,7 @@ async def test_a_cancelled_check_leaves_the_baseline_for_the_next():
     contex = StubContex({"close": [Match("rumor:w-1", {}, 0.53)]})
     baselines = SlowBaselines()
     rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
-    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player=PID)
     first = asyncio.create_task(rumors.on_topic("w-1", "close"))
     await asyncio.sleep(0.01)
     first.cancel()
@@ -110,7 +110,7 @@ async def test_a_cancelled_check_leaves_the_baseline_for_the_next():
 @pytest.mark.asyncio
 async def test_close_cancels_a_pending_measure():
     rumors = Rumors(StubContex(), SlowBaselines(), Config(session="s1", on_topic_margin=0.02))
-    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player=PID)
     measuring = rumors._cards["w-1"].measuring
     rumors.close()
     await asyncio.gather(measuring, return_exceptions=True)
@@ -123,7 +123,7 @@ async def test_a_failed_baseline_is_measured_again_by_the_next_check():
     baselines = SlowBaselines(fail_first=True)
     baselines.release.set()
     rumors = Rumors(contex, baselines, Config(session="s1", on_topic_margin=0.02))
-    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta")
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player=PID)
     assert await rumors.on_topic("w-1", "close")
     assert baselines.calls == 2
 
@@ -131,10 +131,10 @@ async def test_a_failed_baseline_is_measured_again_by_the_next_check():
 @pytest.mark.asyncio
 async def test_a_drift_on_a_reply_thread_shows_on_the_conversation_card():
     rumors, _ = await make()
-    await rumors.add("w-2", "and the baker too", AT, "v1", "Marta", conversation="w-1")
+    await rumors.add("w-2", "and the baker too", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.record("w-2", hop("u-1", "Ann", "the weather"), {"v2": "Ann"}, False)
     assert not rumors.record("w-2", hop("u-2", "Ann", "the weather"), {"v3": "Cal"}, False)
-    card, = rumors.cards()
+    card, = rumors.cards(PID)
     assert card["drifted"] is True
 
 
@@ -148,7 +148,7 @@ async def test_tallies(monkeypatch):
     assert not rumors.record("w-1", hop("u-2", "Ann"), {"v3": "Cal", "v4": "Dee"}, True)
     assert rumors.record("w-1", hop("u-3", "Cal", "the weather"), {"v5": "Eve"}, False)
     assert not rumors.record("w-1", hop("u-4", "Eve", "the weather again"), {"v6": "Fay"}, False)
-    card, = rumors.cards()
+    card, = rumors.cards(PID)
     assert (card["uid"], card["text"], card["target_id"], card["target_name"]) == (
         "w-1", "the miller waters his flour", "v1", "Marta",
     )
@@ -163,9 +163,9 @@ async def test_tallies(monkeypatch):
 async def test_a_reply_joins_its_conversation_card():
     rumors, _ = await make({"close": [Match("rumor:w-2", {}, 0.9)]})
     rumors.add_line("w-1", Utterance("u-1", "v1", "Marta", "tavern", "Who told you that?", "w-1"))
-    await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1")
+    await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True) is False
-    card, = rumors.cards()
+    card, = rumors.cards(PID)
     assert card["uid"] == "w-1"
     assert card["conversation"] == [
         {"uid": "u-1", "speaker_id": "v1", "speaker": "Marta", "text": "Who told you that?"},
@@ -184,7 +184,7 @@ async def test_live_paraphrase_stays_on_topic_and_a_reply_does_not(tmp_path, cap
     reply = "I don't know about that, but my back has been aching since the frost."
     async with ContexClient(URL) as client:
         rumors = Rumors(client, Baselines(client, cfg), cfg)
-        await rumors.add("w-1", whisper, datetime.now(UTC), "v1", "Marta")
+        await rumors.add("w-1", whisper, datetime.now(UTC), "v1", "Marta", player=PID)
         with caplog.at_level(logging.DEBUG, logger=rumors_mod.__name__):
             assert await rumors.on_topic("w-1", paraphrase)
             assert not await rumors.on_topic("w-1", reply)
@@ -197,16 +197,25 @@ async def test_a_topic_is_checked_but_never_shown():
     await rumors.add_topic("u-5", "the baker skims the till", AT)
     assert await rumors.on_topic("u-5", "close")
     assert contex.published[-1] == ("rumor-mill:s1:rumors", "rumor:u-5", {"id": "u-5", "text": "the baker skims the till"})
-    assert [c["uid"] for c in rumors.cards()] == ["w-1"]
+    assert [c["uid"] for c in rumors.cards(PID)] == ["w-1"]
 
 
 @pytest.mark.asyncio
 async def test_carries_names_only_on_topic_hops():
     rumors, _ = await make()
-    await rumors.add("w-2", "reply", AT, "v1", "Marta", conversation="w-1")
+    await rumors.add("w-2", "reply", AT, "v1", "Marta", conversation="w-1", player=PID)
     rumors.record("w-1", hop("u-1"), {"v2": "Ann"}, True)
     rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True)
     rumors.record("w-1", hop("u-3"), {"v2": "Ann"}, False)
     assert rumors.carries("w-1", "u-1") and rumors.carries("w-2", "u-2") and rumors.carries("w-2", "u-1")
     assert not rumors.carries("w-1", "u-3")
     assert not rumors.carries("missing", "u-1")
+
+
+@pytest.mark.asyncio
+async def test_cards_list_only_the_players_own_rumors():
+    rumors = Rumors(StubContex(), StubBaselines(0.5), Config(session="s1"))
+    await rumors.add("w-1", "the miller waters his flour", AT, "v1", "Marta", player="p-a")
+    await rumors.add("w-2", "the baker skims the till", AT, "v2", "Bert", player="p-b")
+    assert [c["uid"] for c in rumors.cards("p-a")] == ["w-1"]
+    assert [c["uid"] for c in rumors.cards("p-b")] == ["w-2"]

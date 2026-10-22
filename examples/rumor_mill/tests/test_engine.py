@@ -785,7 +785,7 @@ async def stub_rumors(similarity):
     contex = StubContex()
     contex.default = [Match("rumor:w-1", {}, similarity)]
     rumors = Rumors(contex, StubBaselines(0.5), Config())
-    await rumors.add("w-1", "psst", datetime.now(UTC), "v1", "V1")
+    await rumors.add("w-1", "psst", datetime.now(UTC), "v1", "V1", player=PID)
     return rumors
 
 
@@ -817,7 +817,7 @@ async def test_off_topic_descendant_is_not_a_hop_and_marks_drift(turns):
     ]
     assert lines == ['V1 told V2: "psst again"']
     assert [k for k, _ in minds["v3"].heard] == ["utt:u-2"] and [k for k, _ in minds["v1"].heard] == ["utt:u-3"]
-    card, = rumors.cards()
+    card, = rumors.cards(PID)
     assert ([h["uid"] for h in card["hops"]], card["drifted"]) == (["u-1"], True)
     await engine.stop()
 
@@ -1110,7 +1110,7 @@ async def answered_once(talks, then, **config):
     whisper(engine, "v1", "w-1")
     await wait_for(lambda: statuses(feed))
     assert [m.data_key for m in talks.views[0].answerable] == ["utt:w-1"]
-    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-1"]}
+    assert engine.conversations[("v1", PID)] == {"id": "w-1", "answered": ["w-1"]}
     reply_whisper(engine, "v1", "w-2", "w-1")
     await wait_for(lambda: len(statuses(feed)) >= 3)
     await engine.stop()
@@ -1121,21 +1121,48 @@ async def answered_once(talks, then, **config):
 async def test_cap_ends_with_moved_on(talks):
     engine, feed = await answered_once(talks, ANSWER, talk_turns=2)
     assert states(feed) == [("w-1", "answered"), ("w-2", "answered"), ("w-1", "moved_on"), ("w-2", "moved_on")]
-    assert "v1" not in engine.conversations
+    assert ("v1", PID) not in engine.conversations
 
 
 @pytest.mark.asyncio
 async def test_other_action_ends_with_moved_on(talks):
     engine, feed = await answered_once(talks, IGNORE)
     assert states(feed) == [("w-1", "answered"), ("w-2", "moved_on"), ("w-1", "moved_on")]
-    assert "v1" not in engine.conversations
+    assert ("v1", PID) not in engine.conversations
 
 
 @pytest.mark.asyncio
 async def test_failed_turn_ends_with_moved_on(talks):
     engine, feed = await answered_once(talks, None)
     assert states(feed) == [("w-1", "answered"), ("w-2", "moved_on"), ("w-1", "moved_on")]
-    assert "v1" not in engine.conversations
+    assert ("v1", PID) not in engine.conversations
+
+
+@pytest.mark.asyncio
+async def test_one_villager_holds_a_conversation_with_each_player():
+    engine, _, _ = await setup("v1")
+    engine.conversations[("v1", "p-a")] = {"id": "w-1", "answered": ["w-1"]}
+    engine.conversations[("v1", "p-b")] = {"id": "w-2", "answered": ["w-2"]}
+    engine.end_conversation("v1", "p-b")
+    assert list(engine.conversations) == [("v1", "p-a")]
+    engine.end_conversation("v1")
+    assert engine.conversations == {}
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_answerable_leaves_out_a_player_whose_conversation_is_full(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[]]
+    full = ["w-0"] * engine.config.talk_turns
+    engine.conversations[("v1", "p-a")] = {"id": "w-0", "answered": full}
+    engine.lineage.record("w-1", None, player="p-a")
+    engine.lineage.record("w-2", None, player="p-b")
+    engine.hear_directly("v1", Match("utt:w-1", {"id": "w-1", "text": "psst"}, 0.8))
+    engine.hear_directly("v1", Match("utt:w-2", {"id": "w-2", "text": "psst"}, 0.8))
+    await wait_for(lambda: len(turns.views) == 1)
+    await engine.stop()
+    assert [m.data["id"] for m in turns.views[0].answerable] == ["w-2"]
 
 
 @pytest.mark.asyncio
@@ -1151,10 +1178,10 @@ async def test_no_answer_is_offered_without_a_newcomer_line(talks):
 @pytest.mark.asyncio
 async def test_departure_ends_the_conversation(talks):
     engine, _, feed = await setup("v1")
-    engine.conversations["v1"] = {"id": "w-1", "answered": ["w-1"]}
+    engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
     await engine.remove_villager("v1")
     assert states(feed) == [("w-1", "moved_on")]
-    assert "v1" not in engine.conversations
+    assert ("v1", PID) not in engine.conversations
     await engine.stop()
 
 
@@ -1183,13 +1210,13 @@ async def test_two_replies_in_one_turn_keep_the_conversation_when_one_is_answere
     engine, minds, feed = await setup("v1")
     minds["v1"].results = [[]]
     talks.plan = [ANSWER]
-    engine.conversations["v1"] = {"id": "w-1", "answered": ["w-1"]}
+    engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
     reply_whisper(engine, "v1", "w-2", "w-1")
     reply_whisper(engine, "v1", "w-3", "w-1")
     await wait_for(lambda: len(statuses(feed)) == 2)
     await engine.stop()
     assert states(feed) == [("w-2", "moved_on"), ("w-3", "answered")]
-    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-1", "w-3"]}
+    assert engine.conversations[("v1", PID)] == {"id": "w-1", "answered": ["w-1", "w-3"]}
 
 
 @pytest.mark.asyncio
@@ -1200,7 +1227,7 @@ async def test_an_answer_after_the_conversation_closed_reopens_it_on_its_card(ta
     reply_whisper(engine, "v1", "w-3", "w-1")
     await wait_for(lambda: statuses(feed))
     await engine.stop()
-    assert engine.conversations["v1"] == {"id": "w-1", "answered": ["w-3"]}
+    assert engine.conversations[("v1", PID)] == {"id": "w-1", "answered": ["w-3"]}
 
 
 @pytest.mark.asyncio
@@ -1463,7 +1490,7 @@ async def test_answering_the_newcomer_leaves_the_scene(talkers):
     await wait_for(lambda: scene_events(feed)[-1]["ended"])
     assert [m.data_key for m in talkers.views[1].new] == ["utt:u-1", "utt:w-1"]
     assert scene_events(feed)[-1]["ended"] == "The conversation broke up."
-    assert engine.conversations["v1"]["answered"] == ["w-1"]
+    assert engine.conversations[("v1", PID)]["answered"] == ["w-1"]
     await engine.stop()
 
 

@@ -3,6 +3,7 @@ import re
 import threading
 import time
 from datetime import UTC, datetime
+from functools import partial
 from types import SimpleNamespace
 
 import pytest
@@ -316,7 +317,9 @@ def test_scene_event_reaches_the_websocket(game):
 
 
 def test_state_carries_cards_beyond_the_replay_window(game):
-    game.client.portal.call(game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale")
+    game.client.portal.call(partial(
+        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=helpers.PID,
+    ))
     hop = Utterance("u-1", "v1", "Marta Hale", "well", "the miller cheats", "w-1")
     game.rumors.record("w-1", hop, {"v2": "Bert Cole"}, True)
     for i in range(REPLAY_EVENTS + 1):
@@ -328,7 +331,9 @@ def test_state_carries_cards_beyond_the_replay_window(game):
 
 def test_card_tallies_reach_the_websocket(game):
     with game.client.websocket_connect(WS) as ws:
-        game.client.portal.call(game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale")
+        game.client.portal.call(partial(
+        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=helpers.PID,
+    ))
         event = receive(ws)
         while event["kind"] != "rumors":
             event = receive(ws)

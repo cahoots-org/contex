@@ -1,4 +1,4 @@
-"""The player's notes: what each villager has shown the player, built from feed events."""
+"""A player's notes: what each villager has shown the player, built from feed events."""
 
 from examples.rumor_mill.feed import Event, Feed
 
@@ -18,11 +18,11 @@ STATUS_OF = {
 
 
 class Notes:
-    def __init__(self, feed: Feed):
+    def __init__(self, feed: Feed, player: str):
         self._notes: dict[str, dict] = {}
-        for event in feed.recent:
+        for event in feed.replay(player):
             self(event)
-        feed.sinks.append(self)
+        feed.sinks.append(feed.view(player, self))
 
     def __call__(self, event: Event) -> None:
         if event.kind == "refusal":

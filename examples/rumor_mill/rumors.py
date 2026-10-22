@@ -25,6 +25,7 @@ class Card:
     target_id: str
     target_name: str
     published_at: datetime
+    player: str = ""
     baseline: float | None = None
     # The first baseline measurement, started when the card is.
     measuring: asyncio.Future | None = None
@@ -51,13 +52,13 @@ class Rumors:
 
     async def add(
         self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
-        conversation: str | None = None,
+        conversation: str | None = None, *, player: str,
     ) -> None:
         """Start the whisper's card and its baseline measurement, then publish its words; failures are logged.
 
         A reply in a conversation is shown on the conversation's card instead of its own.
         """
-        card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at)
+        card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at, player)
         if conversation in self._cards:
             card.part_of = conversation
             self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "The newcomer", "", text, None))
@@ -143,12 +144,12 @@ class Rumors:
         for card in self._cards.values():
             card.measuring.cancel()
 
-    def cards(self) -> list[dict]:
-        """Every card but replies, oldest first, with how many heard it and how many heard it in the last game day."""
+    def cards(self, player: str) -> list[dict]:
+        """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day."""
         cutoff = time.time() - self.config.day_seconds
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
              "conversation": c.conversation}
-            for c in self._cards.values() if c.part_of is None and not c.topic_only
+            for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
         ]

@@ -94,12 +94,12 @@ class Player:
         target = self.town.get(villager_id)
         if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
             self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
-            self.engine.end_conversation(target.id)
+            self.engine.end_conversation(target.id, self.id)
             self.feed.on_refusal(target.id, target.name, await self._turn_away(target), player=self.id)
             return Refusal(f"{target.name} turns away from you.")
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=self.id)
-        conversation = self.engine.conversations.get(target.id)
+        conversation = self.engine.conversations.get((target.id, self.id))
         thread = self._thread(target.id)
         hint_need = None
         if conversation:
@@ -155,9 +155,9 @@ class Player:
             leaning = bool(near_misses) and not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)
             state = "near_miss" if leaning else "brushed_off"
             self.feed.on_whisper_status(uid, target.id, target.name, state)
-            open_now = self.engine.conversations.get(target.id)
+            open_now = self.engine.conversations.get((target.id, self.id))
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
-                self.engine.end_conversation(target.id)
+                self.engine.end_conversation(target.id, self.id)
             if leaning:
                 concern = max(near_misses, key=lambda n: n[1].clearance)[0]
             else:
@@ -226,6 +226,7 @@ class Player:
         if self.engine.rumors is not None:
             await self.engine.rumors.add(
                 utterance.id, utterance.text, published_at, target.id, target.name, utterance.conversation,
+                player=self.id,
             )
 
     def over(self) -> bool:

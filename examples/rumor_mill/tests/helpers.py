@@ -146,8 +146,9 @@ class FakeEngine:
         self.recalls.append((vid, text, exclude))
         return self.heard
 
-    def end_conversation(self, vid):
-        self.conversations.pop(vid, None)
+    def end_conversation(self, vid, player=None):
+        for key in [k for k in self.conversations if k[0] == vid and player in (None, k[1])]:
+            del self.conversations[key]
 
     async def deliver(self, utterance, listener_ids):
         self.delivered.append((utterance, listener_ids))
