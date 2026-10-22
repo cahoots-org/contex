@@ -682,7 +682,7 @@ class Engine:
             told.setdefault(self.lineage.root(uid), heard)
         if self.scenes.of(v.id) is None:
             for root in {self.lineage.root(uid) for uid in hops} - told.keys():
-                self.rumors.reached(root, v.id, v.name, "kept")
+                self.rumors.reached(root, v.id, v.name, "warned" if action == WARN else "kept")
         kept = self._kept.setdefault(v.id, {})
         for wid in [w for w in kept if w in told]:
             del kept[wid]

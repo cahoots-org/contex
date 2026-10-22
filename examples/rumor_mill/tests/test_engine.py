@@ -1954,6 +1954,19 @@ async def test_a_listener_whose_turn_does_not_retell_kept_it_quiet(turns):
 
 
 @pytest.mark.asyncio
+async def test_a_listener_whose_turn_warns_is_marked_warned_not_kept(turns, monkeypatch):
+    async def warn(jev, view):
+        return Decision(WARN, None, None, None)
+
+    monkeypatch.setattr(engine_mod, "decide", warn)
+    engine, minds, rumors = await following(turns, baselines=False)
+    minds["v2"].results = [[Match("utt:u-1", {"id": "u-1", "text": "psst again"})]]
+    push(minds["v2"])
+    await wait_for(lambda: (entry(rumors, "v2") or {}).get("state") == "warned")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_stop_cancels_pending_checks(turns):
     engine, _, _ = await following(turns, contex=HangingContex())
     await wait_for(lambda: mind_queries(engine, "v2"))
