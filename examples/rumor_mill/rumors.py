@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 
 # ponytail: Contex caps top_k at 100, so a whisper followed by 100 closer ones can read as off topic.
 TOP_K = 100
-FRONTIER_STATES = ("heard", "busy", "answered", "uncared", "worn", "knew", "kept", "warned", "drifted", "passed")
 # States a later check or outcome may still replace.
 OPEN_STATES = ("heard", "busy", "answered")
 # The frontier state each whisper status gives the whisper's target.

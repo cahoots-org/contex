@@ -37,8 +37,9 @@ log = logging.getLogger(__name__)
 LISTEN_RETRY_SECONDS = 1
 # How many keys that reached a turn are remembered per villager, so neither a poll nor a direct hit hears them again.
 CONSUMED_KEYS = 500
-# How many whispers a villager kept to themselves are watched for a later relay.
+# Reach counts that mark a moment as a rumor spreads.
 MOMENT_SIZES = (5, 10)
+# How many whispers a villager kept to themselves are watched for a later relay.
 KEPT_WHISPERS = 50
 # How many villagers set off together on their daily round, and how much of each part of the day the round spans.
 ROUTINE_BATCH = 5

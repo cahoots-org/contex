@@ -19,7 +19,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
 from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_player_id
-from examples.rumor_mill.rumors import FRONTIER_STATES, Rumors
+from examples.rumor_mill.rumors import TARGET_STATES, Rumors
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
@@ -620,7 +620,8 @@ def test_beliefs_reach_the_websocket(fast_polls, game):
 def test_the_page_has_words_for_every_frontier_state(game):
     html = game.client.get("/").text
     body = re.search(r"const FRONTIER = \{(.*?)\};", html, re.S).group(1)
-    assert set(re.findall(r"^\s*(\w+):", body, re.M)) == set(FRONTIER_STATES)
+    emitted = set(TARGET_STATES.values()) | {"worn", "knew", "drifted"}
+    assert set(re.findall(r"^\s*(\w+):", body, re.M)) == emitted
 
 
 def test_the_page_renders_moments_and_goal_links(game):
