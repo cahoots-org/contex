@@ -738,7 +738,9 @@ def test_the_page_has_the_conversation_dock(game):
         assert needle in html
     assert 'setAttribute("aria-controls", "chat")' in html and "ariaControls" not in html
     dock = re.search(r"const DOCK = \{(.*?)\};", html, re.S).group(1)
-    assert set(re.findall(r"(\w+): \[", dock)) == {"near_miss", "answered", "brushed_off", "busy"}
+    glyphs = dict(re.findall(r'(\w+): \["(.)"', dock))
+    assert glyphs.keys() == {"near_miss", "answered", "brushed_off", "busy"}
+    assert glyphs["answered"] == "↩" and len(set(glyphs.values())) == 4
     for gone in ("const talks", "startTalk", "innerHTML"):
         assert gone not in html
     assert ".reply" not in re.search(r"const ROVE = (.*);", html).group(1)

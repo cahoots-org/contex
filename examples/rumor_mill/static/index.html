@@ -228,7 +228,7 @@ mark.kept {
 }
 .rumor-row:hover, .rumor-row[aria-expanded="true"] { background: var(--bg); }
 .rumor-row .rmark { margin-right: 0; }
-.stopped > .rumor-row { opacity: .55; }
+.stopped > .rumor-row :is(.rmark, .rbar) { filter: grayscale(1); }
 .rumor-detail { padding: 0 .25rem .6rem 2rem; font-size: .875rem; overflow-wrap: anywhere; }
 .rumor-detail p { margin: .35rem 0 0; }
 .rumor-detail ul { list-style: none; margin: .35rem 0 0; padding: 0; color: var(--muted); }
@@ -655,7 +655,7 @@ const markOf = new Map();
 const rumorRows = new Map();
 // Villagers talking with you, newest last: villager id to their name, the rumor's card id, where things stand, whether
 // it is a missed whisper's exchange that ends with the part of the day, the whisper ids it holds, and its lines.
-const DOCK = { near_miss: ["…", "leaning in"], answered: ["✓", "answered"], brushed_off: ["–", "brushed you off"], busy: ["–", "busy"] };
+const DOCK = { near_miss: ["…", "leaning in"], answered: ["↩", "answered"], brushed_off: ["–", "brushed you off"], busy: ["◷", "busy"] };
 const DOCK_ENDS = new Set(["kept", "took_the_bait", "warned", "moved_on", "not_carried"]);
 const dock = new Map();
 let chatWith = null;

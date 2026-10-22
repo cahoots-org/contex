@@ -17,7 +17,7 @@
 - Everything stays per player. The page shows only events, tallies and state the server already scopes to this player. No new endpoint is added, and nothing names, counts or reveals another player.
 - Text from villagers, players and the model goes in through `textContent` or text nodes only. `innerHTML` never appears in the file.
 - Keyboard: every control is a native `<button>` or sits in the feed's `ROVE`. Every toggle carries `aria-expanded`. Escape closes the innermost open thing in this order: villager card, chat, trophy case, open rumor.
-- Colour is never the only cue. Each rumor mark carries its glyph, each dock badge carries `…`, `✓` or `–`, and a stopped rumor says "stopped".
+- Colour is never the only cue. Each rumor mark carries its glyph, each dock badge carries `…`, `↩`, `–` or `◷`, and a stopped rumor says "stopped".
 - Motion: nothing new animates outside `.fresh`. `prefers-reduced-motion` stills it, as it does today.
 - Light and dark: every new colour is a `:root` token, redefined in the existing `@media (prefers-color-scheme: dark)` block.
 - At 390px wide there is no horizontal page scroll.
@@ -77,7 +77,7 @@
 - Produces (server):
   - A `brushed_off` or `near_miss` status from `Player._whisper_to` carries `continues: bool`, on both the first emission and the hint emission. `continues = not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)`, which is the condition `leaning` already uses (rewrite `leaning` as `bool(near_misses) and continues`). `_hint` takes a new parameter `continues: bool` and passes it through. The `on_whisper_status` docstring adds: "a miss also carries continues, whether the villager's next whisper continues the exchange."
 - Produces (page):
-  - `const DOCK = { near_miss: ["…", "leaning in"], answered: ["✓", "answered"], brushed_off: ["–", "brushed you off"], busy: ["–", "busy"] };`
+  - `const DOCK = { near_miss: ["…", "leaning in"], answered: ["↩", "answered"], brushed_off: ["–", "brushed you off"], busy: ["◷", "busy"] };`
   - `const dock = new Map()`, from villager id to `{ name, rumor, state, thread, whispers: Set<string>, lines: Array<{ you: boolean, text: string }> }`, plus `let chatWith = null` (a villager id).
   - `dockStatus(e, fresh)`, called from `showStatus`. Apply the rules in this order:
     1. `near_miss` or `brushed_off`. If `e.continues === false`, call `dockEnd(e.villager_id)`. If `e.continues === true`, open or keep the entry, set `state = e.state` and `thread = true`, and reset `whispers` to `{e.whisper_id}`. Whenever `e.hint` is present, push `{ you: false, text: e.hint }` onto an existing entry.

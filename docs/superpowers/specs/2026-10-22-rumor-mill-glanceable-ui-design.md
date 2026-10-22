@@ -57,7 +57,7 @@ Three columns, then the dock and whisper box across the bottom:
    colour, and the walk/listen/ask actions as today.
 
 **The dock** (above the whisper box): one face for each villager in a conversation with you now,
-with a badge for where it stands — leaning in (…), answered (✓), brushed off or busy (–). Clicking
+with a badge for where it stands — leaning in (…), answered (↩), brushed off (–) or busy (◷). Clicking
 a face opens that exchange as a short chat right above the box, tagged with the mark of the rumor it
 is about, and points the box at that villager ("Talking with Agnes"); typing continues the
 conversation. A conversation leaves the dock when it ends. The dock is empty when nobody is talking
