@@ -627,9 +627,17 @@ def test_the_page_has_words_for_every_frontier_state(game):
 def test_the_page_renders_moments_and_goal_links(game):
     html = game.client.get("/").text
     rove = re.search(r"const ROVE = (.*);", html).group(1)
-    assert 'case "moment"' in html and "frontier-more" in rove
-    assert "Who has it" in html and "Spreading: " in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
+    assert 'case "moment"' in html and "frontier-more" not in rove
+    assert "Spreading: " in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
     assert "innerHTML" not in html
+
+
+def test_a_rumor_opens_in_place(game):
+    html = game.client.get("/").text
+    for needle in ("rumor-row", "selectRumor(", 'id="legend-mark"', "--sel", "Spreading: ", "whoHasIt(", "talkingNow(", "Reuse"):
+        assert needle in html
+    for gone in ("frontier-more", "togglePin", "goal-link", "innerHTML"):
+        assert gone not in html
 
 
 def test_the_page_marks_each_rumor(game):

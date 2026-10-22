@@ -165,7 +165,7 @@ main {
 }
 .whisper { margin-top: .75rem; }
 .whisper .said { font-style: italic; }
-.hop, .whisper { cursor: pointer; border-radius: 4px; }
+.hop, .whisper { border-radius: 4px; }
 mark {
   background: linear-gradient(transparent 55%, var(--mark) 55%, var(--mark) 92%, transparent 92%) no-repeat;
   color: inherit;
@@ -206,14 +206,10 @@ mark.kept {
 .gameover li { margin: .1rem 0; }
 .gameover .restart { margin: .75rem 0 0; color: var(--muted); font-size: .875rem; }
 @keyframes settle { from { opacity: 0; } to { opacity: 1; } }
-.feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
-.feed.tracing .vt, .feed.tracing .drift { opacity: .35; }
-.lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
 .rumor {
   border: 1px solid var(--rail); border-radius: 8px; padding: .45rem .9rem .6rem; margin: .75rem 0; max-width: 46rem;
   background: var(--panel);
 }
-.rumor .chip { background: var(--bg); }
 [data-r="0"] { --rc: var(--r0); }
 [data-r="1"] { --rc: var(--r1); }
 [data-r="2"] { --rc: var(--r2); }
@@ -226,22 +222,27 @@ mark.kept {
 }
 .rmark.none { background: none; }
 .rumor-list { list-style: none; margin: 0; padding: 0; }
-.rumor-item { display: flex; align-items: center; gap: .5rem; padding: .4rem .25rem; border-top: 1px solid var(--rail); }
-.rumor-item .rmark { margin-right: 0; }
-.rumor-item.stopped { opacity: .55; }
+.rumor-item { border-top: 1px solid var(--rail); }
+.rumor-row {
+  display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .25rem;
+  background: none; border: 0; border-radius: 4px; text-align: left; cursor: pointer;
+}
+.rumor-row:hover, .rumor-row[aria-expanded="true"] { background: var(--bg); }
+.rumor-row .rmark { margin-right: 0; }
+.stopped > .rumor-row { opacity: .55; }
+.rumor-detail { padding: 0 .25rem .6rem 2rem; font-size: .875rem; overflow-wrap: anywhere; }
+.rumor-detail p { margin: .35rem 0 0; }
+.rumor-detail ul { list-style: none; margin: .35rem 0 0; padding: 0; color: var(--muted); }
+.rumor-detail b { color: var(--ink); font-weight: 700; }
+.rumor-detail .chip { background: var(--bg); }
+.rumor-detail .chip .badge { border-color: var(--bg); }
+.goal-line { color: var(--muted); }
+.whispered .brush { font-size: .95rem; }
 .heard { min-width: 2ch; font-size: 1.35rem; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .rbar { flex: 1; min-width: 2rem; height: 6px; background: var(--rail); border-radius: 3px; overflow: hidden; }
 .rbar i { display: block; height: 100%; background: var(--rc); }
 .goal-word { flex: 0 1 6rem; min-width: 0; font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rumor .chip .badge { border-color: var(--bg); }
 .rumor > .whisper { margin-top: 0; }
-.summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .9rem; margin: .3rem 0 .1rem; font-size: .875rem; }
-.summary .story { color: var(--ink); }
-.summary .goal-link { font-size: .8rem; color: var(--muted); }
-.summary span:empty { display: none; }
-.frontier { list-style: none; margin: .1rem 0; padding: 0; font-size: .875rem; color: var(--muted); }
-.frontier b { color: var(--ink); font-weight: 700; }
-.frontier:not(.open) { display: none; }
 .rumor:not(.open) .thread { display: none; }
 .reuse { margin-left: .5rem; font-size: .75rem; }
 .thread, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
@@ -403,7 +404,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .badge[data-s="answered"] { background: var(--talk); }
 .searching .pick:not(.hit) { opacity: .35; }
 .pick.hit canvas { outline: 2px solid var(--accent); outline-offset: 1px; }
-.touched > .face canvas, .legend .touched { outline: 2px solid var(--ink); outline-offset: 1px; }
+.touched > .face canvas, .legend .touched { outline: 2px solid var(--sel, var(--ink)); outline-offset: 1px; }
 .might > .face::before, .legend .might {
   content: ""; position: absolute; left: -4px; top: -4px; width: 7px; height: 7px; border-radius: 50%;
   background: var(--mark); border: 1px solid var(--ink);
@@ -607,7 +608,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
       <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
       <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
-      <span><span class="touched" aria-hidden="true"></span>touched by the rumor you picked</span>
+      <span><span class="touched" aria-hidden="true"></span><span id="legend-mark"></span>touched by the rumor you opened</span>
       <span><span class="might" aria-hidden="true"></span>this might interest them</span>
     </p>
     <section class="card" id="card" role="dialog" aria-labelledby="card-title" hidden></section>
@@ -647,7 +648,6 @@ let villagersKey = "";
 let places = [];
 let boot = null;
 let lastId = 0;
-let pinned = null;
 let selected = null;
 let rover = null;
 let pointing = false;
@@ -693,12 +693,12 @@ const FRONTIER = {
 };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
-const ROVE = ".hop, .whisper, .vt-more, .vt-talk, .thread-more, .scene-more, .scenes-more, .frontier-more, .trophy-open";
+const ROVE = ".hop, .whisper, .vt-more, .vt-talk, .thread-more, .scene-more, .scenes-more, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const SORT_KEY = "rumor-mill-sort";
 const FACES_SHOWN = 11;
-// The rumor whose touch the village panel shows: the card of the pinned whisper or hop.
+// The open rumor, whose touch the village panel shows.
 let selectedRumor = null;
 const TOUCH = { heard: "heard it", passed: "passed it on", believes: "believes it", scene: "in a scene" };
 // Villager id to the claims of the player's goals they believe.
@@ -823,42 +823,91 @@ function rumorGoal(t) {
   };
 }
 
+// The row's name starts with the whisper, since its mark is hidden from screen readers.
 function setRow(uid) {
-  const row = rumorRows.get(uid);
-  if (!row) return;
+  const item = rumorRows.get(uid);
+  if (!item) return;
   const t = tallies.get(uid);
   const goal = rumorGoal(t);
-  row.classList.toggle("stopped", Boolean(t?.stopped));
-  row.replaceChildren(rumorMark(uid),
+  item.classList.toggle("stopped", Boolean(t?.stopped));
+  item.querySelector(".rumor-row").replaceChildren(
+    el("span", { className: "visually-hidden", textContent: `${item.dataset.text}: ` }),
+    rumorMark(uid),
     el("b", { className: "heard", textContent: t?.heard ?? 1 }),
-    el("span", { className: "visually-hidden", textContent: " heard" }),
-    el("span", { className: "rbar", role: "progressbar", ariaLabel: "Toward its goal", ariaValueMin: 0, ariaValueMax: 100,
-      ariaValueNow: goal.value, ariaValueText: goal.said }, el("i", { style: `width:${goal.value}%` })),
-    el("span", { className: "goal-word", textContent: goal.word }));
+    el("span", { className: "visually-hidden", textContent: " heard, " }),
+    el("span", { className: "rbar", ariaHidden: "true" }, el("i", { style: `width:${goal.value}%` })),
+    el("span", { className: "goal-word", textContent: goal.word }),
+    goal.said === goal.word ? null : el("span", { className: "visually-hidden", textContent: `, ${goal.said}` }));
 }
 
-// A whisper's card: the whisper as its title, its chip and tally, then its retellings and any conversation.
+// Opens one rumor in place, or closes the open one, and rings the villagers it touched in its colour.
+function selectRumor(uid) {
+  const was = rumorRows.get(selectedRumor);
+  if (was) {
+    const detail = was.querySelector(".rumor-detail");
+    if (detail.contains(document.activeElement)) was.querySelector(".rumor-row").focus();
+    was.querySelector(".rumor-row").ariaExpanded = "false";
+    detail.hidden = true;
+  }
+  selectedRumor = uid;
+  const item = rumorRows.get(uid);
+  if (item) {
+    item.querySelector(".rumor-row").ariaExpanded = "true";
+    item.querySelector(".rumor-detail").hidden = false;
+  }
+  setDetail(uid);
+  refreshVillagers();
+  if (item) $("town").style.setProperty("--sel", `var(--r${item.dataset.r})`);
+  else $("town").style.removeProperty("--sel");
+  $("legend-mark").replaceChildren(...(item ? [rumorMark(uid)] : []));
+}
+
+// The open rumor: how it is going, its goal, who has it, the conversations about it now, and what you whispered.
+function setDetail(uid) {
+  const item = rumorRows.get(uid);
+  if (!item) return;
+  const detail = item.querySelector(".rumor-detail");
+  const t = tallies.get(uid);
+  const link = t?.goals[0];
+  const status = statuses.get(uid);
+  const { text, target, place } = item.dataset;
+  const focused = detail.contains(document.activeElement);
+  const reuse = reuseButton(text, target);
+  reuse.tabIndex = 0;
+  const talking = t ? talkingNow(t.frontier) : [];
+  detail.replaceChildren(
+    t?.heard > 1 ? el("p", { className: "story", textContent: story(t) })
+      : status ? chip(status) : el("p", { className: "story", textContent: "Waiting to hear back." }),
+    link ? el("p", { className: "goal-line", textContent: goalLine(link) }) : null,
+    t?.heard > 1 && !t.stopped ? el("ul", { className: "frontier" }, ...whoHasIt(t.frontier)) : null,
+    talking.length ? el("ul", { className: "talking" }, ...talking) : null,
+    el("p", { className: "whispered" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
+      ": ", el("span", { className: "brush", textContent: `“${text}”` }), " ", reuse));
+  if (focused) reuse.focus();
+}
+
+// A whisper's card: the whisper as its title, then its scenes and retellings. Its row opens in place on a click.
 function newCard(uid, target, place, text) {
   spoken.set(uid, { text, parent: null, speaker: "you" });
   cardOf.set(uid, uid);
   if (!markOf.has(uid)) {
-    markOf.set(uid, markOf.size);
-    const row = el("li", { className: "rumor-item", title: text, dataset: { r: markOf.get(uid) % MARKS.length } });
+    const index = markOf.size;
+    markOf.set(uid, index);
+    const button = el("button", { type: "button", className: "rumor-row", title: text, ariaExpanded: "false",
+      dataset: { card: uid }, onclick: () => selectRumor(selectedRumor === uid ? null : uid) });
+    button.setAttribute("aria-controls", `rumor-detail-${index}`);
+    const row = el("li", { className: "rumor-item", dataset: { r: index % MARKS.length, text, target, place: place || "" } },
+      button, el("div", { className: "rumor-detail", id: `rumor-detail-${index}`, hidden: true }));
     rumorRows.set(uid, row);
     $("rumor-list").append(row);
   }
-  const status = statuses.get(uid);
   const card = el("li", { className: "rumor", dataset: { card: uid } },
     el("div", { className: "ev whisper", tabIndex: -1, dataset: { uid } },
       el("span", { className: "rails", style: "--d:0" }),
       el("div", { className: "body" },
         el("p", { className: "meta" }, rumorMark(uid), "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
           reuseButton(text, target)),
-        ...quoted(text), status && chip(status))),
-    el("p", { className: "summary" }, el("span", { className: "story" }), el("span", { className: "goal-link" }),
-      el("button", { type: "button", className: "linkish frontier-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
-        onclick: () => toggleFrontier(card) })),
-    el("ul", { className: "frontier" }),
+        ...quoted(text))),
     el("ol", { className: "scenes" }),
     el("button", { type: "button", className: "linkish scenes-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
       onclick: () => toggleScenes(card) }),
@@ -888,20 +937,6 @@ function countThread(card) {
   toggle.textContent = card.classList.contains("open") ? "Hide retellings" : `Show ${n} ${n === 1 ? "retelling" : "retellings"}`;
 }
 
-// Who has the rumor waits behind a toggle; the card leads with one sentence about how it is going.
-function toggleFrontier(card) {
-  const open = card.querySelector(".frontier").classList.toggle("open");
-  card.querySelector(".frontier-more").ariaExpanded = String(open);
-  countFrontier(card);
-}
-
-function countFrontier(card) {
-  const n = card.querySelector(".frontier").children.length;
-  const toggle = card.querySelector(".frontier-more");
-  toggle.hidden = n === 0;
-  toggle.textContent = toggle.ariaExpanded === "true" ? "Hide who has it" : "Who has it";
-}
-
 function joined(names) {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
@@ -913,18 +948,35 @@ function busyText(until) {
 
 function doing(e) {
   if (e.scene) return `in ${e.scene.tone === "argument" ? "an argument" : "a conversation"} at the ${e.scene.place}`;
-  if (e.state === "busy") return "will hear it soon";
   return FRONTIER[e.state] ? FRONTIER[e.state](e) : null;
 }
 
-// One line per thing people are doing with the rumor, naming everyone doing it.
+function waiting(e) {
+  return e.state === "busy" && !e.scene;
+}
+
+// One line per thing people are doing with the rumor, naming everyone doing it; each busy person counts down alone.
 function whoHasIt(frontier) {
   const groups = new Map();
   for (const e of frontier) {
-    const what = doing(e);
+    const what = waiting(e) ? null : doing(e);
     if (what) groups.set(what, [...(groups.get(what) || []), e.name]);
   }
-  return [...groups].map(([what, names]) => el("li", {}, el("b", { textContent: joined(names) }), `: ${what}`));
+  return [
+    ...[...groups].map(([what, names]) => el("li", {}, el("b", { textContent: joined(names) }), `: ${what}`)),
+    ...frontier.filter(waiting).map((e) => el("li", {}, el("b", { textContent: e.name }), ": ", ...countdown(e.until, busyText))),
+  ];
+}
+
+// The conversations about the rumor going on now, by kind and place, with how many are in each.
+function talkingNow(frontier) {
+  const groups = new Map();
+  for (const e of frontier) {
+    if (!e.scene) continue;
+    const words = sceneWords(e.scene.tone, e.scene.place);
+    groups.set(words, (groups.get(words) || 0) + 1);
+  }
+  return [...groups].map(([words, n]) => el("li", { textContent: `${words} · ${n} ${n === 1 ? "person" : "people"}` }));
 }
 
 // How the rumor is going, in one sentence.
@@ -936,9 +988,8 @@ function story(t) {
   return `Spreading: ${t.heard} have heard it${where}.`;
 }
 
-function goalLink(g) {
-  const believe = g.convinced ? `, ${g.convinced} convinced` : "";
-  return `${g.world ? "World goal" : "Goal"}: ${g.claim || g.text}${believe}`;
+function goalLine(link) {
+  return `${link.world ? "World goal" : "Goal"}: ${link.claim || link.text} · ${link.convinced} convinced`;
 }
 
 function sceneWords(tone, place) {
@@ -1043,16 +1094,7 @@ function reuse(text, target) {
 
 function setTally(uid) {
   setRow(uid);
-  const card = cards.get(uid);
-  const t = tallies.get(uid);
-  if (!card) return;
-  // Until the rumor gets past the one you whispered to, the chip already tells its story.
-  const spread = Boolean(t && t.heard > 1);
-  card.querySelector(".story").textContent = spread ? story(t) : "";
-  card.querySelector(".goal-link").textContent = t && t.goals.length ? goalLink(t.goals[0]) : "";
-  card.querySelector(".frontier").replaceChildren(...(spread && !t.stopped ? whoHasIt(t.frontier) : []));
-  countFrontier(card);
-  card.querySelector(".summary").hidden = !card.querySelector(".story").textContent && !card.querySelector(".goal-link").textContent;
+  if (uid === selectedRumor) setDetail(uid);
 }
 
 function setTallies(list) {
@@ -1078,7 +1120,7 @@ function addTo(card, where, node, fresh) {
 // A card from /api/state, for a whisper older than the replay; its hops lack the replay's detail.
 // Hops still in the replay are left to it.
 function restoredCard(c, replayed) {
-  const card = newCard(c.uid, c.target_name, null, c.text);
+  const card = newCard(c.uid, c.target_name, c.place, c.text);
   for (const h of c.hops) {
     if (replayed.has(h.uid)) continue;
     shown.add(h.uid);
@@ -1456,10 +1498,7 @@ function chip(e) {
   if (e.state === "checking") {
     node.append(el("span", { ariaHidden: "true", textContent: "…" }), el("span", { className: "visually-hidden", textContent: "Checking." }));
   } else if (e.state === "busy") {
-    // The countdown ticks out of the screen reader's hearing; it hears the wait once.
-    node.append(`${e.name} is busy. `,
-      el("span", { ariaHidden: "true", dataset: { until: e.until }, textContent: waitText(e.until) }),
-      el("span", { className: "visually-hidden wait", textContent: waitText(e.until) }));
+    node.append(`${e.name} is busy. `, ...countdown(e.until, waitText));
   } else if (e.state === "brushed_off") {
     if (e.hint) node.append("Brushed you off: ", el("span", { className: "brush", textContent: `“${e.hint}”` }));
     else node.append("Brushed you off.");
@@ -1472,18 +1511,20 @@ function chip(e) {
   return node;
 }
 
+// The countdown ticks out of the screen reader's hearing; it hears the wait once.
+function countdown(until, say) {
+  return [el("span", { ariaHidden: "true", dataset: { until }, textContent: say(until) }),
+    el("span", { className: "visually-hidden wait", textContent: say(until) })];
+}
+
 function showStatus(e, fresh) {
   statuses.set(e.whisper_id, e);
   dockStatus(e, fresh);
-  const item = feed.querySelector(`.whisper[data-uid="${CSS.escape(e.whisper_id)}"]`);
-  if (!item) return;
-  const old = item.querySelector(".chip");
-  if (old) old.replaceWith(chip(e));
-  else item.querySelector(".body").append(chip(e));
+  if (e.whisper_id === selectedRumor) setDetail(selectedRumor);
 }
 
 setInterval(() => {
-  for (const node of feed.querySelectorAll("[data-until]")) {
+  for (const node of document.querySelectorAll("[data-until]")) {
     const until = Number(node.dataset.until);
     const say = node.closest(".frontier") ? busyText : waitText;
     node.textContent = say(until);
@@ -1694,35 +1735,9 @@ function addEvents(events, fresh) {
   if (stick) followFeed(fresh);
 }
 
-// Thread tracing: light a hop and every hop back to your whisper.
-function trace(uid) {
-  feed.querySelectorAll(".lit").forEach((n) => n.classList.remove("lit"));
-  feed.classList.toggle("tracing", uid != null);
-  for (let id = uid; id != null; id = spoken.get(id) && spoken.get(id).parent) {
-    const node = feed.querySelector(`[data-uid="${CSS.escape(id)}"]:not(.note)`);
-    if (node) node.classList.add("lit");
-  }
-}
-function threadItem(target) {
-  return target.closest(".hop, .whisper");
-}
-feed.addEventListener("mouseover", (ev) => {
-  const item = threadItem(ev.target);
-  if (pinned == null) trace(item ? item.dataset.uid : null);
-});
-feed.addEventListener("mouseleave", () => { if (pinned == null) trace(null); });
-function togglePin(item) {
-  pinned = item && pinned !== item.dataset.uid ? item.dataset.uid : null;
-  trace(pinned);
-  const rumor = (pinned && item.closest(".rumor")?.dataset.card) || null;
-  if (rumor === selectedRumor) return;
-  selectedRumor = rumor;
-  refreshVillagers();
-}
 feed.addEventListener("click", (ev) => {
   const item = ev.target.closest(ROVE);
   if (item) setRover(item);
-  if (!ev.target.closest("button")) togglePin(threadItem(ev.target));
 });
 feed.addEventListener("keydown", (ev) => {
   const item = ev.target.closest(ROVE);
@@ -1730,15 +1745,10 @@ feed.addEventListener("keydown", (ev) => {
   const items = threadItems();
   const at = items.indexOf(item);
   const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[ev.key];
-  if (ev.key === "Enter" || ev.key === " ") {
-    if (item.matches("button")) return;
-    ev.preventDefault();
-    if (item.matches(".hop, .whisper")) togglePin(item);
-  } else if (next != null && items[next]) {
+  if (next != null && items[next]) {
     ev.preventDefault();
     setRover(items[next]);
     items[next].focus();
-    if (pinned != null && items[next].matches(".hop, .whisper")) togglePin(items[next]);
   }
 });
 document.addEventListener("keydown", (ev) => {
@@ -1746,7 +1756,7 @@ document.addEventListener("keydown", (ev) => {
   if (!$("card").hidden) closeCard();
   else if (chatWith != null) openChat(null);
   else if (!$("trophies").hidden) setTrophies(false);
-  else if (pinned != null) togglePin(null);
+  else if (selectedRumor != null) selectRumor(null);
 });
 
 function goalProgress(g) {
@@ -2389,6 +2399,7 @@ function reset() {
   cardOf.clear();
   shown.clear();
   tallies.clear();
+  selectRumor(null);
   markOf.clear();
   rumorRows.clear();
   $("rumor-list").replaceChildren();
@@ -2400,13 +2411,10 @@ function reset() {
   listenUntil = null;
   lastTarget = null;
   lastId = 0;
-  pinned = null;
-  selectedRumor = null;
   beliefs = {};
   draftAsk++;
   drafted = new Set();
   rover = null;
-  feed.classList.remove("tracing");
   over = false;
   $("gameover").hidden = true;
   $("whisper").classList.remove("over");
