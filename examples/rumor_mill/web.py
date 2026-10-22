@@ -132,10 +132,10 @@ def game_json(player: Player) -> dict:
 
 
 def goal_json(judge, goal: Goal, met: bool) -> dict:
-    """The goal's text, whole percent and believer counts, as the page shows it."""
+    """The goal's text, whole percent, believer counts and doubt, as the page shows it."""
     believers, needed = judge.counts.get(goal.id, (None, None))
     return {"id": goal.id, "text": goal.text, "percent": int(judge.progress.get(goal.id, 0.0) * 100), "met": met,
-            "believers": believers, "needed": needed}
+            "believers": believers, "needed": needed, "doubt": judge.doubt.get(goal.id)}
 
 
 def player_for(players: Players, cookie: str | None) -> Player | None:

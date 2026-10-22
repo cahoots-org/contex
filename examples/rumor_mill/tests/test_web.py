@@ -76,7 +76,9 @@ def game(monkeypatch):
         players.deliver_pending(player)
         return player
 
-    judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD, roots={})
+    judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD, roots={},
+        doubt={},
+    )
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     feed.sinks.append(rumors.on_event)
@@ -104,9 +106,11 @@ def as_owner(client, owner):
 def test_state_lists_goals_villagers_and_replay(game):
     game.feed.say("hello")
     state = game.client.get("/api/state").json()
-    assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12}]
+    assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12,
+                              "doubt": None}]
     assert state["world_goal"] == {
         "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": None, "needed": None,
+        "doubt": None,
     }
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
@@ -165,6 +169,27 @@ def test_page_has_the_trophy_case_and_world_goal(game):
     assert 'id="trophies-toggle"' in html and 'aria-controls="trophies"' in html and 'id="world"' in html
     assert "trophy-open" in html and "innerHTML" not in html
     assert "restart the program" not in html
+
+
+def test_goals_are_cards_and_the_header_has_one_status(game):
+    html = game.client.get("/").text
+    for needle in ('id="world"', 'class="goal-card world"', "goal-card", 'class="hud"', "doubtLine(", "don't believe it"):
+        assert needle in html
+    assert html.count('class="status"') == 0 and ".status {" not in html
+    test_page_has_the_trophy_case_and_world_goal(game)
+
+
+def test_doubt_goes_out_only_for_the_players_own_goals_and_the_world_goal(game):
+    other = game.join("o-other")
+    other.goals = [Goal("dog", "Half the village believes the dog is a thief", "belief")]
+    game.judge.doubt = {
+        "cat": {"count": 3, "saying": "the cat is odd"}, "dog": {"count": 4, "saying": "SECRET DOG TALK"},
+        WORLD.id: {"count": 1, "saying": "the well is poisoned"},
+    }
+    state = game.client.get("/api/state").json()
+    assert state["goals"][0]["doubt"] == {"count": 3, "saying": "the cat is odd"}
+    assert state["world_goal"]["doubt"] == {"count": 1, "saying": "the well is poisoned"}
+    assert "SECRET DOG TALK" not in json.dumps(state)
 
 
 def test_page_has_the_walk_listen_and_ask_controls(game):

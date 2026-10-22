@@ -63,10 +63,12 @@ class Lines:
         self.worlds: list[str] = []
         self.trophies: list[tuple[Trophy, str, str]] = []
         self.rumors: list[tuple[str | None, str | None]] = []
+        self.doubts: list[tuple[str | None, dict | None]] = []
 
-    def on_progress(self, goal, fraction, counts=None, player=None, rumor=None):
+    def on_progress(self, goal, fraction, counts=None, player=None, rumor=None, doubt=None):
         self.progress.append((goal.id, fraction, player))
         self.rumors.append((player, rumor))
+        self.doubts.append((player, doubt))
 
     def on_met(self, goal, player=None):
         self.met.append((goal.id, player))
@@ -218,6 +220,50 @@ async def test_unlikely_yes_does_not_count_as_belief():
     judge, _, jev, _, _ = make(n=4, believers=4)
     jev.answer = 0.3
     assert await judge.check(BELIEF) == 0.0
+
+
+class ClaimJev(StubJev):
+    """Says yes only to memories that state the claim."""
+
+    async def system_one(self, state, questions):
+        self.answer = 0.9 if any("spy" in m for m in state["memories"]) else 0.2
+        return await super().system_one(state, questions)
+
+
+@pytest.mark.asyncio
+async def test_doubters_are_counted_with_what_the_closest_one_is_saying():
+    judge, contex, _, _, _ = make(n=4, believers=1)
+    judge.jev = jev = ClaimJev()
+    contex.minds[mind_project(CONFIG.session, "v1")] = [Match("a", {"text": "Bo said: the cat is odd"}, 0.8)]
+    contex.minds[mind_project(CONFIG.session, "v2")] = [
+        Match("b", {"text": "Al said: the cat is a thief"}, 0.85), Match("c", {"text": "Al said: cats"}, 0.8),
+    ]
+    await judge.check(BELIEF)
+    assert judge.doubt[BELIEF.id] == {"count": 2, "saying": "the cat is a thief"}
+    assert len(jev.calls) == 3 and len(contex.thresholds) == 4
+
+
+@pytest.mark.asyncio
+async def test_no_doubters_means_no_saying():
+    judge, *_ = make(n=2, believers=1)
+    await judge.check(BELIEF)
+    assert judge.doubt[BELIEF.id] == {"count": 0, "saying": None}
+
+
+@pytest.mark.asyncio
+async def test_progress_carries_the_doubt_and_doubt_is_forgotten_with_the_goal():
+    judge, _, jev, feed, _ = make(n=2, believers=2)
+    judge.world = QUIET
+    jev.answer = 0.2
+    p = holder(PID, BELIEF)
+    running = asyncio.create_task(judge.run(players(p)))
+    try:
+        await wait_for(lambda: (PID, {"count": 2, "saying": "the cat is a spy"}) in feed.doubts)
+        p.goals = []
+        await wait_for(lambda: BELIEF.id not in judge.doubt)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
 
 
 @pytest.mark.asyncio

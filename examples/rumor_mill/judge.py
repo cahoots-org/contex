@@ -29,6 +29,16 @@ def _text(match: Match) -> str:
     return str(match.data.get("text") or match.data)
 
 
+def _words(match: Match) -> str:
+    """What the memory says, without who said it."""
+    text = _text(match)
+    return text.partition(": ")[2] or text
+
+
+def _best(matches: list[Match]) -> Match:
+    return max(matches, key=lambda m: m.similarity or 0.0)
+
+
 async def _yes(jev, state: dict, question: str) -> bool:
     """Whether Jev thinks a yes is more likely than a no."""
     response = await jev.system_one(state=state, questions={"q": Noul(instructions=question)})
@@ -61,6 +71,8 @@ class Judge:
         self.counts: dict[str, tuple[int, int]] = {}
         # By goal id, each believer's id and the player whisper behind their best-matching memory, if one is.
         self.roots: dict[str, dict[str, str | None]] = {}
+        # By goal id, how many heard the claim but don't believe it, and what the closest of them is saying.
+        self.doubt: dict[str, dict] = {}
         self.world = self._next_world()
         self.world_since = time.time()
         # The owners who whispered while the world goal was in play.
@@ -68,10 +80,13 @@ class Judge:
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
-    async def _believes(self, goal: Goal, villager: Villager, roots: dict[str, str | None]) -> bool | None:
+    async def _believes(
+        self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match],
+    ) -> bool | None:
         """Whether the villager believes the goal's claim; None if they left or the check failed.
 
-        A believer goes into roots with the player whisper behind their best-matching memory, if one is.
+        A believer goes into roots with the player whisper behind their best-matching memory, if one is; a villager
+        with matching memories who doesn't believe goes into doubters with their best-matching memory.
         """
         async with self._semaphore:
             try:
@@ -96,7 +111,9 @@ class Judge:
             if villager.id not in self.town:
                 return None
             if believes:
-                roots[villager.id] = self._root(max(matches, key=lambda m: m.similarity or 0.0))
+                roots[villager.id] = self._root(_best(matches))
+            else:
+                doubters[villager.id] = _best(matches)
             return believes
 
     def _root(self, memory: Match) -> str | None:
@@ -127,8 +144,11 @@ class Judge:
             return max(0.0, min(1.0, goal.state_check(self.town)))
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         roots: dict[str, str | None] = {}
-        results = await asyncio.gather(*(self._believes(goal, v, roots) for v in self.town.villagers))
+        doubters: dict[str, Match] = {}
+        results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in self.town.villagers))
         self.roots[goal.id] = roots
+        saying = _words(_best(list(doubters.values()))) if doubters else None
+        self.doubt[goal.id] = {"count": len(doubters), "saying": saying}
         counted = [r for r in results if r is not None]
         if not counted:
             return 0.0
@@ -176,6 +196,7 @@ class Judge:
             in_play[self.world.id] = self.world
             for goal in in_play.values():
                 before = dict(self.roots.get(goal.id, {}))
+                doubted = self.doubt.get(goal.id)
                 try:
                     progress = await self.check(goal)
                 except Exception:
@@ -183,12 +204,15 @@ class Judge:
                     continue
                 world = goal.id == self.world.id
                 holders = [p for p in playing if any(g.id == goal.id for g in p.goals)]
-                if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100):
+                doubt = self.doubt.get(goal.id)
+                if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100) or doubt != doubted:
                     counts = self.counts.get(goal.id)
                     for p in holders:
-                        self.feed.on_progress(goal, progress, counts, player=p.id, rumor=self._moved(goal.id, p.id, before))
+                        self.feed.on_progress(
+                            goal, progress, counts, player=p.id, rumor=self._moved(goal.id, p.id, before), doubt=doubt,
+                        )
                     if world:
-                        self.feed.on_progress(goal, progress, counts)
+                        self.feed.on_progress(goal, progress, counts, doubt=doubt)
                 self.progress[goal.id] = progress
                 holds[goal.id] = holds.get(goal.id, 0) + 1 if progress >= 1.0 else 0
                 if holds[goal.id] < goal.hold_checks:
@@ -232,7 +256,7 @@ class Judge:
 
     def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
-        for known in (self.progress, self.counts, self.roots, holds):
+        for known in (self.progress, self.counts, self.roots, self.doubt, holds):
             for gid in known.keys() - in_play:
                 del known[gid]
 
