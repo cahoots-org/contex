@@ -166,6 +166,14 @@ def test_page_has_the_trophy_case_and_world_goal(game):
     assert "restart the program" not in html
 
 
+def test_page_has_the_walk_listen_and_ask_controls(game):
+    html = game.client.get("/").text
+    for needle in ("Walk here", "Listen here", "/api/walk", "/api/listen", "/api/ask", 'case "listen"', 'case "asked"'):
+        assert needle in html
+    assert 'class="ask"' in html or 'className: "ask"' in html
+    assert "innerHTML" not in html
+
+
 def test_whisper_validation_errors_come_back_as_messages(game):
     post = game.client.post
     assert post("/api/whisper", json={"name": "Zed", "text": "hi"}).json() == {"error": "No one in town is called Zed."}

@@ -365,6 +365,13 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dd .brush, .card dd .passed { display: block; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+.ask { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .5rem; }
+.ask label { flex: 1 0 100%; font-size: .85rem; color: var(--muted); }
+.ask input { flex: 1 1 8rem; }
+.ask-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
+.ask-status.error { color: var(--danger); }
+.tile-act { display: block; margin-top: .3rem; font-size: .8rem; }
+.tile-act:disabled { cursor: default; text-decoration: none; }
 .suggest {
   position: absolute; bottom: 100%; left: 0; z-index: 3; width: min(26rem, 100%); max-height: 18rem; overflow-y: auto;
   list-style: none; margin: 0 0 .3rem; padding: .25rem; background: var(--panel);
@@ -543,6 +550,8 @@ let over = false;
 let notes = {};
 let lastTarget = null;
 let cardOpener = null;
+let here = null;
+let listenUntil = null;
 const statuses = new Map();
 // Rumor cards by whisper id; each whisper and reply id to its card's id; hop and line ids already on a card.
 const cards = new Map();
@@ -836,8 +845,15 @@ function restoredCard(c, replayed) {
 // same place; returns a new block to append, or null.
 function overheard(e, fresh) {
   const last = feed.lastElementChild;
-  const block = e.scene ? sceneBlock(e.scene, e.place)
-    : last && last.matches(".vt:not([data-scene])") && last.dataset.place === e.place ? last : talkBlock(e.place);
+  const listening = e.reason === "listen" && listenBlock(e.place);
+  const block = listening || (e.scene ? sceneBlock(e.scene, e.place)
+    : last && last.matches(".vt:not([data-scene]):not([data-listen])") && last.dataset.place === e.place ? last : talkBlock(e.place));
+  addLine(block, e, fresh);
+  return block.isConnected ? null : block;
+}
+
+// A line in a talk block, with a Talk button that starts a whisper about it.
+function addLine(block, e, fresh) {
   const why = REASONS[e.reason];
   const id = `talk-line-${++talkLines}`;
   block.querySelector(".vt-lines").append(el("li", { className: fresh ? "fresh" : "" },
@@ -853,7 +869,30 @@ function overheard(e, fresh) {
     setRover(block.querySelector(".vt-more"));
     if (had) rover.focus();
   }
-  return block.isConnected ? null : block;
+}
+
+// The newest listen at place that has not ended yet.
+function listenBlock(place) {
+  return [...feed.querySelectorAll(`.vt[data-listen][data-place="${CSS.escape(place)}"]:not([data-ended])`)].pop() || null;
+}
+
+// A listen opens a block of the lines said here lately; its end closes the newest open one.
+function listened(e, fresh) {
+  if (e.ended) {
+    if (listenUntil != null) setListening(null);
+    const block = listenBlock(e.place);
+    if (block) {
+      block.dataset.ended = "true";
+      sceneEnd(block, "You stop listening.");
+    }
+    return null;
+  }
+  setListening(e.until);
+  const block = talkBlock(e.place);
+  block.dataset.listen = String(e.id);
+  for (const line of e.lines) addLine(block, line, fresh);
+  countTalk(block);
+  return block;
 }
 
 function talkBlock(place) {
@@ -869,7 +908,8 @@ function talkBlock(place) {
 function countTalk(block) {
   const n = block.querySelector(".vt-lines").children.length;
   const toggle = block.querySelector(".vt-more");
-  const words = block.dataset.tone ? sceneWords(block.dataset.tone, block.dataset.place) : `Village talk at the ${block.dataset.place}`;
+  const words = block.dataset.listen ? `You listen at the ${block.dataset.place}`
+    : block.dataset.tone ? sceneWords(block.dataset.tone, block.dataset.place) : `Village talk at the ${block.dataset.place}`;
   block.querySelector(".vt-head span").textContent = n ? `${words} · ${plural(n, "line")}` : words;
   toggle.hidden = n <= 2;
   toggle.textContent = block.classList.contains("open") ? "Show fewer" : `Show all ${n}`;
@@ -960,8 +1000,10 @@ function render(e, fresh) {
     case "overheard":
       return overheard(e, fresh);
     case "place":
-      $("where").textContent = `You're at the ${e.place}`;
+      setHere(e.place);
       return null;
+    case "listen":
+      return listened(e, fresh);
     case "time":
       setClock(e);
       return null;
@@ -1015,7 +1057,8 @@ function render(e, fresh) {
       return el("li", { className: "note" }, e.text);
     case "asked":
       learn(e);
-      return null;
+      return el("li", { className: "note" },
+        el("b", { textContent: e.name }), `, asked about ${e.topic}: `, el("span", { className: "brush", textContent: `“${e.line}”` }));
     default:
       return null;
   }
@@ -1221,6 +1264,7 @@ function showGameOver(summary, live) {
   }
   talks.clear();
   setComposer();
+  setActions();
   setStatus("The game is over.");
   if (live && wasHidden) $("gameover-title").focus({ preventScroll: true });
 }
@@ -1405,7 +1449,7 @@ function choosePlace(place) {
 // The open tile: the place a search opened, else the player's choice, else where they last whispered, else the square.
 function openPlace(order) {
   const last = villagers.find((v) => v.id === lastTarget);
-  const want = searchPlace || chosenPlace || (last && last.place) || "square";
+  const want = searchPlace || chosenPlace || (last && last.place) || here || "square";
   return order.includes(want) ? want : order[0];
 }
 let chosenPlace = storedPlace();
@@ -1418,16 +1462,16 @@ function faceButton(v, hits) {
   }, faceWith(v), el("span", { className: "visually-hidden", textContent: knownAs(v) }));
 }
 
-function closedTile(place, here, hits) {
-  const first = hits.size ? [...here.filter((v) => hits.has(v.id)), ...here.filter((v) => !hits.has(v.id))] : here;
+function closedTile(place, crowd, hits) {
+  const first = hits.size ? [...crowd.filter((v) => hits.has(v.id)), ...crowd.filter((v) => !hits.has(v.id))] : crowd;
   const shown = first.slice(0, FACES_SHOWN);
-  const more = here.length - shown.length;
+  const more = crowd.length - shown.length;
   return el("div", { className: "faces" }, ...shown.map((v) => faceButton(v, hits)),
     more > 0 ? el("button", { type: "button", tabIndex: -1, className: "more", textContent: `+${more}`, onclick: () => choosePlace(place) }) : null);
 }
 
-function openTile(here, hits) {
-  const list = hits.size ? here.filter((v) => hits.has(v.id)) : here;
+function openTile(crowd, hits) {
+  const list = hits.size ? crowd.filter((v) => hits.has(v.id)) : crowd;
   if (!list.length) return el("p", { className: "meta", textContent: hits.size ? "No one here matches." : "No one is here." });
   const rows = el("ul", { className: "rows" }, ...list.map((v) => el("li", {}, el("button", {
     type: "button", className: "row", dataset: { id: v.id }, ariaCurrent: String(v.id === selected),
@@ -1458,6 +1502,7 @@ function who(v, detail) {
 function focusKey(node) {
   if (node.dataset.id) return `[data-id="${CSS.escape(node.dataset.id)}"]`;
   if (node.dataset.place) return `[data-place="${CSS.escape(node.dataset.place)}"]`;
+  if (node.dataset.act) return `[data-act="${CSS.escape(node.dataset.act)}"]`;
   return null;
 }
 
@@ -1472,8 +1517,8 @@ function renderVillagers() {
   $("people-heading").textContent = `Village (${villagers.length})`;
   people.classList.toggle("searching", hits.size > 0);
   people.replaceChildren(...order.map((place) => {
-    const here = villagers.filter((v) => v.place === place);
-    const count = hits.size ? `${here.filter((v) => hits.has(v.id)).length} of ${here.length}` : String(here.length);
+    const crowd = villagers.filter((v) => v.place === place);
+    const count = hits.size ? `${crowd.filter((v) => hits.has(v.id)).length} of ${crowd.length}` : String(crowd.length);
     return el("section", { className: place === open ? "tile open" : "tile" },
       el("button", {
         type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open),
@@ -1481,7 +1526,8 @@ function renderVillagers() {
         onclick: () => choosePlace(place),
       },
         capital(place), el("span", { textContent: count })),
-      place === open ? openTile(here, hits) : closedTile(place, here, hits));
+      place === open ? tileAction(place) : null,
+      place === open ? openTile(crowd, hits) : closedTile(place, crowd, hits));
   }));
   const said = !query.trim() ? ""
     : found.length ? `${found.length} found. Best match: ${found[0].name}, at the ${found[0].place}.`
@@ -1502,6 +1548,7 @@ function setVillagers(list) {
   villagers = list;
   villagersKey = key;
   refreshVillagers();
+  setAsk();
 }
 function flushVillagers() {
   if (peopleStale && !pointing && !$("people").contains(document.activeElement)) {
@@ -1548,6 +1595,7 @@ async function inspect(id, opener) {
     card.replaceChildren(...cardBody(body));
   }
   card.hidden = false;
+  setAsk();
   const top = cardOpener ? cardOpener.top - 8 : 8;
   card.style.setProperty("--top", `${Math.max(8, Math.min(top, innerHeight - card.offsetHeight - 8))}px`);
   $("card-title").focus({ preventScroll: true });
@@ -1571,6 +1619,7 @@ function cardBody(body) {
         known ? known[1] : "Nothing yet.",
         ...note.hints.map((h) => el("span", { className: "brush", textContent: `“${h}”` })),
         ...note.passed.map((t) => el("span", { className: "passed", textContent: `Passed on: “${t}”` })))),
+    el("div", { className: "ask-slot", dataset: { id: body.id, name: body.name, place: body.place } }),
     el("div", { className: "actions" },
       el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name}`, onclick: () => whisperTo(body.name) }),
       el("button", { className: "linkish", type: "button", textContent: "Close", onclick: closeCard })),
@@ -1702,6 +1751,107 @@ function setStatus(text, error = false) {
   $("status").classList.toggle("error", error);
 }
 
+async function post(path, body) {
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (res.ok) return { ok: true, error: null };
+    const data = await res.json().catch(() => ({}));
+    return { ok: false, error: data.error || "That didn't go through. Try again." };
+  } catch {
+    return { ok: false, error: "Can't reach the game. Check that it is still running, then try again." };
+  }
+}
+
+function setHere(place) {
+  here = place;
+  $("where").textContent = `You're at the ${place}`;
+  setActions();
+  setAsk();
+}
+
+function listening() {
+  return listenUntil != null && listenUntil > Date.now() / 1000;
+}
+
+// A listen runs until its end event, or on a reload until its time is up.
+function setListening(until) {
+  listenUntil = until;
+  setActions();
+  if (until != null) setTimeout(setActions, Math.max(0, until * 1000 - Date.now()) + 100);
+}
+
+// The open tile's button: walk to the place, or listen when the player is already there.
+function tileAction(place) {
+  const button = el("button", { type: "button", className: "linkish tile-act", dataset: { act: place } });
+  fillAction(button);
+  return button;
+}
+
+function fillAction(button) {
+  const at = button.dataset.act === here;
+  const busy = at && listening();
+  button.textContent = !at ? "Walk here" : busy ? "Listening…" : "Listen here";
+  button.disabled = over || busy;
+  button.onclick = at ? listenHere : () => walkTo(button.dataset.act);
+}
+
+function setActions() {
+  for (const button of $("people").querySelectorAll(".tile-act")) fillAction(button);
+}
+
+async function walkTo(place) {
+  const { ok, error } = await post("/api/walk", { place });
+  if (!ok) setStatus(error, true);
+}
+
+async function listenHere() {
+  const { ok, error } = await post("/api/listen", {});
+  if (!ok) setStatus(error, true);
+}
+
+// The card's Ask around form while the villager is where the player is, else where they are and a way there.
+function setAsk() {
+  const slot = $("card").hidden ? null : $("card").querySelector(".ask-slot");
+  if (!slot) return;
+  const { id, name } = slot.dataset;
+  const place = villagers.find((v) => v.id === id)?.place || slot.dataset.place;
+  const key = place === here ? "" : place;
+  if (slot.dataset.key === key) return;
+  const inside = slot.contains(document.activeElement);
+  slot.dataset.key = key;
+  slot.replaceChildren(...(key ? [
+    el("p", { textContent: `${name} is at the ${place}.` }),
+    el("button", { type: "button", className: "linkish", textContent: "Walk there", onclick: () => walkTo(place) }),
+  ] : askForm(id, name)));
+  if (inside) slot.querySelector("input, button").focus();
+}
+
+function askForm(id, name) {
+  const input = el("input", { type: "text", id: "ask-topic", maxLength: 500, autocomplete: "off", required: true,
+    placeholder: "the mill", disabled: over });
+  const button = el("button", { className: "primary", type: "submit", textContent: "Ask", disabled: over });
+  const status = el("p", { className: "ask-status", role: "status" });
+  const say = (text, error = false) => {
+    status.textContent = text;
+    status.classList.toggle("error", error);
+  };
+  const form = el("form", { className: "ask" },
+    el("label", { htmlFor: "ask-topic", textContent: `Ask ${name} what folk say about` }), input, button);
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const topic = input.value.trim();
+    if (!topic) return say("Write what to ask about.", true);
+    button.disabled = true;
+    say("Asking…");
+    const { ok, error } = await post("/api/ask", { villager_id: id, topic });
+    button.disabled = over;
+    if (!ok) return say(error, true);
+    input.value = "";
+    say(`${name} answered. It's in the feed.`);
+  });
+  return [form, status];
+}
+
 $("whisper").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const name = $("target").value.trim();
@@ -1712,26 +1862,13 @@ $("whisper").addEventListener("submit", async (ev) => {
   const reply = [...talks.values()].some((t) => t.name.toLowerCase() === name.toLowerCase());
   button.disabled = true;
   setStatus("Whispering…");
-  try {
-    const res = await fetch("/api/whisper", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(match ? { villager_id: match.id, text } : { name, text }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) {
-      $("text").value = "";
-      recalled = -1;
-      const who = match ? match.name : name;
-      setStatus(reply ? `Said to ${who}.` : `Whispered to ${who}. If it touches what they care about, they'll pass it on.`);
-    } else {
-      setStatus(body.error || "The whisper didn't go through. Try again.", true);
-    }
-  } catch {
-    setStatus("Can't reach the game. Check that it is still running, then try again.", true);
-  } finally {
-    button.disabled = over;
-  }
+  const { ok, error } = await post("/api/whisper", match ? { villager_id: match.id, text } : { name, text });
+  button.disabled = over;
+  if (!ok) return setStatus(error, true);
+  $("text").value = "";
+  recalled = -1;
+  const who = match ? match.name : name;
+  setStatus(reply ? `Said to ${who}.` : `Whispered to ${who}. If it touches what they care about, they'll pass it on.`);
 });
 
 // ArrowUp and ArrowDown in the whisper box step through what you have said, newest first.
@@ -1785,6 +1922,8 @@ function reset() {
   talks.clear();
   setComposer();
   $("where").textContent = "";
+  here = null;
+  listenUntil = null;
   lastTarget = null;
   lastId = 0;
   pinned = null;
@@ -1809,7 +1948,6 @@ async function loadState() {
   notes = state.notes;
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
-  $("where").textContent = `You're at the ${state.place}`;
   setClock(state.time);
   setTallies(state.rumors);
   // The replay goes in before the log is live, so a reload doesn't read it all out.
@@ -1839,6 +1977,7 @@ async function loadState() {
   }
   if (stick) feed.scrollTop = feed.scrollHeight;
   setTimeout(() => feed.setAttribute("aria-live", "polite"));
+  setHere(state.place);
   villagersKey = "";
   setVillagers(state.villagers);
   $("heat").textContent = state.heat_line;
