@@ -235,7 +235,7 @@ async def test_judge_skips_the_goals_of_a_player_whose_game_is_over():
     judge = Judge(None, None, Town(), Config(day_seconds=0.01), player.feed, Game())
     player.goals = [GOAL]
     player.end(Summary("lost", [], []))
-    everyone = Players()
+    everyone = Players(player.feed)
     everyone.add(player)
     checked = []
 

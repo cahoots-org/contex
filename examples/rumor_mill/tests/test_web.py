@@ -18,6 +18,7 @@ from examples.rumor_mill.goals import Goal, world_goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
@@ -71,7 +72,7 @@ def game(monkeypatch):
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
-        player=player, town=town, feed=feed, judge=judge, usage=usage, port=PORT,
+        player=player, players=Players(feed), town=town, feed=feed, judge=judge, usage=usage, port=PORT,
         suspicion=suspicion, game=game, rumors=rumors,
     )
     with TestClient(app, base_url=BASE) as client:
@@ -94,6 +95,7 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert state["events"][-1]["text"] == "hello"
     assert state["place"] == "square"
     assert state["time"] == {"day": 1, "phase": "morning"}
+    assert state["trophies"] == []
     assert "NEED" not in game.client.get("/api/state").text
 
 

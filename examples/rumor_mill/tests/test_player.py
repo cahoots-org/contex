@@ -57,6 +57,7 @@ async def test_whisper_is_delivered_and_rooted_in_lineage():
     assert (utterance.verb, utterance.place, utterance.parent) == ("whispered to you", "tavern", None)
     assert utterance.text == "the miller waters his flour"
     assert lineage.is_player_rooted("w-1")
+    assert player.whispered_at is not None
     player.close()
 
 
@@ -73,6 +74,7 @@ async def test_failed_whisper_says_so_and_leaves_no_brush_off():
     assert lines == []
     assert player._brush_offs == set()
     assert not [e for e in player.feed.recent if e.kind == "whisper_status"]
+    assert player.whispered_at is None
 
 
 @pytest.mark.asyncio

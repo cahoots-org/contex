@@ -7,12 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from examples.rumor_mill.player import Player, Refusal
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import Town
 
 HELP = (
     "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
-    "Other commands: villagers, inspect <name>, goals, usage, help, quit"
+    "Other commands: villagers, inspect <name>, goals, trophies, usage, help, quit"
 )
 
 
@@ -30,7 +31,7 @@ class Command:
 def parse_command(line: str) -> Command:
     """Turn one typed line into a Command."""
     line = line.strip()
-    if line in ("villagers", "goals", "usage", "help", "quit"):
+    if line in ("villagers", "goals", "trophies", "usage", "help", "quit"):
         return Command(line)
     if line.startswith("inspect ") and line[8:].strip():
         return Command("inspect", line[8:].strip())
@@ -79,7 +80,10 @@ async def until_over(session: Coroutine, player: Player) -> None:
         running.result()
 
 
-async def repl(player: Player, town: Town, feed, judge=None, usage=None, suspicion: Suspicion | None = None) -> None:
+async def repl(
+    player: Player, town: Town, feed, judge=None, usage=None, suspicion: Suspicion | None = None,
+    players: Players | None = None,
+) -> None:
     """Read commands until quit or end of input; stdin is read off the event loop."""
     feed.say(HELP)
     while True:
@@ -109,6 +113,12 @@ async def repl(player: Player, town: Town, feed, judge=None, usage=None, suspici
                 feed.say(f"World goal: {judge.world.text}: {int(progress.get(judge.world.id, 0.0) * 100)}%")
             if suspicion:
                 feed.say(HEAT_LINES[suspicion.label(player.id)])
+        elif cmd.kind == "trophies":
+            case = players.cases.get(player.owner, []) if players else []
+            for t in case:
+                feed.say(f"Day {t.day}: {'; '.join(t.goals)}")
+            if not case:
+                feed.say("No trophies yet.")
         elif cmd.kind == "usage" and usage:
             feed.say(usage.summary())
         elif cmd.kind == "help" or line.strip():

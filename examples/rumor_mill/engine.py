@@ -76,7 +76,7 @@ class Engine:
         self.rumors = rumors
         self.overhear = overhear
         self.routine = routine
-        self.players = Players()
+        self.players = Players(feed)
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source

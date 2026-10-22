@@ -1,5 +1,5 @@
 from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import Goal, Trophy
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.scenes import Scene
@@ -246,3 +246,11 @@ def test_a_warning_reaches_only_the_player_it_is_about():
     warning = Utterance("u-9", "v1", "Bert", "tavern", "the newcomer is behind it", None, "warned", about="p-a")
     feed.on_delivery(warning, ["v2"])
     assert [e.kind for e in feed.replay("p-a")] == ["warning"] and feed.replay("p-b") == []
+
+
+def test_a_trophy_reaches_only_its_player():
+    feed, lines = make()
+    feed.on_trophy(Trophy("personal", ("a", "b", "c"), 3), "A trophy for your case.", player="p-a")
+    assert [e.kind for e in feed.replay("p-a")] == ["trophy"] and feed.replay("p-b") == []
+    assert feed.replay("p-a")[0].to_json()["trophy"] == {"kind": "personal", "goals": ["a", "b", "c"], "day": 3}
+    assert lines == ["A trophy for your case."]

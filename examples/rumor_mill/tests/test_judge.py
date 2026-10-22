@@ -6,8 +6,10 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal
+from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy
 from examples.rumor_mill.judge import Judge
+from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.players import Players
@@ -59,6 +61,7 @@ class Lines:
         self.met: list[tuple[str, str | None]] = []
         self.deals: list[tuple[list[str], str]] = []
         self.worlds: list[str] = []
+        self.trophies: list[tuple[Trophy, str, str]] = []
 
     def on_progress(self, goal, fraction, counts=None, player=None):
         self.progress.append((goal.id, fraction, player))
@@ -72,13 +75,18 @@ class Lines:
     def on_world(self, goal):
         self.worlds.append(goal.id)
 
+    def on_trophy(self, trophy, line, player):
+        self.trophies.append((trophy, line, player))
 
-def holder(pid, *goals):
-    return SimpleNamespace(id=pid, goals=list(goals), met=set(), over=lambda: False)
+
+def holder(pid, *goals, whispered_at=None, over=False):
+    return SimpleNamespace(
+        id=pid, owner=f"o-{pid}", goals=list(goals), met=set(), whispered_at=whispered_at, over=lambda: over,
+    )
 
 
-def players(*ps):
-    found = Players()
+def players(*ps, feed=None):
+    found = Players(feed)
     for p in ps:
         found.add(p)
     return found
@@ -293,7 +301,7 @@ async def test_all_goals_met_deals_a_new_hand_and_the_game_goes_on():
     scripted(judge, [1.0] * 10)
     first_hand = [BELIEF]
     pa = holder("p-a", *first_hand)
-    await run_until(judge, players(pa), lambda: feed.deals)
+    await run_until(judge, players(pa, feed=feed), lambda: feed.deals)
     assert pa.goals != first_hand and pa.met == set() and not pa.over()
     assert feed.deals == [([g.id for g in pa.goals], "p-a")]
 
@@ -388,3 +396,72 @@ async def test_a_claim_dealt_again_needs_hold_checks_again():
         running.cancel()
         await asyncio.gather(running, return_exceptions=True)
     assert len(checks) - before == BELIEF.hold_checks
+
+
+SPY = Goal("cat", "Half the village believes cat is a spy", "belief", ("cat spy",), "q", 0.5, hold_checks=1)
+
+
+def world_met(judge):
+    """Make every world goal met, and every other goal unmet."""
+    async def check(goal):
+        return 1.0 if goal.id.startswith("world-") else 0.0
+
+    judge.check = check
+
+
+@pytest.mark.asyncio
+async def test_meeting_every_goal_puts_a_trophy_in_the_case():
+    judge, _, _, feed, _ = make()
+    judge.world, judge.game = QUIET, Game()
+    judge.game.day = 3
+    scripted(judge, [1.0] * 10, goal=SPY)
+    first_hand = [SPY]
+    pa = holder("p-a", *first_hand)
+    everyone = players(pa, feed=feed)
+    await run_until(judge, everyone, lambda: feed.trophies)
+    [t] = everyone.cases[pa.owner]
+    assert (t.kind, t.goals, t.day) == ("personal", tuple(g.text for g in first_hand), judge.game.day)
+    assert feed.trophies[0][1:] == (
+        "The village now swears cat is a spy, and it all began with a whisper. A trophy for your case.", "p-a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_world_trophies_go_to_everyone_who_whispered_under_that_world_goal():
+    judge, _, _, feed, _ = make()
+    world_met(judge)
+    pa = holder("p-a", whispered_at=judge.world_since + 1)
+    pb = holder("p-b", whispered_at=judge.world_since - 1)
+    pc = holder("p-c")
+    everyone = players(pa, pb, pc, feed=feed)
+    await run_until(judge, everyone, lambda: feed.worlds)
+    assert [p.id for p in (pa, pb, pc) if everyone.cases.get(p.owner)] == ["p-a"]
+    assert everyone.cases[pa.owner][0].kind == "world"
+    assert feed.trophies[0][2] == "p-a" and feed.trophies[0][1].startswith("The whole village now holds that ")
+
+
+@pytest.mark.asyncio
+async def test_a_world_trophy_waits_for_a_run_out_persons_next_run():
+    feed = Feed(Lineage(), Town(), out=None)
+    judge = Judge(StubContex(), StubJev(), Town(), CONFIG, feed, baselines=StubBaselines())
+    world_met(judge)
+    pa = holder("p-a", whispered_at=judge.world_since + 1, over=True)
+    feed.close(pa.id)
+    everyone = players(pa, feed=feed)
+    await run_until(judge, everyone, lambda: everyone.pending)
+    assert everyone.pending[pa.owner] and feed.replay(pa.id) == []
+    fresh = holder("p-a2")
+    fresh.owner = pa.owner
+    everyone.add(fresh)
+    everyone.deliver_pending(fresh)
+    assert [e.kind for e in feed.replay(fresh.id)][-1] == "trophy" and not everyone.pending.get(pa.owner)
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_under_the_next_world_goal_does_not_count_for_the_last():
+    judge, _, _, feed, _ = make()
+    world_met(judge)
+    pa = holder("p-a", whispered_at=judge.world_since)
+    everyone = players(pa, feed=feed)
+    await run_until(judge, everyone, lambda: len(feed.worlds) >= 2)
+    assert [t.kind for t in everyone.cases[pa.owner]] == ["world"]

@@ -113,3 +113,23 @@ def deal(rng: random.Random, n: int = 3, skip: Collection[str] = (), never: Coll
     allowed = [g for g in DECK if g.id not in never]
     left = [g for g in allowed if g.id not in skip]
     return rng.sample(left if len(left) >= n else allowed, n)
+
+
+@dataclass(frozen=True)
+class Trophy:
+    kind: Literal["personal", "world"]
+    # The texts of the goals it was won for.
+    goals: tuple[str, ...]
+    day: int
+
+    def to_json(self) -> dict:
+        return {"kind": self.kind, "goals": list(self.goals), "day": self.day}
+
+
+def trophy_line(trophy: Trophy, claim: str | None) -> str:
+    """What the player is told on winning the trophy, naming the claim the village now holds."""
+    if trophy.kind == "world":
+        return f"The whole village now holds that {claim}. A world trophy for your case."
+    if claim is None:
+        return "The village is not what it was, and it all began with a whisper. A trophy for your case."
+    return f"The village now swears {claim}, and it all began with a whisper. A trophy for your case."

@@ -8,10 +8,11 @@ from examples.rumor_mill.cli import Command, parse_command
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import Summary
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import Goal, Trophy
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player, Refusal
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.tests.helpers import PID
 from examples.rumor_mill.town import Town
@@ -26,6 +27,7 @@ def test_parse_command_forms():
     assert parse_command("goals") == Command("goals")
     assert parse_command("help") == Command("help")
     assert parse_command("usage") == Command("usage")
+    assert parse_command("trophies") == Command("trophies")
     assert parse_command("quit") == Command("quit")
     assert parse_command("  quit  ") == Command("quit")
     assert parse_command("dance") == Command("unknown")
@@ -112,3 +114,17 @@ def test_inspect_shows_a_grudge_only_when_there_is_one():
 
     assert not any(line.startswith("Grudge") for line in cli._inspect(town, "Marta"))
     assert "Grudge: the mayor cheated him" in cli._inspect(town, "Bert")
+
+
+@pytest.mark.asyncio
+async def test_trophies_lists_the_case(monkeypatch):
+    town, feed, out = village()
+    monkeypatch.setattr(cli, "_readline", scripted(["trophies\n", ""]))
+    everyone = Players(feed)
+    player = SimpleNamespace(id=PID, owner="o-1")
+    await cli.repl(player, town, feed, players=everyone)
+    assert out[-1] == "No trophies yet."
+    everyone.cases["o-1"] = [Trophy("personal", ("a", "b", "c"), 3)]
+    monkeypatch.setattr(cli, "_readline", scripted(["trophies\n", ""]))
+    await cli.repl(player, town, feed, players=everyone)
+    assert out[-1] == "Day 3: a; b; c"

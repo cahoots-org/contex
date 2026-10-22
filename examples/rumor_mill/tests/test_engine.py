@@ -1538,7 +1538,7 @@ def scene_players(feed):
 @pytest.mark.asyncio
 async def test_a_village_talk_scene_shows_only_to_players_at_its_place(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
-    engine.players = Players()
+    engine.players = Players(feed)
     engine.players.add(stub_player("p-a"))
     engine.players.add(stub_player("p-b", "well"))
     talkers.plan = {"v2": [(SPEAK, 1.0)]}
@@ -1553,7 +1553,7 @@ async def test_a_village_talk_scene_shows_only_to_players_at_its_place(talkers):
 async def test_a_scene_end_reaches_a_player_who_walked_away(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=5)
     engine._last_turn["v1"] = time.monotonic()
-    engine.players = Players()
+    engine.players = Players(feed)
     walker = stub_player("p-a")
     engine.players.add(walker)
     talkers.plan = {"v2": [(SPEAK, 1.0)]}

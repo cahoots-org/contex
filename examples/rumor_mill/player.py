@@ -42,9 +42,11 @@ def echoes(line: str, concern: str) -> bool:
 class Player:
     def __init__(
         self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config, writer=None, game: Game | None = None,
-        *, player_id: str,
+        *, player_id: str, owner: str | None = None,
     ):
         self.id = player_id
+        # The person behind this run; they keep their trophies across runs.
+        self.owner = player_id if owner is None else owner
         self.engine = engine
         self.town = town
         self.lineage = lineage
@@ -59,6 +61,7 @@ class Player:
         self.summary: Summary | None = None
         self.finished = asyncio.Event()
         self.ended_at: float | None = None
+        self.whispered_at: float | None = None
         self.goals: list[Goal] = []
         # The ids of this hand's goals met so far.
         self.met: set[str] = set()
@@ -128,6 +131,7 @@ class Player:
         except Exception:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
+        self.whispered_at = time.time()
         if self.game is not None:
             self.game.moved(self.id)
         if utterance.place != self.place:

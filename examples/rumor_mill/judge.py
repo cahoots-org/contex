@@ -11,7 +11,7 @@ from typesafe_sdk import Noul
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, deal, world_goal
+from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, claim, deal, trophy_line, world_goal
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player
@@ -33,6 +33,14 @@ async def _yes(jev, state: dict, question: str) -> bool:
     return response.nouls["q"].noul > 0.5
 
 
+def _last_claim(player: Player, last: Goal) -> str | None:
+    """The claim of the goal just met, or else of another belief goal in the player's hand."""
+    for goal in (last, *reversed(player.goals)):
+        if claim(goal) is not None:
+            return claim(goal)
+    return None
+
+
 class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
@@ -50,6 +58,8 @@ class Judge:
         self.counts: dict[str, tuple[int, int]] = {}
         self.world = self._next_world()
         self.world_since = time.time()
+        # The owners who whispered while the world goal was in play.
+        self.whisperers: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
@@ -130,12 +140,14 @@ class Judge:
     async def run(self, players: Players) -> None:
         """Check each goal in play once an interval, telling its holders, until cancelled.
 
-        A player whose goals are all met is dealt new ones; a met world goal is replaced by a new one.
+        A player whose goals are all met wins a trophy and is dealt new ones; a met world goal gives a trophy to
+        everyone who whispered while it was in play, and is replaced by a new one.
         """
         holds: dict[str, int] = {}
         interval = self.config.judge_every_days * self.config.day_seconds
         while True:
             await asyncio.sleep(interval)
+            self._note_whisperers(players)
             playing = [p for p in players if not p.over()]
             in_play = {g.id: g for p in playing for g in p.goals}
             in_play[self.world.id] = self.world
@@ -162,13 +174,29 @@ class Judge:
                         p.met.add(goal.id)
                         self.feed.on_met(goal, player=p.id)
                         if all(g.id in p.met for g in p.goals):
+                            trophy = Trophy("personal", tuple(g.text for g in p.goals), self._day())
+                            players.award(p.owner, trophy, trophy_line(trophy, _last_claim(p, goal)))
                             self.deal(p)
                 if world:
                     self.feed.on_met(goal)
+                    self._note_whisperers(players)
+                    trophy = Trophy("world", (goal.text,), self._day())
+                    for owner in sorted(self.whisperers):
+                        players.award(owner, trophy, trophy_line(trophy, claim(goal)))
                     self.world = self._next_world()
                     self.world_since = time.time()
+                    self.whisperers = set()
                     self.feed.on_world(self.world)
             self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
+
+    def _note_whisperers(self, players: Players) -> None:
+        """Remember the owner of each player who has whispered since the world goal was drawn."""
+        self.whisperers |= {
+            p.owner for p in players if p.whispered_at is not None and p.whispered_at >= self.world_since
+        }
+
+    def _day(self) -> int:
+        return self.game.day if self.game else 0
 
     def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""

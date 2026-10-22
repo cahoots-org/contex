@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from examples.rumor_mill.game import Summary
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import Goal, Trophy
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.scenes import Scene
@@ -134,6 +134,10 @@ class Feed:
     def on_world(self, goal: Goal) -> None:
         """A new world goal, for everyone."""
         self.emit("world_goal", f'World goal: "{goal.text}"', goal_id=goal.id, text=goal.text)
+
+    def on_trophy(self, trophy: Trophy, line: str, player: str) -> None:
+        """A trophy won by the player."""
+        self.emit("trophy", line, player=player, trophy=trophy.to_json(), text=line)
 
     def on_heat(self, label: str, player: str | None = None) -> None:
         self.emit("heat", HEAT_LINES[label], player=player, label=label)

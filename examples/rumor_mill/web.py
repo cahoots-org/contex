@@ -17,6 +17,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import Player, Refusal
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
@@ -93,7 +94,7 @@ def _error(status: int, message: str) -> JSONResponse:
 
 
 def create_app(
-    *, player: Player, town: Town, feed: Feed, judge, usage: Usage, port: int,
+    *, player: Player, players: Players, town: Town, feed: Feed, judge, usage: Usage, port: int,
     suspicion: Suspicion, game: Game, rumors: Rumors,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
@@ -160,6 +161,7 @@ def create_app(
             "heat": (label := suspicion.label(player.id)),
             "heat_line": HEAT_LINES[label],
             "game": game_json(player),
+            "trophies": [t.to_json() for t in players.cases.get(player.owner, [])],
         }
 
     @app.get("/api/villagers/{vid}")
