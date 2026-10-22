@@ -6,7 +6,6 @@ from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from examples.rumor_mill.game import Game
 from examples.rumor_mill.player import Player, Refusal
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import Town
@@ -63,13 +62,13 @@ async def _readline() -> str:
     return await asyncio.get_running_loop().run_in_executor(_STDIN, sys.stdin.readline)
 
 
-async def until_over(session: Coroutine, game: Game) -> None:
-    """Run the session until it returns or the game is over, cancelling whichever is left.
+async def until_over(session: Coroutine, player: Player) -> None:
+    """Run the session until it returns or the player's game is over, cancelling whichever is left.
 
     An error raised by the session propagates.
     """
     running = asyncio.ensure_future(session)
-    tasks = {running, asyncio.ensure_future(game.finished.wait())}
+    tasks = {running, asyncio.ensure_future(player.finished.wait())}
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:

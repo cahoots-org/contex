@@ -174,9 +174,8 @@ async def test_echoed_concern_is_retried_once_then_dropped():
 async def test_no_brush_off_is_written_once_the_game_is_over():
     writer = StubWriter("Wheel's groaning.")
     player, lines = make_hinting(writer)
-    player.game = Game(player.feed)
     await player.whisper_to("v1", "the tide tables were misprinted")
-    player.game.lose(Summary("lost", [], []))
+    player.end(Summary("lost", [], []))
     await asyncio.sleep(0.15)
     assert writer.concerns == []
 
@@ -565,7 +564,7 @@ async def test_a_thread_takes_two_whispers_then_starts_a_new_card():
 @pytest.mark.asyncio
 async def test_a_thread_closes_at_the_next_part_of_the_day():
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
-    player.game = Game(player.feed)
+    player.game = Game()
     await miss(player)
     player.game.tick()
     await miss(player)

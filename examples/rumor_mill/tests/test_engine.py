@@ -159,7 +159,7 @@ async def test_deliver_skips_departed_listeners_and_notifies_feed(turns):
 
 @pytest.mark.asyncio
 async def test_stop_leaves_no_pending_tasks(turns):
-    engine, minds, _ = await setup("v1", "v2", game=Game(RecordingFeed()))
+    engine, minds, _ = await setup("v1", "v2", game=Game())
     push(minds["v1"])
     await wait_for(lambda: len(turns.acts) == 1)
     await engine.stop()
@@ -389,42 +389,6 @@ async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fai
     assert "rating down" in caplog.text
     engine.suspect("v1", 0.1, "was warned about the newcomer", "u-1")
     assert engine.suspicion.score("v1") == pytest.approx(engine.config.suspicion_hear_max + 0.1)
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_no_turns_start_after_the_game_is_over(turns):
-    game = Game(RecordingFeed())
-    engine, minds, _ = await setup("v1", game=game)
-    game.finished.set()
-    push(minds["v1"])
-    await asyncio.sleep(SETTLE)
-    assert (turns.views, minds["v1"].polls) == ([], 0)
-    await engine.stop()
-
-
-@pytest.mark.asyncio
-async def test_a_turn_still_deciding_when_the_game_ends_does_nothing(turns, monkeypatch):
-    game = Game(RecordingFeed())
-    engine, minds, _ = await setup("v1", game=game)
-    engine.lineage.record("w-1", None, player=PID)
-    engine.lineage.record("u-0", "w-1")
-    deciding, release = asyncio.Event(), asyncio.Event()
-
-    async def slow_decide(jev, view):
-        deciding.set()
-        await release.wait()
-        return Decision(IGNORE, None, None, None, 1.0)
-
-    monkeypatch.setattr(engine_mod, "decide", slow_decide)
-    push(minds["v1"])
-    await asyncio.wait_for(deciding.wait(), TIMEOUT)
-    game.finished.set()
-    release.set()
-    await asyncio.sleep(SETTLE)
-    assert turns.acts == []
-    assert engine.suspicion.score("v1") == 0.0
-    assert engine._pending.get("v1") is None
     await engine.stop()
 
 
@@ -1702,9 +1666,9 @@ async def test_recall_heard_skips_the_whisper_itself_and_weak_matches():
 @pytest.mark.asyncio
 async def test_recall_heard_looks_back_over_the_remembered_moves():
     contex = StubContex()
-    game = Game(RecordingFeed(), memory_moves=2)
-    game.moved()
-    game.moved()
+    game = Game(memory_moves=2)
+    game.moved(PID)
+    game.moved(PID)
     engine, _, _ = await setup("v1", contex=contex, game=game)
     await engine.recall_heard("v1", "psst", "w-1")
     assert contex.queries[0][2]["since"] == game.memory_since() is not None

@@ -20,6 +20,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
+from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
@@ -54,7 +55,7 @@ class Engine:
         feed,
         mind_factory: Callable[[Villager], Mind] | None = None,
         game: Game | None = None,
-        summary_source: Callable[[], list[tuple[str, int]]] = list,
+        summary_source: Callable[[Player], list[tuple[str, int]]] = lambda p: [],
         baselines: Baselines | None = None,
         rumors: Rumors | None = None,
         overhear: Overhear | None = None,
@@ -373,8 +374,6 @@ class Engine:
 
         Returns whether a turn ran.
         """
-        if self.game is not None and self.game.finished.is_set():
-            return False
         v = mind.villager
         new = await mind.poll()
         self._read_at[v.id] = time.monotonic()
@@ -422,9 +421,6 @@ class Engine:
             async with self._turns:
                 decision = await decide(self.jev, view)
                 action = decision.action
-                if self.game is not None and self.game.finished.is_set():
-                    self._pending.pop(v.id, None)
-                    return True
                 if decision.suspicion_strength is not None:
                     try:
                         self.suspicion.rate(
@@ -613,10 +609,8 @@ class Engine:
     async def _clock_loop(self) -> None:
         """Move the village through the parts of each day, announce each one, and walk its daily round."""
         phase_seconds = self.config.day_seconds / len(PHASES)
-        while not self.game.finished.is_set():
+        while True:
             await asyncio.sleep(phase_seconds)
-            if self.game.finished.is_set():
-                return
             self.game.tick()
             self.feed.on_time(self.game.day, self.game.phase)
             self._chose_move.clear()
@@ -643,9 +637,7 @@ class Engine:
             log.exception("routine round failed")
 
     def _free_to_walk(self, vid: str) -> bool:
-        """Whether the game goes on and the villager is in town, free of a turn, a scene, or a move of their own."""
-        if self.game is not None and self.game.finished.is_set():
-            return False
+        """Whether the villager is in town, free of a turn, a scene, or a move of their own."""
         return vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
             vid not in self._chose_move
         )
@@ -673,13 +665,11 @@ class Engine:
             self._strolling.discard(vid)
 
     async def _suspicion_loop(self) -> None:
-        """Decay suspicion, report label changes, and lose once the town holds at the run-out level."""
+        """Decay suspicion, report label changes, and run every player out once the town holds at the run-out level."""
         days = self.config.suspicion_check_days
         label, held = "quiet", 0
-        while not self.game.finished.is_set():
+        while True:
             await asyncio.sleep(days * self.config.day_seconds)
-            if self.game.finished.is_set():
-                return
             try:
                 self.suspicion.decay(days)
                 if (now := self.suspicion.label()) != label:
@@ -687,9 +677,12 @@ class Engine:
                     self.feed.on_heat(label)
                 held = held + 1 if self.suspicion.level() >= self.config.run_out_level else 0
                 if held >= self.config.run_out_checks:
-                    summary = Summary("lost", self.summary_source(), self.suspicion.reasons())
-                    self.feed.say(MEETING)
-                    self.game.lose(summary)
+                    for p in self.players:
+                        if p.over():
+                            continue
+                        summary = Summary("lost", self.summary_source(p), self.suspicion.reasons())
+                        self.feed.say(MEETING, player=p.id)
+                        p.end(summary)
             except Exception:
                 log.exception("town check failed")
 

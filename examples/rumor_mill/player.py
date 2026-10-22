@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.game import Game
+from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
@@ -54,6 +54,10 @@ class Player:
         self.game = game
         # Where the player last whispered.
         self.place = START_PLACE
+        self.state = "playing"
+        self.summary: Summary | None = None
+        self.finished = asyncio.Event()
+        self.ended_at: float | None = None
         self._brush_offs: set[asyncio.Task] = set()
         self._hinted: dict[str, set[int]] = {}
         self._threads: dict[str, dict] = {}
@@ -121,7 +125,7 @@ class Player:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
         if self.game is not None:
-            self.game.moved()
+            self.game.moved(self.id)
         if utterance.place != self.place:
             self.place = utterance.place
             self.feed.on_place(self.place, player=self.id)
@@ -231,7 +235,16 @@ class Player:
 
     def over(self) -> bool:
         """Whether this player's game is over."""
-        return self.game is not None and self.game.finished.is_set()
+        return self.finished.is_set()
+
+    def end(self, summary: Summary) -> None:
+        """End this player's game once; announce it to them, then send them nothing more."""
+        if self.over():
+            return
+        self.state, self.summary, self.ended_at = summary.outcome, summary, time.time()
+        self.finished.set()
+        self.feed.on_game_over(summary, player=self.id)
+        self.feed.close(self.id)
 
     def close(self) -> None:
         for task in self._brush_offs:

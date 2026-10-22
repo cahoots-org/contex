@@ -43,7 +43,7 @@ async def play(web: bool) -> None:
     villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town, out=None)
-    game = Game(feed, config.memory_moves)
+    game = Game(config.memory_moves, config.day_seconds)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         goals = deal(rng)
@@ -52,7 +52,7 @@ async def play(web: bool) -> None:
         overhear = Overhear(contex, baselines, config, rng)
         routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
-            config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda: judge.percents(goals),
+            config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
             routine=routine,
         )
@@ -72,7 +72,7 @@ async def play(web: bool) -> None:
             await baselines.load([need for v in villagers for need in v.needs])
             await baselines.load([g.evidence[0] for g in goals if g.evidence])
             await overhear.publish(goals)
-            judging = asyncio.create_task(judge.run(goals))
+            judging = asyncio.create_task(judge.run(goals, player))
             await routine.load(villagers)
             await asyncio.gather(*(
                 engine.add_villager(v, routine.place(v.id, "morning") or rng.choice(places)) for v in villagers
@@ -89,7 +89,7 @@ async def play(web: bool) -> None:
                 print(f"Rumor Mill is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
                 await server.serve()
             else:
-                await until_over(repl(player, town, feed, goals, judge.progress, usage, engine.suspicion), game)
+                await until_over(repl(player, town, feed, goals, judge.progress, usage, engine.suspicion), player)
         finally:
             print(usage.summary())
             tasks = [t for t in (replenisher, judging) if t is not None]

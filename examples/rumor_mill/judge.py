@@ -12,6 +12,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.player import Player
 from examples.rumor_mill.town import Town
 
 log = logging.getLogger(__name__)
@@ -103,17 +104,17 @@ class Judge:
                 progress = min(progress, NO_QUALIFYING_GROUP_CAP)
         return progress
 
-    async def run(self, goals: list[Goal]) -> None:
-        """Check every goal each interval until all have held at full progress, then win the game.
+    async def run(self, goals: list[Goal], player: Player) -> None:
+        """Check every goal each interval until all have held at full progress, then end the player's game as won.
 
-        Stops early once the game is over.
+        Stops early once the player's game is over.
         """
         holds = {g.id: 0 for g in goals}
         pending = list(goals)
         interval = self.config.judge_every_days * self.config.day_seconds
         while pending:
             await asyncio.sleep(interval)
-            if self._over():
+            if player.over():
                 return
             for goal in list(pending):
                 try:
@@ -129,12 +130,8 @@ class Judge:
                     pending.remove(goal)
                     self.met.add(goal.id)
                     self.feed.on_met(goal)
-        if self.game is not None:
-            self.game.win(Summary("won", self.percents(goals), []))
+        player.end(Summary("won", self.percents(goals), []))
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
         """Each goal's text and whole percent progress."""
         return [(g.text, int(self.progress.get(g.id, 0.0) * 100)) for g in goals]
-
-    def _over(self) -> bool:
-        return self.game is not None and self.game.finished.is_set()

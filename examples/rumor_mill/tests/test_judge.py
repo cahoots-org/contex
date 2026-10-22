@@ -10,6 +10,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.tests.helpers import PID, make_player
 from examples.rumor_mill.town import Town
 
 CONFIG = Config(day_seconds=0.01, judge_every_days=1.0)
@@ -103,14 +104,14 @@ async def test_villager_below_the_margin_costs_no_jev_call():
 @pytest.mark.asyncio
 async def test_mind_queries_ignore_lines_older_than_the_remembered_moves():
     judge, contex, _, _, _ = make(n=2, believers=2)
-    judge.game = Game(Lines(), memory_moves=2)
+    judge.game = Game(memory_moves=2)
     g = judge.town.found_group("v0", "Order", "worship")
     judge.town.join("v1", g.id)
     creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
     await judge.check(creed)
     assert contex.sinces[mind_project(CONFIG.session, "v0")] is None
     for _ in range(3):
-        judge.game.moved()
+        judge.game.moved(PID)
     await judge.check(creed)
     assert contex.sinces[mind_project(CONFIG.session, "v0")] == judge.game.memory_since() is not None
     assert contex.sinces[group_project(CONFIG.session, g.id)] is None
@@ -195,7 +196,7 @@ async def test_goal_met_only_after_hold_checks_consecutive_checks():
         return next(progress)
 
     judge.check = check
-    await asyncio.wait_for(judge.run([BELIEF]), 2)
+    await asyncio.wait_for(judge.run([BELIEF], make_player()[0]), 2)
     assert next(progress, None) is None
     assert feed.said == ['Goal met: "cat is a spy"']
     assert judge.met == {BELIEF.id}
@@ -235,7 +236,7 @@ async def test_progress_line_only_when_percent_changes():
         return next(progress)
 
     judge.check = check
-    await asyncio.wait_for(judge.run([BELIEF]), 2)
+    await asyncio.wait_for(judge.run([BELIEF], make_player()[0]), 2)
     assert [round(f, 2) for _, f in feed.progress] == [0.5, 0.6, 1.0]
 
 

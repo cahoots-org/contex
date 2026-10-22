@@ -63,7 +63,7 @@ def game(monkeypatch):
     town.add(Villager("v2", "Bert Cole", "miller", "jolly", "none", ["OTHER NEED"], {}), "mill")
     feed = Feed(lineage, town, out=None)
     config = Config()
-    suspicion, game = Suspicion(config, town), Game(feed)
+    suspicion, game = Suspicion(config, town), Game()
     player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game, player_id=helpers.PID)
     judge = SimpleNamespace(progress={"cat": 0.42}, counts={"cat": (5, 12)}, met=set())
     usage = Usage(Config())
@@ -74,7 +74,7 @@ def game(monkeypatch):
     )
     with TestClient(app, base_url=BASE) as client:
         yield SimpleNamespace(
-            client=client, town=town, feed=feed, app=app, usage=usage, suspicion=suspicion, game=game, config=config,
+            client=client, town=town, feed=feed, app=app, usage=usage, suspicion=suspicion, player=player, config=config,
             rumors=rumors,
         )
     player.close()
@@ -230,14 +230,14 @@ def test_heat_event_carries_its_sentence(game):
 
 def test_gameover_event_reaches_the_websocket(game):
     with game.client.websocket_connect(WS) as ws:
-        game.game.lose(LOSS)
+        game.player.end(LOSS)
         event = receive(ws)
     assert event["kind"] == "gameover"
     assert (event["outcome"], event["goals"], event["reasons"]) == ("lost", [[GOAL.text, 42]], LOSS.reasons)
 
 
 def test_state_after_loss_carries_the_summary(game):
-    game.game.lose(LOSS)
+    game.player.end(LOSS)
     state = game.client.get("/api/state").json()
     assert state["game"] == {
         "state": "lost",
@@ -246,8 +246,14 @@ def test_state_after_loss_carries_the_summary(game):
     assert state["events"][-1]["kind"] == "gameover"
 
 
+def test_nothing_reaches_the_page_after_the_game_is_over(game):
+    game.player.end(LOSS)
+    game.feed.on_time(2, "morning")
+    assert game.client.get("/api/state").json()["events"][-1]["kind"] == "gameover"
+
+
 def test_whisper_after_game_over_is_refused(game):
-    game.game.lose(LOSS)
+    game.player.end(LOSS)
     response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"})
     assert (response.status_code, response.json()) == (400, {"error": "The game is over."})
 
@@ -286,7 +292,7 @@ def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects
         responses.append(game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the mill is cursed"}).json())
         game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale")
         game.feed.on_heat(game.suspicion.label())
-        game.game.lose(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
+        game.player.end(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
         events = [receive(ws) for _ in range(8)]
     kinds = ["whisper", "place", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
     assert [e["kind"] for e in events] == kinds

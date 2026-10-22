@@ -66,15 +66,16 @@ class Feed:
         self.sinks: list[Sink] = [terminal(out)] if out else []
         self.recent: deque[Event] = deque(maxlen=REPLAY_EVENTS)
         self._ids = itertools.count(1)
-        self.closed = False
+        # Each closed player's id, with the id of the last event they see.
+        self._closed: dict[str, int] = {}
         self._listening: dict[str, tuple[str, str]] = {}
         # ponytail: grows by one id per whisper the player sends; a session sends far fewer than would matter.
         self._resolved: set[str] = set()
         self._answered: set[str] = set()
 
     def emit(self, kind: str, line: str = "", /, player: str | None = None, **data) -> Event | None:
-        """Send an event to every sink; once the feed is closed, drop it and return None."""
-        if self.closed:
+        """Send an event to every sink; drop one addressed to a closed player and return None."""
+        if player in self._closed:
             return None
         event = Event(next(self._ids), time.time(), kind, line, data, player)
         self.recent.append(event)
@@ -82,10 +83,19 @@ class Feed:
             sink(event)
         return event
 
-    def say(self, line: str, player: str | None = None) -> None:
-        self.emit("system", line, player=player, text=line)
+    def say(self, line: str, player: str | None = None) -> Event | None:
+        """Send a plain line of text."""
+        return self.emit("system", line, player=player, text=line)
+
+    def close(self, player: str) -> None:
+        """Send that player nothing newer than what has been sent so far."""
+        self._closed[player] = self.recent[-1].id if self.recent else 0
 
     def sees(self, player: str, event: Event) -> bool:
+        """Whether the event is meant for that player and came before their feed closed."""
+        closed_at = self._closed.get(player)
+        if closed_at is not None and event.id > closed_at:
+            return False
         return event.player is None or event.player == player
 
     def replay(self, player: str) -> list[Event]:
@@ -110,13 +120,13 @@ class Feed:
     def on_met(self, goal: Goal) -> None:
         self.emit("goal", f'Goal met: "{goal.text}"', goal_id=goal.id, text=goal.text, percent=100, met=True)
 
-    def on_heat(self, label: str) -> None:
-        self.emit("heat", HEAT_LINES[label], label=label)
+    def on_heat(self, label: str, player: str | None = None) -> None:
+        self.emit("heat", HEAT_LINES[label], player=player, label=label)
 
-    def on_game_over(self, summary: Summary) -> None:
+    def on_game_over(self, summary: Summary, player: str | None = None) -> None:
         lines = [GAME_OVER[summary.outcome], *(f"{text}: {percent}%" for text, percent in summary.goals), *summary.reasons]
         self.emit(
-            "gameover", "\n".join(lines), outcome=summary.outcome,
+            "gameover", "\n".join(lines), player=player, outcome=summary.outcome,
             goals=[[text, percent] for text, percent in summary.goals], reasons=list(summary.reasons),
         )
 

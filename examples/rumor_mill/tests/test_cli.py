@@ -7,12 +7,13 @@ from examples.rumor_mill import cli
 from examples.rumor_mill.cli import Command, parse_command
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.game import Game, Summary
+from examples.rumor_mill.game import Summary
 from examples.rumor_mill.goals import Goal
-from examples.rumor_mill.lineage import Lineage
+from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.player import Refusal
+from examples.rumor_mill.player import Player, Refusal
 from examples.rumor_mill.suspicion import Suspicion
+from examples.rumor_mill.tests.helpers import PID
 from examples.rumor_mill.town import Town
 
 
@@ -78,11 +79,11 @@ async def test_goals_also_prints_the_heat_label(monkeypatch):
 @pytest.mark.asyncio
 async def test_the_repl_ends_with_the_summary_when_the_game_is_over(monkeypatch):
     town, feed, out = village()
-    game = Game(feed)
+    player = Player(None, town, feed.lineage, Ids(), feed, Config(), player_id=PID)
     monkeypatch.setattr(cli, "_readline", scripted([]))
-    session = asyncio.create_task(cli.until_over(cli.repl(None, town, feed), game))
+    session = asyncio.create_task(cli.until_over(cli.repl(None, town, feed), player))
     await asyncio.sleep(0.01)
-    game.lose(Summary("lost", [("cat is a spy", 40)], ["Marta heard it from you directly."]))
+    player.end(Summary("lost", [("cat is a spy", 40)], ["Marta heard it from you directly."]))
     await asyncio.wait_for(session, 1)
     assert out[-1].splitlines()[1:] == ["cat is a spy: 40%", "Marta heard it from you directly."]
 
@@ -95,7 +96,8 @@ async def test_an_error_in_the_session_propagates_out_of_until_over():
         raise RuntimeError("whisper failed")
 
     with pytest.raises(RuntimeError, match="whisper failed"):
-        await asyncio.wait_for(cli.until_over(broken(), Game(feed)), 1)
+        player = Player(None, town, feed.lineage, Ids(), feed, Config(), player_id=PID)
+        await asyncio.wait_for(cli.until_over(broken(), player), 1)
 
 
 def test_inspect_shows_a_grudge_only_when_there_is_one():

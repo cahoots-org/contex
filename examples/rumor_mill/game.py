@@ -1,6 +1,5 @@
-"""Whether the game is still on, and how it ended."""
+"""The village clock and memory, and how a player's game ended."""
 
-import asyncio
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -9,6 +8,7 @@ from datetime import UTC, datetime
 
 # The parts of a game day, in order; the clock moves through them evenly.
 PHASES = ("morning", "afternoon", "evening", "night")
+MEMORY_PLAYERS = 20
 
 
 @dataclass(frozen=True)
@@ -20,13 +20,12 @@ class Summary:
 
 
 class Game:
-    def __init__(self, feed, memory_moves: int = 20):
-        self.feed = feed
-        self._moves: deque[float] = deque(maxlen=memory_moves)
+    def __init__(self, memory_moves: int = 20, day_seconds: float = 120.0):
+        self.memory_moves = memory_moves
+        self.day_seconds = day_seconds
+        # ponytail: remembers at most MEMORY_PLAYERS active players' worth of moves; raise it if more play at once.
+        self._moves: deque[tuple[float, str]] = deque(maxlen=memory_moves * MEMORY_PLAYERS)
         self.day, self.phase = 1, PHASES[0]
-        self.state = "playing"
-        self.summary: Summary | None = None
-        self.finished = asyncio.Event()
 
     def tick(self) -> None:
         """Move the village clock on to the next part of the day."""
@@ -34,27 +33,18 @@ class Game:
         self.day += at // len(PHASES)
         self.phase = PHASES[at % len(PHASES)]
 
-    def moved(self) -> None:
-        """Count one of the newcomer's moves; the village's memory is measured in these, not in time."""
-        self._moves.append(time.time())
+    def moved(self, player: str) -> None:
+        """Count one of a player's moves; the village's memory is measured in these, not in time."""
+        self._moves.append((time.time(), player))
 
     def memory_since(self) -> str | None:
-        """When the oldest move still remembered was made, as ISO-8601; None until there have been that many."""
-        if len(self._moves) < (self._moves.maxlen or 0):
+        """When the oldest move still remembered was made, as ISO-8601; None until there have been that many.
+
+        The village remembers memory_moves moves for each player who moved within the last game day.
+        """
+        cutoff = time.time() - self.day_seconds
+        active = len({player for at, player in self._moves if at >= cutoff})
+        needed = self.memory_moves * max(1, active)
+        if len(self._moves) < needed:
             return None
-        return datetime.fromtimestamp(self._moves[0], UTC).isoformat()
-
-    def win(self, summary: Summary) -> None:
-        self._finish("won", summary)
-
-    def lose(self, summary: Summary) -> None:
-        self._finish("lost", summary)
-
-    def _finish(self, state: str, summary: Summary) -> None:
-        """End the game once; announce it, then silence the feed."""
-        if self.finished.is_set():
-            return
-        self.state, self.summary = state, summary
-        self.feed.on_game_over(summary)
-        self.feed.closed = True
-        self.finished.set()
+        return datetime.fromtimestamp(self._moves[-needed][0], UTC).isoformat()

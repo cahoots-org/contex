@@ -75,11 +75,11 @@ def event_json(event: Event) -> dict:
     return data
 
 
-def game_json(game: Game) -> dict:
-    """The game state and, once it is over, only the outcome, goals and reasons."""
-    s = game.summary
+def game_json(player: Player) -> dict:
+    """The player's game state and, once it is over, only the outcome, goals and reasons."""
+    s = player.summary
     summary = s and {"outcome": s.outcome, "goals": [[text, percent] for text, percent in s.goals], "reasons": s.reasons}
-    return {"state": game.state, "summary": summary}
+    return {"state": player.state, "summary": summary}
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -114,7 +114,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        feed.sinks.append(on_event)
+        sink = feed.view(player.id, on_event)
+        feed.sinks.append(sink)
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
@@ -123,7 +124,7 @@ def create_app(
         try:
             yield
         finally:
-            feed.sinks.remove(on_event)
+            feed.sinks.remove(sink)
             for w in watchers:
                 w.cancel()
             await asyncio.gather(*watchers, return_exceptions=True)
@@ -149,13 +150,13 @@ def create_app(
                 for g in goals
             ],
             "villagers": villagers(town),
-            "events": [event_json(e) for e in feed.recent],
+            "events": [event_json(e) for e in feed.replay(player.id)],
             "rumors": rumors.cards(player.id),
             "notes": notes.all(),
             "usage": usage.to_json(),
             "heat": (label := suspicion.label()),
             "heat_line": HEAT_LINES[label],
-            "game": game_json(game),
+            "game": game_json(player),
         }
 
     @app.get("/api/villagers/{vid}")
