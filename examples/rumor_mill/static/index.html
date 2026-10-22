@@ -1194,11 +1194,13 @@ function dockStatus(e, fresh) {
   setComposer();
 }
 
-// A whisper in an exchange in the dock joins its villager's lines; it gets no row and no feed line of its own.
-function dockWhisper(e) {
+// A reply whisper belongs to its conversation's rumor and joins its villager's lines in the dock, if still there;
+// it gets no row and no feed line of its own.
+function joinConversation(e) {
   spoken.set(e.uid, { text: e.text, speaker: "you" });
   cardOf.set(e.uid, cardOf.get(e.conversation));
   const entry = dock.get(e.target_id);
+  if (!entry) return;
   entry.whispers.add(e.uid);
   entry.lines.push({ you: true, text: e.text });
   renderDock();
@@ -1304,7 +1306,7 @@ function render(e, fresh) {
     case "whisper":
       lastTarget = e.target_id;
       if (cardOf.has(e.uid)) return null;
-      if (e.conversation && cardOf.has(e.conversation) && dock.has(e.target_id)) dockWhisper(e);
+      if (e.conversation && cardOf.has(e.conversation)) joinConversation(e);
       else newCard(e.uid, e.target, e.place, e.text);
       return null;
     case "hop":
