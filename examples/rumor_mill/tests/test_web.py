@@ -173,8 +173,10 @@ def test_page_has_the_trophy_case_and_world_goal(game):
 
 def test_goals_are_cards_and_the_header_has_one_status(game):
     html = game.client.get("/").text
-    for needle in ('id="world"', 'class="goal-card world"', "goal-card", 'class="hud"', "doubtLine(", "don't believe it"):
+    for needle in ('id="world"', 'class="goal-card world"', "goal-card", 'class="hud"', "doubtLine(", "don't`", "doesn't"):
         assert needle in html
+    card = re.search(r"function goalCard\(.*?\n}\n", html, re.S).group(0)
+    assert card.index("doubtLine(g)") < card.index('className: "bar"')
     assert html.count('class="status"') == 0 and ".status {" not in html
     test_page_has_the_trophy_case_and_world_goal(game)
 

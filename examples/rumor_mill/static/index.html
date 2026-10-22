@@ -1681,20 +1681,21 @@ function clip(text, max) {
 function doubtLine(g) {
   const d = g.doubt;
   if (g.met || !d?.count || !d.saying) return null;
-  return el("p", { className: "doubt", textContent: `${d.count} heard it but don't believe it — they're saying: “${clip(d.saying, 80)}”` });
+  const who = d.count === 1 ? "1 heard it but doesn't" : `${d.count} heard it but don't`;
+  return el("p", { className: "doubt", textContent: `${who} believe it — they're saying: “${clip(d.saying, 80)}”` });
 }
 
-// A goal card's label, claim, bar with progress words, and doubt.
+// A goal card's label, claim, doubt, and bar with progress words at its foot.
 function goalCard(g, label) {
   const shown = g.met ? "Met" : goalProgress(g);
   return [
     el("div", { className: "goal-label", textContent: label }),
     el("div", { className: "goal-text", textContent: g.text, title: g.text }),
+    doubtLine(g),
     el("div", { className: "bar" },
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
         el("i", { style: `width:${g.percent}%` })),
       el("span", { textContent: shown })),
-    doubtLine(g),
   ].filter(Boolean);
 }
 
