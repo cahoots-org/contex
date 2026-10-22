@@ -171,6 +171,7 @@ def test_page_has_the_walk_listen_and_ask_controls(game):
     for needle in ("Walk here", "Listen here", "/api/walk", "/api/listen", "/api/ask", 'case "listen"', 'case "asked"'):
         assert needle in html
     assert 'class="ask"' in html or 'className: "ask"' in html
+    assert "ariaDisabled" in html
     assert "innerHTML" not in html
 
 

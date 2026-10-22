@@ -371,7 +371,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .ask-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
 .ask-status.error { color: var(--danger); }
 .tile-act { display: block; margin-top: .3rem; font-size: .8rem; }
-.tile-act:disabled { cursor: default; text-decoration: none; }
+.tile-act[aria-disabled="true"] { cursor: default; text-decoration: none; }
 .suggest {
   position: absolute; bottom: 100%; left: 0; z-index: 3; width: min(26rem, 100%); max-height: 18rem; overflow-y: auto;
   list-style: none; margin: 0 0 .3rem; padding: .25rem; background: var(--panel);
@@ -423,6 +423,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
   #target { flex: 1 1 100%; width: auto; }
+  .tile-act, .walk-there { min-height: 2.25rem; }
   #text { flex-basis: 10rem; }
   .rails { width: calc(min(var(--d, 0), 4) * .75rem); background-size: .75rem 100%; }
   .card {
@@ -890,6 +891,8 @@ function listened(e, fresh) {
   setListening(e.until);
   const block = talkBlock(e.place);
   block.dataset.listen = String(e.id);
+  block.classList.add("open");
+  block.querySelector(".vt-more").ariaExpanded = "true";
   for (const line of e.lines) addLine(block, line, fresh);
   countTalk(block);
   return block;
@@ -1265,6 +1268,7 @@ function showGameOver(summary, live) {
   talks.clear();
   setComposer();
   setActions();
+  setAsk();
   setStatus("The game is over.");
   if (live && wasHidden) $("gameover-title").focus({ preventScroll: true });
 }
@@ -1791,8 +1795,12 @@ function fillAction(button) {
   const at = button.dataset.act === here;
   const busy = at && listening();
   button.textContent = !at ? "Walk here" : busy ? "Listening…" : "Listen here";
-  button.disabled = over || busy;
-  button.onclick = at ? listenHere : () => walkTo(button.dataset.act);
+  button.ariaDisabled = String(over || busy);
+  button.onclick = () => {
+    if (button.ariaDisabled === "true") return;
+    if (at) listenHere();
+    else walkTo(button.dataset.act);
+  };
 }
 
 function setActions() {
@@ -1815,13 +1823,13 @@ function setAsk() {
   if (!slot) return;
   const { id, name } = slot.dataset;
   const place = villagers.find((v) => v.id === id)?.place || slot.dataset.place;
-  const key = place === here ? "" : place;
+  const key = place === here ? (over ? "over" : "") : place;
   if (slot.dataset.key === key) return;
   const inside = slot.contains(document.activeElement);
   slot.dataset.key = key;
   slot.replaceChildren(...(key ? [
     el("p", { textContent: `${name} is at the ${place}.` }),
-    el("button", { type: "button", className: "linkish", textContent: "Walk there", onclick: () => walkTo(place) }),
+    el("button", { type: "button", className: "linkish walk-there", textContent: "Walk there", onclick: () => walkTo(place) }),
   ] : askForm(id, name)));
   if (inside) slot.querySelector("input, button").focus();
 }
@@ -1845,6 +1853,7 @@ function askForm(id, name) {
     say("Asking…");
     const { ok, error } = await post("/api/ask", { villager_id: id, topic });
     button.disabled = over;
+    if (input.isConnected) input.focus();
     if (!ok) return say(error, true);
     input.value = "";
     say(`${name} answered. It's in the feed.`);
