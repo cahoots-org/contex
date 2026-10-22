@@ -179,6 +179,12 @@ def test_goals_are_cards_and_the_header_has_one_status(game):
     test_page_has_the_trophy_case_and_world_goal(game)
 
 
+def test_progress_with_unchanged_words_adds_no_feed_line(game):
+    html = game.client.get("/").text
+    assert "goalProgress(was) === goalProgress(e) ? null : progressed(e)" in html
+    assert "goalOf(e)" in html and "needed: null }" not in html
+
+
 def test_doubt_goes_out_only_for_the_players_own_goals_and_the_world_goal(game):
     other = game.join("o-other")
     other.goals = [Goal("dog", "Half the village believes the dog is a thief", "belief")]

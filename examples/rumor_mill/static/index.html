@@ -1334,22 +1334,26 @@ function render(e, fresh) {
       return hinted(e);
     case "announcement":
       return line("quiet", null, e.text);
-    case "goal":
+    case "goal": {
       if (e.world) {
-        world = { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed, doubt: e.doubt };
+        world = goalOf(e);
         renderWorld();
         return e.met ? line("loud", null, e.line) : null;
       }
-      goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed, doubt: e.doubt });
+      const was = goals.get(e.goal_id);
+      goals.set(e.goal_id, goalOf(e));
       renderGoals();
-      return e.met ? line("loud", null, `Goal met: ${e.text}`) : progressed(e);
+      if (e.met) return line("loud", null, `Goal met: ${e.text}`);
+      // Progress that only brings news of doubt updates the card, not the feed.
+      return was && goalProgress(was) === goalProgress(e) ? null : progressed(e);
+    }
     case "world_goal":
-      world = { text: e.text, percent: 0, met: false, believers: null, needed: null };
+      world = goalOf(e);
       renderWorld();
       return null;
     case "deal":
       goals.clear();
-      for (const g of e.goals) goals.set(g.id, { text: g.text, percent: 0, met: false, believers: null, needed: null });
+      for (const g of e.goals) goals.set(g.id, goalOf(g));
       renderGoals();
       return line("quiet", null, `New goals: ${e.goals.map((g) => g.text).join(" · ")}`);
     case "trophy":
@@ -1652,6 +1656,10 @@ document.addEventListener("keydown", (ev) => {
   else if (!$("trophies").hidden) setTrophies(false);
   else if (selectedRumor != null) selectRumor(null);
 });
+
+function goalOf({ text, percent = 0, met = false, believers = null, needed = null, doubt = null }) {
+  return { text, percent, met, believers, needed, doubt };
+}
 
 function goalProgress(g) {
   return g.needed == null ? `${g.percent}%` : `${g.believers} of ${g.needed} believe it`;
@@ -2358,9 +2366,9 @@ async function loadState() {
   addEvents(state.events, false);
   // The replay's goal, deal and trophy events are older than the state, which has the last word.
   goals.clear();
-  for (const g of state.goals) goals.set(g.id, g);
+  for (const g of state.goals) goals.set(g.id, goalOf(g));
   renderGoals();
-  world = state.world_goal;
+  world = goalOf(state.world_goal);
   renderWorld();
   trophies = state.trophies;
   renderTrophies();

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import random
+import re
 import time
 from collections import Counter
 
@@ -23,6 +24,8 @@ from examples.rumor_mill.town import Town
 log = logging.getLogger(__name__)
 
 NO_QUALIFYING_GROUP_CAP = 0.99
+# The "{speaker} {verb}: " a remembered line starts with (Utterance.to_data).
+SPEAKER = re.compile(r"^[^:]+? (?:said|announced|whispered to you): ")
 
 
 def _text(match: Match) -> str:
@@ -31,8 +34,7 @@ def _text(match: Match) -> str:
 
 def _words(match: Match) -> str:
     """What the memory says, without who said it."""
-    text = _text(match)
-    return text.partition(": ")[2] or text
+    return SPEAKER.sub("", _text(match), count=1)
 
 
 def _best(matches: list[Match]) -> Match:
@@ -81,12 +83,13 @@ class Judge:
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
     async def _believes(
-        self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match],
+        self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],
     ) -> bool | None:
         """Whether the villager believes the goal's claim; None if they left or the check failed.
 
         A believer goes into roots with the player whisper behind their best-matching memory, if one is; a villager
-        with matching memories who doesn't believe goes into doubters with their best-matching memory.
+        with matching memories who doesn't believe goes into doubters with their best-matching memory that is not a
+        player's own whisper, if one is.
         """
         async with self._semaphore:
             try:
@@ -113,7 +116,8 @@ class Judge:
             if believes:
                 roots[villager.id] = self._root(_best(matches))
             else:
-                doubters[villager.id] = _best(matches)
+                heard = [m for m in matches if not (self.lineage and self.lineage.is_whisper(m.data.get("id")))]
+                doubters[villager.id] = _best(heard) if heard else None
             return believes
 
     def _root(self, memory: Match) -> str | None:
@@ -144,10 +148,11 @@ class Judge:
             return max(0.0, min(1.0, goal.state_check(self.town)))
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         roots: dict[str, str | None] = {}
-        doubters: dict[str, Match] = {}
+        doubters: dict[str, Match | None] = {}
         results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in self.town.villagers))
         self.roots[goal.id] = roots
-        saying = _words(_best(list(doubters.values()))) if doubters else None
+        heard = [m for m in doubters.values() if m is not None]
+        saying = _words(_best(heard)) if heard else None
         self.doubt[goal.id] = {"count": len(doubters), "saying": saying}
         counted = [r for r in results if r is not None]
         if not counted:
@@ -196,7 +201,7 @@ class Judge:
             in_play[self.world.id] = self.world
             for goal in in_play.values():
                 before = dict(self.roots.get(goal.id, {}))
-                doubted = self.doubt.get(goal.id)
+                doubted = self.doubt.get(goal.id, {}).get("count")
                 try:
                     progress = await self.check(goal)
                 except Exception:
@@ -205,7 +210,8 @@ class Judge:
                 world = goal.id == self.world.id
                 holders = [p for p in playing if any(g.id == goal.id for g in p.goals)]
                 doubt = self.doubt.get(goal.id)
-                if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100) or doubt != doubted:
+                moved = int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100)
+                if moved or self.doubt.get(goal.id, {}).get("count") != doubted:
                     counts = self.counts.get(goal.id)
                     for p in holders:
                         self.feed.on_progress(

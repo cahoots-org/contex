@@ -8,7 +8,7 @@ from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy
-from examples.rumor_mill.judge import Judge
+from examples.rumor_mill.judge import Judge, _words
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
@@ -241,6 +241,44 @@ async def test_doubters_are_counted_with_what_the_closest_one_is_saying():
     await judge.check(BELIEF)
     assert judge.doubt[BELIEF.id] == {"count": 2, "saying": "the cat is a thief"}
     assert len(jev.calls) == 3 and len(contex.thresholds) == 4
+
+
+@pytest.mark.asyncio
+async def test_a_players_whisper_counts_as_heard_but_is_never_the_saying():
+    _, contex, _, feed, town = make(n=2)
+    lineage = Lineage()
+    lineage.record("w-1", None, "p-1")
+    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you: the cat sells our secrets"}, 0.95)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [whisper, Match("u", {"id": "u-2", "text": "Bo said: the cat is odd"}, 0.8)]
+    contex.minds[mind_project(CONFIG.session, "v1")] = [whisper]
+    await judge.check(BELIEF)
+    assert judge.doubt[BELIEF.id] == {"count": 2, "saying": "the cat is odd"}
+
+
+def test_the_saying_drops_only_a_speaker():
+    said = Match("k", {"text": "Bo Hale said: the bell: it rang twice"})
+    assert _words(said) == "the bell: it rang twice"
+    assert _words(Match("k", {"text": "the bell: it rang twice"})) == "the bell: it rang twice"
+
+
+@pytest.mark.asyncio
+async def test_a_new_saying_alone_sends_no_progress():
+    judge, contex, jev, feed, _ = make(n=2, believers=2)
+    judge.world = QUIET
+    jev.answer = 0.2
+    running = asyncio.create_task(judge.run(players(holder(PID, BELIEF))))
+    try:
+        await wait_for(lambda: feed.doubts)
+        contex.minds[mind_project(CONFIG.session, "v0")] = [Match("k2", {"text": "Al said: the cat is odd"}, 0.99)]
+        await wait_for(lambda: judge.doubt[BELIEF.id]["saying"] == "the cat is odd")
+        assert len(feed.doubts) == 1
+        del contex.minds[mind_project(CONFIG.session, "v0")]
+        await wait_for(lambda: len(feed.doubts) == 2)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    assert feed.doubts[1] == (PID, {"count": 1, "saying": "the cat is a spy"})
 
 
 @pytest.mark.asyncio
