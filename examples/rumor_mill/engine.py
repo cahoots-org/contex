@@ -65,6 +65,7 @@ class Engine:
         rumors: Rumors | None = None,
         overhear: Overhear | None = None,
         routine: Routine | None = None,
+        facts: Facts | None = None,
     ):
         self.config = config
         self.town = town
@@ -74,7 +75,7 @@ class Engine:
         self.lineage = lineage
         self.ids = ids
         self.feed = feed
-        self.facts = Facts()
+        self.facts = facts or Facts()
         self.hints = Hints(contex, config)
         self.suspicion = Suspicion(config, town)
         self.scenes = Scenes(config, town, random.Random())

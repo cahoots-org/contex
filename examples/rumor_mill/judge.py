@@ -4,7 +4,6 @@ import asyncio
 import logging
 import math
 import random
-import re
 import time
 from collections import Counter
 
@@ -12,6 +11,7 @@ from typesafe_sdk import Noul
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, claim, deal, trophy_line, world_goal
 from examples.rumor_mill.lineage import Lineage
@@ -24,17 +24,10 @@ from examples.rumor_mill.town import Town
 log = logging.getLogger(__name__)
 
 NO_QUALIFYING_GROUP_CAP = 0.99
-# The "{speaker} {verb}: " a remembered line starts with (Utterance.to_data).
-SPEAKER = re.compile(r"^[^:]+? (?:said|announced|whispered to you): ")
 
 
 def _text(match: Match) -> str:
     return str(match.data.get("text") or match.data)
-
-
-def _words(match: Match) -> str:
-    """What the memory says, without who said it."""
-    return SPEAKER.sub("", _text(match), count=1)
 
 
 def _best(matches: list[Match]) -> Match:
@@ -58,7 +51,7 @@ def _last_claim(player: Player, last: Goal) -> str | None:
 class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
-        rng: random.Random | None = None, lineage: Lineage | None = None,
+        rng: random.Random | None = None, lineage: Lineage | None = None, facts: Facts | None = None,
     ):
         self.contex = contex
         self.jev = jev
@@ -69,6 +62,7 @@ class Judge:
         self.baselines = baselines
         self.rng = rng or random.Random()
         self.lineage = lineage
+        self.facts = facts or Facts()
         self.progress: dict[str, float] = {}
         self.counts: dict[str, tuple[int, int]] = {}
         # By goal id, each believer's id and the player whisper behind their best-matching memory, if one is.
@@ -120,6 +114,11 @@ class Judge:
                 doubters[villager.id] = _best(heard) if heard else None
             return believes
 
+    def _words(self, memory: Match) -> str:
+        """What the remembered line says, without who said it while the game still keeps it."""
+        fact = self.facts.get(memory.data.get("id"))
+        return fact.text if fact else _text(memory)
+
     def _root(self, memory: Match) -> str | None:
         """The player whisper the memory descends from, or None."""
         uid = memory.data_key.removeprefix("utt:")
@@ -152,7 +151,7 @@ class Judge:
         results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in self.town.villagers))
         self.roots[goal.id] = roots
         heard = [m for m in doubters.values() if m is not None]
-        saying = _words(_best(heard)) if heard else None
+        saying = self._words(_best(heard)) if heard else None
         self.doubt[goal.id] = {"count": len(doubters), "saying": saying}
         counted = [r for r in results if r is not None]
         if not counted:

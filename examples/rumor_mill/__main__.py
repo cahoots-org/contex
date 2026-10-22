@@ -17,6 +17,7 @@ from examples.rumor_mill.cli import repl, until_over
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import DECK
@@ -47,13 +48,14 @@ async def play(web: bool) -> None:
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         baselines = Baselines(contex, config)
-        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage)
+        facts = Facts()
+        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts)
         overhear = Overhear(contex, baselines, config, rng)
         routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(p.goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,
-            routine=routine,
+            routine=routine, facts=facts,
         )
         players = Players(feed)
         engine.players = players

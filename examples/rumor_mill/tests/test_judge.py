@@ -8,10 +8,11 @@ from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy
-from examples.rumor_mill.judge import Judge, _words
+from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
-from examples.rumor_mill.models import Villager
+from examples.rumor_mill.facts import Facts
+from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.tests.helpers import PID, wait_for
 from examples.rumor_mill.town import Town
@@ -234,9 +235,9 @@ class ClaimJev(StubJev):
 async def test_doubters_are_counted_with_what_the_closest_one_is_saying():
     judge, contex, _, _, _ = make(n=4, believers=1)
     judge.jev = jev = ClaimJev()
-    contex.minds[mind_project(CONFIG.session, "v1")] = [Match("a", {"text": "Bo said: the cat is odd"}, 0.8)]
+    contex.minds[mind_project(CONFIG.session, "v1")] = [Match("a", {"text": "the cat is odd"}, 0.8)]
     contex.minds[mind_project(CONFIG.session, "v2")] = [
-        Match("b", {"text": "Al said: the cat is a thief"}, 0.85), Match("c", {"text": "Al said: cats"}, 0.8),
+        Match("b", {"text": "the cat is a thief"}, 0.85), Match("c", {"text": "cats"}, 0.8),
     ]
     await judge.check(BELIEF)
     assert judge.doubt[BELIEF.id] == {"count": 2, "saying": "the cat is a thief"}
@@ -250,16 +251,22 @@ async def test_a_players_whisper_counts_as_heard_but_is_never_the_saying():
     lineage.record("w-1", None, "p-1")
     judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
     whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you: the cat sells our secrets"}, 0.95)
-    contex.minds[mind_project(CONFIG.session, "v0")] = [whisper, Match("u", {"id": "u-2", "text": "Bo said: the cat is odd"}, 0.8)]
+    contex.minds[mind_project(CONFIG.session, "v0")] = [whisper, Match("u", {"id": "u-2", "text": "the cat is odd"}, 0.8)]
     contex.minds[mind_project(CONFIG.session, "v1")] = [whisper]
     await judge.check(BELIEF)
     assert judge.doubt[BELIEF.id] == {"count": 2, "saying": "the cat is odd"}
 
 
-def test_the_saying_drops_only_a_speaker():
-    said = Match("k", {"text": "Bo Hale said: the bell: it rang twice"})
-    assert _words(said) == "the bell: it rang twice"
-    assert _words(Match("k", {"text": "the bell: it rang twice"})) == "the bell: it rang twice"
+@pytest.mark.asyncio
+async def test_the_saying_is_the_line_as_the_game_kept_it():
+    _, contex, _, feed, town = make(n=1)
+    facts = Facts()
+    sermon = Utterance("u-3", "v9", "Wren Crane", "chapel", "the cat: a devil in fur", None, "preached")
+    facts.record(sermon)
+    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), facts=facts)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [Match("utt:u-3", sermon.to_data(), 0.9)]
+    await judge.check(BELIEF)
+    assert judge.doubt[BELIEF.id]["saying"] == "the cat: a devil in fur"
 
 
 @pytest.mark.asyncio
@@ -270,7 +277,7 @@ async def test_a_new_saying_alone_sends_no_progress():
     running = asyncio.create_task(judge.run(players(holder(PID, BELIEF))))
     try:
         await wait_for(lambda: feed.doubts)
-        contex.minds[mind_project(CONFIG.session, "v0")] = [Match("k2", {"text": "Al said: the cat is odd"}, 0.99)]
+        contex.minds[mind_project(CONFIG.session, "v0")] = [Match("k2", {"text": "the cat is odd"}, 0.99)]
         await wait_for(lambda: judge.doubt[BELIEF.id]["saying"] == "the cat is odd")
         assert len(feed.doubts) == 1
         del contex.minds[mind_project(CONFIG.session, "v0")]
