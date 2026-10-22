@@ -791,8 +791,8 @@ async def test_off_topic_descendant_is_not_a_hop_and_marks_drift(turns):
     ]
     assert lines == ['V1 told V2: "psst again"']
     assert [k for k, _ in minds["v3"].heard] == ["utt:u-2"] and [k for k, _ in minds["v1"].heard] == ["utt:u-3"]
-    card, = rumors.cards(PID)
-    assert ([h["uid"] for h in card["hops"]], card["drifted"]) == (["u-1"], True)
+    card = rumors.card("w-1")
+    assert ([h["uid"] for h in card.hops], card.drifted) == (["u-1"], True)
     await engine.stop()
 
 

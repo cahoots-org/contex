@@ -39,7 +39,7 @@ BAD_ASK = 'Send JSON like {"villager_id": "v1", "topic": "the mill"}.'
 COOKIE = "rumor_mill_player"
 COOKIE_SECONDS = 365 * 24 * 3600
 RELOAD = "Reload the page to join the village."
-TALLY_KEYS = ("uid", "heard", "still", "frontier", "stopped", "touched", "goals")
+TALLY_KEYS = ("uid", "heard", "frontier", "stopped", "touched", "goals")
 
 
 class Guard:

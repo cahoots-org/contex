@@ -90,7 +90,7 @@ async def test_a_hop_checked_before_the_baseline_waits_for_it():
     baselines.release.set()
     assert await check
     assert not rumors.record("w-1", hop("u-1"), {"v2": "Ann"}, True)
-    assert rumors.cards(PID)[0]["drifted"] is False
+    assert rumors.card("w-1").drifted is False
 
 
 @pytest.mark.asyncio
@@ -135,8 +135,7 @@ async def test_a_drift_on_a_reply_thread_shows_on_the_conversation_card():
     await rumors.add("w-2", "and the baker too", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.record("w-2", hop("u-1", "Ann", "the weather"), {"v2": "Ann"}, False)
     assert not rumors.record("w-2", hop("u-2", "Ann", "the weather"), {"v3": "Cal"}, False)
-    card, = rumors.cards(PID)
-    assert card["drifted"] is True
+    assert rumors.card("w-1").drifted is True
 
 
 @pytest.mark.asyncio
@@ -150,15 +149,15 @@ async def test_tallies(monkeypatch):
     assert rumors.record("w-1", hop("u-3", "Cal", "the weather"), {"v5": "Eve"}, False)
     assert not rumors.record("w-1", hop("u-4", "Eve", "the weather again"), {"v6": "Fay"}, False)
     card, = rumors.cards(PID)
-    assert (card["uid"], card["text"], card["target_id"], card["target_name"]) == (
-        "w-1", "the miller waters his flour", "v1", "Marta",
-    )
-    assert [h["uid"] for h in card["hops"]] == ["u-1", "u-2"]
-    assert card["hops"][1] == {
+    assert (card["uid"], card["text"], card["target_name"]) == ("w-1", "the miller waters his flour", "Marta")
+    shown = rumors.card("w-1")
+    assert shown.target_id == "v1"
+    assert [h["uid"] for h in shown.hops] == ["u-1", "u-2"]
+    assert shown.hops[1] == {
         "uid": "u-2", "speaker_id": "v1", "speaker": "Ann", "listeners": ["Cal", "Dee"], "ids": ["v3", "v4"],
         "place": "tavern", "text": "the miller waters his flour",
     }
-    assert (card["heard"], card["still"], card["drifted"]) == (4, 2, True)
+    assert (card["heard"], card["still"], shown.drifted) == (4, 2, True)
 
 
 @pytest.mark.asyncio
@@ -168,7 +167,7 @@ async def test_a_reply_joins_its_conversation_card():
     assert rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True) is False
     card, = rumors.cards(PID)
     assert card["uid"] == "w-1"
-    assert [h["uid"] for h in card["hops"]] == ["u-2"]
+    assert [h["uid"] for h in rumors.card("w-1").hops] == ["u-2"]
     assert await rumors.on_topic("w-2", "close")
 
 
@@ -238,7 +237,8 @@ async def test_a_hop_makes_its_teller_pass_it_on_and_its_listener_hear_it():
     rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
     card, = rumors.cards(PID)
     assert [(e["id"], e["state"], e["told"]) for e in card["frontier"]] == [("v1", "passed", ["Bert"]), ("v2", "heard", [])]
-    assert card["hops"][0]["speaker_id"] == "v1" and card["hops"][0]["ids"] == ["v2"]
+    hop, = rumors.card("w-1").hops
+    assert hop["speaker_id"] == "v1" and hop["ids"] == ["v2"]
 
 
 @pytest.mark.asyncio

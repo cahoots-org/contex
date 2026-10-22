@@ -258,8 +258,8 @@ class Rumors:
         who holds it now, why it stopped, how it touched each villager, and where it was whispered."""
         cutoff = time.time() - self.config.day_seconds
         return [
-            {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
-             "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
+            {"uid": c.uid, "text": c.text, "target_name": c.target_name,
+             "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()),
              "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
              "touched": self._touched(c), "place": c.place}
             for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
