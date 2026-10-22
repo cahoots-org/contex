@@ -753,3 +753,12 @@ def test_a_phone_gets_three_tabs(game):
         assert tab in html and controls in html
     for gone in ("drawer-toggle", "setDrawer", "innerHTML"):
         assert gone not in html
+    # The columns are tab panels only on a phone, so a wide screen keeps its landmarks and names.
+    assert 'role="tabpanel"' not in html and 'matchMedia("(max-width: 760px)")' in html
+    assert '<main id="hear-panel">' in html and 'aria-label="Villagers"' in html and 'aria-label="Your rumors"' in html
+
+
+def test_every_goal_card_has_a_label_a_claim_and_a_bar(game):
+    html = game.client.get("/").text
+    for needle in ('"Your goal"', '"World goal"', "goalCard(", "-webkit-line-clamp: 2", "margin-top: auto"):
+        assert needle in html

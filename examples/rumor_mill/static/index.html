@@ -92,7 +92,10 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.visually-hidden {
+  position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 
 .app {
   display: grid;
@@ -220,7 +223,7 @@ mark.kept {
 .rumor-list { list-style: none; margin: 0; padding: 0; }
 .rumor-item { border-top: 1px solid var(--rail); }
 .rumor-row {
-  display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .25rem;
+  position: relative; display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .25rem;
   background: none; border: 0; border-radius: 4px; text-align: left; cursor: pointer;
 }
 .rumor-row:hover, .rumor-row[aria-expanded="true"] { background: var(--bg); }
@@ -313,34 +316,33 @@ h2 { font-size: 1rem; margin: 1rem 0 .5rem; }
 h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 .2rem; }
 .strip {
   flex: none;
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
-  align-items: start;
-  gap: .5rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: .5rem;
   padding: .25rem 1.25rem .6rem;
   border-bottom: 1px solid var(--rail);
 }
 .strip-toggle { display: none; }
 .goals {
-  grid-column: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .5rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: .5rem;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 .goal-card {
-  min-width: 0; display: grid; gap: .25rem; align-content: start;
+  flex: 0 0 19rem; min-width: 0; display: flex; flex-direction: column; gap: .25rem;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: .4rem .6rem;
 }
 .goal-card:empty { display: none; }
-.goal-card.world { grid-column: 2; }
 .goal-label { font-size: .75rem; color: var(--muted); }
+.goal-text, .doubt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .goal-text { font-size: .85rem; }
 .doubt { margin: 0; font-size: .75rem; color: var(--muted); }
-.bar { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
+.bar { margin-top: auto; display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
 .bar span:first-child { flex: 1; height: 4px; background: var(--rail); border-radius: 3px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 .met .bar { color: var(--accent); font-weight: 700; }
@@ -454,9 +456,6 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 @media (max-width: 1200px) {
   .conn { margin-left: auto; }
   .hud { order: 5; flex: 1 0 100%; margin-left: 0; justify-content: flex-start; }
-  .strip { grid-template-columns: minmax(0, 1fr); }
-  .goals { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
-  .goal-card.world { grid-column: 1; }
 }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -482,10 +481,10 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   }
   .strip-toggle::after { content: " \25BE"; }
   .strip-toggle[aria-expanded="true"]::after { content: " \25B4"; }
-  .goals { display: none; flex: 1 0 100%; order: 3; grid-template-columns: minmax(0, 1fr); }
-  .strip.open .goals { display: grid; }
-  .goal-card { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
-  .goal-card.world { order: 3; flex: 1 0 100%; }
+  .goals { display: none; flex: 1 0 100%; order: 3; flex-direction: column; }
+  .strip.open .goals { display: flex; }
+  .goal-card { flex: 1 1 100%; gap: .1rem; }
+  .goal-card.world { order: 3; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
@@ -551,12 +550,12 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
   </nav>
 
-  <aside class="rumors" id="rumors-panel" role="tabpanel" aria-labelledby="tab-rumors">
+  <aside class="rumors" id="rumors-panel" aria-label="Your rumors">
     <h2>Your rumors</h2>
     <ol class="rumor-list" id="rumor-list"></ol>
   </aside>
 
-  <main id="hear-panel" role="tabpanel" aria-labelledby="tab-hear">
+  <main id="hear-panel">
     <div class="stage">
       <section class="trophies" id="trophies" aria-labelledby="trophies-title" hidden>
         <h2 id="trophies-title" tabindex="-1">Trophy case</h2>
@@ -576,7 +575,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     </div>
   </main>
 
-  <aside id="town" role="tabpanel" aria-labelledby="tab-village">
+  <aside id="town" aria-label="Villagers">
     <h2 id="people-heading">Village</h2>
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
@@ -1685,10 +1684,11 @@ function doubtLine(g) {
   return el("p", { className: "doubt", textContent: `${d.count} heard it but don't believe it — they're saying: “${clip(d.saying, 80)}”` });
 }
 
-// A goal card's text, bar, progress words and doubt.
-function goalParts(g) {
+// A goal card's label, claim, bar with progress words, and doubt.
+function goalCard(g, label) {
   const shown = g.met ? "Met" : goalProgress(g);
   return [
+    el("div", { className: "goal-label", textContent: label }),
     el("div", { className: "goal-text", textContent: g.text, title: g.text }),
     el("div", { className: "bar" },
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
@@ -1701,12 +1701,13 @@ function goalParts(g) {
 function renderGoals() {
   const all = [...goals.values()];
   $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
-  $("goals").replaceChildren(...all.map((g) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalParts(g))));
+  $("goals").replaceChildren(...all.map((g) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalCard(g, "Your goal"))));
   for (const uid of rumorRows.keys()) setRow(uid);
 }
 
 function renderWorld() {
-  $("world").replaceChildren(...(world ? [el("div", { className: "goal-label", textContent: "World goal" }), ...goalParts(world)] : []));
+  $("world").replaceChildren(...(world ? goalCard(world, "World goal") : []));
+  $("world").classList.toggle("met", Boolean(world?.met));
   for (const uid of rumorRows.keys()) setRow(uid);
 }
 
@@ -2315,7 +2316,25 @@ document.querySelector(".tabs").addEventListener("keydown", (ev) => {
   setTab(name);
   $(`tab-${name}`).focus();
 });
-try { if (TABS.includes(localStorage.getItem(TAB_KEY))) setTab(localStorage.getItem(TAB_KEY)); } catch { /* the Hear tab */ }
+let storedTab = null;
+try { storedTab = localStorage.getItem(TAB_KEY); } catch { /* the Hear tab */ }
+if (TABS.includes(storedTab)) setTab(storedTab);
+// The columns are tab panels only while they are tabs, so a wide screen keeps its landmarks.
+const PANELS = { rumors: "rumors-panel", hear: "hear-panel", village: "town" };
+const phone = matchMedia("(max-width: 760px)");
+function setPanels() {
+  for (const [t, id] of Object.entries(PANELS)) {
+    if (phone.matches) {
+      $(id).setAttribute("role", "tabpanel");
+      $(id).setAttribute("aria-labelledby", `tab-${t}`);
+    } else {
+      $(id).removeAttribute("role");
+      $(id).removeAttribute("aria-labelledby");
+    }
+  }
+}
+phone.addEventListener("change", setPanels);
+setPanels();
 
 $("strip-toggle").addEventListener("click", () => {
   const open = $("strip").classList.toggle("open");
