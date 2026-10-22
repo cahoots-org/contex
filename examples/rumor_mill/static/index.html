@@ -33,6 +33,8 @@
   --wait: #2b5d8a;
   --kept: #5a6152;
   --talk: #6a4c93;
+  --sun: #d99a1e;
+  --moon: #7d8a8f;
   --rumor: "Alegreya", Georgia, "Times New Roman", serif;
   --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
@@ -50,6 +52,8 @@
     --danger: #f19a9a;
     --on-accent: #10202f;
     --face-edge: rgb(255 255 255 / .3);
+    --sun: #f0c45a;
+    --moon: #cfd8dc;
   }
 }
 * { box-sizing: border-box; }
@@ -200,12 +204,14 @@ mark.kept {
 .vt-talk { flex: none; }
 .vt:not(.open) .vt-lines > li:nth-last-child(n+3) { display: none; }
 .where, .clock { margin: 0; font-size: .85rem; color: var(--muted); }
-.clock { color: var(--ink); }
-.daybreak {
-  display: flex; align-items: center; gap: .75rem; max-width: 46rem; margin: 1rem 0 .5rem;
-  font: italic .9rem/1.3 var(--rumor); color: var(--muted);
-}
-.daybreak::before, .daybreak::after { content: ""; flex: 1; border-top: 1px solid var(--rail); }
+.clock { color: var(--ink); font-variant-numeric: tabular-nums; }
+.sky { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }
+.sky svg { width: 4.5rem; height: 2.4rem; flex: none; overflow: visible; }
+.sky .horizon { stroke: var(--rail); stroke-width: 1.5; fill: none; }
+.sky .path { stroke: var(--rail); stroke-width: 1; stroke-dasharray: 2 3; fill: none; }
+.sky .sun { fill: var(--sun); }
+.sky .moon { fill: var(--moon); }
+.sky.night .sun, .sky:not(.night) .moon { display: none; }
 
 .composer {
   border-top: 1px solid var(--rail);
@@ -389,7 +395,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .strip-side { display: contents; }
   .heat { flex: 1; min-width: 0; text-align: right; font-size: .95rem; }
   .world { order: 3; flex: 1 0 100%; font-size: .8rem; }
-  .where, .clock { order: 2; flex: 1 0 100%; text-align: right; }
+  .where, .sky { order: 2; flex: 1 0 100%; text-align: right; }
   .usage { order: 4; flex: 1 0 100%; text-align: left; }
   .strip:not(.open) .usage { display: none; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
@@ -426,7 +432,15 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <div class="strip-side">
         <p class="heat" id="heat" aria-live="polite"></p>
         <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
-        <p class="clock" id="clock"></p>
+        <div class="sky" id="sky">
+          <svg viewBox="0 0 64 34" aria-hidden="true">
+            <defs><mask id="crescent"><rect x="-7" y="-7" width="14" height="14" fill="white"/><circle cx="2.5" cy="-1.8" r="4.2" fill="black"/></mask></defs>
+            <path class="path" d="M4 30 A28 28 0 0 1 60 30"/>
+            <line class="horizon" x1="0" y1="30" x2="64" y2="30"/>
+            <g id="sky-body"><circle class="sun" r="5"/><circle class="moon" r="5" mask="url(#crescent)"/></g>
+          </svg>
+          <p class="clock" id="clock"></p>
+        </div>
         <p class="where" id="where"></p>
         <p class="usage" id="usage"></p>
       </div>
@@ -925,7 +939,7 @@ function render(e, fresh) {
       return null;
     case "time":
       setClock(e);
-      return el("li", { className: "daybreak", textContent: `${PHASE_MARKS[e.phase] || ""} ${e.text}` });
+      return null;
     case "warning":
       return el("li", { className: "note against" },
         el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
@@ -1605,11 +1619,31 @@ $("target").addEventListener("keydown", (ev) => {
 });
 $("target").addEventListener("blur", () => showSuggestions([]));
 
-const PHASE_MARKS = { morning: "\u2600", afternoon: "\u2600", evening: "\u263E", night: "\u263E" };
+const PHASES = ["morning", "afternoon", "evening", "night"];
+let clockAt = null;
 
+// The server says where the day is; the page runs the clock between its ticks, never past the current part of the day.
 function setClock(t) {
-  $("clock").textContent = `Day ${t.day}, ${t.phase}`;
+  const fraction = t.fraction ?? PHASES.indexOf(t.phase) / PHASES.length;
+  const daySeconds = t.day_seconds || (clockAt && clockAt.daySeconds) || 180;
+  clockAt = { day: t.day, fraction, daySeconds, at: performance.now() };
+  drawClock();
 }
+
+function drawClock() {
+  if (!clockAt) return;
+  const partEnd = (Math.floor(clockAt.fraction * PHASES.length) + 1) / PHASES.length;
+  const fraction = Math.min(clockAt.fraction + (performance.now() - clockAt.at) / 1000 / clockAt.daySeconds, partEnd - 1e-6);
+  const minutes = (Math.floor((360 + fraction * 1440) / 10) * 10) % 1440;
+  const hour = Math.floor(minutes / 60);
+  $("clock").textContent = `Day ${clockAt.day}, ${hour % 12 || 12}:${String(minutes % 60).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`;
+  const night = hour >= 18 || hour < 6;
+  const along = ((minutes / 60 - (night ? 18 : 6) + 24) % 24) / 12;
+  $("sky").classList.toggle("night", night);
+  $("sky-body").setAttribute("transform",
+    `translate(${(32 - 28 * Math.cos(Math.PI * along)).toFixed(2)} ${(30 - 28 * Math.sin(Math.PI * along)).toFixed(2)})`);
+}
+setInterval(drawClock, 1000);
 
 function setStatus(text, error = false) {
   $("status").textContent = text;

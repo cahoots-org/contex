@@ -26,12 +26,21 @@ class Game:
         # ponytail: remembers at most MEMORY_PLAYERS active players' worth of moves; raise it if more play at once.
         self._moves: deque[tuple[float, str]] = deque(maxlen=memory_moves * MEMORY_PLAYERS)
         self.day, self.phase = 1, PHASES[0]
+        self.phase_started = time.time()
 
     def tick(self) -> None:
         """Move the village clock on to the next part of the day."""
         at = PHASES.index(self.phase) + 1
         self.day += at // len(PHASES)
         self.phase = PHASES[at % len(PHASES)]
+        self.phase_started = time.time()
+
+    def clock(self) -> dict:
+        """The day, its part, how far through the day it is (0 to 1), and how long a day lasts in seconds."""
+        part = self.day_seconds / len(PHASES)
+        into = min(1.0, (time.time() - self.phase_started) / part)
+        return {"day": self.day, "phase": self.phase, "fraction": (PHASES.index(self.phase) + into) / len(PHASES),
+                "day_seconds": self.day_seconds}
 
     def moved(self, player: str) -> None:
         """Count one of a player's moves; the village's memory is measured in these, not in time."""

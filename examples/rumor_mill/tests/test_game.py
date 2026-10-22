@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from examples.rumor_mill import engine as engine_mod
+from examples.rumor_mill import game as game_mod
 from examples.rumor_mill.actions import MOVE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -449,3 +450,14 @@ async def test_villagers_keep_their_places_while_nobody_is_playing():
     await engine._walk("morning", 0.0)
     assert engine.town.place_of("v1") == "square"
     await engine.stop()
+
+
+def test_the_clock_says_how_far_through_the_day_it_is(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(game_mod.time, "time", lambda: now[0])
+    game = Game(day_seconds=120.0)
+    now[0] += 15
+    assert game.clock() == {"day": 1, "phase": "morning", "fraction": 0.125, "day_seconds": 120.0}
+    game.tick()
+    now[0] += 60
+    assert game.clock()["fraction"] == 0.5

@@ -111,7 +111,8 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert state["places"] == list(PLACES) and state["boot"]
     assert state["events"][-1]["text"] == "hello"
     assert state["place"] == "square"
-    assert state["time"] == {"day": 1, "phase": "morning"}
+    assert (state["time"]["day"], state["time"]["phase"]) == (1, "morning")
+    assert 0 <= state["time"]["fraction"] < 0.25 and state["time"]["day_seconds"] > 0
     assert state["trophies"] == []
     assert "NEED" not in game.client.get("/api/state").text
 

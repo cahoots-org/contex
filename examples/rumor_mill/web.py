@@ -193,7 +193,7 @@ def create_app(
             "boot": f"{boot}:{player.id}",
             "places": list(PLACES),
             "place": player.place,
-            "time": {"day": game.day, "phase": game.phase},
+            "time": game.clock(),
             "goals": [goal_json(judge, g, g.id in player.met) for g in player.goals],
             "world_goal": goal_json(judge, judge.world, False),
             "villagers": villagers(town),
