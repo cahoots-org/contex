@@ -336,6 +336,13 @@ def test_a_deal_sends_counts_for_its_belief_goals_only():
     assert feed.deal_counts == {g.id: (0, math.ceil(g.target_fraction * 4)) for g in p.goals if g.kind == "belief"}
 
 
+def test_an_empty_town_sends_no_counts_rather_than_none_of_none():
+    judge, _, _, feed, _ = make(n=0)
+    assert judge.counts_of(BELIEF) is None
+    judge.deal(SimpleNamespace(id=PID, goals=[], met=set()))
+    assert feed.deal_counts == {}
+
+
 @pytest.mark.asyncio
 async def test_needed_rounds_up_to_a_whole_villager():
     judge, *_ = make(n=50, believers=15)

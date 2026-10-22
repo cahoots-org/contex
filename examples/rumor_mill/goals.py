@@ -103,11 +103,13 @@ def needed(goal: Goal, counted: int) -> int:
 def goal_counts(goal: Goal, known: dict[str, tuple[int, int]], villagers: int) -> tuple[int, int] | None:
     """A belief goal's believers and how many it needs, none of the whole village before its first check.
 
-    None for a state goal, which has only a percent.
+    None for a state goal, which has only a percent, and for an unchecked goal while the town is still empty.
     """
     if goal.kind != "belief":
         return None
-    return known.get(goal.id) or (0, needed(goal, villagers))
+    if goal.id in known or not villagers:
+        return known.get(goal.id)
+    return 0, needed(goal, villagers)
 
 
 def claim(goal: Goal) -> str | None:
