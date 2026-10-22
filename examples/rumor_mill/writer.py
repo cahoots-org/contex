@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from examples.rumor_mill.actions import STYLES
 from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.usage import charged_to
 
 SAY_MAX_TOKENS = 80
 TURN_AWAY_MAX_TOKENS = 60
@@ -58,7 +59,7 @@ class Writer:
             messages=[{"role": "user", "content": user}],
         )
         if self.usage:
-            self.usage.record("haiku", response.usage.input_tokens, response.usage.output_tokens)
+            self.usage.record("haiku", response.usage.input_tokens, response.usage.output_tokens, charged_to.get())
         return response.content[0].text.strip()
 
     async def say(

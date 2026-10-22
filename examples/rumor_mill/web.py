@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket
@@ -111,8 +112,8 @@ def create_app(
     clients: dict[asyncio.Queue, str] = {}
     boot = uuid.uuid4().hex
     notes: dict[str, Notes] = {}
-    # The rumor tallies last sent to each player's tabs.
-    sent: dict[str, list[dict]] = {}
+    # What each player's tabs were last sent, by kind.
+    sent: dict[str, dict[str, object]] = {"rumors": {}, "usage": {}}
 
     def notes_of(player: Player) -> Notes:
         if player.id not in notes:
@@ -138,24 +139,24 @@ def create_app(
                 last = now
                 broadcast({"kind": kind, kind: now})
 
-    async def watch_tallies() -> None:
-        """Send each player's tabs their rumor tallies whenever those have changed."""
+    async def watch_each(kind: str, snapshot: Callable[[str], object], seconds: float) -> None:
+        """Send each player's tabs their own snapshot whenever it has changed, checking every few seconds."""
         while True:
-            await asyncio.sleep(VILLAGER_POLL_SECONDS)
+            await asyncio.sleep(seconds)
             for pid in set(clients.values()):
-                now = tallies(rumors, pid)
-                if now != sent.get(pid):
-                    sent[pid] = now
+                now = snapshot(pid)
+                if now != sent[kind].get(pid):
+                    sent[kind][pid] = now
                     for queue in [q for q, p in clients.items() if p == pid]:
-                        queue.put_nowait({"kind": "rumors", "rumors": now})
+                        queue.put_nowait({"kind": kind, kind: now})
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         feed.sinks.append(on_event)
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
-            asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
-            asyncio.create_task(watch_tallies()),
+            asyncio.create_task(watch_each("usage", usage.to_json, USAGE_POLL_SECONDS)),
+            asyncio.create_task(watch_each("rumors", partial(tallies, rumors), VILLAGER_POLL_SECONDS)),
         ]
         try:
             yield
@@ -199,7 +200,7 @@ def create_app(
             "events": [event_json(e) for e in feed.replay(player.id)],
             "rumors": rumors.cards(player.id),
             "notes": notes_of(player).all(),
-            "usage": usage.to_json(),
+            "usage": usage.to_json(player.id),
             "heat": (label := suspicion.label(player.id)),
             "heat_line": HEAT_LINES[label],
             "game": game_json(player),
@@ -256,7 +257,8 @@ def create_app(
             return
         await socket.accept()
         queue: asyncio.Queue = asyncio.Queue()
-        sent.setdefault(player.id, tallies(rumors, player.id))
+        sent["rumors"].setdefault(player.id, tallies(rumors, player.id))
+        sent["usage"].setdefault(player.id, usage.to_json(player.id))
         clients[queue] = player.id
 
         async def pump() -> None:

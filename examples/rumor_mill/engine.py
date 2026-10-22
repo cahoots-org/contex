@@ -27,6 +27,7 @@ from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import START_PLACE, Town
+from examples.rumor_mill.usage import charging
 from examples.rumor_mill.writer import WHISPER_FRAMING, Writer
 
 log = logging.getLogger(__name__)
@@ -420,25 +421,30 @@ class Engine:
             ask_keen=self.scenes.of(v.id) is not None or any(self._exchange(m, v.id, place) for m in new),
         )
         action = answered = None
+        # The turn answers to the player behind the first of its new items that a player started, if any.
+        started = [p for p in map(self._player_behind, new) if p]
+        payer = started[0] if started else None
         try:
             async with self._turns:
-                decision = await decide(self.jev, view)
+                with charging(payer):
+                    decision = await decide(self.jev, view)
                 action = decision.action
                 if decision.suspicion_strength is not None:
                     self._rate(v.id, decision.suspicion_strength, view.names_newcomer)
                 if decision.gossip is not None:
                     self._gossip[v.id] = decision.gossip
-                scene, joined = await self._enter_scene(v, decision, place)
-                await act(
-                    decision, v, town=self.town, writer=self.writer, hub=self,
-                    lineage=self.lineage, ids=self.ids, facts=self.facts,
-                    inspiration=[m.data.get("text", "") for m in new],
-                    said=[m.data.get("text", "") for m in said],
-                    heard=[m.data.get("text", "") for m in heard],
-                    suspicion_hear_max=self.config.suspicion_hear_max,
-                    share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
-                    about=suspect,
-                )
+                with charging(self._player_behind(decision.source) or payer):
+                    scene, joined = await self._enter_scene(v, decision, place)
+                    await act(
+                        decision, v, town=self.town, writer=self.writer, hub=self,
+                        lineage=self.lineage, ids=self.ids, facts=self.facts,
+                        inspiration=[m.data.get("text", "") for m in new],
+                        said=[m.data.get("text", "") for m in said],
+                        heard=[m.data.get("text", "") for m in heard],
+                        suspicion_hear_max=self.config.suspicion_hear_max,
+                        share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
+                        about=suspect,
+                    )
                 if action == MOVE:
                     self._chose_move.add(v.id)
                 if scene is not None:
@@ -448,6 +454,10 @@ class Engine:
         finally:
             self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
         return True
+
+    def _player_behind(self, m: Match | None) -> str | None:
+        """The player whose whisper the item's lineage roots in."""
+        return None if m is None else self.lineage.player_of(m.data.get("id"))
 
     def _about(self, m: Match) -> str | None:
         """The player the item's lineage roots in, or else the player it warns of."""
@@ -668,12 +678,13 @@ class Engine:
         v = self.town.get(vid)
         self._strolling.add(vid)
         try:
-            await act(
-                Decision(MOVE, latest, place, None), v, town=self.town, writer=self.writer,
-                hub=self, lineage=self.lineage, ids=self.ids, facts=self.facts,
-                suspicion_hear_max=self.config.suspicion_hear_max,
-                share_chance=self.share_chance(vid, latest) if latest else 0.0,
-            )
+            with charging(self._player_behind(latest)):
+                await act(
+                    Decision(MOVE, latest, place, None), v, town=self.town, writer=self.writer,
+                    hub=self, lineage=self.lineage, ids=self.ids, facts=self.facts,
+                    suspicion_hear_max=self.config.suspicion_hear_max,
+                    share_chance=self.share_chance(vid, latest) if latest else 0.0,
+                )
             self._report(v, [], MOVE, self._said.pop(vid, []))
         except Exception:
             log.exception("routine move failed for %s", vid)

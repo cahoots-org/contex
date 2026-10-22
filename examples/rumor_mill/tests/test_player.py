@@ -10,9 +10,12 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
-from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex, wait_for
+from examples.rumor_mill.config import Config
+from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
 from examples.rumor_mill.town import NEWCOMER
+from examples.rumor_mill.usage import Usage, charged_to
+from examples.rumor_mill.writer import Writer
 
 
 @pytest.mark.asyncio
@@ -667,3 +670,20 @@ async def test_a_villager_turns_away_only_the_player_they_suspect():
     engine.suspicion.bump("v1", PID, player.config.refuse_threshold, "test")
     assert isinstance(await player.whisper_to("v1", "hi"), Refusal)
     assert await other.whisper_to("v1", "hi") is None
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_check_and_brush_off_are_charged_to_the_whisperer():
+    usage = Usage(Config())
+    player, lines = make_hinting(Writer(StubClient("Leave off, the wheel won't mend itself."), "haiku", usage))
+    contex, checked = player.engine.contex, []
+
+    async def query(project_id, query, **kwargs):
+        checked.append(charged_to.get())
+        return []
+
+    contex.query = query
+    assert await brush_off_once(player, lines) == 'Aldwin Miller brushes you off: "Leave off, the wheel won\'t mend itself."'
+    assert checked and set(checked) == {PID}
+    assert usage.cost(PID) == pytest.approx(usage.cost()) and usage.cost() > 0
+    assert charged_to.get() is None

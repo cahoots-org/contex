@@ -1,8 +1,25 @@
 """Token counts per provider and what they cost at the configured prices."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from examples.rumor_mill.config import Config
 
 PROVIDERS = ("haiku", "jev")
+
+# The player whose whisper set off the model calls made here; None is village overhead.
+charged_to: ContextVar[str | None] = ContextVar("charged_to", default=None)
+
+
+@contextmanager
+def charging(player: str | None) -> Iterator[None]:
+    """Charge the model calls made inside the block to player."""
+    token = charged_to.set(player)
+    try:
+        yield
+    finally:
+        charged_to.reset(token)
 
 
 def _tokens(n: int) -> str:
@@ -20,20 +37,32 @@ class Usage:
             "jev": (config.jev_input_per_mtok, config.jev_output_per_mtok),
         }
         self.tokens = {p: [0, 0] for p in PROVIDERS}
+        self.players: dict[str, float] = {}
 
-    def record(self, provider: str, input_tokens: int | None, output_tokens: int | None) -> None:
+    def record(
+        self, provider: str, input_tokens: int | None, output_tokens: int | None, player: str | None = None,
+    ) -> None:
+        """Add a call's tokens to the totals, and its cost to player's share when there is one."""
         counts = self.tokens[provider]
         counts[0] += input_tokens or 0
         counts[1] += output_tokens or 0
+        if player is not None:
+            dollars = self._dollars(provider, input_tokens or 0, output_tokens or 0)
+            self.players[player] = self.players.get(player, 0.0) + dollars
 
-    def cost(self) -> float:
-        """Estimated dollars spent so far."""
-        return sum(
-            (inp * self.prices[p][0] + out * self.prices[p][1]) / 1_000_000
-            for p, (inp, out) in self.tokens.items()
-        )
+    def _dollars(self, provider: str, input_tokens: int, output_tokens: int) -> float:
+        return (input_tokens * self.prices[provider][0] + output_tokens * self.prices[provider][1]) / 1_000_000
 
-    def summary(self) -> str:
+    def cost(self, player: str | None = None) -> float:
+        """Estimated dollars spent so far, in all or on player's behalf."""
+        if player is not None:
+            return self.players.get(player, 0.0)
+        return sum(self._dollars(p, inp, out) for p, (inp, out) in self.tokens.items())
+
+    def summary(self, player: str | None = None) -> str:
+        """The cost so far as one line: the village total with its tokens, or player's share."""
+        if player is not None:
+            return f"Your rumors have cost about ${self.cost(player):.2f} so far"
         parts = []
         for name, (inp, out) in (("Haiku", self.tokens["haiku"]), ("Jev", self.tokens["jev"])):
             if inp or out:
@@ -43,8 +72,9 @@ class Usage:
         dollars = "less than $0.01" if 0 < cost < 0.005 else f"${cost:.2f}"
         return f"Estimated cost so far: {dollars}{detail}"
 
-    def to_json(self) -> dict:
-        return {"summary": self.summary(), "cost": round(self.cost(), 4)}
+    def to_json(self, player: str | None = None) -> dict:
+        """The summary and cost, in all or for player."""
+        return {"summary": self.summary(player), "cost": round(self.cost(player), 4)}
 
 
 class CountingJev:
@@ -56,5 +86,5 @@ class CountingJev:
 
     async def system_one(self, *args, **kwargs):
         response = await self.client.system_one(*args, **kwargs)
-        self.usage.record("jev", response.usage.input_tokens, response.usage.output_tokens)
+        self.usage.record("jev", response.usage.input_tokens, response.usage.output_tokens, charged_to.get())
         return response

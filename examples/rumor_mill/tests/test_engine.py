@@ -25,9 +25,11 @@ from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH
 from examples.rumor_mill.tests.helpers import (
-    PID, TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, stub_player, wait_for,
+    PID, TIMEOUT, Always, FakeMind, StubBaselines, StubClient, StubContex, make, stub_player, wait_for,
 )
 from examples.rumor_mill.town import NEWCOMER, Town
+from examples.rumor_mill.usage import CountingJev, Usage
+from examples.rumor_mill.writer import Writer
 
 SETTLE = 0.1
 
@@ -1763,4 +1765,84 @@ async def test_the_turn_weighs_suspicion_of_the_player_in_front(turns):
     push(minds["v1"])
     await wait_for(lambda: turns.views)
     assert turns.views[0].suspicion == pytest.approx(0.1)
+    await engine.stop()
+
+
+class TokenJev:
+    """A Jev whose answers cost a million input tokens per id in the state's villager field."""
+
+    def __init__(self, gate=None):
+        self.gate = gate
+        self.started = 0
+
+    async def system_one(self, state, questions):
+        self.started += 1
+        if self.gate:
+            await self.gate.wait()
+        return SimpleNamespace(usage=SimpleNamespace(input_tokens=1_000_000 * state["n"], output_tokens=0))
+
+
+class Paying:
+    """Each turn asks Jev, then has the writer speak about its first new item, as a real turn does."""
+
+    async def decide(self, jev, view):
+        await jev.system_one(state={"n": int(view.villager.id[1:])}, questions={})
+        return Decision(SPEAK, view.new[0], None, None)
+
+    async def act(self, decision, villager, *, writer, **kw):
+        await writer.complete("system", "user")
+
+
+async def paying_engine(monkeypatch, *vids, gate=None):
+    p = Paying()
+    monkeypatch.setattr(engine_mod, "decide", p.decide)
+    monkeypatch.setattr(engine_mod, "act", p.act)
+    engine, minds, feed = await setup(*vids)
+    usage = Usage(Config())
+    engine.jev = CountingJev(TokenJev(gate), usage)
+    engine.writer = Writer(StubClient(*["Did you hear?"] * len(vids)), "haiku", usage)
+    return engine, minds, usage
+
+
+def hop(engine, uid, root, player):
+    engine.lineage.record(root, None, player=player)
+    engine.lineage.record(uid, root)
+    return Match(f"utt:{uid}", {"id": uid, "text": "V9 said at the square: the well is cursed"})
+
+
+@pytest.mark.asyncio
+async def test_a_turn_on_a_players_rumor_is_charged_to_that_player(monkeypatch):
+    engine, minds, usage = await paying_engine(monkeypatch, "v1")
+    minds["v1"].results = [[hop(engine, "u-1", "w-1", "p-a")]]
+    push(minds["v1"])
+    await wait_for(lambda: usage.tokens["haiku"][0])
+    assert usage.tokens == {"haiku": [120, 30], "jev": [1_000_000, 0]}
+    assert usage.cost("p-a") == pytest.approx(usage.cost()) and usage.cost() > 0
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_village_talk_is_charged_to_no_player(monkeypatch):
+    engine, minds, usage = await paying_engine(monkeypatch, "v1")
+    engine.lineage.record("u-0", None)
+    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V9 said at the square: rain tomorrow"})]]
+    push(minds["v1"])
+    await wait_for(lambda: usage.tokens["haiku"][0])
+    assert usage.cost() > 0 and usage.cost(PID) == usage.cost("p-a") == 0.0
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_turns_charge_each_their_own_player(monkeypatch):
+    gate = asyncio.Event()
+    engine, minds, usage = await paying_engine(monkeypatch, "v1", "v2", gate=gate)
+    minds["v1"].results = [[hop(engine, "u-1", "w-1", "p-a")]]
+    minds["v2"].results = [[hop(engine, "u-2", "w-2", "p-b")]]
+    push(minds["v1"])
+    push(minds["v2"])
+    await wait_for(lambda: engine.jev.client.started == 2)
+    gate.set()
+    await wait_for(lambda: usage.tokens["haiku"][0] == 240)
+    assert usage.cost("p-a") + usage.cost("p-b") == pytest.approx(usage.cost())
+    assert usage.cost("p-b") - usage.cost("p-a") == pytest.approx(0.04)
     await engine.stop()

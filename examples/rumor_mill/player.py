@@ -15,6 +15,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import NEWCOMER, START_PLACE, Town
+from examples.rumor_mill.usage import charging
 
 log = logging.getLogger(__name__)
 
@@ -90,8 +91,12 @@ class Player:
     async def whisper_to(self, villager_id: str, text: str) -> str | None:
         """Whisper text to the villager with this id; returns why it could not be done, if it couldn't.
 
-        A villager turning the whisper away comes back as a Refusal.
+        A villager turning the whisper away comes back as a Refusal. Every model call it sets off is charged to this player.
         """
+        with charging(self.id):
+            return await self._whisper_to(villager_id, text)
+
+    async def _whisper_to(self, villager_id: str, text: str) -> str | None:
         if self.over():
             return GAME_OVER
         text = text.strip()
