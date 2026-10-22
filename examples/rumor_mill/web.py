@@ -77,18 +77,21 @@ def card_view(card: dict, player: Player, judge, rumors: Rumors) -> dict:
 
     That is the first claim in the player's hand, and the world goal when the card makes its claim.
     """
+    claims = rumors.card(card["uid"]).claims
     hand = {g.id: g for g in player.goals}
-    goals = [hand[c] for c in card["claims"] if c in hand][:1]
-    goals += [judge.world for c in card["claims"] if judge.world.id == f"world-{c}"]
+    goals = [hand[c] for c in claims if c in hand][:1]
+    if judge.world.id.removeprefix("world-") in claims:
+        goals.append(judge.world)
+    touched = dict(card["touched"])
     links = []
     for goal in goals:
         convinced = [
             vid for vid, root in judge.roots.get(goal.id, {}).items()
             if root is not None and (shown := rumors.card(root)) is not None and shown.uid == card["uid"]
         ]
-        card["touched"].update(dict.fromkeys(convinced, "believes"))
+        touched.update(dict.fromkeys(convinced, "believes"))
         links.append({"text": goal.text, "claim": claim(goal), "world": goal is judge.world, "convinced": len(convinced)})
-    return {**card, "goals": links}
+    return {**card, "touched": touched, "goals": links}
 
 
 def tallies(rumors: Rumors, judge, players: Players, player_id: str) -> list[dict]:

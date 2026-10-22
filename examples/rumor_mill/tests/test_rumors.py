@@ -382,7 +382,8 @@ async def test_a_whisper_card_keeps_its_place_and_claims_and_a_reply_asks_nothin
     await rumors.add("w-2", "it moans", AT, "v1", "Marta", conversation="w-1", player=PID, place="tavern")
     assert overhear.calls == ["a ghost in the tavern"]
     card, = rumors.cards(PID)
-    assert card["claims"] == ["tavern-ghost"] and card["place"] == "tavern"
+    assert rumors.card("w-1").claims == ["tavern-ghost"] and card["place"] == "tavern"
+    assert "claims" not in card
 
 
 @pytest.mark.asyncio

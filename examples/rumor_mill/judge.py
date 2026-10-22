@@ -68,8 +68,11 @@ class Judge:
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
-    async def _believes(self, goal: Goal, villager: Villager) -> bool | None:
-        """Whether the villager believes the goal's claim; None if they left or the check failed."""
+    async def _believes(self, goal: Goal, villager: Villager, roots: dict[str, str | None]) -> bool | None:
+        """Whether the villager believes the goal's claim; None if they left or the check failed.
+
+        A believer goes into roots with the player whisper behind their best-matching memory, if one is.
+        """
         async with self._semaphore:
             try:
                 project = mind_project(self.config.session, villager.id)
@@ -93,7 +96,7 @@ class Judge:
             if villager.id not in self.town:
                 return None
             if believes:
-                self.roots[goal.id][villager.id] = self._root(max(matches, key=lambda m: m.similarity or 0.0))
+                roots[villager.id] = self._root(max(matches, key=lambda m: m.similarity or 0.0))
             return believes
 
     def _root(self, memory: Match) -> str | None:
@@ -123,8 +126,9 @@ class Judge:
         if goal.kind == "state":
             return max(0.0, min(1.0, goal.state_check(self.town)))
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
-        self.roots[goal.id] = {}
-        results = await asyncio.gather(*(self._believes(goal, v) for v in self.town.villagers))
+        roots: dict[str, str | None] = {}
+        results = await asyncio.gather(*(self._believes(goal, v, roots) for v in self.town.villagers))
+        self.roots[goal.id] = roots
         counted = [r for r in results if r is not None]
         if not counted:
             return 0.0

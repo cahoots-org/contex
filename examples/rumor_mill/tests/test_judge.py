@@ -520,3 +520,30 @@ async def test_progress_names_the_players_rumor_that_moved_it():
     judge.check = check
     await run_until(judge, players(holder("p-1", BELIEF), holder("p-2", BELIEF)), lambda: len(feed.rumors) >= 4)
     assert feed.rumors[:4] == [("p-1", "w-1"), ("p-2", None), ("p-1", "w-1"), ("p-2", "w-2")]
+
+
+class BlockedContex(StubContex):
+    def __init__(self):
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def query(self, *args, **kwargs):
+        await self.release.wait()
+        return await super().query(*args, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_roots_keep_the_last_complete_map_while_a_check_runs():
+    _, _, jev, feed, town = make(n=1)
+    contex = BlockedContex()
+    lineage = Lineage()
+    lineage.record("w-1", None, "p-1")
+    contex.minds[mind_project(CONFIG.session, "v0")] = [Match("utt:w-1", {"text": "a"}, 0.9)]
+    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    judge.roots[BELIEF.id] = {"v0": None}
+    checking = asyncio.create_task(judge.check(BELIEF))
+    await asyncio.sleep(0.01)
+    assert judge.roots[BELIEF.id] == {"v0": None}
+    contex.release.set()
+    await checking
+    assert judge.roots[BELIEF.id] == {"v0": "w-1"}

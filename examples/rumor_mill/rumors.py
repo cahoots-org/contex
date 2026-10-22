@@ -257,13 +257,13 @@ class Rumors:
 
     def cards(self, player: str) -> list[dict]:
         """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day,
-        who holds it now, why it stopped, how it touched each villager, the goals it serves, and where it was whispered."""
+        who holds it now, why it stopped, how it touched each villager, and where it was whispered."""
         cutoff = time.time() - self.config.day_seconds
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
              "conversation": c.conversation, "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
-             "touched": self._touched(c), "claims": c.claims, "place": c.place}
+             "touched": self._touched(c), "place": c.place}
             for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
         ]
 

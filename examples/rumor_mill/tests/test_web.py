@@ -476,6 +476,7 @@ def test_cards_link_goals_and_count_who_each_convinced(game):
         {"text": WORLD.text, "claim": "the well is cursed", "world": True, "convinced": 1},
     ]
     assert card["touched"] == {"v1": "believes", "v2": "believes"}
+    assert "claims" not in card
 
 
 def test_another_players_believers_never_count_on_your_card(game):
