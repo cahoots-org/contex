@@ -176,6 +176,14 @@ def test_page_has_the_walk_listen_and_ask_controls(game):
     assert "innerHTML" not in html
 
 
+def test_a_body_too_deeply_nested_to_parse_is_a_bad_request(game, monkeypatch):
+    def too_deep(body):
+        raise RecursionError
+
+    monkeypatch.setattr(web.json, "loads", too_deep)
+    assert game.client.post("/api/whisper", content=b"[" * 8000).status_code == 400
+
+
 def test_whisper_validation_errors_come_back_as_messages(game):
     post = game.client.post
     assert post("/api/whisper", json={"name": "Zed", "text": "hi"}).json() == {"error": "No one in town is called Zed."}

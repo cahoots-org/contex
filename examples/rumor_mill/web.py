@@ -156,7 +156,7 @@ async def _payload(request: Request, bad: str, too_long: str) -> dict | JSONResp
             return _error(413, too_long)
     try:
         payload = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):
         return _error(400, bad)
     return payload if isinstance(payload, dict) else _error(400, bad)
 
