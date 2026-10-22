@@ -95,7 +95,10 @@ same way now and then.
   goals it was for and the game day it was won. When the world goal is met, every player who was
   active (whispered at least once) while that world goal was in play gets a world trophy, since no
   one's share can be told apart (Rob). The world records who whispered under each world goal.
-  Trophies are stored with the player and survive restarts.
+  Trophies belong to the person, not the run: the cookie
+  identifies a person, each run in the village is a newcomer of theirs, and the trophy case follows
+  the person from run to run. A trophy won while the person has no run in play (they were run out)
+  is shown when their next run starts (Rob). Trophies survive restarts.
 - **Judging cost** is bounded by the deck, not the players: the judge checks each claim that is in
   play (any player's goal or the world goal) once per check, and every player with that claim reads
   the same result. At most 15 claims × the village per check, with the existing verdict cache.
@@ -117,6 +120,10 @@ same way now and then.
   uses the overhearing player's own goals. *(My call.)*
 - **Per-player limits.** At most one whisper every few seconds per player (`whisper_cooldown_seconds`,
   Config, 5), so one player can't flood the village.
+- **Cost per player.** Every model call is charged to the player whose whisper set it off (the
+  root of the lineage behind the villager's turn, or the whisperer for checks, hints and replies);
+  village talk no player started is shared overhead. Each player's page shows their own cost; the
+  village total stays in the terminal and logs (Rob).
 - **Cost** follows villager activity: about the cost of a busy single-player village per world,
   whatever the number of players in it. A cap on worlds bounds the whole service.
 

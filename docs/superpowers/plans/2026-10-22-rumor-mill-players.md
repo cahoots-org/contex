@@ -549,28 +549,37 @@ git commit -am "Deal personal goals per player and keep one world goal for every
   - `goals.trophy_line(trophy: Trophy, claim: str | None) -> str`:
     - personal: `f"The village now swears {claim}, and it all began with a whisper. A trophy for your case."`, or `"The village is not what it was, and it all began with a whisper. A trophy for your case."` when `claim` is `None`.
     - world: `f"The whole village now holds that {claim}. A world trophy for your case."`
-  - `Player.trophies: list[Trophy]` and `Player.whispered_at: float | None`, set in `whisper_to` after a successful delivery.
-  - In `Judge.run`, when a player's goals are all met, it builds `Trophy("personal", tuple(g.text for g in p.goals), game.day)` and appends it. It then calls `feed.on_trophy(t, line, player=p.id)`, with the claim of the last belief goal met, and deals again. When the world goal is met, every player in `players` with `whispered_at >= self.world_since` gets `Trophy("world", (world.text,), game.day)` and its line. This includes players since run out, whose closed feed drops the event. After that the next world goal is drawn.
+  - **A person outlives their runs.** `Player.owner: str` is the person behind a run (the cookie id in Task 8; in terminal mode one fixed owner). `Players.cases: dict[str, list[Trophy]]` is each owner's trophy case, and `Players.pending: dict[str, list[tuple[Trophy, str]]]` holds trophy lines for an owner with no live run. `Players.award(owner: str, trophy: Trophy, line: str) -> None` appends to the case and, if the owner has a live player, calls `feed.on_trophy(trophy, line, player=live.id)`; otherwise it queues the line in `pending`. `Players.deliver_pending(player: Player) -> None` sends and clears the owner's pending lines; Task 8's `join` calls it when a run starts.
+  - `Player.whispered_at: float | None`, set in `whisper_to` after a successful delivery; the world goal's roll of whisperers is kept by owner (`Judge.whisperers: set[str]`, cleared when a new world goal is drawn), so a run-out person keeps credit for that world goal.
+  - In `Judge.run`, when a player's goals are all met, it builds `Trophy("personal", tuple(g.text for g in p.goals), game.day)` and calls `players.award(p.owner, t, line)` with the claim of the last belief goal met, then deals again. When the world goal is met, every owner in `Judge.whisperers` gets `players.award(owner, Trophy("world", (world.text,), game.day), line)`: a person run out since then gets the line when their next run starts. Then the next world goal is drawn.
   - `Feed.on_trophy(trophy: Trophy, line: str, player: str)` emits kind `"trophy"`, with data `trophy=trophy.to_json()` and `text=line`.
-  - `/api/state` gains `trophies: [t.to_json() for t in player.trophies]`. `cli` gains a `trophies` command that prints `f"Day {t.day}: {'; '.join(t.goals)}"` per trophy, or `"No trophies yet."`. `HELP` lists it.
+  - `/api/state` gains `trophies: [t.to_json() for t in players.cases.get(player.owner, [])]`. `cli` gains a `trophies` command that prints `f"Day {t.day}: {'; '.join(t.goals)}"` per trophy, or `"No trophies yet."`. `HELP` lists it.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
 # test_judge.py
 async def test_meeting_every_goal_puts_a_trophy_in_the_case():
-    [t] = pa.trophies
+    [t] = players.cases[pa.owner]
     assert (t.kind, t.goals, t.day) == ("personal", tuple(g.text for g in first_hand), game.day)
     assert feed.trophies[0][1] == "The village now swears cat is a spy, and it all began with a whisper. A trophy for your case."
 
 async def test_world_trophies_go_to_everyone_who_whispered_under_that_world_goal():
     # p-a whispered after world_since, p-b whispered before it, p-c never
-    assert [p.id for p in (pa, pb, pc) if p.trophies] == ["p-a"]
-    assert pa.trophies[0].kind == "world"
+    assert [p.id for p in (pa, pb, pc) if players.cases.get(p.owner)] == ["p-a"]
+    assert players.cases[pa.owner][0].kind == "world"
+
+async def test_a_world_trophy_waits_for_a_run_out_persons_next_run():
+    # pa whispered under the world goal, then was run out; the world goal is met
+    assert players.pending[pa.owner] and feed.replay(pa.id) == []
+    fresh = make_player("p-a2", owner=pa.owner)
+    players.add(fresh)
+    players.deliver_pending(fresh)
+    assert [e.kind for e in feed.replay(fresh.id)][-1] == "trophy" and not players.pending.get(pa.owner)
 
 async def test_a_whisper_under_the_next_world_goal_does_not_count_for_the_last():
     # world met twice; p-a whispered only under the first
-    assert [t.kind for t in pa.trophies] == ["world"]
+    assert [t.kind for t in players.cases[pa.owner]] == ["world"]
 
 # test_feed.py
 def test_a_trophy_reaches_only_its_player():
@@ -614,8 +623,8 @@ git commit -am "Award personal and world trophies and keep them in each player's
   - `players.RUN_OUT_LOCKOUT_SECONDS = 600`.
   - `web.COOKIE = "rumor_mill_player"` and `web.RELOAD = "Reload the page to join the village."`.
   - `create_app(*, players: Players, join: Callable[[], Player], town, feed, judge, usage, port, suspicion, game, rumors) -> FastAPI`. The `player` and `goals` parameters are gone.
-  - `web.player_for(players: Players, cookie: str | None) -> Player | None`.
-  - `GET /` joins a new player when the cookie is missing or unknown, or when its player lost and `time.time() - ended_at >= RUN_OUT_LOCKOUT_SECONDS`. It sets the cookie with `httponly=True, samesite="strict"`.
+  - The cookie holds the **owner** id (`o-` + 16 hex), not a run's player id. `Players.live(owner: str) -> Player | None` is the owner's current run; `web.player_for(players: Players, cookie: str | None) -> Player | None` returns it.
+  - `GET /` makes a new owner when the cookie is missing or unknown, and starts a run (`join(owner)`) when the owner has no run, or their run lost and `time.time() - ended_at >= RUN_OUT_LOCKOUT_SECONDS`. The cookie keeps its owner across runs, so the trophy case and any pending trophy lines follow the person. It is set with `httponly=True, samesite="strict"` and a one-year `max_age`.
   - `/api/state`, `/api/villagers/{vid}` and `POST /api/whisper` with no known player return `_error(401, RELOAD)`. The websocket closes with 1008 before accepting.
   - `/api/state` is per player:
     - `boot` is `f"{boot}:{player.id}"`, so a new newcomer resets the page.
@@ -624,14 +633,23 @@ git commit -am "Award personal and world trophies and keep them in each player's
     - `heat`/`heat_line` use `suspicion.label(player.id)` and `game` uses `game_json(player)`.
     - No key names or counts other players.
   - Clients become `dict[asyncio.Queue, str]` (queue → player id). `on_event` puts an event only on the queues whose player `feed.sees`. The `villagers` and `usage` watchers still broadcast. The `rumors` tallies watcher compares and sends a snapshot per player id.
-  - `__main__` uses `join() -> Player`, which makes `Player(..., player_id=new_player_id())`, then `players.add`, then `judge.deal`. Terminal mode calls `join()` once. Web mode makes no player up front.
+  - `__main__` uses `join(owner: str) -> Player`, which makes `Player(..., player_id=new_player_id(), owner=owner)`, then `players.add`, then `judge.deal`, then `players.deliver_pending`. Terminal mode calls `join("o-local")` once. Web mode makes no player up front.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-def test_first_visit_sets_a_player_cookie(game):
+def test_first_visit_sets_an_owner_cookie(game):
     game.client.cookies.clear()
-    assert game.client.get("/").cookies[web.COOKIE].startswith("p-")
+    assert game.client.get("/").cookies[web.COOKIE].startswith("o-")
+
+def test_a_new_run_keeps_the_same_person_and_trophy_case(game):
+    owner = game.client.cookies[web.COOKIE]
+    game.players.cases[owner] = [Trophy("personal", ("a", "b", "c"), 2)]
+    game.player.end(LOSS)
+    game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
+    game.client.get("/")
+    body = game.client.get("/api/state").json()
+    assert game.client.cookies[web.COOKIE] == owner and body["trophies"] == [{"kind": "personal", "goals": ["a", "b", "c"], "day": 2}]
 
 def test_two_sessions_play_as_two_players(game):
     a = game.client.cookies[web.COOKIE]
@@ -665,7 +683,8 @@ def test_a_run_out_player_starts_over_only_after_the_lockout(game):
     game.player.end(LOSS)
     assert web.COOKIE not in game.client.get("/").cookies
     game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
-    assert game.client.get("/").cookies[web.COOKIE] != game.player.id
+    game.client.get("/")
+    assert game.players.live(game.player.owner).id != game.player.id
 
 def test_state_never_names_or_counts_other_players(game):
     # join a second player via game.join(); state as the first
@@ -690,6 +709,29 @@ Expected: all pass. Two-browser verification is the controller's separate step.
 ```bash
 git commit -am "Map each browser session to its own player in one shared world"
 ```
+
+---
+
+### Task 10: Cost per player
+
+Rob: "We can't calculate cost per player?" Every model call can be charged to the player whose whisper set it off.
+
+**Files:**
+- Modify: `examples/rumor_mill/usage.py`, `engine.py`, `player.py`, `writer.py`, `web.py`, `static/index.html`
+- Test: `tests/test_usage.py`, `tests/test_engine.py`, `tests/test_player.py`, `tests/test_web.py`
+
+**Interfaces:**
+- Consumes: Task 1's player id on lineage roots (`lineage.player_of(uid) -> str | None`), Task 8's per-player state.
+- Produces:
+  - `Usage.record(model: str, tokens_in: int, tokens_out: int, player: str | None = None)`: totals as today, plus a per-player tally when `player` is set. `Usage.cost(player: str | None = None) -> float` is the total without a player, that player's share with one. `Usage.summary(player: str | None = None) -> str`: without a player, today's line; with one, `f"Your rumors have cost about ${cost:.2f} so far"`.
+  - A `contextvars.ContextVar[str | None]` named `usage.charged_to` decides whom a call is charged to; `Writer.complete` and the counting Jev wrapper read it. `Engine._turn` sets it to the player its turn answers to: the root player of the decision's source, else of the first player-rooted new item, else None (village overhead). `Player.whisper_to` sets it to the whispering player for the check, the hint, the go-on line and the reply path; `_stroll` sets it to the root player of the carried news.
+  - `/api/state` and the usage websocket send each player `usage.summary(player.id)`; the terminal keeps the total line.
+
+- [ ] **Step 1: Write the failing tests:** `test_record_tallies_per_player_and_in_total`; `test_summary_for_a_player_shows_only_their_share`; `test_a_turn_on_a_players_rumor_is_charged_to_that_player` (a hop rooted in `p-a`'s whisper: the turn's Jev and Haiku tokens land on `p-a`); `test_village_talk_is_charged_to_no_player`; `test_a_whisper_check_and_brush_off_are_charged_to_the_whisperer`; `test_each_session_sees_only_its_own_cost` (web).
+- [ ] **Step 2: Run them to verify they fail.**
+- [ ] **Step 3: Implement the interfaces above.**
+- [ ] **Step 4: Run the suite and lint.** Expected: all pass.
+- [ ] **Step 5: Commit** `Charge each model call to the player whose whisper set it off`.
 
 ---
 
@@ -751,4 +793,4 @@ git commit -am "Show the world goal, new hands and the trophy case on the page"
 - **No winning.** The "won" outcome and `Game.finished` are gone, and the world runs until the process stops. Terminal play ends when its player is run out or quits.
 - **Scenes and presence.** Village-talk scene events go only to players at the scene's place, or to players who already saw it. A scene event elsewhere would reveal another player's presence.
 - **Replay window.** Replay is one shared 500-event window filtered per player. A per-player window waits for hosting, where many players make it matter.
-- **Usage.** The usage line stays (local cost). The hosting plan decides whether it leaks activity.
+- **Usage.** Cost is charged per player (Task 10): the page shows your own cost; the village total stays in the terminal and the logs.
