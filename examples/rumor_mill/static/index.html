@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>Rumor Mill</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -123,7 +123,7 @@ h1 { font: 500 1.5rem/1.2 var(--rumor); margin: 0; }
 .conn[data-state="live"]::before { background: var(--accent); }
 .conn[data-state="down"] { color: var(--danger); }
 .conn[data-state="down"]::before { background: var(--danger); }
-.drawer-toggle { display: none; }
+.tabs { display: none; }
 
 main {
   display: flex;
@@ -461,17 +461,19 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
   header { padding: .6rem 1rem; align-items: center; }
-  .drawer-toggle {
-    display: inline-block; background: var(--panel); border: 1px solid var(--edge);
-    border-radius: 6px; padding: .3rem .7rem; cursor: pointer; font-size: .875rem;
+  .app { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  .app:not([data-tab="rumors"]) #rumors-panel,
+  .app:not([data-tab="hear"]) #hear-panel,
+  .app:not([data-tab="village"]) #town { display: none; }
+  .tabs { display: flex; grid-column: 1 / -1; border-bottom: 1px solid var(--rail); }
+  .tabs button {
+    flex: 1; background: none; border: 0; border-bottom: 3px solid transparent;
+    padding: .5rem 0; cursor: pointer; font-size: .9rem; color: var(--muted);
   }
+  .tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--ink); font-weight: 700; }
   .hud { order: 5; flex: 1 0 100%; margin-left: 0; justify-content: space-between; gap: .25rem 1rem; }
   .conn { margin-left: auto; }
-  aside {
-    position: fixed; inset: 3.25rem 0 0 0; z-index: 2; display: none;
-    padding: .5rem 1rem 2rem;
-  }
-  aside.open { display: block; }
+  aside { padding: .5rem 1rem 1.5rem; }
   .feed { padding: .5rem 1rem 1rem; }
   .strip { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .25rem 1rem .5rem; }
   .strip-toggle {
@@ -488,14 +490,14 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
-  .dock { padding: .5rem 1rem 0; }
-  .chat { margin: .4rem 1rem 0; }
+  .dock { flex-wrap: nowrap; overflow-x: auto; padding: .5rem 1rem 0; }
+  .chat { max-height: 30dvh; margin: .4rem 1rem 0; }
   #target { flex: 1 1 100%; width: auto; }
   .tile-act, .walk-there { min-height: 2.25rem; }
   #text { flex-basis: 10rem; }
   .card {
-    top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 60dvh;
-    border-radius: 10px 10px 0 0; border-width: 1px 0 0;
+    position: sticky; top: auto; bottom: 0; right: auto; width: auto; max-height: 45dvh;
+    margin: 0 -1rem; border-radius: 10px 10px 0 0; border-width: 1px 0 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -504,7 +506,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app" data-tab="hear">
   <header>
     <h1>Rumor Mill</h1>
     <div class="hud">
@@ -535,7 +537,6 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <p class="usage" id="usage"></p>
     </div>
     <span class="conn" id="conn" data-state="connecting" role="status">Connecting</span>
-    <button class="drawer-toggle" id="drawer-toggle" aria-controls="town" aria-expanded="false">Villagers</button>
   </header>
 
   <section class="strip" id="strip" aria-label="Goals and mood">
@@ -544,12 +545,18 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <div class="goal-card world" id="world" aria-live="polite"></div>
   </section>
 
-  <aside class="rumors" id="rumors-panel" aria-labelledby="rumors-heading">
-    <h2 id="rumors-heading">Your rumors</h2>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
+    <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
+    <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
+  </nav>
+
+  <aside class="rumors" id="rumors-panel" role="tabpanel" aria-labelledby="tab-rumors">
+    <h2>Your rumors</h2>
     <ol class="rumor-list" id="rumor-list"></ol>
   </aside>
 
-  <main>
+  <main id="hear-panel" role="tabpanel" aria-labelledby="tab-hear">
     <div class="stage">
       <section class="trophies" id="trophies" aria-labelledby="trophies-title" hidden>
         <h2 id="trophies-title" tabindex="-1">Trophy case</h2>
@@ -569,7 +576,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     </div>
   </main>
 
-  <aside id="town" aria-label="Villagers">
+  <aside id="town" role="tabpanel" aria-labelledby="tab-village">
     <h2 id="people-heading">Village</h2>
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
@@ -676,6 +683,7 @@ const ROVE = ".fold-more, .fold-talk, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const SORT_KEY = "rumor-mill-sort";
+const TAB_KEY = "rumor-mill-tab";
 const FACES_SHOWN = 11;
 // The open rumor, whose touch the village panel shows.
 let selectedRumor = null;
@@ -1128,7 +1136,6 @@ function talkAbout(name, text) {
   $("text").value = `You said: "${text}" `;
   draftChanged();
   showSuggestions([]);
-  setDrawer(false);
   $("text").focus();
   $("text").setSelectionRange($("text").value.length, $("text").value.length);
   setComposer();
@@ -1934,7 +1941,7 @@ $("search").addEventListener("keydown", (ev) => {
   }
 });
 
-// The villager card: a popover beside the tiles, or a sheet inside the drawer on a phone.
+// The villager card: a popover beside the tiles, or a sheet at the foot of the Village tab on a phone.
 let cardRequest = 0;
 async function inspect(id, opener) {
   const request = ++cardRequest;
@@ -2019,7 +2026,6 @@ function whisperTo(name) {
   selected = null;
   cardOpener = null;
   $("target").value = name;
-  setDrawer(false);
   $("text").focus();
   setComposer();
 }
@@ -2286,12 +2292,30 @@ $("text").addEventListener("keydown", (ev) => {
   draftChanged();
 });
 
-function setDrawer(open) {
-  $("town").classList.toggle("open", open);
-  $("drawer-toggle").setAttribute("aria-expanded", String(open));
-  $("drawer-toggle").textContent = open ? "Back to the feed" : "Villagers";
+// On a phone the three columns are tabs; the choice is remembered.
+const TABS = ["rumors", "hear", "village"];
+function setTab(name) {
+  $("app").dataset.tab = name;
+  for (const t of TABS) {
+    const tab = $(`tab-${t}`);
+    tab.ariaSelected = String(t === name);
+    tab.tabIndex = t === name ? 0 : -1;
+  }
+  try { localStorage.setItem(TAB_KEY, name); } catch { /* the choice lasts until reload */ }
+  // Tiles drawn while hidden measured nothing, so the scroll cue is redone once they show.
+  if (name === "village") refreshVillagers();
 }
-$("drawer-toggle").addEventListener("click", () => setDrawer(!$("town").classList.contains("open")));
+for (const t of TABS) $(`tab-${t}`).addEventListener("click", () => setTab(t));
+document.querySelector(".tabs").addEventListener("keydown", (ev) => {
+  const at = TABS.indexOf($("app").dataset.tab);
+  const to = { ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: TABS.length - 1 }[ev.key];
+  if (to == null) return;
+  ev.preventDefault();
+  const name = TABS[(to + TABS.length) % TABS.length];
+  setTab(name);
+  $(`tab-${name}`).focus();
+});
+try { if (TABS.includes(localStorage.getItem(TAB_KEY))) setTab(localStorage.getItem(TAB_KEY)); } catch { /* the Hear tab */ }
 
 $("strip-toggle").addEventListener("click", () => {
   const open = $("strip").classList.toggle("open");

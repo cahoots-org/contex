@@ -740,3 +740,16 @@ def test_the_page_has_the_conversation_dock(game):
     for gone in ("const talks", "startTalk", "innerHTML"):
         assert gone not in html
     assert ".reply" not in re.search(r"const ROVE = (.*);", html).group(1)
+
+
+def test_a_phone_gets_three_tabs(game):
+    html = game.client.get("/").text
+    assert 'role="tablist"' in html
+    for tab, controls in (
+        ('id="tab-rumors"', 'aria-controls="rumors-panel"'),
+        ('id="tab-hear"', 'aria-controls="hear-panel"'),
+        ('id="tab-village"', 'aria-controls="town"'),
+    ):
+        assert tab in html and controls in html
+    for gone in ("drawer-toggle", "setDrawer", "innerHTML"):
+        assert gone not in html
