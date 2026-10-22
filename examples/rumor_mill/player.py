@@ -299,9 +299,10 @@ class Player:
         """The villager's answer from the writer, or a plain line when there is none or it fails."""
         if self.writer is not None:
             try:
-                return await self.writer.answer(
+                if line := await self.writer.answer(
                     villager, topic, [f"{u.speaker_name} at the {u.place}: {u.text}" for u in heard],
-                )
+                ):
+                    return line
             except Exception:
                 log.exception("answer for %s failed", villager.id)
         if heard:

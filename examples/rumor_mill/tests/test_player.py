@@ -841,6 +841,21 @@ async def test_ask_answers_from_what_the_villager_heard():
 
 
 @pytest.mark.asyncio
+async def test_ask_falls_back_to_a_plain_line_when_the_writer_says_nothing():
+    player, _, _, engine, _ = asking("Marta")
+    engine.heard = []
+    player.writer = StubWriter()
+    player.writer.answer = lambda *args: _blank()
+    assert await player.ask("v1", "the mill") is None
+    [event] = [e for e in player.feed.recent if e.kind == "asked"]
+    assert event.data["line"] == "Marta hasn't heard anything about that."
+
+
+async def _blank():
+    return ""
+
+
+@pytest.mark.asyncio
 async def test_ask_needs_the_villager_at_your_place():
     player, _, _, engine, _ = asking("Marta")
     player.place = "square"
