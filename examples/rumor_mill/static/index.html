@@ -383,6 +383,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dt { color: var(--muted); font-size: .8rem; }
 .card dd { margin: 0 0 .35rem; }
 .card dd .brush, .card dd .passed, .card dd .known { display: block; }
+.card dd .known[hidden] { display: none; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
 .ask { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .5rem; }
@@ -1638,8 +1639,11 @@ function faceButton(v, hits) {
   said ? el("span", { className: "visually-hidden", textContent: said }) : null);
 }
 
+// Search hits, villagers the selected rumor touched and those the draft might interest come first, ahead of the cut.
 function closedTile(place, crowd, hits) {
-  const first = hits.size ? [...crowd.filter((v) => hits.has(v.id)), ...crowd.filter((v) => !hits.has(v.id))] : crowd;
+  const touched = touchedBy();
+  const lead = (v) => hits.has(v.id) || touched[v.id] || drafted.has(v.id);
+  const first = crowd.some(lead) ? [...crowd.filter(lead), ...crowd.filter((v) => !lead(v))] : crowd;
   const shown = first.slice(0, FACES_SHOWN);
   const more = crowd.length - shown.length;
   return el("div", { className: "faces" }, ...shown.map((v) => faceButton(v, hits)),
@@ -1798,7 +1802,7 @@ function cardBody(body) {
   const note = notes[body.id] || body.note;
   const known = BADGES[note.status];
   const believes = believesText(body.believes);
-  const nothing = !known && !body.influence && !believes && !note.hints.length && !note.passed.length;
+  const alone = !known && !body.influence && !note.hints.length && !note.passed.length;
   return [
     el("h3", { id: "card-title", tabIndex: -1, textContent: body.name }),
     el("p", { className: "meta", textContent: `${body.occupation}, at the ${body.place}` }),
@@ -1808,10 +1812,11 @@ function cardBody(body) {
       body.grudge ? el("dd", { textContent: body.grudge }) : null,
       el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels),
       el("dt", { textContent: "What you know" }), el("dd", {},
-        nothing ? "Nothing yet." : null,
+        el("span", { className: "known nothing", hidden: !alone || Boolean(believes), textContent: "Nothing yet." }),
         known ? el("span", { className: "known", textContent: capital(known[1]) }) : null,
         body.influence ? el("span", { className: "known", textContent: capital(body.influence) }) : null,
-        believes ? el("span", { className: "known", textContent: capital(believes) }) : null,
+        el("span", { className: "known believes", hidden: !believes, textContent: believes && capital(believes),
+          dataset: { id: body.id, alone: String(alone) } }),
         ...note.hints.map((h) => el("span", { className: "brush", textContent: `“${h}”` })),
         ...note.passed.map((t) => el("span", { className: "passed", textContent: `Passed on: “${t}”` })))),
     el("div", { className: "ask-slot", dataset: { id: body.id, name: body.name, place: body.place } }),
@@ -1819,6 +1824,16 @@ function cardBody(body) {
       el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name}`, onclick: () => whisperTo(body.name) }),
       el("button", { className: "linkish", type: "button", textContent: "Close", onclick: closeCard })),
   ];
+}
+
+// The open card's beliefs line follows the live beliefs.
+function setCardBeliefs() {
+  const line = $("card").hidden ? null : $("card").querySelector(".believes");
+  if (!line) return;
+  const text = believesText(beliefs[line.dataset.id]);
+  line.textContent = text && capital(text);
+  line.hidden = !text;
+  $("card").querySelector(".nothing").hidden = line.dataset.alone !== "true" || Boolean(text);
 }
 
 function closeCard() {
@@ -2087,7 +2102,7 @@ function draftChanged() {
   draftTimer = setTimeout(async () => {
     const res = await fetch(`/api/hints?text=${encodeURIComponent(text)}`).catch(() => null);
     const body = res && res.ok ? await res.json().catch(() => null) : null;
-    if (request === draftAsk && body) setDrafted(body.ids);
+    if (request === draftAsk) setDrafted(body && Array.isArray(body.ids) ? body.ids : []);
   }, DRAFT_WAIT);
 }
 
@@ -2219,6 +2234,7 @@ function receive(e) {
   } else if (e.kind === "beliefs") {
     beliefs = e.beliefs;
     refreshVillagers();
+    setCardBeliefs();
   } else if (e.kind === "usage") {
     $("usage").textContent = e.usage.summary;
   } else {
