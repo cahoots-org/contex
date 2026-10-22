@@ -19,7 +19,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
 from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_player_id
-from examples.rumor_mill.rumors import Rumors
+from examples.rumor_mill.rumors import FRONTIER_STATES, Rumors
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
@@ -607,3 +607,17 @@ def test_beliefs_reach_the_websocket(fast_polls, game):
     assert event == {"kind": "beliefs", "beliefs": {"v1": ["the mayor's cat is a spy"]}}
     as_owner(game.client, other.owner)
     assert game.client.get("/api/state").json()["beliefs"] == {}
+
+
+def test_the_page_has_words_for_every_frontier_state(game):
+    html = game.client.get("/").text
+    body = re.search(r"const FRONTIER = \{(.*?)\};", html, re.S).group(1)
+    assert set(re.findall(r"^\s*(\w+):", body, re.M)) == set(FRONTIER_STATES)
+
+
+def test_the_page_renders_moments_and_goal_links(game):
+    html = game.client.get("/").text
+    rove = re.search(r"const ROVE = (.*);", html).group(1)
+    assert 'case "moment"' in html and "frontier-more" in rove
+    assert "For your goal" in html and "moved by" in html
+    assert "innerHTML" not in html
