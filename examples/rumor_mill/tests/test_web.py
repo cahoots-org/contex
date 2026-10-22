@@ -143,6 +143,13 @@ def test_page_is_served(game):
     assert response.status_code == 200 and "Rumor Mill" in response.text
 
 
+def test_page_has_the_trophy_case_and_world_goal(game):
+    html = game.client.get("/").text
+    assert 'id="trophies-toggle"' in html and 'aria-controls="trophies"' in html and 'id="world"' in html
+    assert "trophy-open" in html and "innerHTML" not in html
+    assert "restart the program" not in html
+
+
 def test_whisper_validation_errors_come_back_as_messages(game):
     post = game.client.post
     assert post("/api/whisper", json={"name": "Zed", "text": "hi"}).json() == {"error": "No one in town is called Zed."}

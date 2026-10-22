@@ -272,6 +272,16 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .bar i { display: block; height: 100%; background: var(--accent); }
 .met .bar { color: var(--accent); font-weight: 700; }
 .heat { margin: 0; font: italic 1rem/1.3 var(--rumor); }
+.world { flex: 0 1 16rem; min-width: 0; margin: 0; font-size: .85rem; }
+.trophies {
+  flex: none; max-height: 40%; overflow-y: auto; background: var(--panel); border-bottom: 1px solid var(--rail);
+  padding: .75rem 1.25rem 1rem;
+}
+.trophies[hidden] { display: none; }
+.trophies h2 { font: 500 1.25rem/1.25 var(--rumor); margin: 0 0 .4rem; width: fit-content; }
+.trophies ol { max-width: 46rem; margin: 0; padding-left: 1.25rem; font-size: .95rem; }
+.trophies li { margin: .1rem 0; }
+.trophies li.none { list-style: none; margin-left: -1.25rem; color: var(--muted); }
 #search { width: 100%; }
 .find-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .5rem; margin-top: .25rem; }
@@ -376,6 +386,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .strip.open .goals { display: grid; }
   .strip-side { display: contents; }
   .heat { flex: 1; min-width: 0; text-align: right; font-size: .95rem; }
+  .world { order: 3; flex: 1 0 100%; font-size: .8rem; }
   .where, .clock { order: 2; flex: 1 0 100%; text-align: right; }
   .usage { order: 4; flex: 1 0 100%; text-align: left; }
   .strip:not(.open) .usage { display: none; }
@@ -409,21 +420,27 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <section class="strip" id="strip" aria-label="Goals and mood">
       <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
       <ul class="goals" id="goals"></ul>
+      <p class="world" id="world" aria-live="polite"></p>
       <div class="strip-side">
         <p class="heat" id="heat" aria-live="polite"></p>
+        <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
         <p class="clock" id="clock"></p>
         <p class="where" id="where"></p>
         <p class="usage" id="usage"></p>
       </div>
     </section>
     <div class="stage">
+      <section class="trophies" id="trophies" aria-labelledby="trophies-title" hidden>
+        <h2 id="trophies-title" tabindex="-1">Trophy case</h2>
+        <ol id="trophy-list"></ol>
+      </section>
       <section class="gameover" id="gameover" aria-labelledby="gameover-title" hidden>
         <div>
           <h2 id="gameover-title" tabindex="-1"></h2>
           <h3>Goals</h3>
           <ul id="gameover-goals"></ul>
           <div id="gameover-reasons"></div>
-          <p class="restart">To play again, restart the program.</p>
+          <p class="restart">Reload the page in 10 minutes to come back as a new newcomer.</p>
         </div>
       </section>
       <ol class="feed" id="feed" role="log" aria-live="off" aria-label="What the village is saying"></ol>
@@ -467,6 +484,8 @@ const $ = (id) => document.getElementById(id);
 const feed = $("feed");
 const spoken = new Map();
 const goals = new Map();
+let world = null;
+let trophies = [];
 const MAX_ITEMS = 1000;
 // Above this share of new words, mark what survived instead of what changed.
 const REWORDED = 0.6;
@@ -496,7 +515,7 @@ const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
-const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more";
+const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const FACES_SHOWN = 11;
@@ -927,10 +946,30 @@ function render(e, fresh) {
     case "announcement":
       return el("li", { className: "note" }, e.text);
     case "goal":
+      if (e.world) {
+        world = { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed };
+        renderWorld();
+        return e.met ? el("li", { className: "note goal", textContent: `The village now holds: ${e.text}` }) : null;
+      }
       goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed });
       renderGoals();
       return el("li", { className: "note goal" },
         e.met ? `Goal met: ${e.text}` : `${e.text}: now ${goalProgress(e)}`);
+    case "world_goal":
+      world = { text: e.text, percent: 0, met: false, believers: null, needed: null };
+      renderWorld();
+      return null;
+    case "deal":
+      goals.clear();
+      for (const g of e.goals) goals.set(g.id, { text: g.text, percent: 0, met: false, believers: null, needed: null });
+      renderGoals();
+      return el("li", { className: "note goal", textContent: `New goals: ${e.goals.map((g) => g.text).join(" · ")}` });
+    case "trophy":
+      trophies.push(e.trophy);
+      renderTrophies();
+      return el("li", { className: "note goal" }, e.text, " ",
+        el("button", { type: "button", className: "linkish trophy-open", tabIndex: -1, textContent: "Open the trophy case",
+          onclick: () => setTrophies(true, true) }));
     case "system":
       return el("li", { className: "note" }, e.text);
     default:
@@ -1102,7 +1141,7 @@ function knownAs(v) {
   return b ? `${v.name}, ${b[1]}` : v.name;
 }
 
-const OUTCOMES = { won: "Every goal is met. You won.", lost: "The village ran you out of town." };
+const OUTCOMES = { lost: "The village ran you out of town." };
 
 // The end of the game: a panel above the feed, and no more whispers.
 function showGameOver(summary, live) {
@@ -1238,6 +1277,7 @@ feed.addEventListener("keydown", (ev) => {
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented) return;
   if (!$("card").hidden) closeCard();
+  else if (!$("trophies").hidden) setTrophies(false);
   else if (pinned != null) { pinned = null; trace(null); }
 });
 
@@ -1256,6 +1296,27 @@ function renderGoals() {
         el("i", { style: `width:${g.percent}%` })),
       el("span", { textContent: g.met ? "Met" : goalProgress(g) })))));
 }
+
+function renderWorld() {
+  $("world").textContent = world ? `World goal: ${world.text}: ${goalProgress(world)}` : "";
+}
+
+function renderTrophies() {
+  $("trophies-toggle").textContent = `Trophies (${trophies.length})`;
+  $("trophy-list").replaceChildren(...(trophies.length
+    ? trophies.map((t) => el("li", { textContent: `${t.kind === "world" ? "World: " : ""}Day ${t.day}: ${t.goals.join("; ")}` }))
+    : [el("li", { className: "none", textContent: "No trophies yet." })]));
+}
+
+// Opening from a feed note moves focus to the case; closing returns it to the toggle when it was inside.
+function setTrophies(open, focus = false) {
+  const inside = $("trophies").contains(document.activeElement);
+  $("trophies").hidden = !open;
+  $("trophies-toggle").setAttribute("aria-expanded", String(open));
+  if (open && focus) $("trophies-title").focus();
+  else if (!open && inside) $("trophies-toggle").focus();
+}
+$("trophies-toggle").addEventListener("click", () => setTrophies($("trophies").hidden));
 
 function capital(word) {
   return `${word[0].toUpperCase()}${word.slice(1)}`;
@@ -1621,6 +1682,11 @@ function reset() {
   closeCard();
   spoken.clear();
   goals.clear();
+  world = null;
+  trophies = [];
+  renderWorld();
+  renderTrophies();
+  setTrophies(false);
   noted.clear();
   statuses.clear();
   faces.clear();
@@ -1646,13 +1712,12 @@ function reset() {
 
 async function loadState() {
   const res = await fetch("/api/state");
+  if (res.status === 401) unknown = true;
   if (!res.ok) throw new Error(String(res.status));
   const state = await res.json();
   if (boot !== null && state.boot !== boot) reset();
   boot = state.boot;
   places = state.places;
-  for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met, believers: g.believers, needed: g.needed });
-  renderGoals();
   notes = state.notes;
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
@@ -1666,6 +1731,14 @@ async function loadState() {
   const replayed = new Set(state.events.map((e) => e.uid).filter(Boolean));
   for (const c of state.rumors) if (!cards.has(c.uid) && !replayed.has(c.uid)) feed.append(restoredCard(c, replayed));
   addEvents(state.events, false);
+  // The replay's goal, deal and trophy events are older than the state, which has the last word.
+  goals.clear();
+  for (const g of state.goals) goals.set(g.id, { text: g.text, percent: g.percent, met: g.met, believers: g.believers, needed: g.needed });
+  renderGoals();
+  world = state.world_goal;
+  renderWorld();
+  trophies = state.trophies;
+  renderTrophies();
   const open = [...talks.values()].pop();
   if (open && !$("target").value.trim()) $("target").value = open.name;
   setComposer();
@@ -1697,6 +1770,8 @@ function receive(e) {
 
 // Open the socket first and hold its messages until the state has loaded, so nothing falls in between.
 let retry = 1000;
+// Set when the game no longer knows this browser, so only a reload brings it back.
+let unknown = false;
 function connect() {
   setConn("connecting", "Connecting");
   const socket = new WebSocket(`ws://${location.host}/ws`);
@@ -1715,10 +1790,12 @@ function connect() {
     held.forEach(receive);
     held = null;
     retry = 1000;
+    unknown = false;
     setConn("live", "Live");
   };
-  socket.onclose = () => {
-    setConn("down", "Can't reach the game; retrying");
+  socket.onclose = (ev) => {
+    if (ev.code === 1008) unknown = true;
+    setConn("down", unknown ? "Reload the page to join the village." : "Can't reach the game; retrying");
     setTimeout(connect, retry);
     retry = Math.min(retry * 2, 8000);
   };
