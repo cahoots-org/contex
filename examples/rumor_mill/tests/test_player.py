@@ -474,6 +474,22 @@ async def test_reply_threads_onto_the_first_whisper():
 
 
 @pytest.mark.asyncio
+async def test_only_a_new_rumor_ages_the_village_memory():
+    player, _, _, engine, _ = make("Marta")
+    player.game = Game(memory_moves=1)
+    assert await player.whisper("Marta", "the well tastes odd") is None
+    first = player.game.memory_since()
+    engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
+    await asyncio.sleep(0.01)
+    assert await player.whisper("Marta", "odd since the frost, too") is None
+    assert player.game.memory_since() == first
+    engine.conversations.pop(("v1", PID), None)
+    assert await player.whisper("Marta", "the miller waters his flour") is None
+    assert player.game.memory_since() > first
+    player.close()
+
+
+@pytest.mark.asyncio
 async def test_a_missed_reply_ends_the_conversation():
     player, _ = make_hinting(StubWriter("Wheel's groaning."))
     player.engine.conversations[("v1", PID)] = {"id": "w-0", "answered": ["w-0"]}

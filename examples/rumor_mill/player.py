@@ -202,7 +202,7 @@ class Player:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
         self.whispered_at = time.time()
-        if self.game is not None:
+        if self.game is not None and thread_id is None:
             self.game.moved(self.id)
         if utterance.place != self.place:
             self._move(utterance.place)
