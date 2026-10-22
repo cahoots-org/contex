@@ -164,6 +164,8 @@ mark.kept {
 .brush { font: italic 1rem/1.4 var(--rumor); color: var(--ink); }
 .note.against, .note.moment { color: var(--ink); border-left: 2px solid var(--danger); padding-left: .6rem; margin: .25rem 0; }
 .note.moment[data-tone="good"] { border-left-color: var(--accent); }
+.moment-mark { display: inline-block; width: 1em; margin-right: .3rem; font-weight: 700; color: var(--danger); }
+.note.moment[data-tone="good"] .moment-mark { color: var(--accent); }
 .gameover {
   flex: none;
   max-height: 50%;
@@ -197,8 +199,8 @@ mark.kept {
 .goal-link span { display: block; }
 .goal-link:empty, .stopped:empty { display: none; }
 .stopped { font-style: italic; color: var(--muted); }
-.frontier { list-style: none; margin: .1rem 0; padding: 0; font-size: .8rem; color: var(--muted); }
-.frontier b { color: var(--ink); font-weight: 600; }
+.frontier { list-style: none; margin: .1rem 0; padding: 0; font-size: .875rem; color: var(--muted); }
+.frontier b { color: var(--ink); font-weight: 700; }
 .frontier:not(.open) > li:nth-last-child(n+5) { display: none; }
 .rumor:not(.open) .thread { display: none; }
 .reuse { margin-left: .5rem; font-size: .75rem; }
@@ -762,11 +764,12 @@ function frontierItem(e) {
     const talk = e.scene.tone === "argument" ? "an argument" : "a conversation";
     return el("li", {}, el("b", { textContent: e.name }), `: in ${talk} at the ${e.scene.place}`);
   }
+  if (!FRONTIER[e.state]) return null;
   if (e.state !== "busy") return el("li", {}, el("b", { textContent: e.name }), `: ${FRONTIER[e.state](e)}`);
-  // The countdown ticks out of the screen reader's hearing; it hears the wait once.
+  // The countdown ticks out of the screen reader's hearing; it hears that the wait is short, then that it is over.
   return el("li", {}, el("b", { textContent: e.name }), ": ",
     el("span", { ariaHidden: "true", dataset: { until: e.until }, textContent: busyText(e.until) }),
-    el("span", { className: "visually-hidden wait", textContent: busyText(e.until) }));
+    el("span", { className: "visually-hidden wait", textContent: "busy, hears it soon" }));
 }
 
 function goalLink(g) {
@@ -860,7 +863,7 @@ function setTally(uid) {
   if (!card) return;
   card.querySelector(".tally").textContent = t ? `heard by ${t.heard} · still told by ${t.still}` : "";
   card.querySelector(".goal-link").replaceChildren(...(t ? t.goals.map(goalLink) : []));
-  card.querySelector(".frontier").replaceChildren(...(t ? t.frontier.map(frontierItem) : []));
+  card.querySelector(".frontier").replaceChildren(...(t ? t.frontier.map(frontierItem).filter(Boolean) : []));
   card.querySelector(".stopped").textContent = (t && t.stopped) || "";
   countFrontier(card);
 }
@@ -1133,7 +1136,9 @@ function render(e, fresh) {
     case "system":
       return el("li", { className: "note" }, e.text);
     case "moment":
-      return el("li", { className: "note moment", dataset: { tone: e.tone }, textContent: e.text });
+      return el("li", { className: "note moment", dataset: { tone: e.tone } },
+        el("span", { className: "moment-mark", ariaHidden: "true", textContent: e.tone === "good" ? "✓" : "!" }),
+        el("span", { className: "visually-hidden", textContent: e.tone === "good" ? "Good news: " : "Trouble: " }), e.text);
     case "asked":
       learn(e);
       return el("li", { className: "note" },
@@ -1147,7 +1152,8 @@ function render(e, fresh) {
 function movedBy(uid) {
   const card = uid && cards.get(cardOf.get(uid));
   if (!card) return "";
-  return ` · moved by “${spoken.get(card.dataset.card).text.split(/\s+/).slice(0, 8).join(" ")}…”`;
+  const said = spoken.get(card.dataset.card).text.split(/\s+/);
+  return ` · moved by “${said.slice(0, 8).join(" ")}${said.length > 8 ? "…" : ""}”`;
 }
 
 // What a whisper's status chip says, by state.
