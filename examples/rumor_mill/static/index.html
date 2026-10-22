@@ -193,15 +193,13 @@ mark.kept {
 .rumor .chip { background: var(--bg); }
 .rumor .chip .badge { border-color: var(--bg); }
 .rumor > .whisper { margin-top: 0; }
-.tally { margin: .1rem 0 .2rem; font-size: .8rem; color: var(--muted); }
-.tally:empty { display: none; }
-.goal-link, .stopped { margin: .1rem 0; font-size: .8rem; color: var(--muted); }
-.goal-link span { display: block; }
-.goal-link:empty, .stopped:empty { display: none; }
-.stopped { font-style: italic; color: var(--muted); }
+.summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .9rem; margin: .3rem 0 .1rem; font-size: .875rem; }
+.summary .story { color: var(--ink); }
+.summary .goal-link { font-size: .8rem; color: var(--muted); }
+.summary span:empty { display: none; }
 .frontier { list-style: none; margin: .1rem 0; padding: 0; font-size: .875rem; color: var(--muted); }
 .frontier b { color: var(--ink); font-weight: 700; }
-.frontier:not(.open) > li:nth-last-child(n+5) { display: none; }
+.frontier:not(.open) { display: none; }
 .rumor:not(.open) .thread { display: none; }
 .reuse { margin-left: .5rem; font-size: .75rem; }
 .thread, .talk, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
@@ -608,7 +606,6 @@ const FRONTIER = {
     ? `passed it on at the ${e.crowd.place}: ${e.crowd.heard} heard it, ${e.crowd.passed} passed it on`
     : `passed it on to ${joined(e.told)}`,
 };
-const FRONTIER_SHOWN = 4;
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .frontier-more, .trophy-open";
@@ -734,12 +731,10 @@ function newCard(uid, target, place, text) {
         el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
           reuseButton(text, target)),
         ...quoted(text), status && chip(status))),
-    el("p", { className: "tally" }),
-    el("p", { className: "goal-link" }),
-    el("ol", { className: "frontier" }),
-    el("button", { type: "button", className: "linkish frontier-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
-      onclick: () => toggleFrontier(card) }),
-    el("p", { className: "stopped" }),
+    el("p", { className: "summary" }, el("span", { className: "story" }), el("span", { className: "goal-link" }),
+      el("button", { type: "button", className: "linkish frontier-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
+        onclick: () => toggleFrontier(card) })),
+    el("ul", { className: "frontier" }),
     el("ol", { className: "scenes" }),
     el("button", { type: "button", className: "linkish thread-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
       onclick: () => toggleThread(card) }),
@@ -767,7 +762,7 @@ function countThread(card) {
   toggle.textContent = card.classList.contains("open") ? "Hide retellings" : `Show ${n} ${n === 1 ? "retelling" : "retellings"}`;
 }
 
-// The newest few on the frontier show; the rest wait behind a toggle.
+// Who has the rumor waits behind a toggle; the card leads with one sentence about how it is going.
 function toggleFrontier(card) {
   const open = card.querySelector(".frontier").classList.toggle("open");
   card.querySelector(".frontier-more").ariaExpanded = String(open);
@@ -777,8 +772,8 @@ function toggleFrontier(card) {
 function countFrontier(card) {
   const n = card.querySelector(".frontier").children.length;
   const toggle = card.querySelector(".frontier-more");
-  toggle.hidden = n <= FRONTIER_SHOWN;
-  toggle.textContent = toggle.ariaExpanded === "true" ? "Show fewer" : `Show all ${n}`;
+  toggle.hidden = n === 0;
+  toggle.textContent = toggle.ariaExpanded === "true" ? "Hide who has it" : "Who has it";
 }
 
 function joined(names) {
@@ -790,22 +785,34 @@ function busyText(until) {
   return left ? `busy, hears it in about ${left}s` : "busy, hearing it now";
 }
 
-function frontierItem(e) {
-  if (e.scene) {
-    const talk = e.scene.tone === "argument" ? "an argument" : "a conversation";
-    return el("li", {}, el("b", { textContent: e.name }), `: in ${talk} at the ${e.scene.place}`);
+function doing(e) {
+  if (e.scene) return `in ${e.scene.tone === "argument" ? "an argument" : "a conversation"} at the ${e.scene.place}`;
+  if (e.state === "busy") return "will hear it soon";
+  return FRONTIER[e.state] ? FRONTIER[e.state](e) : null;
+}
+
+// One line per thing people are doing with the rumor, naming everyone doing it.
+function whoHasIt(frontier) {
+  const groups = new Map();
+  for (const e of frontier) {
+    const what = doing(e);
+    if (what) groups.set(what, [...(groups.get(what) || []), e.name]);
   }
-  if (!FRONTIER[e.state]) return null;
-  if (e.state !== "busy") return el("li", {}, el("b", { textContent: e.name }), `: ${FRONTIER[e.state](e)}`);
-  // The countdown ticks out of the screen reader's hearing; it hears that the wait is short, then that it is over.
-  return el("li", {}, el("b", { textContent: e.name }), ": ",
-    el("span", { ariaHidden: "true", dataset: { until: e.until }, textContent: busyText(e.until) }),
-    el("span", { className: "visually-hidden wait", textContent: "busy, hears it soon" }));
+  return [...groups].map(([what, names]) => el("li", {}, el("b", { textContent: joined(names) }), `: ${what}`));
+}
+
+// How the rumor is going, in one sentence.
+function story(t) {
+  if (t.stopped) return `Stopped after ${t.heard} heard it. ${t.stopped}`;
+  const talking = t.frontier.filter((e) => e.scene);
+  const where = talking.length
+    ? `; ${talking.length} ${talking.length === 1 ? "is" : "are"} talking about it at the ${talking[0].scene.place}` : "";
+  return `Spreading: ${t.heard} have heard it${where}.`;
 }
 
 function goalLink(g) {
-  const believe = g.convinced ? ` · ${g.convinced} convinced` : "";
-  return el("span", { textContent: `${g.world ? "Serves the world goal" : "Serves your goal"}: ${g.claim || g.text}${believe}` });
+  const believe = g.convinced ? `, ${g.convinced} convinced` : "";
+  return `${g.world ? "World goal" : "Goal"}: ${g.claim || g.text}${believe}`;
 }
 
 function sceneWords(tone, place) {
@@ -895,13 +902,11 @@ function setTally(uid) {
   if (!card) return;
   // Until the rumor gets past the one you whispered to, the chip already tells its story.
   const spread = Boolean(t && t.heard > 1);
-  const still = t && !t.stopped ? ` · still told by ${t.still}` : "";
-  card.querySelector(".tally").textContent = spread ? `heard by ${t.heard}${still}` : "";
-  card.querySelector(".goal-link").replaceChildren(...(t && t.goals.length ? [goalLink(t.goals[0])] : []));
-  const rows = spread && !t.stopped ? t.frontier.map(frontierItem).filter(Boolean) : [];
-  card.querySelector(".frontier").replaceChildren(...rows);
-  card.querySelector(".stopped").textContent = (spread && t.stopped) || "";
+  card.querySelector(".story").textContent = spread ? story(t) : "";
+  card.querySelector(".goal-link").textContent = t && t.goals.length ? goalLink(t.goals[0]) : "";
+  card.querySelector(".frontier").replaceChildren(...(spread && !t.stopped ? whoHasIt(t.frontier) : []));
   countFrontier(card);
+  card.querySelector(".summary").hidden = !card.querySelector(".story").textContent && !card.querySelector(".goal-link").textContent;
 }
 
 function setTallies(list) {
