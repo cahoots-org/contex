@@ -204,6 +204,8 @@ mark.kept {
 .reuse { margin-left: .5rem; font-size: .75rem; }
 .thread, .talk, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
 .scene { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
+.scenes:not(.open) .scene[data-ended] { display: none; }
+.scenes-more { display: block; margin-top: .3rem; font-size: .8rem; }
 .scene-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 .75rem; margin: 0; font-size: .85rem; color: var(--muted); }
 .scene:not(.open) .scene-lines { display: none; }
 .scene-end { margin: .1rem 0 0; font-size: .85rem; font-style: italic; color: var(--muted); }
@@ -608,7 +610,7 @@ const FRONTIER = {
 };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
-const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .frontier-more, .trophy-open";
+const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .scenes-more, .frontier-more, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const SORT_KEY = "rumor-mill-sort";
@@ -736,6 +738,8 @@ function newCard(uid, target, place, text) {
         onclick: () => toggleFrontier(card) })),
     el("ul", { className: "frontier" }),
     el("ol", { className: "scenes" }),
+    el("button", { type: "button", className: "linkish scenes-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
+      onclick: () => toggleScenes(card) }),
     el("button", { type: "button", className: "linkish thread-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
       onclick: () => toggleThread(card) }),
     el("ol", { className: "thread" }), el("ol", { className: "talk" }));
@@ -851,6 +855,25 @@ function cardScene(e, fresh) {
   item.querySelector(".scene-head span").textContent =
     `${sceneWords(e.tone, e.place)}: ${e.people} ${e.people === 1 ? "person" : "people"}, ${plural(e.lines, "line")}`;
   sceneEnd(item, e.ended);
+  if (e.ended) item.dataset.ended = "";
+  countScenes(card);
+}
+
+// Conversations going on now show; finished ones wait behind one toggle that counts them.
+function toggleScenes(card) {
+  const list = card.querySelector(".scenes");
+  const toggle = card.querySelector(".scenes-more");
+  toggle.ariaExpanded = String(list.classList.toggle("open"));
+  countScenes(card);
+  if (rover && list.contains(rover) && !rover.getClientRects().length) setRover(toggle);
+}
+
+function countScenes(card) {
+  const n = card.querySelectorAll(".scenes .scene[data-ended]").length;
+  const toggle = card.querySelector(".scenes-more");
+  toggle.hidden = n === 0;
+  toggle.textContent = toggle.ariaExpanded === "true"
+    ? "Hide earlier conversations" : `${n} earlier ${n === 1 ? "conversation" : "conversations"} about it`;
 }
 
 function toggleScene(item) {
