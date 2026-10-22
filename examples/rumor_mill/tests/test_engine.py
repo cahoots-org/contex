@@ -1960,3 +1960,15 @@ async def test_stop_cancels_pending_checks(turns):
     task, = engine._following
     await engine.stop()
     assert task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_a_room_listener_who_does_not_retell_stays_in_the_crowd(turns):
+    engine, minds, rumors = await following(turns, baselines=False, listeners=("v2", "v3"))
+    minds["v2"].results = [[Match("utt:u-1", {"id": "u-1", "text": "psst again"})]]
+    push(minds["v2"])
+    await wait_for(lambda: len(turns.views) == 1)
+    await asyncio.sleep(SETTLE)
+    assert entry(rumors, "v2") is None
+    assert rumors.cards(PID)[0]["stopped"] == "It stopped at the square: 2 heard it and no one passed it on."
+    await engine.stop()

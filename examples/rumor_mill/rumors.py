@@ -235,6 +235,11 @@ class Rumors:
         shown = self._cards.get(card.part_of, card)
         return any(hop["uid"] == uid for hop in shown.hops)
 
+    def told_only(self, root_uid: str, uid: str, vid: str) -> bool:
+        """Whether uid is an on-topic hop on root_uid's card told to vid alone."""
+        card = self._shown(root_uid)
+        return card is not None and any(hop["uid"] == uid and hop["ids"] == [vid] for hop in card.hops)
+
     def close(self) -> None:
         """Cancel any baseline measurement still running."""
         for card in self._cards.values():

@@ -352,12 +352,12 @@ class Engine:
         elif verdict in ("uncared", "worn"):
             self.rumors.reached(root, vid, name, verdict, depth=u.depth)
 
-    def _carried(self, uid: str | None) -> bool:
-        """Whether uid is an on-topic hop shown on a player whisper's card."""
+    def _carried(self, uid: str | None, vid: str) -> bool:
+        """Whether uid is an on-topic hop shown on a player whisper's card, told to vid alone."""
         if uid is None or self.rumors is None:
             return False
         root = self.lineage.root(uid)
-        return root != uid and self.lineage.is_whisper(root) and self.rumors.carries(root, uid)
+        return root != uid and self.lineage.is_whisper(root) and self.rumors.told_only(root, uid, vid)
 
     def hear_directly(self, vid: str, match: Match) -> bool:
         """Add the match to the villager's next turn and wake them; False once they have left."""
@@ -514,7 +514,7 @@ class Engine:
         finally:
             self._report(
                 v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered,
-                [m.data["id"] for m in new if self._carried(m.data.get("id"))],
+                [m.data["id"] for m in new if self._carried(m.data.get("id"), v.id)],
             )
         return True
 
@@ -650,7 +650,8 @@ class Engine:
 
         said holds (utterance id, listeners who heard it) for what this turn said, in order; answered is the
         whisper the villager answered, if any. A reply in an open conversation ends it unless the turn answered.
-        hops are the rumor hops this turn heard; outside a scene, one not retold was kept quiet.
+        hops are the rumor hops told to the villager alone that this turn heard; outside a scene, one not retold was
+        kept quiet.
         """
         told: dict[str, int] = {}
         for uid, heard in said:
