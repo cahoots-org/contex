@@ -149,7 +149,8 @@ main {
 .feed > li { max-width: 46rem; border-bottom: 1px solid var(--rail); }
 .line, .fold-head { display: flex; align-items: flex-start; gap: .5rem; margin: 0; padding: .35rem 0; }
 .line .rmark, .fold-head .rmark { margin: .15rem 0 0; }
-.line-text { min-width: 0; overflow-wrap: anywhere; }
+.line-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.line .fold-talk { flex: none; align-self: baseline; }
 .line.loud { font-weight: 700; }
 .line.speech .line-text { font: italic 1.05rem/1.4 var(--rumor); }
 .line.quiet, .fold-head { font-size: .875rem; color: var(--muted); }
@@ -971,7 +972,7 @@ function countFold(block) {
 
 function foldWords(block, n) {
   const { listen, scene, tone, place, rumor, said, ended } = block.dataset;
-  if (listen) return `You listen at the ${place} · ${plural(n, "line")}`;
+  if (listen) return `You listen at the ${place} · ${plural(n, "line")}${ended ? " · ended" : ""}`;
   if (scene && tone) {
     const people = Number(block.dataset.people);
     return `${sceneWords(tone, place)} · ${people} ${people === 1 ? "person" : "people"}${ended ? ` · ${ended}` : ""}`;
@@ -1048,7 +1049,13 @@ function touchedBy() {
 // for the same place; a line about your goal outside a scene is speech of its own. Returns a new line or fold, or null.
 function overheard(e, fresh) {
   const listening = e.reason === "listen" && listenBlock(e.place);
-  if (!listening && !e.scene && e.reason === "goal") return line("speech", null, `${e.speaker_name}: “${e.text}”`);
+  if (!listening && !e.scene && e.reason === "goal") {
+    const id = `talk-line-${++talkLines}`;
+    const node = line("speech", null, `${e.speaker_name}: “${e.text}”`);
+    node.querySelector(".line-text").id = id;
+    node.append(talkButton(e, id));
+    return node;
+  }
   const last = feed.lastElementChild;
   const block = listening || (e.scene ? sceneFold(e.scene, e.place)
     : last?.matches(".fold:not([data-scene]):not([data-listen]):not([data-rumor])") && last.dataset.place === e.place
@@ -1057,16 +1064,21 @@ function overheard(e, fresh) {
   return block.isConnected ? null : block;
 }
 
-// A line in a fold, with a Talk button that starts a whisper about it.
-function addLine(block, e, fresh) {
-  const why = REASONS[e.reason];
-  const id = `talk-line-${++talkLines}`;
+// A Talk button that starts a whisper about an overheard line, described by the line's text at id.
+function talkButton(e, id) {
   const talk = el("button", { type: "button", className: "linkish fold-talk", tabIndex: -1, textContent: "Talk",
     ariaLabel: `Talk to ${e.speaker_name} about this`, onclick: () => talkAbout(e.speaker_name, e.text) });
   talk.setAttribute("aria-describedby", id);
+  return talk;
+}
+
+// A line in a fold, with its Talk button.
+function addLine(block, e, fresh) {
+  const why = REASONS[e.reason];
+  const id = `talk-line-${++talkLines}`;
   block.querySelector(".fold-lines").append(el("li", { className: fresh ? "talk-line fresh" : "talk-line" },
     el("span", { className: "fold-text", id }, el("b", { textContent: e.speaker_name }),
-      why ? el("span", { className: "fold-why", textContent: ` · ${why}` }) : null, ": ", e.text), talk));
+      why ? el("span", { className: "fold-why", textContent: ` · ${why}` }) : null, ": ", e.text), talkButton(e, id)));
   countFold(block);
 }
 
@@ -1080,7 +1092,7 @@ function listened(e, fresh) {
   if (e.ended) {
     if (listenUntil != null) setListening(null);
     const block = listenBlock(e.place);
-    if (block) block.dataset.ended = "true";
+    if (block) endListen(block);
     return null;
   }
   setListening(e.until);
@@ -1088,6 +1100,20 @@ function listened(e, fresh) {
   for (const said of e.lines) addLine(block, said, fresh);
   countFold(block);
   return block;
+}
+
+// An ended listen closes its fold; arrow focus inside it moves to the fold's toggle.
+function endListen(block) {
+  const toggle = block.querySelector(".fold-more");
+  block.dataset.ended = "true";
+  block.classList.remove("open");
+  toggle.ariaExpanded = "false";
+  countFold(block);
+  if (rover && block.querySelector(".fold-lines").contains(rover)) {
+    const had = document.activeElement === rover;
+    setRover(toggle);
+    if (had) toggle.focus();
+  }
 }
 
 function talkAbout(name, text) {
@@ -1285,11 +1311,11 @@ function render(e, fresh) {
       closeThreads();
       return null;
     case "warning":
-      return line("loud", null, el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
+      return line("loud", null, `${e.speaker} warned ${e.target} about you.`);
     case "refusal":
       learn(e);
       dockEnd(e.villager_id);
-      return line("loud", null, el("b", { textContent: e.name }), e.line ? ` turns away from you: “${e.line}”` : " turns away from you.");
+      return line("loud", null, e.line ? `${e.name} turns away from you: “${e.line}”` : `${e.name} turns away from you.`);
     case "heat":
       $("heat").textContent = e.text;
       return null;
