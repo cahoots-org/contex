@@ -104,7 +104,9 @@ margin can land under one id and miss under another.
 
 The margin was tuned on the 100-villager seed with 20 whispers written from
 villagers' cards before reading their needs, half aimed at a trade and grudge
-and half unrelated, each published four times with random ids and places:
+and half unrelated, each published four times with random ids and places.
+These figures and the retold-line figure below were measured while the place
+was still part of the published text, and are due to be re-measured:
 
 | Margin | Aimed whispers that land | Unrelated whispers that land |
 |---|---|---|
@@ -119,7 +121,7 @@ a hit that didn't count. Expect more unrelated whispers to land than at 0.0175.
 
 A line someone retells ("Bert said: ...") matches a little more
 easily than a whisper: at 0.02, 42% of the unrelated lines matched a need of
-whoever heard them retold. A lower margin makes the village talk more, and a
+whoever heard them retold (measured with the place in the text). A lower margin makes the village talk more, and a
 higher one makes more of your aimed whispers miss.
 
 Run Contex with authentication off, since its rate limits would throttle
