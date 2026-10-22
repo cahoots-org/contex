@@ -23,8 +23,8 @@ from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH
-from examples.rumor_mill.tests.helpers import TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, wait_for
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.tests.helpers import PID, TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, wait_for
+from examples.rumor_mill.town import NEWCOMER, Town
 
 SETTLE = 0.1
 
@@ -364,7 +364,7 @@ async def test_addressed_message_survives_a_failed_poll(turns):
 @pytest.mark.asyncio
 async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fail_the_turn(turns, caplog):
     engine, minds, _ = await setup("v1")
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     engine.lineage.record("u-0", "w-1")
     engine.facts.record(Utterance("u-0", "v2", "V2", "square", "news", "w-1", names_newcomer=True))
     turns.strength = 1.0
@@ -403,7 +403,7 @@ async def test_no_turns_start_after_the_game_is_over(turns):
 async def test_a_turn_still_deciding_when_the_game_ends_does_nothing(turns, monkeypatch):
     game = Game(RecordingFeed())
     engine, minds, _ = await setup("v1", game=game)
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     engine.lineage.record("u-0", "w-1")
     deciding, release = asyncio.Event(), asyncio.Event()
 
@@ -510,7 +510,7 @@ async def test_a_hit_while_a_turn_is_in_progress_reports_busy(turns, monkeypatch
     monkeypatch.setattr(engine_mod, "decide", slow_decide)
     lineage = Lineage()
     feed = Feed(lineage, engine.town, out=None)
-    player = Player(engine, engine.town, lineage, Ids(), feed, engine.config)
+    player = Player(engine, engine.town, lineage, Ids(), feed, engine.config, player_id=PID)
     push(minds["v1"])
     await asyncio.wait_for(deciding.wait(), TIMEOUT)
     assert await player.whisper_to("v1", "psst") is None
@@ -569,7 +569,7 @@ def statuses(feed):
 
 
 def whisper(engine, vid, wid="w-1"):
-    engine.lineage.record(wid, None, player=True)
+    engine.lineage.record(wid, None, player=PID)
     engine.hear_directly(vid, Match(f"utt:{wid}", {"id": wid, "text": "psst"}, 0.8))
 
 
@@ -654,7 +654,7 @@ async def test_hurtful_gossip_raises_no_suspicion(monkeypatch):
     monkeypatch.setattr(engine_mod, "act", no_act)
     engine, minds, _ = await setup("v1")
     engine.jev = Rater()
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     engine.lineage.record("u-0", "w-1")
     engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Drogo drinks", "w-1", style="exaggerated"))
     minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V2 said at the square: Drogo drinks"})]]
@@ -756,7 +756,7 @@ async def test_no_turn_without_a_fresh_item(turns):
 @pytest.mark.asyncio
 async def test_the_newcomers_whisper_is_fresh_even_with_negative_clearance(turns):
     engine, minds, _ = await setup("v1")
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     minds["v1"].results = [[Match("k-w", {"id": "w-1", "text": "psst"}, 0.4, -0.01)]]
     push(minds["v1"])
     await wait_for(lambda: len(turns.views) == 1)
@@ -801,7 +801,7 @@ async def test_off_topic_descendant_is_not_a_hop_and_marks_drift(turns):
     engine = Engine(Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=factory, rumors=rumors)
     for vid in ("v1", "v2", "v3"):
         await engine.add_villager(make(vid))
-    lineage.record("w-1", None, player=True)
+    lineage.record("w-1", None, player=PID)
     for uid, parent in (("u-1", "w-1"), ("u-2", "u-1"), ("u-3", "u-2")):
         lineage.record(uid, parent)
     await engine.deliver(Utterance("u-1", "v1", "V1", "square", "psst again", "w-1"), ["v2"])
@@ -899,7 +899,7 @@ async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     for vid in ("v1", "v2"):
         await engine.add_villager(make(vid), "tavern")
     engine.player_place = lambda: "tavern"
-    lineage.record("w-1", None, player=True)
+    lineage.record("w-1", None, player=PID)
     lineage.record("u-1", "w-1")
     lineage.record("u-2", None)
     await engine.deliver(Utterance("u-1", "v1", "V1", "tavern", "psst again", "w-1", action=SPEAK), ["v2"])
@@ -944,7 +944,7 @@ async def test_a_town_crier_line_is_not_remembered_as_said(turns):
 async def test_the_players_whispers_are_not_remembered_as_said(turns):
     contex = StubContex()
     engine, _, _ = await setup("v1", contex=contex)
-    utt = Utterance("w-1", PLAYER_ID, "The newcomer", "square", "psst", None, "whispered to you")
+    utt = Utterance("w-1", NEWCOMER, "The newcomer", "square", "psst", None, "whispered to you")
     await engine.deliver(utt, ["v1"])
     assert contex.published == []
     await engine.stop()
@@ -971,7 +971,7 @@ async def test_a_failed_said_publish_is_logged_with_ids_only_and_delivery_goes_o
 async def whisper_turn(turns, contex, **config):
     engine, minds, _ = await setup("v1", contex=contex, config=Config(**{"cooldown_seconds": 0.05, **config}))
     minds["v1"].results = [[]]
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     text = "The newcomer whispered to you at the square: psst"
     engine.hear_directly("v1", Match("utt:w-1", {"id": "w-1", "text": text}, 0.8))
     await wait_for(lambda: len(turns.views) == 1)
@@ -1063,7 +1063,7 @@ def talks(monkeypatch):
 
 
 def reply_whisper(engine, vid, wid, conversation):
-    engine.facts.record(Utterance(wid, PLAYER_ID, "The newcomer", "square", "psst", None, conversation=conversation))
+    engine.facts.record(Utterance(wid, NEWCOMER, "The newcomer", "square", "psst", None, conversation=conversation))
     whisper(engine, vid, wid)
 
 
@@ -1132,7 +1132,7 @@ async def test_a_reply_is_remembered_and_reaches_the_feed_not_minds(turns):
     engine, minds, _ = await setup("v1", "v2", contex=contex)
     lines = []
     engine.feed = Feed(engine.lineage, engine.town, out=lines.append)
-    engine.facts.record(Utterance("w-2", PLAYER_ID, "The newcomer", "square", "psst", None, conversation="w-1"))
+    engine.facts.record(Utterance("w-2", NEWCOMER, "The newcomer", "square", "psst", None, conversation="w-1"))
     utt = Utterance("u-5", "v1", "V1", "square", "Aye, the well.", "w-2", "answered", action=ANSWER)
     await engine.reply(utt)
     assert minds["v2"].heard == [] and minds["v1"].heard == []
@@ -1285,7 +1285,7 @@ async def test_village_talk_away_from_the_player_starts_no_scene(talkers):
 async def test_an_on_card_hop_starts_a_scene_anywhere_and_an_off_card_one_does_not(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
     engine.player_place = lambda: "tavern"
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     talkers.plan = {"v2": [(SPEAK, 1.0), (SPEAK, 1.0)]}
     engine.lineage.record("o-2", "w-1")
     said_by(engine, "o-2", "v1")
@@ -1305,8 +1305,8 @@ async def test_an_on_card_hop_starts_a_scene_anywhere_and_an_off_card_one_does_n
 async def test_the_newcomers_whisper_never_opens_a_scene(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
     talkers.plan = {"v2": [(SPEAK, 1.0)]}
-    engine.lineage.record("w-1", None, player=True)
-    said_by(engine, "w-1", PLAYER_ID)
+    engine.lineage.record("w-1", None, player=PID)
+    said_by(engine, "w-1", NEWCOMER)
     hand(engine, "v2", "w-1")
     await wait_for(lambda: feed.deliveries)
     assert scene_events(feed) == []
@@ -1574,7 +1574,7 @@ async def test_every_line_of_a_village_scene_is_overheard(talkers):
 async def test_a_player_rooted_scene_line_is_a_hop_not_overheard(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
     engine.overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=1.0), random.Random(1))
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     engine.lineage.record("o-1", "w-1")
     said_by(engine, "o-1", "v1")
     engine.rumors.record("w-1", engine.facts.get("o-1"), {"v2": "V2"}, True)
@@ -1650,7 +1650,7 @@ async def test_recall_heard_leaves_out_the_newcomers_earlier_whispers():
     contex = StubContex()
     contex.default = [heard_line("w-1", 0.99), heard_line("u-2", 0.9)]
     engine, _, _ = await setup("v1", contex=contex)
-    engine.lineage.record("w-1", None, player=True)
+    engine.lineage.record("w-1", None, player=PID)
     found = await engine.recall_heard("v1", "psst", "w-2")
     assert [m.data_key for m in found] == ["utt:u-2"]
     await engine.stop()

@@ -10,8 +10,8 @@ from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
-from examples.rumor_mill.tests.helpers import StubClient
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.tests.helpers import PID, StubClient
+from examples.rumor_mill.town import NEWCOMER, Town
 from examples.rumor_mill.writer import Writer
 
 
@@ -92,7 +92,7 @@ def source(uid="u-0"):
 @pytest.mark.asyncio
 async def test_retell_delivers_to_target_with_parent_lineage():
     s = Setup()
-    s.lineage.record("u-0", None, player=True)
+    s.lineage.record("u-0", None, player=PID)
     await s.act("v1", Decision(RETELL, source("u-0"), "v2", "faithful"))
     utt, listeners = s.hub.delivered[0]
     assert listeners == ["v2"]
@@ -257,8 +257,8 @@ WHISPER = "The newcomer whispered to you at the square: Bert stole bread"
 
 def whispered(s, uid="w-1"):
     """A player whisper recorded the way the player records one."""
-    s.lineage.record(uid, None, player=True)
-    s.facts.record(Utterance(uid, PLAYER_ID, "The newcomer", "square", "Bert stole bread", None, "whispered to you"))
+    s.lineage.record(uid, None, player=PID)
+    s.facts.record(Utterance(uid, NEWCOMER, "The newcomer", "square", "Bert stole bread", None, "whispered to you"))
     return Match(f"utt:{uid}", {"id": uid, "text": WHISPER})
 
 
@@ -312,7 +312,7 @@ async def test_shift_blame_drops_the_newcomer():
 @pytest.mark.asyncio
 async def test_answer_emits_a_reply_and_records_it():
     s = Setup()
-    s.lineage.record("w-1", None, player=True)
+    s.lineage.record("w-1", None, player=PID)
     whisper = Match("utt:w-1", {"id": "w-1", "text": "The newcomer whispered to you at the square: psst"})
     await s.act(
         "v1", Decision(ANSWER, whisper, None, None),

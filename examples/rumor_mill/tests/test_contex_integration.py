@@ -17,7 +17,7 @@ from examples.rumor_mill.mind import Mind, mind_project, said_project
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.suspicion import Suspicion
-from examples.rumor_mill.tests.helpers import FakeEngine, StubBaselines
+from examples.rumor_mill.tests.helpers import PID, FakeEngine, StubBaselines
 from examples.rumor_mill.town import Town
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
@@ -187,7 +187,7 @@ async def test_direct_check_hits_only_the_need_it_clears():
 
         engine.deliver = deliver
         lineage = Lineage()
-        player = Player(engine, town, lineage, Ids(), Feed(lineage, town, out=None), config)
+        player = Player(engine, town, lineage, Ids(), Feed(lineage, town, out=None), config, player_id=PID)
         assert await player.whisper_to("v1", "the oven at the bakery is cold") is None
         assert await player.whisper_to("v2", "the oven at the bakery is cold") is None
         player.close()

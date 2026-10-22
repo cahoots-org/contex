@@ -13,7 +13,7 @@ from examples.rumor_mill.goals import DECK
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.tests.helpers import Always, StubBaselines, StubContex
-from examples.rumor_mill.town import PLAYER_ID
+from examples.rumor_mill.town import NEWCOMER
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
 GOALS = {g.id: g for g in DECK}
@@ -44,7 +44,7 @@ async def test_only_the_players_place():
     overhear, _ = await make(rate=1.0, roll=0.0)
     assert await overhear.keep(line(place="tavern"), "tavern") == "random"
     assert await overhear.keep(line(place="mill"), "tavern") is None
-    assert await overhear.keep(line(speaker=PLAYER_ID), "tavern") is None
+    assert await overhear.keep(line(speaker=NEWCOMER), "tavern") is None
     assert await overhear.keep(line(action="join_group", verb="announced"), "tavern") is None
 
 

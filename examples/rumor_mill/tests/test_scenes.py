@@ -7,7 +7,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.scenes import MAX_PEOPLE, Scenes, heat
 from examples.rumor_mill.tests.helpers import Always, make
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.town import Town
 
 
 def town_with(*ids, place="tavern"):
@@ -122,13 +122,12 @@ def test_addressed_draws_bystanders_at_momentum_times_join_rate():
     assert scenes.addressed(scene, "v1") == ["v2"]
 
 
-def test_addressed_never_draws_the_player_and_stops_at_six():
+def test_addressed_never_draws_the_speaker_and_stops_at_six():
     ids = [f"v{i}" for i in range(1, 10)]
-    scenes, town = scenes_for(*ids, rng=Always(0.0))
-    town.add(make(PLAYER_ID), "tavern")
+    scenes, _ = scenes_for(*ids, rng=Always(0.0))
     scene = scenes.start(opening(), "v2", "w-1", None)
     heard = scenes.addressed(scene, "v1")
-    assert PLAYER_ID not in heard and "v1" not in heard
+    assert "v1" not in heard
     assert len(heard) + 1 == MAX_PEOPLE
 
 

@@ -10,9 +10,9 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
-from examples.rumor_mill.tests.helpers import StubBaselines, StubContex, wait_for
+from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
-from examples.rumor_mill.town import PLAYER_ID
+from examples.rumor_mill.town import NEWCOMER
 
 
 @pytest.mark.asyncio
@@ -53,7 +53,7 @@ async def test_whisper_is_delivered_and_rooted_in_lineage():
     assert await player.whisper("Marta", "the miller waters his flour") is None
     (utterance, listeners), = engine.delivered
     assert listeners == ["v1"]
-    assert (utterance.id, utterance.speaker, utterance.speaker_name) == ("w-1", PLAYER_ID, "The newcomer")
+    assert (utterance.id, utterance.speaker, utterance.speaker_name) == ("w-1", NEWCOMER, "The newcomer")
     assert (utterance.verb, utterance.place, utterance.parent) == ("whispered to you", "tavern", None)
     assert utterance.text == "the miller waters his flour"
     assert lineage.is_player_rooted("w-1")
@@ -638,3 +638,12 @@ async def test_an_unfamiliar_miss_still_brushes_off():
     assert player.engine.recalls == [("v1", "the tide tables were misprinted", "w-1")]
     assert player.engine.direct == []
     assert [s["state"] for s in statuses(player)] == ["checking", "brushed_off", "brushed_off"]
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_is_recorded_under_its_player():
+    player, _, _, engine, lineage = make("Marta")
+    assert await player.whisper_to("v1", "the well is cursed") is None
+    assert lineage.player_of("w-1") == PID
+    assert engine.delivered[0][0].speaker == NEWCOMER
+    player.close()

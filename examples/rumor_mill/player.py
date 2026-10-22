@@ -13,7 +13,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
-from examples.rumor_mill.town import PLAYER_ID, START_PLACE, Town
+from examples.rumor_mill.town import NEWCOMER, START_PLACE, Town
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,9 @@ def echoes(line: str, concern: str) -> bool:
 class Player:
     def __init__(
         self, engine, town: Town, lineage: Lineage, ids: Ids, feed, config: Config, writer=None, game: Game | None = None,
+        *, player_id: str,
     ):
+        self.id = player_id
         self.engine = engine
         self.town = town
         self.lineage = lineage
@@ -93,10 +95,10 @@ class Player:
         if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
             self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
             self.engine.end_conversation(target.id)
-            self.feed.on_refusal(target.id, target.name, await self._turn_away(target))
+            self.feed.on_refusal(target.id, target.name, await self._turn_away(target), player=self.id)
             return Refusal(f"{target.name} turns away from you.")
         uid = self.ids.next("w")
-        self.lineage.record(uid, None, player=True)
+        self.lineage.record(uid, None, player=self.id)
         conversation = self.engine.conversations.get(target.id)
         thread = self._thread(target.id)
         hint_need = None
@@ -107,7 +109,7 @@ class Player:
         else:
             thread_id = None
         utterance = Utterance(
-            uid, PLAYER_ID, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
+            uid, NEWCOMER, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
             conversation=thread_id,
         )
         self.engine.facts.record(utterance)
@@ -122,7 +124,7 @@ class Player:
             self.game.moved()
         if utterance.place != self.place:
             self.place = utterance.place
-            self.feed.on_place(self.place)
+            self.feed.on_place(self.place, player=self.id)
         self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
         found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))

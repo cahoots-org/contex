@@ -8,7 +8,7 @@ from examples.rumor_mill.actions import CONFRONT, DENY, RETELL, SPEAK, WARN
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import HEATED_ACTIONS, HEATED_STYLES, LIVELY_STYLES
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.town import Town
 
 # Speech that keeps a scene going.
 SCENE_SPEECH = (RETELL, DENY, CONFRONT, WARN, SPEAK)
@@ -119,7 +119,7 @@ class Scenes:
         room = MAX_PEOPLE - len(scene.participants)
         chance = scene.momentum * self.config.join_rate
         for vid in here:
-            if vid in scene.participants or vid == PLAYER_ID or room <= 0:
+            if vid in scene.participants or room <= 0:
                 continue
             if self.rng.random() < chance:
                 heard.append(vid)

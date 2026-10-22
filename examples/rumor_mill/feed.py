@@ -12,7 +12,7 @@ from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES
-from examples.rumor_mill.town import PLAYER_ID, Town
+from examples.rumor_mill.town import NEWCOMER, Town
 
 REPLAY_EVENTS = 500
 LISTENING = ("checking", "busy", "heard")
@@ -41,6 +41,8 @@ class Event:
     # What the terminal prints; empty when it prints nothing.
     line: str
     data: dict
+    # Who sees the event; None means everyone in the village.
+    player: str | None = None
 
     def to_json(self) -> dict:
         return {"id": self.id, "at": self.at, "kind": self.kind, **self.data}
@@ -70,18 +72,33 @@ class Feed:
         self._resolved: set[str] = set()
         self._answered: set[str] = set()
 
-    def emit(self, kind: str, line: str = "", /, **data) -> Event | None:
+    def emit(self, kind: str, line: str = "", /, player: str | None = None, **data) -> Event | None:
         """Send an event to every sink; once the feed is closed, drop it and return None."""
         if self.closed:
             return None
-        event = Event(next(self._ids), time.time(), kind, line, data)
+        event = Event(next(self._ids), time.time(), kind, line, data, player)
         self.recent.append(event)
         for sink in self.sinks:
             sink(event)
         return event
 
-    def say(self, line: str) -> None:
-        self.emit("system", line, text=line)
+    def say(self, line: str, player: str | None = None) -> None:
+        self.emit("system", line, player=player, text=line)
+
+    def sees(self, player: str, event: Event) -> bool:
+        return event.player is None or event.player == player
+
+    def replay(self, player: str) -> list[Event]:
+        """The recent events that player sees."""
+        return [e for e in self.recent if self.sees(player, e)]
+
+    def view(self, player: str, sink: Sink) -> Sink:
+        """A sink passing on to sink only the events that player sees."""
+        def seen(event: Event) -> None:
+            if self.sees(player, event):
+                sink(event)
+
+        return seen
 
     def on_progress(self, goal: Goal, fraction: float, counts: tuple[int, int] | None = None) -> None:
         percent = int(fraction * 100)
@@ -131,15 +148,16 @@ class Feed:
                 text = f'{name} leans in: "{hint}"' if hint else f"{name} leans in."
             else:
                 text = f'{name} brushes you off: "{hint}"' if hint else f"{name} shrugs it off."
-        self.emit("whisper_status", text, whisper_id=whisper_id, villager_id=villager_id, name=name, state=state, **extra)
+        self.emit("whisper_status", text, player=self.lineage.player_of(whisper_id), whisper_id=whisper_id,
+                  villager_id=villager_id, name=name, state=state, **extra)
 
     def listening(self, villager_id: str) -> list[tuple[str, str]]:
         """The (whisper id, name) of each whisper the villager is still hearing."""
         return [(wid, name) for wid, (vid, name) in self._listening.items() if vid == villager_id]
 
-    def on_refusal(self, villager_id: str, name: str, line: str | None = None) -> None:
+    def on_refusal(self, villager_id: str, name: str, line: str | None = None, player: str | None = None) -> None:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
-        self.emit("refusal", text, villager_id=villager_id, name=name, line=line)
+        self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
     def on_warning(self, speaker_id: str, speaker_name: str, target_id: str, target_name: str) -> None:
         self.emit(
@@ -150,20 +168,20 @@ class Feed:
     def on_reply(self, conversation: str, utterance: Utterance) -> None:
         """A villager answered the newcomer in the conversation started by that whisper."""
         u = utterance
-        self.emit("reply", f'{u.speaker_name} answers you: "{u.text}"', conversation=conversation,
-                  villager_id=u.speaker, name=u.speaker_name, text=u.text, uid=u.id)
+        self.emit("reply", f'{u.speaker_name} answers you: "{u.text}"', player=self.lineage.player_of(conversation),
+                  conversation=conversation, villager_id=u.speaker, name=u.speaker_name, text=u.text, uid=u.id)
 
     def on_drift(self, whisper_id: str) -> None:
         """The whisper's story turned to other things; the terminal prints nothing."""
-        self.emit("drift", whisper_id=whisper_id)
+        self.emit("drift", player=self.lineage.player_of(whisper_id), whisper_id=whisper_id)
 
     def on_time(self, day: int, phase: str) -> None:
         line = TIME_LINES[phase].format(day=day)
         self.emit("time", line, text=line, day=day, phase=phase)
 
-    def on_place(self, place: str) -> None:
+    def on_place(self, place: str, player: str | None = None) -> None:
         """The player is now at place; the terminal prints nothing."""
-        self.emit("place", place=place)
+        self.emit("place", player=player, place=place)
 
     def on_overheard(self, utterance: Utterance, reason: str, scene: str | None = None) -> None:
         """A line the player overheard at their place, and the scene it belongs to if any; the terminal prints nothing."""
@@ -191,16 +209,17 @@ class Feed:
         """
         u = utterance
         names = [self.town.get(i).name for i in listener_ids if i in self.town]
-        if u.speaker == PLAYER_ID:
+        if u.speaker == NEWCOMER:
             if listener_ids:
-                self.emit("whisper", uid=u.id, target_id=listener_ids[0], target=names[0] if names else "",
+                self.emit("whisper", player=self.lineage.player_of(u.id), uid=u.id, target_id=listener_ids[0], target=names[0] if names else "",
                           place=u.place, text=u.text, conversation=u.conversation)
             return
         if u.verb == "warned":
             if listener_ids:
                 self.on_warning(u.speaker, u.speaker_name, listener_ids[0], names[0] if names else listener_ids[0])
             return
-        if listener_ids and self.lineage.is_player_rooted(u.id):
+        player = self.lineage.player_of(u.id)
+        if listener_ids and player is not None:
             if not on_topic:
                 return
             if len(listener_ids) == 1:
@@ -208,7 +227,7 @@ class Feed:
             else:
                 line = f'{u.speaker_name} said at the {u.place} (heard by {len(listener_ids)}): "{u.text}"'
             self.emit(
-                "hop", line, uid=u.id, parent=u.parent, root=self.lineage.root(u.id),
+                "hop", line, player=player, uid=u.id, parent=u.parent, root=self.lineage.root(u.id),
                 depth=self.lineage.depth(u.id), speaker_id=u.speaker, speaker=u.speaker_name,
                 listeners=names, heard=len(listener_ids), place=u.place, verb=u.verb, text=u.text, scene=scene,
             )

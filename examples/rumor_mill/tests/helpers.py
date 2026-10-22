@@ -13,6 +13,7 @@ from examples.rumor_mill.player import Player
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import Town
 
+PID = "p-1"
 TIMEOUT = 2.0
 
 
@@ -167,7 +168,7 @@ def make_player(*names, cooldown=0.0):
     for i, name in enumerate(names, 1):
         town.add(Villager(f"v{i}", name, "baker", "calm", "none", [], {}), "tavern")
     feed = Feed(lineage, town, out=lines.append)
-    player = Player(engine, town, lineage, Ids(), feed, config)
+    player = Player(engine, town, lineage, Ids(), feed, config, player_id=PID)
     return player, town, lines, engine, lineage
 
 

@@ -63,7 +63,7 @@ def game(monkeypatch):
     feed = Feed(lineage, town, out=None)
     config = Config()
     suspicion, game = Suspicion(config, town), Game(feed)
-    player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game)
+    player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game, player_id=helpers.PID)
     judge = SimpleNamespace(progress={"cat": 0.42}, counts={"cat": (5, 12)}, met=set())
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)

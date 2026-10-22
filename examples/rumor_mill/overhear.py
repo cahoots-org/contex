@@ -9,7 +9,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.models import Utterance
-from examples.rumor_mill.town import PLAYER_ID
+from examples.rumor_mill.town import NEWCOMER
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class Overhear:
         Only speech at the player's place that is not their own whisper or a hop on a rumor card is overheard.
         """
         u = utterance
-        if hop or u.place != player_place or u.speaker == PLAYER_ID or u.action not in SPOKEN:
+        if hop or u.place != player_place or u.speaker == NEWCOMER or u.action not in SPOKEN:
             return None
         if u.action in HEATED_ACTIONS or u.style in HEATED_STYLES:
             return "heated"

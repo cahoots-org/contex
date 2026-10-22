@@ -10,7 +10,7 @@ from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.models import Utterance
-from examples.rumor_mill.town import PLAYER_ID
+from examples.rumor_mill.town import NEWCOMER
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class Rumors:
         card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at)
         if conversation in self._cards:
             card.part_of = conversation
-            self.add_line(conversation, Utterance(whisper_uid, PLAYER_ID, "The newcomer", "", text, None))
+            self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "The newcomer", "", text, None))
         card.heard.add(target_id)
         await self._start(card)
 

@@ -17,13 +17,14 @@ from examples.rumor_mill.cli import repl, until_over
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.engine import Engine
-from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import deal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.players import new_player_id
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
@@ -41,7 +42,7 @@ async def play(web: bool) -> None:
     writer = Writer(anthropic.AsyncAnthropic(), config.haiku_model, usage)
     villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
     town, lineage, ids = Town(), Lineage(), Ids()
-    feed = Feed(lineage, town, out=None if web else print)
+    feed = Feed(lineage, town, out=None)
     game = Game(feed, config.memory_moves)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
@@ -55,7 +56,9 @@ async def play(web: bool) -> None:
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
             routine=routine,
         )
-        player = Player(engine, town, lineage, ids, feed, config, writer, game)
+        player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id())
+        if not web:
+            feed.sinks.append(feed.view(player.id, terminal(print)))
         engine.player_place = lambda: player.place
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         if not web:

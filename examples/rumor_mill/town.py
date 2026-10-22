@@ -5,7 +5,7 @@ from examples.rumor_mill.models import Group, Villager
 PLACES = ("square", "tavern", "market", "well", "mill", "chapel", "gate")
 START_PLACE = "square"
 GATE = "gate"
-PLAYER_ID = "newcomer"
+NEWCOMER = "newcomer"
 
 
 class Town:

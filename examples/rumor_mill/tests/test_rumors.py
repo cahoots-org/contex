@@ -13,7 +13,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.tests.helpers import StubBaselines, StubContex
-from examples.rumor_mill.town import PLAYER_ID
+from examples.rumor_mill.town import NEWCOMER
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
 AT = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
@@ -169,7 +169,7 @@ async def test_a_reply_joins_its_conversation_card():
     assert card["uid"] == "w-1"
     assert card["conversation"] == [
         {"uid": "u-1", "speaker_id": "v1", "speaker": "Marta", "text": "Who told you that?"},
-        {"uid": "w-2", "speaker_id": PLAYER_ID, "speaker": "The newcomer", "text": "the baker"},
+        {"uid": "w-2", "speaker_id": NEWCOMER, "speaker": "The newcomer", "text": "the baker"},
     ]
     assert [h["uid"] for h in card["hops"]] == ["u-2"]
     assert await rumors.on_topic("w-2", "close")

@@ -3,6 +3,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.scenes import Scene
+from examples.rumor_mill.tests.helpers import PID
 from examples.rumor_mill.town import Town
 
 
@@ -10,7 +11,7 @@ def make():
     town, lines, lineage = Town(), [], Lineage()
     for vid, name in (("v1", "Bert"), ("v2", "Marta")):
         town.add(Villager(vid, name, "baker", "calm", "none", [], {}))
-    lineage.record("w-1", None, player=True)
+    lineage.record("w-1", None, player=PID)
     lineage.record("u-1", "w-1")
     lineage.record("u-2", None)
     return Feed(lineage, town, out=lines.append), lines
@@ -192,3 +193,27 @@ def test_a_near_miss_prints_once_its_line_is_settled():
     feed.on_whisper_status("w-3", "v1", "Bert", "answered")
     feed.on_whisper_status("w-3", "v1", "Bert", "near_miss", hint="Late.")
     assert lines == ['Bert leans in: "Go on."', "Bert leans in."]
+
+
+def test_events_go_to_the_player_whose_whisper_they_follow():
+    town, lineage = Town(), Lineage()
+    town.add(Villager("v1", "Bert", "baker", "calm", "none", [], {}))
+    lineage.record("w-1", None, player="p-a")
+    lineage.record("w-2", None, player="p-b")
+    lineage.record("u-2", "w-2")
+    feed = Feed(lineage, town, out=None)
+    feed.on_whisper_status("w-1", "v1", "Bert", "checking")
+    feed.on_delivery(Utterance("u-2", "v1", "Bert", "tavern", "news", "w-2"), ["v1"])
+    feed.on_time(1, "afternoon")
+    assert [e.kind for e in feed.replay("p-a")] == ["whisper_status", "time"]
+    assert [e.kind for e in feed.replay("p-b")] == ["hop", "time"]
+    assert all("player" not in e.to_json() for e in feed.recent)
+
+
+def test_a_view_passes_only_what_its_player_sees():
+    feed, seen = Feed(Lineage(), Town(), out=None), []
+    feed.sinks.append(feed.view("p-a", seen.append))
+    feed.emit("system", "mine", player="p-a")
+    feed.emit("system", "theirs", player="p-b")
+    feed.say("everyone")
+    assert [e.line for e in seen] == ["mine", "everyone"]
