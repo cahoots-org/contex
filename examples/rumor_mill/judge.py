@@ -118,7 +118,7 @@ class Judge:
 
     def deal(self, player: Player) -> None:
         """Give the player three new goals, none held now nor the world goal's claim."""
-        player.goals = deal(self.rng, skip=self.held() | {self.world.id.removeprefix("world-")})
+        player.goals = deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")})
         player.met = set()
         self.feed.on_deal(player.goals, player=player.id)
 
@@ -164,11 +164,17 @@ class Judge:
                         if all(g.id in p.met for g in p.goals):
                             self.deal(p)
                 if world:
-                    del holds[goal.id]
                     self.feed.on_met(goal)
                     self.world = self._next_world()
                     self.world_since = time.time()
                     self.feed.on_world(self.world)
+            self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
+
+    def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
+        """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
+        for known in (self.progress, self.counts, holds):
+            for gid in known.keys() - in_play:
+                del known[gid]
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
         """Each goal's text and whole percent progress."""

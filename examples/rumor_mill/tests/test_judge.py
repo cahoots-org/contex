@@ -6,7 +6,7 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal
+from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
@@ -349,3 +349,42 @@ async def test_all_villagers_failing_gives_zero_progress():
 
     contex.query = boom
     assert await judge.check(BELIEF) == 0.0
+
+
+def test_deal_never_gives_the_world_claim_even_when_most_of_the_deck_is_held():
+    judge, *_ = make()
+    world_claim = judge.world.id.removeprefix("world-")
+    judge.progress = {g.id: 1.0 for g in DECK[:-2]}
+    for seed in range(50):
+        judge.rng.seed(seed)
+        pa = holder("p-a")
+        judge.deal(pa)
+        assert world_claim not in {g.id for g in pa.goals}
+
+
+@pytest.mark.asyncio
+async def test_a_claim_dealt_again_needs_hold_checks_again():
+    judge, _, _, feed, _ = make()
+    judge.world = QUIET
+    checks = []
+
+    async def check(goal):
+        if goal.id != BELIEF.id:
+            return 0.0
+        checks.append(goal.id)
+        return 1.0
+
+    judge.check = check
+    p = holder(PID, BELIEF, QUIET)
+    running = asyncio.create_task(judge.run(players(p)))
+    try:
+        await wait_for(lambda: feed.met)
+        p.goals = [QUIET]
+        await wait_for(lambda: BELIEF.id not in judge.progress)
+        p.goals, p.met = [BELIEF, QUIET], set()
+        before = len(checks)
+        await wait_for(lambda: len(feed.met) == 2)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    assert len(checks) - before == BELIEF.hold_checks
