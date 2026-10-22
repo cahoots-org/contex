@@ -33,8 +33,10 @@
   --wait: #2b5d8a;
   --kept: #5a6152;
   --talk: #6a4c93;
-  --sun: #d99a1e;
-  --moon: #7d8a8f;
+  --sun: #e2a52a;
+  --moon: #f3f1e4;
+  --day-sky: #bcd8ea;
+  --night-sky: #26324c;
   --rumor: "Alegreya", Georgia, "Times New Roman", serif;
   --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
@@ -53,7 +55,9 @@
     --on-accent: #10202f;
     --face-edge: rgb(255 255 255 / .3);
     --sun: #f0c45a;
-    --moon: #cfd8dc;
+    --moon: #eef0ea;
+    --day-sky: #4f7896;
+    --night-sky: #141c30;
   }
 }
 * { box-sizing: border-box; }
@@ -206,12 +210,13 @@ mark.kept {
 .where, .clock { margin: 0; font-size: .85rem; color: var(--muted); }
 .clock { color: var(--ink); font-variant-numeric: tabular-nums; }
 .sky { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }
-.sky svg { width: 4.5rem; height: 2.4rem; flex: none; overflow: visible; }
-.sky .horizon { stroke: var(--rail); stroke-width: 1.5; fill: none; }
-.sky .path { stroke: var(--rail); stroke-width: 1; stroke-dasharray: 2 3; fill: none; }
-.sky .sun { fill: var(--sun); }
-.sky .moon { fill: var(--moon); }
-.sky.night .sun, .sky:not(.night) .moon { display: none; }
+.sky svg { width: 4.5rem; height: 2.4rem; flex: none; }
+.sky .horizon { stroke: var(--edge); stroke-width: 1.5; }
+.sky .wheel { transform-box: view-box; transform-origin: 32px 33px; transition: transform 1s linear; }
+.sky .day { fill: var(--day-sky); }
+.sky .night { fill: var(--night-sky); }
+.sky .sun { fill: var(--sun); stroke: var(--sun); stroke-width: 1.6; stroke-linecap: round; }
+.sky .moon, .sky .star { fill: var(--moon); }
 
 .composer {
   border-top: 1px solid var(--rail);
@@ -412,6 +417,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 }
 @media (prefers-reduced-motion: reduce) {
   .fresh, .fresh mark, .gameover { animation: none; }
+  .sky .wheel { transition: none; }
 }
 </style>
 </head>
@@ -434,10 +440,22 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
         <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
         <div class="sky" id="sky">
           <svg viewBox="0 0 64 34" aria-hidden="true">
-            <defs><mask id="crescent"><rect x="-7" y="-7" width="14" height="14" fill="white"/><circle cx="2.5" cy="-1.8" r="4.2" fill="black"/></mask></defs>
-            <path class="path" d="M4 30 A28 28 0 0 1 60 30"/>
-            <line class="horizon" x1="0" y1="30" x2="64" y2="30"/>
-            <g id="sky-body"><circle class="sun" r="5"/><circle class="moon" r="5" mask="url(#crescent)"/></g>
+            <defs>
+              <clipPath id="above"><rect width="64" height="33"/></clipPath>
+              <mask id="crescent"><rect x="20" y="40" width="24" height="24" fill="white"/><circle cx="35" cy="50" r="5.2" fill="black"/></mask>
+            </defs>
+            <g clip-path="url(#above)">
+              <g class="wheel" id="wheel">
+                <path class="day" d="M1 33 A31 31 0 0 1 63 33 Z"/>
+                <path class="night" d="M1 33 A31 31 0 0 0 63 33 Z"/>
+                <g class="sun"><circle cx="32" cy="14" r="5"/>
+                  <path d="M32 5v2.5M32 21v2.5M23 14h2.5M38.5 14h2.5M25.6 7.6l1.8 1.8M36.6 18.6l1.8 1.8M25.6 20.4l1.8-1.8M36.6 9.4l1.8-1.8"/></g>
+                <circle class="moon" cx="32" cy="52" r="6" mask="url(#crescent)"/>
+                <circle class="star" cx="18" cy="45" r=".9"/><circle class="star" cx="46" cy="47" r=".9"/>
+                <circle class="star" cx="24" cy="58" r=".7"/><circle class="star" cx="42" cy="59" r=".7"/>
+              </g>
+            </g>
+            <line class="horizon" x1="0" y1="33" x2="64" y2="33"/>
           </svg>
           <p class="clock" id="clock"></p>
         </div>
@@ -1637,11 +1655,9 @@ function drawClock() {
   const minutes = (Math.floor((360 + fraction * 1440) / 10) * 10) % 1440;
   const hour = Math.floor(minutes / 60);
   $("clock").textContent = `Day ${clockAt.day}, ${hour % 12 || 12}:${String(minutes % 60).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`;
-  const night = hour >= 18 || hour < 6;
-  const along = ((minutes / 60 - (night ? 18 : 6) + 24) % 24) / 12;
-  $("sky").classList.toggle("night", night);
-  $("sky-body").setAttribute("transform",
-    `translate(${(32 - 28 * Math.cos(Math.PI * along)).toFixed(2)} ${(30 - 28 * Math.sin(Math.PI * along)).toFixed(2)})`);
+  // Clockwise: the sun rises on the left, tops the wheel at noon and sets on the right; the angle only grows.
+  const turns = clockAt.day - 1 + (minutes / 60 - 12) / 24;
+  $("wheel").style.transform = `rotate(${(turns * 360).toFixed(2)}deg)`;
 }
 setInterval(drawClock, 1000);
 
