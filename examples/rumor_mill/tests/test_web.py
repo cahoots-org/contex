@@ -628,7 +628,7 @@ def test_the_page_renders_moments_and_goal_links(game):
     html = game.client.get("/").text
     rove = re.search(r"const ROVE = (.*);", html).group(1)
     assert 'case "moment"' in html and "frontier-more" in rove
-    assert "For your goal" in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
+    assert "Serves your goal" in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
     assert "innerHTML" not in html
 
 

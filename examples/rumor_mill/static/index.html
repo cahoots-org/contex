@@ -195,7 +195,7 @@ mark.kept {
 .rumor > .whisper { margin-top: 0; }
 .tally { margin: .1rem 0 .2rem; font-size: .8rem; color: var(--muted); }
 .tally:empty { display: none; }
-.goal-link, .stopped { margin: .1rem 0; font-size: .8rem; }
+.goal-link, .stopped { margin: .1rem 0; font-size: .8rem; color: var(--muted); }
 .goal-link span { display: block; }
 .goal-link:empty, .stopped:empty { display: none; }
 .stopped { font-style: italic; color: var(--muted); }
@@ -804,8 +804,8 @@ function frontierItem(e) {
 }
 
 function goalLink(g) {
-  const believe = g.convinced ? ` · ${g.convinced} now believe ${g.claim}` : "";
-  return el("span", { textContent: `${g.world ? "For the world goal" : "For your goal"}: ${g.text}${believe}` });
+  const believe = g.convinced ? ` · ${g.convinced} convinced` : "";
+  return el("span", { textContent: `${g.world ? "Serves the world goal" : "Serves your goal"}: ${g.claim || g.text}${believe}` });
 }
 
 function sceneWords(tone, place) {
@@ -893,10 +893,14 @@ function setTally(uid) {
   const card = cards.get(uid);
   const t = tallies.get(uid);
   if (!card) return;
-  card.querySelector(".tally").textContent = t ? `heard by ${t.heard} · still told by ${t.still}` : "";
-  card.querySelector(".goal-link").replaceChildren(...(t ? t.goals.map(goalLink) : []));
-  card.querySelector(".frontier").replaceChildren(...(t ? t.frontier.map(frontierItem).filter(Boolean) : []));
-  card.querySelector(".stopped").textContent = (t && t.stopped) || "";
+  // Until the rumor gets past the one you whispered to, the chip already tells its story.
+  const spread = Boolean(t && t.heard > 1);
+  const still = t && !t.stopped ? ` · still told by ${t.still}` : "";
+  card.querySelector(".tally").textContent = spread ? `heard by ${t.heard}${still}` : "";
+  card.querySelector(".goal-link").replaceChildren(...(t && t.goals.length ? [goalLink(t.goals[0])] : []));
+  const rows = spread && !t.stopped ? t.frontier.map(frontierItem).filter(Boolean) : [];
+  card.querySelector(".frontier").replaceChildren(...rows);
+  card.querySelector(".stopped").textContent = (spread && t.stopped) || "";
   countFrontier(card);
 }
 
