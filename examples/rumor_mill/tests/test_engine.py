@@ -160,6 +160,14 @@ async def test_deliver_skips_departed_listeners_and_notifies_feed(turns):
 
 
 @pytest.mark.asyncio
+async def test_a_mind_hears_the_line_without_its_place(turns):
+    engine, minds, _ = await setup("v1", "v2")
+    await engine.deliver(Utterance("u-1", "v1", "V1", "well", "the bread is stale", None), ["v2"])
+    assert minds["v2"].heard == [("utt:u-1", {"id": "u-1", "text": "V1 said: the bread is stale"})]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_stop_leaves_no_pending_tasks(turns):
     engine, minds, _ = await setup("v1", "v2", game=Game())
     push(minds["v1"])
@@ -627,7 +635,7 @@ async def test_hurtful_gossip_raises_no_suspicion(monkeypatch):
     engine.lineage.record("w-1", None, player=PID)
     engine.lineage.record("u-0", "w-1")
     engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Drogo drinks", "w-1", style="exaggerated"))
-    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V2 said at the square: Drogo drinks"})]]
+    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V2 said: Drogo drinks"})]]
     push(minds["v1"])
     await wait_for(lambda: engine.jev.asked)
     assert engine.jev.asked == [False]
@@ -646,7 +654,7 @@ async def test_a_warning_asks_no_score_question(monkeypatch):
     engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Mind the newcomer", None, "warned",
                                   names_newcomer=True, action=WARN, about=PID))
     engine.suspect("v1", PID, 0.1, "was warned about the newcomer", "u-0")
-    engine.hear_directly("v1", Match("utt:u-0", {"id": "u-0", "text": "V2 warned at the square: Mind the newcomer"}))
+    engine.hear_directly("v1", Match("utt:u-0", {"id": "u-0", "text": "V2 warned: Mind the newcomer"}))
     await wait_for(lambda: engine.jev.asked)
     assert engine.jev.asked == [False]
     assert engine.suspicion.score("v1", PID) == pytest.approx(0.1)
@@ -930,7 +938,7 @@ async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     await engine.stop()
 
 
-def said_line(uid="u-9", text="Ada said at the square: the well is fine"):
+def said_line(uid="u-9", text="Ada said: the well is fine"):
     return Match(f"said:{uid}", {"id": uid, "text": text}, 0.9)
 
 
@@ -985,7 +993,7 @@ async def whisper_turn(turns, contex, **config):
     engine, minds, _ = await setup("v1", contex=contex, config=Config(**{"cooldown_seconds": 0.05, **config}))
     minds["v1"].results = [[]]
     engine.lineage.record("w-1", None, player=PID)
-    text = "A newcomer whispered to you at the square: psst"
+    text = "A newcomer whispered to you: psst"
     engine.hear_directly("v1", Match("utt:w-1", {"id": "w-1", "text": text}, 0.8))
     await wait_for(lambda: len(turns.views) == 1)
     await engine.stop()
@@ -1663,7 +1671,7 @@ async def test_a_player_rooted_scene_line_is_a_hop_not_overheard(talkers):
     await engine.stop()
 
 
-def heard_line(uid, similarity, text="Bo said at the well: the miller waters his flour"):
+def heard_line(uid, similarity, text="Bo said: the miller waters his flour"):
     return Match(f"utt:{uid}", {"id": uid, "text": text}, similarity)
 
 
@@ -1672,7 +1680,7 @@ async def test_recall_heard_skips_the_whisper_itself_and_weak_matches():
     contex = StubContex()
     contex.default = [heard_line("w-1", 0.99), heard_line("u-3", 0.85), heard_line("u-2", 0.9), heard_line("u-4", 0.82)]
     engine, _, _ = await setup("v1", contex=contex)
-    found = await engine.recall_heard("v1", "A newcomer whispered to you at the square: psst", "w-1")
+    found = await engine.recall_heard("v1", "A newcomer whispered to you: psst", "w-1")
     assert [m.data_key for m in found] == ["utt:u-2", "utt:u-3"]
     [(project, query, kwargs)] = contex.queries
     assert (project, query) == (mind_project(engine.config.session, "v1"), "psst")
@@ -1708,7 +1716,7 @@ async def test_the_turn_view_and_state_carry_what_they_heard(turns):
     contex.default = [heard_line("w-1", 0.99), heard_line("u-2", 0.9)]
     engine, view = await whisper_turn(turns, contex)
     assert [m.data_key for m in view.heard] == ["utt:u-2"]
-    assert _state(view)["things_i_heard_before"] == ["Bo said at the well: the miller waters his flour"]
+    assert _state(view)["things_i_heard_before"] == ["Bo said: the miller waters his flour"]
 
 
 @pytest.mark.asyncio
@@ -1738,7 +1746,7 @@ async def skip_act(*args, **kw):
 
 def player_whisper(engine, wid, player):
     engine.lineage.record(wid, None, player=player)
-    return Match(f"utt:{wid}", {"id": wid, "text": f"A newcomer whispered to you at the square: {wid}"})
+    return Match(f"utt:{wid}", {"id": wid, "text": f"A newcomer whispered to you: {wid}"})
 
 
 @pytest.mark.asyncio
@@ -1818,7 +1826,7 @@ async def paying_engine(monkeypatch, *vids, gate=None):
 def hop(engine, uid, root, player):
     engine.lineage.record(root, None, player=player)
     engine.lineage.record(uid, root)
-    return Match(f"utt:{uid}", {"id": uid, "text": "V9 said at the square: the well is cursed"})
+    return Match(f"utt:{uid}", {"id": uid, "text": "V9 said: the well is cursed"})
 
 
 @pytest.mark.asyncio
@@ -1836,7 +1844,7 @@ async def test_a_turn_on_a_players_rumor_is_charged_to_that_player(monkeypatch):
 async def test_village_talk_is_charged_to_no_player(monkeypatch):
     engine, minds, usage = await paying_engine(monkeypatch, "v1")
     engine.lineage.record("u-0", None)
-    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V9 said at the square: rain tomorrow"})]]
+    minds["v1"].results = [[Match("utt:u-0", {"id": "u-0", "text": "V9 said: rain tomorrow"})]]
     push(minds["v1"])
     await wait_for(lambda: usage.tokens["haiku"][0])
     assert usage.cost() > 0 and usage.cost(PID) == usage.cost("p-a") == 0.0

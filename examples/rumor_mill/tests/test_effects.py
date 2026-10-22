@@ -249,10 +249,10 @@ async def test_act_records_depth_audience_action_style():
 def test_payload_unchanged():
     u = Utterance("u-1", "v1", "Bert", "square", "hi", None, depth=4, names_newcomer=True,
                   audience="room", action=SPEAK, style="sly")
-    assert u.to_data() == {"id": "u-1", "text": "Bert said at the square: hi"}
+    assert u.to_data() == {"id": "u-1", "text": "Bert said: hi"}
 
 
-WHISPER = "A newcomer whispered to you at the square: Bert stole bread"
+WHISPER = "A newcomer whispered to you: Bert stole bread"
 
 
 def whispered(s, uid="w-1"):
@@ -285,7 +285,7 @@ async def test_faithful_retelling_of_a_whisper_names_the_newcomer():
     first, _ = s.hub.delivered[0]
     assert first.names_newcomer is True
     assert WHISPER in client.messages.calls[0]["messages"][0]["content"]
-    retold = Match(f"utt:{first.id}", {"id": first.id, "text": "Bert said at the square: words"})
+    retold = Match(f"utt:{first.id}", {"id": first.id, "text": "Bert said: words"})
     await s.act("v2", Decision(SPEAK, retold, None, "faithful"))
     assert s.hub.delivered[1][0].names_newcomer is True
 
@@ -313,13 +313,13 @@ async def test_shift_blame_drops_the_newcomer():
 async def test_answer_emits_a_reply_and_records_it():
     s = Setup()
     s.lineage.record("w-1", None, player=PID)
-    whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you at the square: psst"})
+    whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you: psst"})
     await s.act(
         "v1", Decision(ANSWER, whisper, None, None),
-        said=["Bert said at the square: the well is fine"], heard=["Cy said at the well: the well is dry"],
+        said=["Bert said: the well is fine"], heard=["Cy said: the well is dry"],
     )
     assert s.writer.reply_calls == [
-        ("v1", whisper.data["text"], ["Bert said at the square: the well is fine"], ["Cy said at the well: the well is dry"]),
+        ("v1", whisper.data["text"], ["Bert said: the well is fine"], ["Cy said: the well is dry"]),
     ]
     assert s.hub.delivered == [] and s.writer.say_calls == []
     utt, = s.hub.replies

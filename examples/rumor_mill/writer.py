@@ -14,7 +14,7 @@ TURN_AWAY_MAX_TOKENS = 60
 WARN_MAX_TOKENS = 60
 GO_ON_MAX_TOKENS = 40
 # How a player whisper reads when it reaches a villager.
-WHISPER_FRAMING = re.compile(r"^A newcomer whispered to you at the [^:]*: ")
+WHISPER_FRAMING = re.compile(r"^A newcomer whispered to you: ")
 
 
 STAGE_DIRECTION = re.compile(r"\*[^*]*\*")

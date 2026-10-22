@@ -117,7 +117,7 @@ The default is 0.015, a little below the lowest measured margin: in play,
 aimed whispers kept missing a fitting need by less than 0.005, which felt like
 a hit that didn't count. Expect more unrelated whispers to land than at 0.0175.
 
-A line someone retells ("Bert said at the tavern: ...") matches a little more
+A line someone retells ("Bert said: ...") matches a little more
 easily than a whisper: at 0.02, 42% of the unrelated lines matched a need of
 whoever heard them retold. A lower margin makes the village talk more, and a
 higher one makes more of your aimed whispers miss.

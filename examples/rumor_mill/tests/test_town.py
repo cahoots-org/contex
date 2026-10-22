@@ -64,7 +64,7 @@ def test_move_rejects_unknown_place():
 
 def test_utterance_to_data_is_one_sentence():
     u = Utterance("u-1", "a", "Bert", "tavern", "the oven is cold", "w-1", verb="said")
-    assert u.to_data() == {"id": "u-1", "text": "Bert said at the tavern: the oven is cold"}
+    assert u.to_data() == {"id": "u-1", "text": "Bert said: the oven is cold"}
 
 
 def test_villagers_lists_current_roster():

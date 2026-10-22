@@ -34,8 +34,11 @@ class Utterance:
     about: str | None = None
 
     def to_data(self) -> dict:
-        """Payload for Contex, which embeds every field, so it holds only what the game reads back."""
-        return {"id": self.id, "text": f"{self.speaker_name} {self.verb} at the {self.place}: {self.text}"}
+        """Payload for Contex, which embeds every field, so it holds only what the game reads back.
+
+        The place stays out: it would pull every line said there toward news about that place.
+        """
+        return {"id": self.id, "text": f"{self.speaker_name} {self.verb}: {self.text}"}
 
 
 @dataclass

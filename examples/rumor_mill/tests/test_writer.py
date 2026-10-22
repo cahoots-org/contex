@@ -112,9 +112,9 @@ async def test_warn_asks_for_one_line_and_never_says_how_suspicious_anyone_is():
 async def test_reply_answers_the_newcomer_in_one_line():
     client = StubClient('"Aye, the well has been off since spring."\nShe wipes her hands.', "Hm.")
     writer = Writer(client, "haiku-test")
-    line = "A newcomer whispered to you at the square: the well water tastes odd"
+    line = "A newcomer whispered to you: the well water tastes odd"
     assert await writer.reply(villager(), line, []) == "Aye, the well has been off since spring."
-    await writer.reply(villager(), line, ["Ada said at the square: the well is fine"])
+    await writer.reply(villager(), line, ["Ada said: the well is fine"])
     plain, with_said = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
     assert "the well water tastes odd" in plain and "whispered to you" not in plain
     assert "the well is fine" not in plain and "the well is fine" in with_said
@@ -125,12 +125,12 @@ async def test_reply_answers_the_newcomer_in_one_line():
 async def test_reply_mentions_what_they_heard_only_when_there_is_something():
     client = StubClient("Hm.", "Hm.")
     writer = Writer(client, "haiku-test")
-    line = "A newcomer whispered to you at the square: the miller waters his flour"
+    line = "A newcomer whispered to you: the miller waters his flour"
     await writer.reply(villager(), line, [])
-    await writer.reply(villager(), line, [], ["Bo said at the well: the miller waters his flour", "Cy said: flour is thin"])
+    await writer.reply(villager(), line, [], ["Bo said: the miller waters his flour", "Cy said: flour is thin"])
     plain, with_heard = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
     assert "What you heard earlier" not in plain and "If you already heard" not in plain
-    assert "What you heard earlier: Bo said at the well: the miller waters his flour / Cy said: flour is thin" in with_heard
+    assert "What you heard earlier: Bo said: the miller waters his flour / Cy said: flour is thin" in with_heard
     assert "If you already heard about this, say so and what you heard, in your own words." in with_heard
 
 
@@ -177,7 +177,7 @@ async def test_go_on_urges_the_newcomer_on_in_one_line():
 
 
 def test_whisper_framing_is_a_newcomer():
-    assert WHISPER_FRAMING.sub("", "A newcomer whispered to you at the well: hi") == "hi"
+    assert WHISPER_FRAMING.sub("", "A newcomer whispered to you: hi") == "hi"
 
 
 @pytest.mark.asyncio
