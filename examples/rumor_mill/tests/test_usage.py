@@ -70,3 +70,9 @@ def test_summary_for_a_player_shows_only_their_share():
     assert usage.summary("p-c") == "Your rumors have cost about $0.00 so far"
     assert usage.summary() == "Estimated cost so far: $5.00 (Haiku 4.0M in / 200k out)"
     assert usage.to_json("p-a") == {"summary": usage.summary("p-a"), "cost": 2.0}
+
+
+def test_a_players_sub_cent_share_reads_less_than_a_cent():
+    usage = Usage(Config())
+    usage.record("haiku", 1_000, 0, player="p-a")
+    assert usage.summary("p-a") == "Your rumors have cost less than $0.01 so far"
