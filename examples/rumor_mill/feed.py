@@ -30,7 +30,7 @@ SCENE_ENDS = {
     "long": "The {kind} ran its course.",
     "alone": "The {kind} broke up.",
 }
-GAME_OVER = {"won": "You won: every goal is met.", "lost": "Game over: you were run out of town."}
+GAME_OVER = {"lost": "Game over: you were run out of town."}
 
 
 @dataclass(frozen=True)
@@ -110,15 +110,30 @@ class Feed:
 
         return seen
 
-    def on_progress(self, goal: Goal, fraction: float, counts: tuple[int, int] | None = None) -> None:
+    def on_progress(
+        self, goal: Goal, fraction: float, counts: tuple[int, int] | None = None, player: str | None = None,
+    ) -> None:
+        """Progress on a player's goal, or on the world goal when player is None."""
         percent = int(fraction * 100)
         believers, needed = counts or (None, None)
         shown = f"{believers} of {needed} believe it" if counts else f"{percent}%"
-        self.emit("goal", f'Goal "{goal.text}": {shown}', goal_id=goal.id, text=goal.text, percent=percent, met=False,
-                  believers=believers, needed=needed)
+        self.emit("goal", f'Goal "{goal.text}": {shown}', player=player, goal_id=goal.id, text=goal.text, percent=percent,
+                  met=False, believers=believers, needed=needed, world=player is None)
 
-    def on_met(self, goal: Goal) -> None:
-        self.emit("goal", f'Goal met: "{goal.text}"', goal_id=goal.id, text=goal.text, percent=100, met=True)
+    def on_met(self, goal: Goal, player: str | None = None) -> None:
+        """A player's goal met, or the world goal when player is None."""
+        line = f'The village now holds: "{goal.text}"' if player is None else f'Goal met: "{goal.text}"'
+        self.emit("goal", line, player=player, goal_id=goal.id, text=goal.text, percent=100, met=True,
+                  world=player is None)
+
+    def on_deal(self, goals: list[Goal], player: str) -> None:
+        """A new hand of goals for the player."""
+        self.emit("deal", "\n".join(f"Goal: {g.text}" for g in goals), player=player,
+                  goals=[{"id": g.id, "text": g.text} for g in goals])
+
+    def on_world(self, goal: Goal) -> None:
+        """A new world goal, for everyone."""
+        self.emit("world_goal", f'World goal: "{goal.text}"', goal_id=goal.id, text=goal.text)
 
     def on_heat(self, label: str, player: str | None = None) -> None:
         self.emit("heat", HEAT_LINES[label], player=player, label=label)

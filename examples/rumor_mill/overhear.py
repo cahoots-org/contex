@@ -2,6 +2,7 @@
 
 import logging
 import random
+from collections.abc import Collection
 
 from examples.rumor_mill.actions import CONFRONT, DENY, PREACH, RETELL, SPEAK
 from examples.rumor_mill.calibration import Baselines
@@ -37,9 +38,12 @@ class Overhear:
                 self._evidence[key] = goal.evidence[0]
                 await self.contex.publish(self.project, key, {"id": goal.id, "text": goal.evidence[0]})
 
-    async def keep(self, utterance: Utterance, player_place: str, hop: bool = False) -> str | None:
+    async def keep(
+        self, utterance: Utterance, player_place: str, hop: bool = False, goals: Collection[str] = (),
+    ) -> str | None:
         """Why the player overhears the line (heated, lively, goal, or random), or None when they don't.
 
+        A line counts as goal talk only for the player's own goals, given by id.
         Only speech at the player's place that is not their own whisper or a hop on a rumor card is overheard.
         """
         u = utterance
@@ -50,19 +54,20 @@ class Overhear:
         lively = u.style in LIVELY_STYLES
         if lively and self.rng.random() < self.config.lively_rate:
             return "lively"
-        if await self._touches_a_goal(u):
+        if await self._touches_a_goal(u, goals):
             return "goal"
         if not lively and self.rng.random() < self.config.overhear_rate:
             return "random"
         return None
 
-    async def _touches_a_goal(self, u: Utterance) -> bool:
-        if not self._evidence:
+    async def _touches_a_goal(self, u: Utterance, goals: Collection[str]) -> bool:
+        keys = {f"goal:{g}" for g in goals} & self._evidence.keys()
+        if not keys:
             return False
         try:
             found = await self.contex.query(self.project, u.text, top_k=len(self._evidence), threshold=0)
             return any(
-                m.data_key in self._evidence and m.similarity is not None
+                m.data_key in keys and m.similarity is not None
                 and self.baselines.matches(self._evidence[m.data_key], m.similarity)
                 for m in found
             )

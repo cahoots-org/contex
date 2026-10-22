@@ -842,17 +842,19 @@ async def test_each_player_overhears_only_talk_at_their_own_place(turns):
 async def test_a_rumor_hop_is_village_talk_to_another_player(turns):
     hops = []
 
-    async def keep(utterance, place, hop):
-        hops.append(hop)
+    async def keep(utterance, place, hop, goals=()):
+        hops.append((hop, goals))
         return None
 
     overhear = Overhear(StubContex(), StubBaselines(0.5), Config(), random.Random(1))
     overhear.keep = keep
-    engine, _ = await overhearing_engine(overhear, stub_player("p-a", "tavern"), stub_player("p-b", "tavern"))
+    pa = stub_player("p-a", "tavern")
+    pa.goals = [SimpleNamespace(id="well-cursed")]
+    engine, _ = await overhearing_engine(overhear, pa, stub_player("p-b", "tavern"))
     engine.lineage.record("w-1", None, player="p-a")
     engine.lineage.record("u-1", "w-1")
     await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "psst again", "w-1", action=SPEAK), ["v1"])
-    assert sorted(hops) == [False, True]
+    assert sorted(hops) == [(False, []), (True, ["well-cursed"])]
     await engine.stop()
 
 
@@ -862,7 +864,9 @@ async def test_a_failing_goal_check_still_lets_the_line_be_overheard(turns):
     contex.default = [Match("goal:g", {}, 0.9)]
     overhear = Overhear(contex, RaisingBaselines(), Config(overhear_rate=1.0), random.Random(1))
     overhear._evidence = {"goal:g": "the well"}
-    engine, feed = await overhearing_engine(overhear)
+    player = stub_player(place="tavern")
+    player.goals = [SimpleNamespace(id="g")]
+    engine, feed = await overhearing_engine(overhear, player)
     await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
     assert [(e.kind, e.data["reason"]) for e in feed.recent] == [("overheard", "random")]
     await engine.stop()
@@ -872,7 +876,7 @@ async def test_a_failing_goal_check_still_lets_the_line_be_overheard(turns):
 async def test_a_failing_overhear_does_not_fail_the_delivery(turns):
     overhear = Overhear(StubContex(), StubBaselines(0.5), Config(), random.Random(1))
 
-    async def broken(*args):
+    async def broken(*args, **kwargs):
         raise RuntimeError("keep failed")
 
     overhear.keep = broken

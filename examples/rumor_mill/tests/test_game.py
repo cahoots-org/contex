@@ -15,6 +15,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.tests.helpers import PID, FakeMind, make, make_player, wait_for
 from examples.rumor_mill.town import PLACES, Town
 
@@ -225,38 +226,29 @@ async def test_whisper_after_game_over_is_refused():
     assert len(lines) == 1
 
 
-def judge_with_player(progress):
-    player, *_ = make_player()
-    judge = Judge(None, None, Town(), Config(day_seconds=0.01), player.feed, Game())
-    values = iter(progress)
-
-    async def check(goal):
-        return next(values)
-
-    judge.check = check
-    return judge, player, player.feed
-
-
 GOAL = Goal("g", "cat is a spy", "belief", ("cat spy",), "Does it believe?", 0.5, hold_checks=2)
 
 
 @pytest.mark.asyncio
-async def test_winning_through_the_judge_ends_the_game_once():
-    judge, player, feed = judge_with_player([0.5, 1.0, 1.0])
-    await asyncio.wait_for(judge.run([GOAL], player), 2)
-    assert player.state == "won"
-    assert player.summary == Summary("won", [("cat is a spy", 100)], [])
-    player.end(Summary("lost", [], ["late"]))
-    assert player.state == "won"
-    assert len(kinds(feed, "gameover")) == 1
-
-
-@pytest.mark.asyncio
-async def test_judge_stops_once_the_players_game_is_over():
-    judge, player, _ = judge_with_player([])
+async def test_judge_skips_the_goals_of_a_player_whose_game_is_over():
+    player, *_ = make_player()
+    judge = Judge(None, None, Town(), Config(day_seconds=0.01), player.feed, Game())
+    player.goals = [GOAL]
     player.end(Summary("lost", [], []))
-    await asyncio.wait_for(judge.run([GOAL], player), 2)
-    assert judge.progress == {}
+    everyone = Players()
+    everyone.add(player)
+    checked = []
+
+    async def check(goal):
+        checked.append(goal.id)
+        return 0.0
+
+    judge.check = check
+    running = asyncio.create_task(judge.run(everyone))
+    await wait_for(lambda: len(checked) >= 2)
+    running.cancel()
+    await asyncio.gather(running, return_exceptions=True)
+    assert set(checked) == {judge.world.id}
 
 
 def test_memory_starts_at_the_oldest_remembered_move():

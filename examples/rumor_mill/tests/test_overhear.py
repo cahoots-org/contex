@@ -86,16 +86,24 @@ async def test_goal_relevant_kept():
     results = {"the well water tastes of brimstone": [Match("goal:well-cursed", {}, 0.65)],
                "the well is deep": [Match("goal:well-cursed", {}, 0.55)]}
     overhear, contex = await make(results)
-    assert await overhear.keep(line("the well water tastes of brimstone"), "tavern") == "goal"
-    assert await overhear.keep(line("the well is deep"), "tavern") is None
+    assert await overhear.keep(line("the well water tastes of brimstone"), "tavern", goals=["well-cursed"]) == "goal"
+    assert await overhear.keep(line("the well is deep"), "tavern", goals=["well-cursed"]) is None
     assert contex.queries[0] == ("rumor-mill:s1:goals", "the well water tastes of brimstone", {"top_k": 1, "threshold": 0})
+
+
+@pytest.mark.asyncio
+async def test_goal_reason_uses_only_the_overhearing_players_goals():
+    results = {"the well is cursed": [Match("goal:well-cursed", {}, 0.65)]}
+    overhear, _ = await make(results, goals=(WELL, GOALS["mayors-cat"]))
+    assert await overhear.keep(line("the well is cursed"), "tavern", goals=["well-cursed"]) == "goal"
+    assert await overhear.keep(line("the well is cursed"), "tavern", goals=["mayors-cat"]) is None
 
 
 @pytest.mark.asyncio
 async def test_goal_check_failure_is_not_goal_relevant(caplog):
     overhear, _ = await make(error=RuntimeError("down 0.73"))
     with caplog.at_level(logging.WARNING):
-        assert await overhear.keep(line(), "tavern") is None
+        assert await overhear.keep(line(), "tavern", goals=["well-cursed"]) is None
     assert "u-1" in caplog.text and "0.73" not in caplog.text
 
 
@@ -119,5 +127,5 @@ async def test_live_goal_relevance(tmp_path):
         await baselines.load([g.evidence[0] for g in goals])
         overhear = Overhear(client, baselines, cfg, random.Random(1))
         await overhear.publish(goals)
-        assert await overhear.keep(line("They say a curse lies on the well and its water is poisoned."), "tavern") == "goal"
+        assert await overhear.keep(line("They say a curse lies on the well and its water is poisoned."), "tavern", goals=["well-cursed"]) == "goal"
         assert await overhear.keep(line("My back has ached since the frost came."), "tavern") is None

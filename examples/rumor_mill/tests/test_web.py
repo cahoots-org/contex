@@ -14,7 +14,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
 from examples.rumor_mill.game import Game, Summary
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import Goal, world_goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
@@ -31,6 +31,7 @@ PORT = 8765
 BASE = f"http://127.0.0.1:{PORT}"
 WS = f"ws://127.0.0.1:{PORT}/ws"
 GOAL = Goal("cat", "Half the village believes the mayor's cat is a spy", "belief")
+WORLD = world_goal(Goal("well", "A third of the village believes the well is cursed", "belief"))
 
 
 def receive(ws, timeout=5.0):
@@ -65,11 +66,12 @@ def game(monkeypatch):
     config = Config()
     suspicion, game = Suspicion(config, town), Game()
     player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game, player_id=helpers.PID)
-    judge = SimpleNamespace(progress={"cat": 0.42}, counts={"cat": (5, 12)}, met=set())
+    player.goals = [GOAL]
+    judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD)
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
-        player=player, town=town, feed=feed, judge=judge, goals=[GOAL], usage=usage, port=PORT,
+        player=player, town=town, feed=feed, judge=judge, usage=usage, port=PORT,
         suspicion=suspicion, game=game, rumors=rumors,
     )
     with TestClient(app, base_url=BASE) as client:
@@ -84,6 +86,9 @@ def test_state_lists_goals_villagers_and_replay(game):
     game.feed.say("hello")
     state = game.client.get("/api/state").json()
     assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12}]
+    assert state["world_goal"] == {
+        "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": None, "needed": None,
+    }
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
     assert state["events"][-1]["text"] == "hello"

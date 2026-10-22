@@ -19,7 +19,7 @@ from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import deal
+from examples.rumor_mill.goals import DECK
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
@@ -46,13 +46,12 @@ async def play(web: bool) -> None:
     game = Game(config.memory_moves, config.day_seconds)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
-        goals = deal(rng)
         baselines = Baselines(contex, config)
-        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines)
+        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng)
         overhear = Overhear(contex, baselines, config, rng)
         routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
-            config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(goals),
+            config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(p.goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
             routine=routine,
         )
@@ -63,16 +62,15 @@ async def play(web: bool) -> None:
         players.add(player)
         engine.players = players
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
-        if not web:
-            for goal in goals:
-                feed.say(f"Goal: {goal.text}")
+        feed.on_world(judge.world)
+        judge.deal(player)
         places = [p for p in PLACES if p != GATE]
         judging = None
         try:
             await baselines.load([need for v in villagers for need in v.needs])
-            await baselines.load([g.evidence[0] for g in goals if g.evidence])
-            await overhear.publish(goals)
-            judging = asyncio.create_task(judge.run(goals, player))
+            await baselines.load([g.evidence[0] for g in DECK if g.evidence])
+            await overhear.publish(list(DECK))
+            judging = asyncio.create_task(judge.run(players))
             await routine.load(villagers)
             await asyncio.gather(*(
                 engine.add_villager(v, routine.place(v.id, "morning") or rng.choice(places)) for v in villagers
@@ -80,7 +78,7 @@ async def play(web: bool) -> None:
             await engine.run()
             if web:
                 app = create_app(
-                    player=player, town=town, feed=feed, judge=judge, goals=goals, usage=usage, port=config.web_port,
+                    player=player, town=town, feed=feed, judge=judge, usage=usage, port=config.web_port,
                     suspicion=engine.suspicion, game=game, rumors=engine.rumors,
                 )
                 server = uvicorn.Server(uvicorn.Config(
@@ -89,7 +87,7 @@ async def play(web: bool) -> None:
                 print(f"Rumor Mill is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
                 await server.serve()
             else:
-                await until_over(repl(player, town, feed, goals, judge.progress, usage, engine.suspicion), player)
+                await until_over(repl(player, town, feed, judge, usage, engine.suspicion), player)
         finally:
             print(usage.summary())
             tasks = [t for t in (replenisher, judging) if t is not None]

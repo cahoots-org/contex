@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -82,12 +81,19 @@ def game_json(player: Player) -> dict:
     return {"state": player.state, "summary": summary}
 
 
+def goal_json(judge, goal: Goal, met: bool) -> dict:
+    """The goal's text, whole percent and believer counts, as the page shows it."""
+    believers, needed = judge.counts.get(goal.id, (None, None))
+    return {"id": goal.id, "text": goal.text, "percent": int(judge.progress.get(goal.id, 0.0) * 100), "met": met,
+            "believers": believers, "needed": needed}
+
+
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status)
 
 
 def create_app(
-    *, player: Player, town: Town, feed: Feed, judge, goals: Sequence[Goal], usage: Usage, port: int,
+    *, player: Player, town: Town, feed: Feed, judge, usage: Usage, port: int,
     suspicion: Suspicion, game: Game, rumors: Rumors,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
@@ -144,11 +150,8 @@ def create_app(
             "places": list(PLACES),
             "place": player.place,
             "time": {"day": game.day, "phase": game.phase},
-            "goals": [
-                {"id": g.id, "text": g.text, "percent": int(judge.progress.get(g.id, 0.0) * 100),
-                 "met": g.id in judge.met, **dict(zip(("believers", "needed"), judge.counts.get(g.id, (None, None))))}
-                for g in goals
-            ],
+            "goals": [goal_json(judge, g, g.id in player.met) for g in player.goals],
+            "world_goal": goal_json(judge, judge.world, False),
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.replay(player.id)],
             "rumors": rumors.cards(player.id),

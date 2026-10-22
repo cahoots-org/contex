@@ -66,14 +66,19 @@ async def test_a_refused_whisper_prints_once(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_goals_also_prints_the_heat_label(monkeypatch):
+async def test_goals_prints_the_players_goals_the_world_goal_and_the_heat_label(monkeypatch):
     town, feed, out = village()
     suspicion = Suspicion(Config(), town)
     suspicion.bump("v1", PID, 0.9, "whispered to them directly")
     monkeypatch.setattr(cli, "_readline", scripted(["goals\n", ""]))
     goal = Goal("g", "cat is a spy", "belief", ("cat spy",), "q", 0.5)
-    await cli.repl(SimpleNamespace(id=PID), town, feed, [goal], {"g": 0.4}, suspicion=suspicion)
-    assert out[-2:] == ["cat is a spy: 40%", "The village is hunting for you."]
+    world = Goal("world-w", "Two thirds of the village believes the well is cursed", "belief", ("well",), "q", 2 / 3)
+    judge = SimpleNamespace(progress={"g": 0.4, "world-w": 0.1}, world=world)
+    await cli.repl(SimpleNamespace(id=PID, goals=[goal]), town, feed, judge, suspicion=suspicion)
+    assert out[-3:] == [
+        "cat is a spy: 40%", "World goal: Two thirds of the village believes the well is cursed: 10%",
+        "The village is hunting for you.",
+    ]
 
 
 @pytest.mark.asyncio

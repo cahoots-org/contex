@@ -1,8 +1,8 @@
-"""The goal deck: town-wide outcomes the player tries to cause with whispers."""
+"""The goal deck: town-wide outcomes players try to cause with whispers, and the world goal drawn from it."""
 
 import random
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Collection
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from examples.rumor_mill.town import Town
@@ -90,6 +90,25 @@ DECK: tuple[Goal, ...] = (
 )
 
 
-def deal(rng: random.Random, n: int = 3) -> list[Goal]:
-    """Draw n distinct goals from the deck."""
-    return rng.sample(DECK, n)
+WORLD_FRACTION = 2 / 3
+WORLD_CANDIDATES: tuple[Goal, ...] = tuple(g for g in DECK if g.kind == "belief" and g.creed_question is None)
+
+
+def claim(goal: Goal) -> str | None:
+    """What a belief goal's village believes, or None for any other goal."""
+    _, sep, rest = goal.text.partition(" believes ")
+    return rest if goal.kind == "belief" and sep else None
+
+
+def world_goal(goal: Goal) -> Goal:
+    """The goal's claim, held by two thirds of the village."""
+    return replace(
+        goal, id=f"world-{goal.id}", text=f"Two thirds of the village believes {claim(goal)}",
+        target_fraction=WORLD_FRACTION,
+    )
+
+
+def deal(rng: random.Random, n: int = 3, skip: Collection[str] = ()) -> list[Goal]:
+    """Draw n distinct goals from the deck, leaving out skip unless that leaves fewer than n."""
+    left = [g for g in DECK if g.id not in skip]
+    return rng.sample(left if len(left) >= n else DECK, n)

@@ -79,9 +79,7 @@ async def until_over(session: Coroutine, player: Player) -> None:
         running.result()
 
 
-async def repl(
-    player: Player, town: Town, feed, goals=(), progress=None, usage=None, suspicion: Suspicion | None = None,
-) -> None:
+async def repl(player: Player, town: Town, feed, judge=None, usage=None, suspicion: Suspicion | None = None) -> None:
     """Read commands until quit or end of input; stdin is read off the event loop."""
     feed.say(HELP)
     while True:
@@ -102,10 +100,13 @@ async def repl(
             for out in _inspect(town, cmd.name):
                 feed.say(out)
         elif cmd.kind == "goals":
-            for goal in goals:
-                feed.say(f"{goal.text}: {int((progress or {}).get(goal.id, 0.0) * 100)}%")
-            if not goals:
+            progress = judge.progress if judge else {}
+            for goal in player.goals:
+                feed.say(f"{goal.text}: {int(progress.get(goal.id, 0.0) * 100)}%")
+            if not player.goals:
                 feed.say("No goals yet.")
+            if judge:
+                feed.say(f"World goal: {judge.world.text}: {int(progress.get(judge.world.id, 0.0) * 100)}%")
             if suspicion:
                 feed.say(HEAT_LINES[suspicion.label(player.id)])
         elif cmd.kind == "usage" and usage:

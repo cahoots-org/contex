@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
+from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
@@ -58,6 +59,9 @@ class Player:
         self.summary: Summary | None = None
         self.finished = asyncio.Event()
         self.ended_at: float | None = None
+        self.goals: list[Goal] = []
+        # The ids of this hand's goals met so far.
+        self.met: set[str] = set()
         self._brush_offs: set[asyncio.Task] = set()
         self._hinted: dict[str, set[int]] = {}
         self._threads: dict[str, dict] = {}

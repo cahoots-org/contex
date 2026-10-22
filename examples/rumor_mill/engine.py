@@ -212,7 +212,7 @@ class Engine:
             for player in self.players.at(utterance.place):
                 hop = on_topic and self.lineage.player_of(utterance.id) == player.id
                 try:
-                    reason = await self.overhear.keep(utterance, player.place, hop)
+                    reason = await self.overhear.keep(utterance, player.place, hop, goals=[g.id for g in player.goals])
                 except Exception:
                     log.warning("overhearing %s failed", utterance.id)
                     log.debug("overhearing failure", exc_info=True)

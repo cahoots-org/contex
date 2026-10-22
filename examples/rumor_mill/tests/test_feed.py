@@ -71,10 +71,12 @@ def test_unrooted_announcements_reach_sinks_but_not_the_terminal():
 def test_goal_events_and_replay_is_bounded():
     feed, lines = make()
     goal = Goal("cat", "the cat is a spy", "belief")
-    feed.on_progress(goal, 0.42)
-    feed.on_progress(goal, 0.6, (15, 25))
-    feed.on_met(goal)
-    assert [(e.data["percent"], e.data["met"]) for e in feed.recent] == [(42, False), (60, False), (100, True)]
+    feed.on_progress(goal, 0.42, player=PID)
+    feed.on_progress(goal, 0.6, (15, 25), player=PID)
+    feed.on_met(goal, player=PID)
+    assert [(e.data["percent"], e.data["met"], e.player) for e in feed.recent] == [
+        (42, False, PID), (60, False, PID), (100, True, PID),
+    ]
     assert feed.recent[1].data["believers"] == 15 and feed.recent[1].data["needed"] == 25
     assert lines == ['Goal "the cat is a spy": 42%', 'Goal "the cat is a spy": 15 of 25 believe it',
                      'Goal met: "the cat is a spy"']
@@ -82,6 +84,25 @@ def test_goal_events_and_replay_is_bounded():
         feed.say("x")
     assert len(feed.recent) == REPLAY_EVENTS
     assert feed.recent[-1].id == REPLAY_EVENTS + 3
+
+
+def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
+    feed, lines = make()
+    world = Goal("world-cat", "Two thirds of the village believes the cat is a spy", "belief")
+    feed.on_world(world)
+    feed.on_progress(world, 0.5)
+    feed.on_met(world)
+    feed.on_deal([Goal("a", "A", "belief"), Goal("b", "B", "state")], player=PID)
+    assert [(e.kind, e.player, e.data.get("world")) for e in feed.recent] == [
+        ("world_goal", None, None), ("goal", None, True), ("goal", None, True), ("deal", PID, None),
+    ]
+    assert lines == [
+        'World goal: "Two thirds of the village believes the cat is a spy"',
+        'Goal "Two thirds of the village believes the cat is a spy": 50%',
+        'The village now holds: "Two thirds of the village believes the cat is a spy"',
+        "Goal: A\nGoal: B",
+    ]
+    assert feed.recent[-1].data["goals"] == [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}]
 
 
 def test_refusal_event_and_terminal_lines():

@@ -6,15 +6,17 @@ import pytest
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.tests.helpers import PID, make_player
+from examples.rumor_mill.players import Players
+from examples.rumor_mill.tests.helpers import PID, wait_for
 from examples.rumor_mill.town import Town
 
 CONFIG = Config(day_seconds=0.01, judge_every_days=1.0)
 BELIEF = Goal("g", "cat is a spy", "belief", ("cat spy",), "Does it believe?", 0.5, hold_checks=2)
+QUIET = Goal("q", "nobody leaves", "state", state_check=lambda town: 0.0)
 
 
 class StubBaselines:
@@ -53,17 +55,53 @@ class StubJev:
 
 class Lines:
     def __init__(self):
-        self.progress: list[tuple[str, float]] = []
-        self.said: list[str] = []
+        self.progress: list[tuple[str, float, str | None]] = []
+        self.met: list[tuple[str, str | None]] = []
+        self.deals: list[tuple[list[str], str]] = []
+        self.worlds: list[str] = []
 
-    def on_progress(self, goal, fraction, counts=None):
-        self.progress.append((goal.id, fraction))
+    def on_progress(self, goal, fraction, counts=None, player=None):
+        self.progress.append((goal.id, fraction, player))
 
-    def say(self, line):
-        self.said.append(line)
+    def on_met(self, goal, player=None):
+        self.met.append((goal.id, player))
 
-    def on_met(self, goal):
-        self.said.append(f'Goal met: "{goal.text}"')
+    def on_deal(self, goals, player):
+        self.deals.append(([g.id for g in goals], player))
+
+    def on_world(self, goal):
+        self.worlds.append(goal.id)
+
+
+def holder(pid, *goals):
+    return SimpleNamespace(id=pid, goals=list(goals), met=set(), over=lambda: False)
+
+
+def players(*ps):
+    found = Players()
+    for p in ps:
+        found.add(p)
+    return found
+
+
+def scripted(judge, values, goal=BELIEF):
+    """Make judge.check answer the goal from values in turn, and every other goal with 0."""
+    values = iter(values)
+
+    async def check(g):
+        return next(values) if g.id == goal.id else 0.0
+
+    judge.check = check
+    return values
+
+
+async def run_until(judge, everyone, done):
+    running = asyncio.create_task(judge.run(everyone))
+    try:
+        await wait_for(done)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
 
 
 def make(n=4, believers=0):
@@ -189,17 +227,13 @@ async def test_needed_rounds_up_to_a_whole_villager():
 
 @pytest.mark.asyncio
 async def test_goal_met_only_after_hold_checks_consecutive_checks():
-    judge, _, _, feed, town = make(n=2, believers=2)
-    progress = iter([1.0, 0.5, 1.0, 1.0])
-
-    async def check(goal):
-        return next(progress)
-
-    judge.check = check
-    await asyncio.wait_for(judge.run([BELIEF], make_player()[0]), 2)
-    assert next(progress, None) is None
-    assert feed.said == ['Goal met: "cat is a spy"']
-    assert judge.met == {BELIEF.id}
+    judge, _, _, feed, _ = make(n=2, believers=2)
+    values = scripted(judge, [1.0, 0.5, 1.0, 1.0])
+    p = holder(PID, BELIEF, QUIET)
+    await run_until(judge, players(p), lambda: feed.met)
+    assert next(values, None) is None
+    assert feed.met == [("g", PID)]
+    assert p.met == {BELIEF.id}
 
 
 @pytest.mark.asyncio
@@ -230,14 +264,66 @@ async def test_state_goal_uses_town_departures():
 @pytest.mark.asyncio
 async def test_progress_line_only_when_percent_changes():
     judge, _, _, feed, _ = make()
-    progress = iter([0.5, 0.5, 0.504, 0.6, 1.0, 1.0, 1.0])
+    scripted(judge, [0.5, 0.5, 0.504, 0.6, 1.0, 1.0, 1.0])
+    await run_until(judge, players(holder(PID, BELIEF)), lambda: feed.met)
+    assert [(round(f, 2), p) for g, f, p in feed.progress if g == "g"] == [(0.5, PID), (0.6, PID), (1.0, PID)]
 
-    async def check(goal):
-        return next(progress)
 
-    judge.check = check
-    await asyncio.wait_for(judge.run([BELIEF], make_player()[0]), 2)
-    assert [round(f, 2) for _, f in feed.progress] == [0.5, 0.6, 1.0]
+@pytest.mark.asyncio
+async def test_one_check_per_claim_whoever_holds_it():
+    judge, _, jev, feed, _ = make(n=4, believers=3)
+    judge.world = QUIET
+    await run_until(judge, players(holder("p-a", BELIEF), holder("p-b", BELIEF)), lambda: len(feed.progress) >= 2)
+    assert len(jev.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_claim_met_is_met_for_every_player_holding_it():
+    judge, _, _, feed, _ = make()
+    scripted(judge, [1.0] * 10)
+    pa, pb = holder("p-a", BELIEF, QUIET), holder("p-b", BELIEF, QUIET)
+    await run_until(judge, players(pa, pb), lambda: len(feed.met) >= 2)
+    assert pa.met == pb.met == {"g"} and [(g, p) for g, p in feed.met] == [("g", "p-a"), ("g", "p-b")]
+
+
+@pytest.mark.asyncio
+async def test_all_goals_met_deals_a_new_hand_and_the_game_goes_on():
+    judge, _, _, feed, _ = make()
+    judge.world = QUIET
+    scripted(judge, [1.0] * 10)
+    first_hand = [BELIEF]
+    pa = holder("p-a", *first_hand)
+    await run_until(judge, players(pa), lambda: feed.deals)
+    assert pa.goals != first_hand and pa.met == set() and not pa.over()
+    assert feed.deals == [([g.id for g in pa.goals], "p-a")]
+
+
+@pytest.mark.asyncio
+async def test_world_goal_met_draws_a_new_one():
+    judge, _, _, feed, _ = make()
+    old = judge.world
+    scripted(judge, [1.0] * 10, goal=old)
+    await run_until(judge, players(), lambda: feed.worlds)
+    assert judge.world.id != old.id and feed.worlds == [judge.world.id]
+    assert (old.id, None) in feed.met
+
+
+def test_world_goal_falls_back_when_every_claim_is_held():
+    judge, *_ = make()
+    judge.progress = {g.id: 1.0 for g in WORLD_CANDIDATES}
+    assert judge._next_world().id.startswith("world-")
+
+
+def test_deal_skips_the_world_claim_and_held_claims():
+    for seed in range(20):
+        judge, *_ = make()
+        judge.rng.seed(seed)
+        judge.progress = {g.id: 1.0 for g in WORLD_CANDIDATES[:5]}
+        pa = holder("p-a")
+        judge.deal(pa)
+        dealt = {g.id for g in pa.goals}
+        assert judge.world.id.removeprefix("world-") not in dealt
+        assert not dealt & {g.id for g in WORLD_CANDIDATES[:5]}
 
 
 @pytest.mark.asyncio

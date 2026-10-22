@@ -163,7 +163,7 @@ class FakeEngine:
 
 def stub_player(pid=PID, place="square"):
     """A player standing at place whose game is not over."""
-    return SimpleNamespace(id=pid, place=place, over=lambda: False)
+    return SimpleNamespace(id=pid, place=place, goals=[], over=lambda: False)
 
 
 def make_player(*names, cooldown=0.0):

@@ -1,18 +1,21 @@
-"""The judge: measures how far the village has come to each goal."""
+"""The judge: measures how far the village has come to each goal in play, and deals new ones."""
 
 import asyncio
 import logging
 import math
+import random
+import time
 
 from typesafe_sdk import Noul
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
-from examples.rumor_mill.game import Game, Summary
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.game import Game
+from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, deal, world_goal
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.town import Town
 
 log = logging.getLogger(__name__)
@@ -31,7 +34,10 @@ async def _yes(jev, state: dict, question: str) -> bool:
 
 
 class Judge:
-    def __init__(self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None):
+    def __init__(
+        self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
+        rng: random.Random | None = None,
+    ):
         self.contex = contex
         self.jev = jev
         self.town = town
@@ -39,9 +45,11 @@ class Judge:
         self.feed = feed
         self.game = game
         self.baselines = baselines
+        self.rng = rng or random.Random()
         self.progress: dict[str, float] = {}
         self.counts: dict[str, tuple[int, int]] = {}
-        self.met: set[str] = set()
+        self.world = self._next_world()
+        self.world_since = time.time()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
 
@@ -56,7 +64,7 @@ class Judge:
                 )
                 if not matches:
                     return False
-                key = (goal.id, villager.id, frozenset(m.data_key for m in matches))
+                key = (goal.believer_question, villager.id, frozenset(m.data_key for m in matches))
                 if key not in self._verdicts:
                     state = {
                         "villager": f"{villager.name}, {villager.occupation}. {villager.personality}",
@@ -104,33 +112,63 @@ class Judge:
                 progress = min(progress, NO_QUALIFYING_GROUP_CAP)
         return progress
 
-    async def run(self, goals: list[Goal], player: Player) -> None:
-        """Check every goal each interval until all have held at full progress, then end the player's game as won.
+    def held(self) -> set[str]:
+        """The claims the village holds now, by deck goal id."""
+        return {gid.removeprefix("world-") for gid, p in self.progress.items() if p >= 1.0}
 
-        Stops early once the player's game is over.
+    def deal(self, player: Player) -> None:
+        """Give the player three new goals, none held now nor the world goal's claim."""
+        player.goals = deal(self.rng, skip=self.held() | {self.world.id.removeprefix("world-")})
+        player.met = set()
+        self.feed.on_deal(player.goals, player=player.id)
+
+    def _next_world(self) -> Goal:
+        held = self.held()
+        fresh = [g for g in WORLD_CANDIDATES if g.id not in held]
+        return world_goal(self.rng.choice(fresh or WORLD_CANDIDATES))
+
+    async def run(self, players: Players) -> None:
+        """Check each goal in play once an interval, telling its holders, until cancelled.
+
+        A player whose goals are all met is dealt new ones; a met world goal is replaced by a new one.
         """
-        holds = {g.id: 0 for g in goals}
-        pending = list(goals)
+        holds: dict[str, int] = {}
         interval = self.config.judge_every_days * self.config.day_seconds
-        while pending:
+        while True:
             await asyncio.sleep(interval)
-            if player.over():
-                return
-            for goal in list(pending):
+            playing = [p for p in players if not p.over()]
+            in_play = {g.id: g for p in playing for g in p.goals}
+            in_play[self.world.id] = self.world
+            for goal in in_play.values():
                 try:
                     progress = await self.check(goal)
                 except Exception:
                     log.exception("checking %s failed", goal.id)
                     continue
+                world = goal.id == self.world.id
+                holders = [p for p in playing if any(g.id == goal.id for g in p.goals)]
                 if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100):
-                    self.feed.on_progress(goal, progress, self.counts.get(goal.id))
+                    counts = self.counts.get(goal.id)
+                    for p in holders:
+                        self.feed.on_progress(goal, progress, counts, player=p.id)
+                    if world:
+                        self.feed.on_progress(goal, progress, counts)
                 self.progress[goal.id] = progress
-                holds[goal.id] = holds[goal.id] + 1 if progress >= 1.0 else 0
-                if holds[goal.id] >= goal.hold_checks:
-                    pending.remove(goal)
-                    self.met.add(goal.id)
+                holds[goal.id] = holds.get(goal.id, 0) + 1 if progress >= 1.0 else 0
+                if holds[goal.id] < goal.hold_checks:
+                    continue
+                for p in holders:
+                    if goal.id not in p.met:
+                        p.met.add(goal.id)
+                        self.feed.on_met(goal, player=p.id)
+                        if all(g.id in p.met for g in p.goals):
+                            self.deal(p)
+                if world:
+                    del holds[goal.id]
                     self.feed.on_met(goal)
-        player.end(Summary("won", self.percents(goals), []))
+                    self.world = self._next_world()
+                    self.world_since = time.time()
+                    self.feed.on_world(self.world)
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
         """Each goal's text and whole percent progress."""
