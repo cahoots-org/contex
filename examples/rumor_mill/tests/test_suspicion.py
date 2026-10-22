@@ -2,7 +2,7 @@ import pytest
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.suspicion import Suspicion
+from examples.rumor_mill.suspicion import Suspicion, influence
 from examples.rumor_mill.town import Town
 
 P = "p-1"
@@ -161,3 +161,9 @@ def test_asking_has_its_own_reason_line():
     s, _ = make(Villager("a", "Marta", "baker", "kind", "none", [], {}))
     s.bump("a", P, 0.06, "asked questions")
     assert s.reasons(P) == ["Marta noticed you asking questions."]
+
+
+def test_influence_is_words_for_the_weighted_roles_only():
+    assert influence(v("a", "Priest")) == "folk listen to the priest"
+    assert influence(v("b", "Tavern keeper")) == "folk listen to the tavern keeper"
+    assert influence(v("c", "baker")) is None

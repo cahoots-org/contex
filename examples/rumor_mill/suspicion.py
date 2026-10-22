@@ -11,6 +11,8 @@ from examples.rumor_mill.town import Town
 # Occupation substring (lowercase) to how much that villager's suspicion counts.
 WEIGHTS = {"mayor": 3.0, "priest": 2.0, "innkeeper": 2.0, "constable": 2.0, "reeve": 2.0,
            "tavern": 2.0, "bailiff": 2.0}
+# What the player is told about a villager whose suspicion counts for more.
+INFLUENCE = "folk listen to the {}"
 # Upper bound of each label as a fraction of the run-out level.
 LABELS = ((0.25, "quiet"), (0.5, "murmurs"), (0.8, "watched"))
 # What the player is told for each label.
@@ -28,6 +30,12 @@ REASON_LINES = {
     "was warned about the newcomer": "{} was warned about you.",
     "asked questions": "{} noticed you asking questions.",
 }
+
+
+def influence(villager: Villager) -> str | None:
+    """Who the folk listen to, in words, for a villager in a weighted role; None for any other."""
+    job = villager.occupation.lower()
+    return INFLUENCE.format(job) if any(key in job for key in WEIGHTS) else None
 
 
 @dataclass

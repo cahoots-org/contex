@@ -572,3 +572,38 @@ def test_state_never_names_or_counts_other_players(game):
     response = game.client.get("/api/state")
     assert other.id not in response.text and "o-other" not in response.text and "for the other one" not in response.text
     assert "players" not in response.json()
+
+
+def test_villagers_carry_influence_words_and_no_weights(game):
+    villagers = game.client.get("/api/state").json()["villagers"]
+    assert all("influence" in v for v in villagers)
+    assert "2.0" not in json.dumps(villagers) and "3.0" not in json.dumps(villagers)
+    game.town.add(Villager("v3", "Padre Ox", "Priest", "calm", "none", [], {}), "well")
+    assert game.client.get("/api/villagers/v3").json()["influence"] == "folk listen to the priest"
+    assert game.client.get("/api/villagers/v1").json()["influence"] is None
+
+
+def test_beliefs_are_the_players_own_goals_only(game):
+    game.judge.roots = {"cat": {"v1": None}, "other": {"v2": "w-9"}, WORLD.id: {"v2": None}}
+    assert game.client.get("/api/state").json()["beliefs"] == {
+        "v1": ["the mayor's cat is a spy"], "v2": ["the well is cursed"],
+    }
+    assert game.client.get("/api/villagers/v1").json()["believes"] == ["the mayor's cat is a spy"]
+
+
+@pytest.fixture
+def fast_polls(monkeypatch):
+    monkeypatch.setattr(web, "VILLAGER_POLL_SECONDS", 0.05)
+
+
+def test_beliefs_reach_the_websocket(fast_polls, game):
+    other = game.join("o-other")
+    other.goals = [Goal("dog", "Half the village believes the dog is a thief", "belief")]
+    with game.client.websocket_connect(WS) as ws:
+        game.judge.roots = {"cat": {"v1": None}}
+        event = receive(ws)
+        while event["kind"] != "beliefs":
+            event = receive(ws)
+    assert event == {"kind": "beliefs", "beliefs": {"v1": ["the mayor's cat is a spy"]}}
+    as_owner(game.client, other.owner)
+    assert game.client.get("/api/state").json()["beliefs"] == {}

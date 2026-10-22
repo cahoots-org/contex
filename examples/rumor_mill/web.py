@@ -23,7 +23,7 @@ from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal
 from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_owner_id
 from examples.rumor_mill.rumors import Rumors
-from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
+from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion, influence
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.usage import Usage, charging
 
@@ -66,7 +66,8 @@ class Guard:
 
 def villagers(town: Town) -> list[dict]:
     return sorted(
-        ({"id": v.id, "name": v.name, "occupation": v.occupation, "place": town.place_of(v.id)}
+        ({"id": v.id, "name": v.name, "occupation": v.occupation, "place": town.place_of(v.id),
+          "influence": influence(v)}
          for v in town.villagers),
         key=lambda v: v["name"],
     )
@@ -92,6 +93,21 @@ def card_view(card: dict, player: Player, judge, rumors: Rumors) -> dict:
         touched.update(dict.fromkeys(convinced, "believes"))
         links.append({"text": goal.text, "claim": claim(goal), "world": goal is judge.world, "convinced": len(convinced)})
     return {**card, "touched": touched, "goals": links}
+
+
+def beliefs(judge, player: Player) -> dict[str, list[str]]:
+    """Each villager's claims among the player's goals, then the world goal, that they believe."""
+    found: dict[str, list[str]] = {}
+    for goal in [*player.goals, judge.world]:
+        for vid in judge.roots.get(goal.id, {}):
+            if text := claim(goal):
+                found.setdefault(vid, []).append(text)
+    return found
+
+
+def beliefs_of(judge, players: Players, player_id: str) -> dict[str, list[str]]:
+    """The beliefs of the player with this id."""
+    return beliefs(judge, players.get(player_id))
 
 
 def tallies(rumors: Rumors, judge, players: Players, player_id: str) -> list[dict]:
@@ -154,7 +170,7 @@ def create_app(
     boot = uuid.uuid4().hex
     notes: dict[str, Notes] = {}
     # What each player's tabs were last sent, by kind.
-    sent: dict[str, dict[str, object]] = {"rumors": {}, "usage": {}}
+    sent: dict[str, dict[str, object]] = {"rumors": {}, "usage": {}, "beliefs": {}}
 
     def notes_of(player: Player) -> Notes:
         if player.id not in notes:
@@ -198,6 +214,7 @@ def create_app(
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch_each("usage", usage.to_json, USAGE_POLL_SECONDS)),
             asyncio.create_task(watch_each("rumors", partial(tallies, rumors, judge, players), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch_each("beliefs", partial(beliefs_of, judge, players), VILLAGER_POLL_SECONDS)),
         ]
         try:
             yield
@@ -242,6 +259,7 @@ def create_app(
             "rumors": [card_view(c, player, judge, rumors) for c in rumors.cards(player.id)],
             "notes": notes_of(player).all(),
             "usage": usage.to_json(player.id),
+            "beliefs": beliefs(judge, player),
             "heat": (label := suspicion.label(player.id)),
             "heat_line": HEAT_LINES[label],
             "game": game_json(player),
@@ -267,6 +285,8 @@ def create_app(
                 {"id": rid, "name": town.name_of(rid) or "someone who left", "kind": kind}
                 for rid, kind in v.relationships.items()
             ],
+            "influence": influence(v),
+            "believes": beliefs(judge, player).get(v.id, []),
             "note": notes_of(player).get(v.id),
         }
 
@@ -341,6 +361,7 @@ def create_app(
         queue: asyncio.Queue = asyncio.Queue()
         sent["rumors"].setdefault(player.id, tallies(rumors, judge, players, player.id))
         sent["usage"].setdefault(player.id, usage.to_json(player.id))
+        sent["beliefs"].setdefault(player.id, beliefs(judge, player))
         clients[queue] = player.id
 
         async def pump() -> None:
