@@ -33,7 +33,10 @@
   --wait: #2b5d8a;
   --kept: #5a6152;
   --talk: #6a4c93;
-  --lean: #a87412;
+  --dock-lean: #e9cf3b;
+  --dock-said: #23302e;
+  --on-dock-said: #fff;
+  --dock-off: #8a958f;
   --sun: #e2a52a;
   --moon: #f3f1e4;
   --day-sky: #bcd8ea;
@@ -73,7 +76,10 @@
     --r4: #7fcf8a;
     --r5: #6fb3e6;
     --on-mark: #1a2226;
-    --lean: #94650c;
+    --dock-lean: #f2e05a;
+    --dock-said: #eef0ea;
+    --on-dock-said: #1a2226;
+    --dock-off: #6b7a7c;
   }
 }
 * { box-sizing: border-box; }
@@ -275,20 +281,18 @@ mark.kept {
   display: grid; justify-items: center; gap: .25rem; background: none; border: 0; border-radius: 6px;
   padding: .25rem .35rem; cursor: pointer;
 }
+.dock-pic { position: relative; line-height: 0; }
 .dock-face canvas {
-  grid-area: 1 / 1; width: 36px; height: 36px; border-radius: 7px; image-rendering: pixelated;
+  width: 36px; height: 36px; border-radius: 7px; image-rendering: pixelated;
   outline: 1px solid var(--face-edge); outline-offset: -1px;
 }
 .dock-face[aria-expanded="true"] canvas { outline: 2px solid var(--ink); outline-offset: 2px; }
 .dock-badge {
-  grid-area: 1 / 1; align-self: end; justify-self: end; margin: 0 -7px -7px 0;
-  width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: content-box;
-  display: grid; place-items: center; font: 700 10px/1 var(--ui); color: #fff;
+  position: absolute; right: -7px; bottom: -7px; width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: content-box;
+  display: grid; place-items: center; font: 700 10px/1 var(--ui); color: #1a2226; background: var(--dock-off);
 }
-.dock-badge[data-s="near_miss"] { background: var(--lean); }
-.dock-badge[data-s="answered"] { background: var(--talk); }
-.dock-badge[data-s="brushed_off"] { background: var(--off); }
-.dock-badge[data-s="busy"] { background: var(--kept); }
+.dock-badge[data-s="near_miss"] { background: var(--dock-lean); }
+.dock-badge[data-s="answered"] { background: var(--dock-said); color: var(--on-dock-said); }
 .dock-face small { font-size: .75rem; color: var(--muted); }
 .chat { max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
 .chat[hidden] { display: none; }
@@ -611,7 +615,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 
   <div class="bottom">
     <ul class="dock" id="dock" aria-label="Talking with you"></ul>
-    <section class="chat" id="chat" aria-label="Conversation" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
+    <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
     <div class="composer">
       <form id="whisper">
         <label for="target" id="to-label">Whisper to</label>
@@ -1218,17 +1222,18 @@ function dockStatus(e, fresh) {
     return;
   }
   if (fresh && dock.has(e.villager_id) && (e.state === "answered" || e.state === "near_miss")
-    && !$("whisper").contains(document.activeElement)) $("target").value = e.name;
+    && (chatWith == null || chatWith === e.villager_id) && !$("whisper").contains(document.activeElement)) {
+    $("target").value = e.name;
+  }
   renderDock();
   setComposer();
 }
 
-// A whisper in an open exchange joins its villager's lines; it gets no row and no feed line of its own.
+// A whisper in an exchange in the dock joins its villager's lines; it gets no row and no feed line of its own.
 function dockWhisper(e) {
   spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
   cardOf.set(e.uid, cardOf.get(e.conversation));
   const entry = dock.get(e.target_id);
-  if (!entry) return;
   entry.whispers.add(e.uid);
   entry.lines.push({ you: true, text: e.text });
   renderDock();
@@ -1245,10 +1250,12 @@ function dockReply(e) {
 }
 
 function dockEnd(villagerId) {
+  const focused = document.activeElement?.closest?.(".dock-face")?.dataset.id === villagerId;
   dock.delete(villagerId);
   if (chatWith === villagerId) openChat(null);
   renderDock();
   setComposer();
+  if (focused) $("text").focus();
 }
 
 // A missed whisper's exchange lasts until the next part of the day.
@@ -1259,13 +1266,19 @@ function closeThreads() {
 function renderDock() {
   const focused = document.activeElement?.closest?.(".dock-face")?.dataset.id;
   $("dock").replaceChildren(...[...dock].map(([id, t]) => el("li", {},
-    el("button", { type: "button", className: "dock-face", ariaExpanded: String(chatWith === id), ariaControls: "chat",
-      dataset: { id }, onclick: () => openChat(chatWith === id ? null : id) },
-      faceFor(id, villagers.find((v) => v.id === id)?.occupation || ""),
-      el("span", { className: "dock-badge", ariaHidden: "true", textContent: DOCK[t.state][0], dataset: { s: t.state } }),
-      el("small", { textContent: `${t.name} · ${DOCK[t.state][1]}` })))));
+    dockFace(id, t))));
   if (focused) $("dock").querySelector(`[data-id="${CSS.escape(focused)}"]`)?.focus();
   if (chatWith != null) renderChat();
+}
+
+function dockFace(id, t) {
+  const button = el("button", { type: "button", className: "dock-face", ariaExpanded: String(chatWith === id),
+    dataset: { id }, onclick: () => openChat(chatWith === id ? null : id) },
+    el("span", { className: "dock-pic" }, faceFor(id, villagers.find((v) => v.id === id)?.occupation || ""),
+      el("span", { className: "dock-badge", ariaHidden: "true", textContent: DOCK[t.state][0], dataset: { s: t.state } })),
+    el("small", { textContent: `${t.name} · ${DOCK[t.state][1]}` }));
+  button.setAttribute("aria-controls", "chat");
+  return button;
 }
 
 function openChat(villagerId) {
@@ -1274,6 +1287,7 @@ function openChat(villagerId) {
   renderDock();
   if (villagerId == null) return;
   $("target").value = dock.get(villagerId).name;
+  $("chat").ariaLabel = `Conversation with ${dock.get(villagerId).name}`;
   setComposer();
   $("text").focus();
 }
@@ -1299,9 +1313,11 @@ function render(e, fresh) {
     case "whisper": {
       lastTarget = e.target_id;
       if (cardOf.has(e.uid)) return null;
-      if (!e.conversation || !cardOf.has(e.conversation)) return newCard(e.uid, e.target, e.place, e.text);
-      dockWhisper(e);
-      return null;
+      if (e.conversation && cardOf.has(e.conversation) && dock.has(e.target_id)) {
+        dockWhisper(e);
+        return null;
+      }
+      return newCard(e.uid, e.target, e.place, e.text);
     }
     case "hop": {
       learn(e);

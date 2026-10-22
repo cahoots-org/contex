@@ -636,6 +636,23 @@ async def test_a_miss_says_whether_the_next_whisper_continues_it():
 
 
 @pytest.mark.asyncio
+async def test_a_miss_reads_the_thread_as_it_stands_after_the_check():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    player.game = Game()
+    await miss(player)
+    check = player.check
+
+    async def tick_then_check(*args):
+        player.game.tick()
+        return await check(*args)
+
+    player.check = tick_then_check
+    await miss(player)
+    assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True] * 4
+    assert player._threads["v1"]["whispers"] == 1
+
+
+@pytest.mark.asyncio
 async def test_a_whisper_about_a_story_they_heard_lands_without_a_need_match():
     player = hinted_player("Wheel's groaning.")
     player.engine.heard = [Match("utt:u-3", {"id": "u-3", "text": "Bo said at the well: the miller waters his flour"}, 0.9)]

@@ -652,7 +652,7 @@ def test_the_page_has_the_conversation_dock(game):
     html = game.client.get("/").text
     for needle in ('id="dock"', 'id="chat"', "continues", "Talking with"):
         assert needle in html
-    assert 'ariaControls: "chat"' in html or 'aria-controls", "chat"' in html
+    assert 'setAttribute("aria-controls", "chat")' in html and "ariaControls" not in html
     dock = re.search(r"const DOCK = \{(.*?)\};", html, re.S).group(1)
     assert set(re.findall(r"(\w+): \[", dock)) == {"near_miss", "answered", "brushed_off", "busy"}
     for gone in ("const talks", "startTalk", "innerHTML"):

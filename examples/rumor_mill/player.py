@@ -235,7 +235,8 @@ class Player:
             else:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
-            continues = not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)
+            current = self._thread(target.id)
+            continues = not (current and current["whispers"] + 1 >= THREAD_WHISPERS)
             leaning = bool(near_misses) and continues
             state = "near_miss" if leaning else "brushed_off"
             self.feed.on_whisper_status(uid, target.id, target.name, state, continues=continues)
