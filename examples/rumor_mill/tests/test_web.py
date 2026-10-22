@@ -632,6 +632,15 @@ def test_the_page_renders_moments_and_goal_links(game):
     assert "innerHTML" not in html
 
 
+def test_the_page_marks_each_rumor(game):
+    html = game.client.get("/").text
+    marks = re.search(r"const MARKS = \[(.*?)\];", html).group(1)
+    assert marks == '"◆", "●", "▲", "■", "★", "✚"'
+    for needle in ('id="rumor-list"', "--r5", "rumorMark("):
+        assert needle in html
+    assert "innerHTML" not in html
+
+
 def test_the_panel_has_selection_sort_and_draft_marks(game):
     html = game.client.get("/").text
     for text in ('id="sort"', "By what you know", "By influence", "/api/hints", "this might interest them", "touched", '"beliefs"'):

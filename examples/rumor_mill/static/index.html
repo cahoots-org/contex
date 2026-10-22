@@ -37,6 +37,13 @@
   --moon: #f3f1e4;
   --day-sky: #bcd8ea;
   --night-sky: #26324c;
+  --r0: #a87412;
+  --r1: #1d8577;
+  --r2: #7656c0;
+  --r3: #b8406a;
+  --r4: #3b8236;
+  --r5: #2c78b0;
+  --on-mark: #fff;
   --rumor: "Alegreya", Georgia, "Times New Roman", serif;
   --ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light dark;
@@ -58,6 +65,13 @@
     --moon: #eef0ea;
     --day-sky: #4f7896;
     --night-sky: #141c30;
+    --r0: #e0b04a;
+    --r1: #4fb6a8;
+    --r2: #a58be0;
+    --r3: #e07a9a;
+    --r4: #7fcf8a;
+    --r5: #6fb3e6;
+    --on-mark: #1a2226;
   }
 }
 * { box-sizing: border-box; }
@@ -74,10 +88,11 @@ button, input, select { font: inherit; color: inherit; }
 
 .app {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 20rem;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 18rem minmax(0, 1fr) 20rem;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100dvh;
 }
+.strip, .bottom { grid-column: 1 / -1; }
 header {
   grid-column: 1 / -1;
   display: flex;
@@ -191,6 +206,25 @@ mark.kept {
   background: var(--panel);
 }
 .rumor .chip { background: var(--bg); }
+[data-r="0"] { --rc: var(--r0); }
+[data-r="1"] { --rc: var(--r1); }
+[data-r="2"] { --rc: var(--r2); }
+[data-r="3"] { --rc: var(--r3); }
+[data-r="4"] { --rc: var(--r4); }
+[data-r="5"] { --rc: var(--r5); }
+.rmark {
+  display: inline-grid; place-items: center; flex: none; width: 1.25rem; height: 1.25rem; border-radius: 50%;
+  margin-right: .35rem; vertical-align: -.2rem; background: var(--rc); color: var(--on-mark); font: 700 .75rem/1 var(--ui);
+}
+.rmark.none { background: none; }
+.rumor-list { list-style: none; margin: 0; padding: 0; }
+.rumor-item { display: flex; align-items: center; gap: .5rem; padding: .4rem .25rem; border-top: 1px solid var(--rail); }
+.rumor-item .rmark { margin-right: 0; }
+.rumor-item.stopped { opacity: .55; }
+.heard { min-width: 2ch; font-size: 1.35rem; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.rbar { flex: 1; min-width: 2rem; height: 6px; background: var(--rail); border-radius: 3px; overflow: hidden; }
+.rbar i { display: block; height: 100%; background: var(--rc); }
+.goal-word { flex: 0 1 6rem; min-width: 0; font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rumor .chip .badge { border-color: var(--bg); }
 .rumor > .whisper { margin-top: 0; }
 .summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .9rem; margin: .3rem 0 .1rem; font-size: .875rem; }
@@ -492,12 +526,18 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <button class="drawer-toggle" id="drawer-toggle" aria-controls="town" aria-expanded="false">Villagers</button>
   </header>
 
+  <section class="strip" id="strip" aria-label="Goals and mood">
+    <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
+    <ul class="goals" id="goals"></ul>
+    <p class="world" id="world" aria-live="polite"></p>
+  </section>
+
+  <aside class="rumors" id="rumors-panel" aria-labelledby="rumors-heading">
+    <h2 id="rumors-heading">Your rumors</h2>
+    <ol class="rumor-list" id="rumor-list"></ol>
+  </aside>
+
   <main>
-    <section class="strip" id="strip" aria-label="Goals and mood">
-      <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
-      <ul class="goals" id="goals"></ul>
-      <p class="world" id="world" aria-live="polite"></p>
-    </section>
     <div class="stage">
       <section class="trophies" id="trophies" aria-labelledby="trophies-title" hidden>
         <h2 id="trophies-title" tabindex="-1">Trophy case</h2>
@@ -514,18 +554,6 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       </section>
       <ol class="feed" id="feed" role="log" aria-live="off" aria-label="What the village is saying"></ol>
       <p class="empty" id="empty">Whisper to a villager to start a rumor. Pick someone whose trade or fears fit it.</p>
-    </div>
-    <div class="composer">
-      <form id="whisper">
-        <label for="target" id="to-label">Whisper to</label>
-        <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
-          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
-        <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
-        <label for="text" class="visually-hidden">What to whisper</label>
-        <input type="text" id="text" maxlength="500" autocomplete="off" placeholder="the miller waters his flour" required>
-        <button class="primary" type="submit">Whisper</button>
-      </form>
-      <p class="status" id="status" role="status"></p>
     </div>
   </main>
 
@@ -554,6 +582,21 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     </p>
     <section class="card" id="card" role="dialog" aria-labelledby="card-title" hidden></section>
   </aside>
+
+  <div class="bottom">
+    <div class="composer">
+      <form id="whisper">
+        <label for="target" id="to-label">Whisper to</label>
+        <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+        <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
+        <label for="text" class="visually-hidden">What to whisper</label>
+        <input type="text" id="text" maxlength="500" autocomplete="off" placeholder="the miller waters his flour" required>
+        <button class="primary" type="submit">Whisper</button>
+      </form>
+      <p class="status" id="status" role="status"></p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -589,6 +632,10 @@ const cards = new Map();
 const cardOf = new Map();
 const shown = new Set();
 const tallies = new Map();
+// Each rumor's mark, in the order the player whispered them, and its row in the rumors column; neither is pruned.
+const MARKS = ["◆", "●", "▲", "■", "★", "✚"];
+const markOf = new Map();
+const rumorRows = new Map();
 // Open conversations: villager id to their name and card, newest last.
 const talks = new Map();
 const DRIFT = "The story turned to other things after this.";
@@ -721,16 +768,55 @@ function hopMeta(e, parent) {
   return meta;
 }
 
+function rumorMark(uid) {
+  if (!markOf.has(uid)) return el("span", { className: "rmark none", ariaHidden: "true" });
+  const r = markOf.get(uid) % MARKS.length;
+  return el("span", { className: "rmark", ariaHidden: "true", textContent: MARKS[r], dataset: { r } });
+}
+
+// How far a rumor has carried its first goal, and the goal in a word.
+function rumorGoal(t) {
+  const link = t?.goals[0];
+  const stopped = t?.stopped ? "stopped" : null;
+  if (!link) return { word: stopped || "no goal yet", value: 0, said: "no goal yet" };
+  const needed = link.world ? world?.needed : [...goals.values()].find((g) => g.text === link.text)?.needed;
+  return {
+    word: stopped || link.claim || link.text,
+    value: needed ? Math.min(100, Math.round(100 * link.convinced / needed)) : 0,
+    said: needed ? `${link.convinced} of ${needed} convinced` : `${link.convinced} convinced`,
+  };
+}
+
+function setRow(uid) {
+  const row = rumorRows.get(uid);
+  if (!row) return;
+  const t = tallies.get(uid);
+  const goal = rumorGoal(t);
+  row.classList.toggle("stopped", Boolean(t?.stopped));
+  row.replaceChildren(rumorMark(uid),
+    el("b", { className: "heard", textContent: t?.heard ?? 1 }),
+    el("span", { className: "visually-hidden", textContent: " heard" }),
+    el("span", { className: "rbar", role: "progressbar", ariaLabel: "Toward its goal", ariaValueMin: 0, ariaValueMax: 100,
+      ariaValueNow: goal.value, ariaValueText: goal.said }, el("i", { style: `width:${goal.value}%` })),
+    el("span", { className: "goal-word", textContent: goal.word }));
+}
+
 // A whisper's card: the whisper as its title, its chip and tally, then its retellings and any conversation.
 function newCard(uid, target, place, text) {
   spoken.set(uid, { text, parent: null, speaker: "you" });
   cardOf.set(uid, uid);
+  if (!markOf.has(uid)) {
+    markOf.set(uid, markOf.size);
+    const row = el("li", { className: "rumor-item", title: text, dataset: { r: markOf.get(uid) % MARKS.length } });
+    rumorRows.set(uid, row);
+    $("rumor-list").append(row);
+  }
   const status = statuses.get(uid);
   const card = el("li", { className: "rumor", dataset: { card: uid } },
     el("div", { className: "ev whisper", tabIndex: -1, dataset: { uid } },
       el("span", { className: "rails", style: "--d:0" }),
       el("div", { className: "body" },
-        el("p", { className: "meta" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
+        el("p", { className: "meta" }, rumorMark(uid), "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
           reuseButton(text, target)),
         ...quoted(text), status && chip(status))),
     el("p", { className: "summary" }, el("span", { className: "story" }), el("span", { className: "goal-link" }),
@@ -920,6 +1006,7 @@ function reuse(text, target) {
 }
 
 function setTally(uid) {
+  setRow(uid);
   const card = cards.get(uid);
   const t = tallies.get(uid);
   if (!card) return;
@@ -1565,10 +1652,12 @@ function renderGoals() {
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: g.met ? "Met" : goalProgress(g) },
         el("i", { style: `width:${g.percent}%` })),
       el("span", { textContent: g.met ? "Met" : goalProgress(g) })))));
+  for (const uid of rumorRows.keys()) setRow(uid);
 }
 
 function renderWorld() {
   $("world").textContent = world ? `World goal: ${world.text}: ${goalProgress(world)}` : "";
+  for (const uid of rumorRows.keys()) setRow(uid);
 }
 
 function renderTrophies() {
@@ -2189,6 +2278,9 @@ function reset() {
   cardOf.clear();
   shown.clear();
   tallies.clear();
+  markOf.clear();
+  rumorRows.clear();
+  $("rumor-list").replaceChildren();
   talks.clear();
   setComposer();
   $("where").textContent = "";
