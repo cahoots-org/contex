@@ -212,7 +212,7 @@ mark.kept {
 .sky { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; }
 .sky svg { width: 4.5rem; height: 2.4rem; flex: none; }
 .sky .horizon { stroke: var(--edge); stroke-width: 1.5; }
-.sky .wheel { transform-box: view-box; transform-origin: 32px 33px; transition: transform 1s linear; }
+.sky .wheel { transform-box: view-box; transform-origin: 32px 33px; }
 .sky .day { fill: var(--day-sky); }
 .sky .night { fill: var(--night-sky); }
 .sky .sun { fill: var(--sun); stroke: var(--sun); stroke-width: 1.6; stroke-linecap: round; }
@@ -417,7 +417,6 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 }
 @media (prefers-reduced-motion: reduce) {
   .fresh, .fresh mark, .gameover { animation: none; }
-  .sky .wheel { transition: none; }
 }
 </style>
 </head>
@@ -1648,18 +1647,32 @@ function setClock(t) {
   drawClock();
 }
 
+function dayFraction() {
+  const partEnd = (Math.floor(clockAt.fraction * PHASES.length) + 1) / PHASES.length;
+  return Math.min(clockAt.fraction + (performance.now() - clockAt.at) / 1000 / clockAt.daySeconds, partEnd - 1e-6);
+}
+
 function drawClock() {
   if (!clockAt) return;
-  const partEnd = (Math.floor(clockAt.fraction * PHASES.length) + 1) / PHASES.length;
-  const fraction = Math.min(clockAt.fraction + (performance.now() - clockAt.at) / 1000 / clockAt.daySeconds, partEnd - 1e-6);
-  const minutes = (Math.floor((360 + fraction * 1440) / 10) * 10) % 1440;
+  const minutes = (Math.floor((360 + dayFraction() * 1440) / 10) * 10) % 1440;
   const hour = Math.floor(minutes / 60);
   $("clock").textContent = `Day ${clockAt.day}, ${hour % 12 || 12}:${String(minutes % 60).padStart(2, "0")} ${hour < 12 ? "am" : "pm"}`;
-  // Clockwise: the sun rises on the left, tops the wheel at noon and sets on the right; the angle only grows.
-  const turns = clockAt.day - 1 + (minutes / 60 - 12) / 24;
-  $("wheel").style.transform = `rotate(${(turns * 360).toFixed(2)}deg)`;
+  drawWheel();
+}
+
+// Clockwise: the sun rises on the left, tops the wheel at noon and sets on the right; the angle only grows.
+function drawWheel() {
+  if (!clockAt) return;
+  const turns = clockAt.day - 1 + (6 + dayFraction() * 24 - 12) / 24;
+  $("wheel").style.transform = `rotate(${(turns * 360).toFixed(3)}deg)`;
+}
+
+function turnWheel() {
+  if (!REDUCED_MOTION.matches) drawWheel();
+  requestAnimationFrame(turnWheel);
 }
 setInterval(drawClock, 1000);
+requestAnimationFrame(turnWheel);
 
 function setStatus(text, error = false) {
   $("status").textContent = text;
