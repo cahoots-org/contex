@@ -402,7 +402,7 @@ def test_first_visit_sets_an_owner_cookie(game):
     response = game.client.get("/")
     assert response.cookies[web.COOKIE].startswith("o-")
     header = response.headers["set-cookie"].lower()
-    assert "httponly" in header and "samesite=strict" in header and "max-age=31536000" in header
+    assert "httponly" in header and "samesite=lax" in header and "max-age=31536000" in header
 
 
 def test_a_new_run_keeps_the_same_person_and_trophy_case(game):
