@@ -164,6 +164,19 @@ class Writer:
             lines.append("What you heard earlier: " + " / ".join(heard))
         return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
 
+    async def answer(self, villager: Villager, topic: str, heard: Sequence[str]) -> str:
+        """The villager telling the newcomer what folk have said about the topic, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "The newcomer asks what folk have been saying about something. Answer in one short sentence, "
+            "under 30 words, in your own voice, naming who told you and where. If you heard nothing about it, "
+            "say so. Never mention suspicion. No stage directions, no quotation marks, no preamble."
+        )
+        said = "What you heard: " + " / ".join(heard) if heard else "What you heard: nothing about it."
+        user = f"The newcomer asks about: {topic}\n{said}"
+        return first_line(await self.complete(system, user, max_tokens=SAY_MAX_TOKENS))
+
     async def describe_group(
         self, villager: Villager, inspiration: list[str],
     ) -> tuple[str, str]:

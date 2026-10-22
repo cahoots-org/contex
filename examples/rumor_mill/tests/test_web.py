@@ -196,6 +196,23 @@ def test_listen_starts_and_a_second_is_refused(game):
     assert again.status_code == 400 and again.json() == {"error": "You're already listening."}
 
 
+def test_ask_reports_problems_and_answers_through_the_feed(game):
+    post = game.client.post
+    post("/api/walk", json={"place": "well"})
+    with game.client.websocket_connect(WS) as ws:
+        assert post("/api/ask", json={"villager_id": "v1", "topic": "the mill"}).json() == {"ok": True}
+        event = receive(ws)
+        while event["kind"] != "asked":
+            event = receive(ws)
+    assert (event["villager_id"], event["line"]) == ("v1", "Marta Hale hasn't heard anything about that.")
+    away = post("/api/ask", json={"villager_id": "v2", "topic": "the mill"})
+    assert (away.status_code, away.json()) == (400, {"error": "Bert Cole is at the mill. Walk there to ask them."})
+    bad = post("/api/ask", json={"villager_id": "v1"})
+    assert (bad.status_code, bad.json()) == (400, {"error": web.BAD_ASK})
+    game.suspicion.bump("v1", game.player.id, 0.9, "whispered to them directly")
+    assert post("/api/ask", json={"villager_id": "v1", "topic": "the mill"}).status_code == 409
+
+
 def test_websocket_receives_the_whisper(game):
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})

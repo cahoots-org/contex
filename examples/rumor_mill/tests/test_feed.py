@@ -281,3 +281,13 @@ def test_listen_events_reach_only_the_listener_and_print_the_lines():
     assert lines[-1] == 'Ada: "the well is dry"'
     feed.on_overheard(said, "heated", player=PID)
     assert lines[-1] == 'Ada: "the well is dry"' and len(lines) == 4
+
+
+def test_an_answer_reaches_only_the_asker():
+    feed, lines = make()
+    feed.on_answer("v2", "Marta", "the mill", "Tom told me so.", player=PID)
+    event = feed.recent[-1]
+    assert (event.kind, event.player) == ("asked", PID)
+    assert event.data == {"villager_id": "v2", "name": "Marta", "topic": "the mill", "line": "Tom told me so."}
+    assert lines == ['Marta, asked about the mill: "Tom told me so."']
+    assert not feed.sees("p-2", event)

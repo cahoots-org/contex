@@ -26,6 +26,7 @@ REASON_LINES = {
     "tried to whisper again": "{} caught you whispering to them again.",
     "heard the newcomer named": "{} grew wary of the rumors going around.",
     "was warned about the newcomer": "{} was warned about you.",
+    "asked questions": "{} noticed you asking questions.",
 }
 
 

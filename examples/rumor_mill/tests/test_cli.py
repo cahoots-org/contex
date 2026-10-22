@@ -36,6 +36,9 @@ def test_parse_command_forms():
     assert parse_command("dance") == Command("unknown")
     assert parse_command("") == Command("unknown")
     assert parse_command(": nobody") == Command("unknown")
+    assert parse_command("ask Marta: the mill") == Command("ask", "Marta", "the mill")
+    assert parse_command("ask Old Bert:the well ") == Command("ask", "Old Bert", "the well")
+    assert parse_command("ask : x") == Command("unknown")
 
 
 def make_walker():
@@ -148,3 +151,20 @@ async def test_go_walks_and_prints_problems(monkeypatch):
     await cli.repl(player, player.town, player.feed)
     assert [line for line in out if "There's no moon" in line]
     assert player.place == "mill"
+
+
+@pytest.mark.asyncio
+async def test_ask_resolves_the_name_and_prints_problems_but_not_a_refusal(monkeypatch):
+    town, feed, out = village()
+    asked = []
+
+    async def ask(vid, topic):
+        asked.append((vid, topic))
+        return Refusal("Marta turns away from you.") if topic == "rude" else "Marta is at the tavern. Walk there to ask them."
+
+    player = SimpleNamespace(find=lambda name: town.get("v1") if name == "Marta" else f"No one in town is called {name}.", ask=ask)
+    monkeypatch.setattr(cli, "_readline", scripted(["ask Zed: x\n", "ask Marta: the mill\n", "ask Marta: rude\n", ""]))
+    await cli.repl(player, town, feed)
+    assert asked == [("v1", "the mill"), ("v1", "rude")]
+    assert out[1:] == ["No one in town is called Zed.", "Marta is at the tavern. Walk there to ask them."]
+    assert "ask <name>: <topic>" in cli.HELP

@@ -188,6 +188,11 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
+    def on_answer(self, villager_id: str, name: str, topic: str, line: str, *, player: str) -> None:
+        """The villager's answer to the player asking what folk say about the topic."""
+        self.emit("asked", f'{name}, asked about {topic}: "{line}"', player=player,
+                  villager_id=villager_id, name=name, topic=topic, line=line)
+
     def on_warning(self, speaker_id: str, speaker_name: str, target_id: str, target_name: str, player: str) -> None:
         """A villager warned another about player."""
         self.emit(

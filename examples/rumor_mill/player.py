@@ -28,6 +28,7 @@ THREAD_WHISPERS = 2
 LISTEN_OPENING = 5
 LISTEN_LOOKBACK_DAYS = 1 / 4
 ALREADY_LISTENING = "You're already listening."
+ASK_LINES = 3
 
 
 class Refusal(str):
@@ -248,6 +249,64 @@ class Player:
             task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text))
             self._track(task)
         return None
+
+    async def ask(self, villager_id: str, topic: str) -> str | None:
+        """Ask the villager what folk have been saying about the topic; returns why it could not be done, if it couldn't.
+
+        A villager turning the question away comes back as a Refusal. The model call is charged to this player.
+        """
+        with charging(self.id):
+            return await self._ask(villager_id, topic)
+
+    async def _ask(self, villager_id: str, topic: str) -> str | None:
+        if self.over():
+            return GAME_OVER
+        if villager_id not in self.town:
+            gone = self.town.name_of(villager_id)
+            return f"{gone} has left town." if gone else "No one in town has that id."
+        topic = topic.strip()
+        if not topic:
+            return "Ask about what? Try: the mill"
+        if len(topic) > MAX_WHISPER_CHARS:
+            return f"Too long: a question is at most {MAX_WHISPER_CHARS} characters."
+        villager = self.town.get(villager_id)
+        place = self.town.place_of(villager_id)
+        if place != self.place:
+            return f"{villager.name} is at the {place}. Walk there to ask them."
+        if self.engine.suspicion.score(villager_id, self.id) >= self.config.refuse_threshold:
+            self.feed.on_refusal(villager_id, villager.name, await self._turn_away(villager), player=self.id)
+            return Refusal(f"{villager.name} turns away from you.")
+        self.engine.suspicion.bump(villager_id, self.id, self.config.suspicion_whisper_bump / 2, "asked questions")
+        recalled = await self.engine.recall_heard(villager_id, topic, "")
+        heard = [u for u in map(self._tellable, recalled) if u is not None][:ASK_LINES]
+        line = await self._answer(villager, topic, heard)
+        self.feed.on_answer(villager_id, villager.name, topic, line, player=self.id)
+        await self.engine.hints.add(self.id, villager_id, line)
+        return None
+
+    def _tellable(self, m: Match) -> Utterance | None:
+        """The fact behind a recalled line, unless it would give away another newcomer."""
+        fact = self.engine.facts.get(m.data.get("id"))
+        if fact is None:
+            return None
+        if self.lineage.player_of(fact.id) == self.id or fact.about == self.id:
+            return fact
+        if fact.names_newcomer or fact.speaker == NEWCOMER or fact.about is not None:
+            return None
+        return fact
+
+    async def _answer(self, villager: Villager, topic: str, heard: list[Utterance]) -> str:
+        """The villager's answer from the writer, or a plain line when there is none or it fails."""
+        if self.writer is not None:
+            try:
+                return await self.writer.answer(
+                    villager, topic, [f"{u.speaker_name} at the {u.place}: {u.text}" for u in heard],
+                )
+            except Exception:
+                log.exception("answer for %s failed", villager.id)
+        if heard:
+            return f"{villager.name} heard {heard[0].speaker_name} talking about it at the {heard[0].place}."
+        return f"{villager.name} hasn't heard anything about that."
 
     def _now(self) -> tuple[int, str] | None:
         return (self.game.day, self.game.phase) if self.game is not None else None

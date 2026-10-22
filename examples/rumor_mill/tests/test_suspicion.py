@@ -155,3 +155,9 @@ def test_decay_covers_every_player():
     s.bump("v1", "p-b", 0.05, "x")
     s.decay(1)
     assert s.score("v1", "p-a") == pytest.approx(0.15) and s.score("v1", "p-b") == 0.0
+
+
+def test_asking_has_its_own_reason_line():
+    s, _ = make(Villager("a", "Marta", "baker", "kind", "none", [], {}))
+    s.bump("a", P, 0.06, "asked questions")
+    assert s.reasons(P) == ["Marta noticed you asking questions."]

@@ -11,6 +11,7 @@ from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.actions import SPEAK, WARN
 from examples.rumor_mill.player import ALREADY_LISTENING, GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
+from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
@@ -811,3 +812,126 @@ async def test_listen_makes_no_model_calls_and_raises_no_suspicion():
     assert client.messages.calls == []
     assert engine.suspicion.level(PID) == 0
     player.close()
+
+
+def asking(*names):
+    """A player at the tavern with the villagers, where make_player puts them."""
+    player, town, lines, engine, lineage = make(*names)
+    player.place = "tavern"
+    return player, town, lines, engine, lineage
+
+
+def asked_user_text(client):
+    return client.messages.calls[0]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_ask_answers_from_what_the_villager_heard():
+    player, _, _, engine, _ = asking("Marta")
+    engine.facts.record(Utterance("u-3", "v2", "Tom", "mill", "the mill is haunted", None, action=SPEAK))
+    engine.heard = [Match("utt:u-3", {"id": "u-3"}, 0.9)]
+    client = StubClient("Tom told me so.")
+    player.writer = Writer(client, "haiku-test")
+    assert await player.ask("v1", "the mill") is None
+    assert engine.recalls == [("v1", "the mill", "")]
+    assert "Tom at the mill: the mill is haunted" in asked_user_text(client)
+    [event] = [e for e in player.feed.recent if e.kind == "asked"]
+    assert (event.player, event.data["line"]) == (PID, "Tom told me so.")
+    assert engine.delivered == []
+
+
+@pytest.mark.asyncio
+async def test_ask_needs_the_villager_at_your_place():
+    player, _, _, engine, _ = asking("Marta")
+    player.place = "square"
+    assert await player.ask("v1", "the mill") == "Marta is at the tavern. Walk there to ask them."
+    assert engine.recalls == []
+    assert engine.suspicion.score("v1", PID) == 0
+
+
+@pytest.mark.asyncio
+async def test_ask_checks_the_game_the_villager_and_the_topic():
+    player, town, _, engine, _ = asking("Marta")
+    assert await player.ask("v1", "  ") == "Ask about what? Try: the mill"
+    too_long = await player.ask("v1", "x" * (MAX_WHISPER_CHARS + 1))
+    assert too_long == f"Too long: a question is at most {MAX_WHISPER_CHARS} characters."
+    assert await player.ask("v9", "the mill") == "No one in town has that id."
+    town.remove("v1")
+    assert await player.ask("v1", "the mill") == "Marta has left town."
+    player.end(Summary("lost", [], []))
+    assert await player.ask("v1", "the mill") == GAME_OVER
+    assert engine.recalls == []
+
+
+@pytest.mark.asyncio
+async def test_asking_raises_half_a_whisper_bump_and_charges_the_asker():
+    player, _, _, engine, _ = asking("Marta")
+    usage = Usage(Config())
+    player.writer = Writer(StubClient("Not a word."), "haiku-test", usage)
+    await player.ask("v1", "the mill")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(player.config.suspicion_whisper_bump / 2)
+    assert [e.reason for e in engine.suspicion.top_evidence(PID)] == ["asked questions"]
+    assert usage.cost(PID) > 0
+
+
+@pytest.mark.asyncio
+async def test_a_villager_who_heard_nothing_says_so():
+    player, _, _, _, _ = asking("Marta")
+    client = StubClient("Not a word.")
+    player.writer = Writer(client, "haiku-test")
+    await player.ask("v1", "the mill")
+    assert "nothing about it" in asked_user_text(client)
+    player.writer = None
+    await player.ask("v1", "the mill")
+    assert player.feed.recent[-1].data["line"] == "Marta hasn't heard anything about that."
+
+
+@pytest.mark.asyncio
+async def test_lines_about_another_newcomer_are_never_told():
+    player, _, _, engine, lineage = asking("Marta")
+    lineage.record("w-9", None, player="p-2")
+    lineage.record("u-4", "w-9")
+    engine.facts.record(Utterance("u-4", "v2", "Tom", "mill", "the newcomer started it", "w-9", names_newcomer=True))
+    engine.facts.record(Utterance("u-5", "v2", "Tom", "mill", "watch that newcomer", None, "warned", action=WARN, about="p-2"))
+    engine.heard = [Match(f"utt:{uid}", {"id": uid}, 0.9) for uid in ("u-4", "u-5", "u-6")]
+    client = StubClient("Not a word.")
+    player.writer = Writer(client, "haiku-test")
+    await player.ask("v1", "the newcomer")
+    user = asked_user_text(client)
+    assert "nothing about it" in user and "Tom" not in user
+
+
+@pytest.mark.asyncio
+async def test_lines_about_the_asker_can_be_told():
+    player, _, _, engine, lineage = asking("Marta")
+    lineage.record("w-1", None, player=PID)
+    lineage.record("u-4", "w-1")
+    engine.facts.record(Utterance("u-4", "v2", "Tom", "mill", "the newcomer started it", "w-1", names_newcomer=True))
+    engine.facts.record(Utterance("u-5", "v2", "Tom", "mill", "watch that newcomer", None, "warned", action=WARN, about=PID))
+    engine.heard = [Match(f"utt:{uid}", {"id": uid}, 0.9) for uid in ("u-4", "u-5")]
+    client = StubClient("Not a word.")
+    player.writer = Writer(client, "haiku-test")
+    await player.ask("v1", "the newcomer")
+    user = asked_user_text(client)
+    assert "the newcomer started it" in user and "watch that newcomer" in user
+
+
+@pytest.mark.asyncio
+async def test_a_wary_villager_turns_the_question_away():
+    player, _, _, engine, _ = asking("Marta")
+    engine.suspicion.bump("v1", PID, 0.9, "whispered to them directly")
+    assert await player.ask("v1", "the mill") == Refusal("Marta turns away from you.")
+    assert isinstance(await player.ask("v1", "the mill"), Refusal)
+    assert [e.player for e in player.feed.recent if e.kind == "refusal"] == [PID, PID]
+    assert engine.recalls == []
+    assert engine.suspicion.score("v1", PID) == pytest.approx(0.9)
+
+
+@pytest.mark.asyncio
+async def test_the_answer_joins_notes_and_hints():
+    player, _, _, engine, _ = asking("Marta")
+    notes = Notes(player.feed, PID)
+    await player.ask("v1", "the mill")
+    line = "Marta hasn't heard anything about that."
+    assert notes.get("v1")["hints"] == [line]
+    assert (engine.hints.project(PID), "hint:1", {"id": "v1", "text": line}) in engine.contex.published

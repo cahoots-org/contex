@@ -7,7 +7,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill.tests.helpers import StubClient
-from examples.rumor_mill.writer import WHISPER_FRAMING, Writer, first_line
+from examples.rumor_mill.writer import SAY_MAX_TOKENS, WHISPER_FRAMING, Writer, first_line
 
 
 def villager():
@@ -178,3 +178,18 @@ async def test_go_on_urges_the_newcomer_on_in_one_line():
 
 def test_whisper_framing_is_a_newcomer():
     assert WHISPER_FRAMING.sub("", "A newcomer whispered to you at the well: hi") == "hi"
+
+
+@pytest.mark.asyncio
+async def test_answer_names_the_topic_and_what_was_heard_in_one_line():
+    client = StubClient("Tom told me at the mill, aye.", "Not a word.")
+    writer = Writer(client, "haiku-test")
+    line = await writer.answer(villager(), "the mill", ["Tom at the mill: the mill is haunted"])
+    assert line == "Tom told me at the mill, aye."
+    call = client.messages.calls[0]
+    user = call["messages"][0]["content"]
+    assert call["max_tokens"] == SAY_MAX_TOKENS
+    assert "the mill" in user and "Tom at the mill: the mill is haunted" in user
+    assert "Ada" in call["system"] and "Never mention suspicion" in call["system"]
+    await writer.answer(villager(), "the well", [])
+    assert "nothing about it" in client.messages.calls[1]["messages"][0]["content"]

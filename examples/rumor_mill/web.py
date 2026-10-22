@@ -35,6 +35,7 @@ VILLAGER_POLL_SECONDS = 1.0
 USAGE_POLL_SECONDS = 3.0
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
 BAD_WALK = 'Send JSON like {"place": "tavern"}.'
+BAD_ASK = 'Send JSON like {"villager_id": "v1", "topic": "the mill"}.'
 COOKIE = "rumor_mill_player"
 COOKIE_SECONDS = 365 * 24 * 3600
 RELOAD = "Reload the page to join the village."
@@ -281,6 +282,20 @@ def create_app(
             return _error(400, BAD_WALK)
         if problem := player.walk(place.strip().lower()):
             return _error(400, problem)
+        return {"ok": True}
+
+    @app.post("/api/ask")
+    async def ask(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        payload = await _payload(request, BAD_ASK, "That question is too long.")
+        if isinstance(payload, JSONResponse):
+            return payload
+        vid, topic = payload.get("villager_id"), payload.get("topic")
+        if not isinstance(vid, str) or not isinstance(topic, str):
+            return _error(400, BAD_ASK)
+        if problem := await player.ask(vid, topic):
+            return _error(409 if isinstance(problem, Refusal) else 400, problem)
         return {"ok": True}
 
     @app.post("/api/listen")
