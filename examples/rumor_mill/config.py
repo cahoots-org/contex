@@ -45,6 +45,8 @@ class Config:
     share_clearance: float = 0.02
     # How long one Listen lasts.
     listen_seconds: float = 20.0
+    # How similar a draft must be to a hint line for the villager who gave it to be marked.
+    draft_floor: float = 0.82
     # How many times a villager answers the newcomer in one conversation.
     talk_turns: int = 3
     # Where need baselines are cached; empty means the seed path plus .baselines.json.

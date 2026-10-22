@@ -691,6 +691,24 @@ async def test_a_whisper_check_and_brush_off_are_charged_to_the_whisperer():
     assert charged_to.get() is None
 
 
+@pytest.mark.asyncio
+async def test_a_settled_brush_off_line_goes_to_the_players_hints():
+    line = "Leave off, the wheel won't mend itself."
+    player, lines = make_hinting(Writer(StubClient(line), "haiku", Usage(Config())))
+    engine = player.engine
+    assert await brush_off_once(player, lines) == f'Aldwin Miller brushes you off: "{line}"'
+    await wait_for(lambda: engine.contex.published)
+    assert engine.contex.published == [(engine.hints.project(PID), "hint:1", {"id": "v1", "text": line})]
+
+
+@pytest.mark.asyncio
+async def test_a_plain_shrug_adds_no_hint():
+    player, lines = make_hinting(StubWriter(RuntimeError("haiku down")))
+    assert await brush_off_once(player, lines) == "Aldwin Miller shrugs it off."
+    await asyncio.sleep(0.05)
+    assert player.engine.contex.published == []
+
+
 def test_someone_is_playing_only_while_a_player_is_not_over():
     players = Players(None)
     assert not players.any_playing()

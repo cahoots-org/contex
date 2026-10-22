@@ -347,8 +347,11 @@ class Player:
         except Exception:
             log.exception("%s line for %s failed", state, villager_id)
             line = None
-        if not self.over():
-            self.feed.on_whisper_status(uid, villager_id, name, state, hint=line)
+        if self.over():
+            return
+        self.feed.on_whisper_status(uid, villager_id, name, state, hint=line)
+        if line:
+            await self.engine.hints.add(self.id, villager_id, line)
 
     def _next_concern(self, villager_id: str) -> str | None:
         """One of the villager's needs not hinted at yet, starting over once all have been."""

@@ -7,6 +7,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import Feed
+from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player
@@ -134,6 +135,7 @@ class FakeEngine:
         self.suspicion = suspicion
         self.contex = contex or StubContex()
         self.baselines = baselines or StubBaselines(0.5)
+        self.hints = Hints(self.contex, Config())
         self.direct = []
         self.rumors = None
         self.facts = Facts()

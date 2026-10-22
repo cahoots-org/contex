@@ -18,13 +18,14 @@ from starlette.websockets import WebSocketClose
 from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.notes import Notes
-from examples.rumor_mill.player import Player, Refusal
+from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal
 from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_owner_id
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
-from examples.rumor_mill.usage import Usage
+from examples.rumor_mill.usage import Usage, charging
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ async def _payload(request: Request, bad: str, too_long: str) -> dict | JSONResp
 
 def create_app(
     *, players: Players, join: Callable[[str], Player], town: Town, feed: Feed, judge, usage: Usage, port: int,
-    suspicion: Suspicion, game: Game, rumors: Rumors,
+    suspicion: Suspicion, game: Game, rumors: Rumors, hints: Hints,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
     clients: dict[asyncio.Queue, str] = {}
@@ -243,6 +244,16 @@ def create_app(
             ],
             "note": notes_of(player).get(v.id),
         }
+
+    @app.get("/api/hints")
+    async def hinted(request: Request, text: str = ""):
+        """The ids of villagers whose hints to the player are close to the draft."""
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        if not text.strip() or len(text) > MAX_WHISPER_CHARS:
+            return {"ids": []}
+        with charging(player.id):
+            return {"ids": await hints.matching(player.id, text)}
 
     @app.post("/api/whisper")
     async def whisper(request: Request):

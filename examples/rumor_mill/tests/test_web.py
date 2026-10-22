@@ -81,14 +81,14 @@ def game(monkeypatch):
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
         players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=PORT,
-        suspicion=suspicion, game=game, rumors=rumors,
+        suspicion=suspicion, game=game, rumors=rumors, hints=engine.hints,
     )
     with TestClient(app, base_url=BASE) as client:
         client.get("/")
         player = players.live(client.cookies[web.COOKIE])
         yield SimpleNamespace(
             client=client, town=town, feed=feed, app=app, usage=usage, suspicion=suspicion, player=player, config=config,
-            rumors=rumors, players=players, join=join, judge=judge,
+            rumors=rumors, players=players, join=join, judge=judge, engine=engine,
         )
     for p in players:
         p.close()
@@ -131,12 +131,27 @@ def test_state_and_card_carry_notes_without_needs_or_numbers(game):
     game.feed.on_whisper_status("w-2", "v2", "Bert Cole", "took_the_bait", told=3)
     notes = game.client.get("/api/state").json()["notes"]
     assert notes == {
-        "v1": {"status": "brushed_off", "hint": "The well keeps me up."},
-        "v2": {"status": "took_the_bait", "hint": None},
+        "v1": {"status": "brushed_off", "hints": ["The well keeps me up."], "passed": []},
+        "v2": {"status": "took_the_bait", "hints": [], "passed": []},
     }
     card = game.client.get("/api/villagers/v2")
-    assert card.json()["note"] == {"status": "took_the_bait", "hint": None}
+    assert card.json()["note"] == {"status": "took_the_bait", "hints": [], "passed": []}
     assert "NEED" not in card.text and "3" not in json.dumps(notes)
+
+
+def test_hints_endpoint_marks_villagers_by_earned_hints(game):
+    contex = game.engine.contex
+    game.client.portal.call(game.engine.hints.add, game.player.id, "v1", "The vines worry me.")
+    contex.results["the vines"] = [Match("hint:1", {"id": "v1", "text": "x"}, 0.9)]
+    assert game.client.get("/api/hints", params={"text": "the vines"}).json() == {"ids": ["v1"]}
+    assert len(contex.queries) == 1
+    assert game.client.get("/api/hints", params={"text": "x" * (MAX_WHISPER_CHARS + 1)}).json() == {"ids": []}
+    game.join("o-2")
+    as_owner(game.client, "o-2")
+    assert game.client.get("/api/hints", params={"text": "the vines"}).json() == {"ids": []}
+    assert len(contex.queries) == 1
+    game.client.cookies.clear()
+    assert game.client.get("/api/hints", params={"text": "the vines"}).status_code == 401
 
 
 def test_page_is_served(game):

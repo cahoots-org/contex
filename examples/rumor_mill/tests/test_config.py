@@ -73,3 +73,7 @@ def test_scene_defaults_and_env_overrides(monkeypatch):
 
 def test_listen_lasts_twenty_seconds_by_default():
     assert Config().listen_seconds == 20.0
+
+
+def test_drafts_match_hints_at_a_high_bar_by_default():
+    assert Config().draft_floor == 0.82

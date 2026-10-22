@@ -15,19 +15,19 @@ def make():
 
 def test_status_never_moves_backwards():
     feed, notes = make()
-    assert notes.get("v1") == {"status": "none", "hint": None}
+    assert notes.get("v1") == {"status": "none", "hints": [], "passed": []}
     feed.on_whisper_status("w-1", "v1", "Bert", "checking")
     assert notes.get("v1")["status"] == "listening"
     feed.on_whisper_status("w-1", "v1", "Bert", "kept")
     feed.on_whisper_status("w-2", "v1", "Bert", "heard")
     feed.on_whisper_status("w-3", "v1", "Bert", "brushed_off")
     feed.on_whisper_status("w-3", "v1", "Bert", "brushed_off", hint="The well worries me.")
-    assert notes.get("v1") == {"status": "kept", "hint": "The well worries me."}
+    assert notes.get("v1") == {"status": "kept", "hints": ["The well worries me."], "passed": []}
     feed.on_whisper_status("w-1", "v1", "Bert", "took_the_bait", told=2)
     feed.on_whisper_status("w-4", "v1", "Bert", "kept")
     feed.on_whisper_status("w-5", "v1", "Bert", "not_carried")
     feed.on_whisper_status("w-6", "v1", "Bert", "brushed_off", hint=None)
-    assert notes.get("v1") == {"status": "took_the_bait", "hint": "The well worries me."}
+    assert notes.get("v1") == {"status": "took_the_bait", "hints": ["The well worries me."], "passed": []}
 
 
 def test_wary_overrides():
@@ -50,9 +50,9 @@ def test_replay_rebuilds_the_same_notes():
     feed.say("unrelated")
     assert Notes(feed, PID).all() == notes.all()
     assert notes.all() == {
-        "v1": {"status": "brushed_off", "hint": "Bread is dear."},
-        "v2": {"status": "took_the_bait", "hint": None},
-        "v3": {"status": "wary", "hint": None},
+        "v1": {"status": "brushed_off", "hints": ["Bread is dear."], "passed": []},
+        "v2": {"status": "took_the_bait", "hints": [], "passed": []},
+        "v3": {"status": "wary", "hints": [], "passed": []},
     }
 
 
@@ -77,3 +77,31 @@ def test_notes_hold_only_the_players_own_villagers():
     feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off")
     feed.on_whisper_status("w-2", "v2", "Marta", "took_the_bait", told=1)
     assert list(Notes(feed, "p-a").all()) == ["v1"]
+
+
+def test_every_hint_is_kept_once_in_order():
+    feed, notes = make()
+    feed.on_whisper_status("w-1", "v1", "Bert", "brushed_off", hint="Bread is dear.")
+    feed.on_whisper_status("w-2", "v1", "Bert", "near_miss", hint="Go on, then.")
+    feed.on_whisper_status("w-3", "v1", "Bert", "brushed_off", hint="Bread is dear.")
+    feed.on_whisper_status("w-4", "v1", "Bert", "brushed_off", hint=None)
+    assert notes.get("v1")["hints"] == ["Bread is dear.", "Go on, then."]
+    assert Notes(feed, PID).all() == notes.all()
+
+
+def test_what_they_passed_on_comes_from_bait_and_hops():
+    feed, notes = make()
+    feed.emit("whisper", player=PID, uid="w-1", text="the well is cursed")
+    feed.on_whisper_status("w-1", "v1", "Bert", "took_the_bait", told=1)
+    feed.on_whisper_status("w-1", "v1", "Bert", "took_the_bait", told=2)
+    feed.emit("hop", player=PID, uid="u-1", root="w-1", speaker_id="v2", text="they say the well is cursed")
+    feed.emit("hop", player=PID, uid="u-2", root="w-1", speaker_id="v2", text="the well, cursed")
+    assert notes.get("v1") == {"status": "took_the_bait", "hints": [], "passed": ["the well is cursed"]}
+    assert notes.get("v2") == {"status": "none", "hints": [], "passed": ["the well is cursed"]}
+    assert Notes(feed, PID).all() == notes.all()
+
+
+def test_an_answer_from_asking_around_is_a_hint():
+    feed, notes = make()
+    feed.emit("asked", player=PID, villager_id="v1", name="Bert", topic="the mill", line="Tom said so at the mill.")
+    assert notes.get("v1") == {"status": "none", "hints": ["Tom said so at the mill."], "passed": []}

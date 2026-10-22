@@ -16,6 +16,7 @@ from examples.rumor_mill.decide import Decision, TurnView, decide
 from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import PHASES, Game, Summary
+from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
@@ -71,6 +72,7 @@ class Engine:
         self.ids = ids
         self.feed = feed
         self.facts = Facts()
+        self.hints = Hints(contex, config)
         self.suspicion = Suspicion(config, town)
         self.scenes = Scenes(config, town, random.Random())
         self.baselines = baselines

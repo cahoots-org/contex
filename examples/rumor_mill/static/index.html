@@ -362,6 +362,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dl { margin: .35rem 0; font-size: .9rem; }
 .card dt { color: var(--muted); font-size: .8rem; }
 .card dd { margin: 0 0 .35rem; }
+.card dd .brush, .card dd .passed { display: block; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
 .suggest {
@@ -919,6 +920,7 @@ function render(e, fresh) {
       return null;
     }
     case "hop": {
+      learn(e);
       if (shown.has(e.uid)) return null;
       const parent = spoken.get(e.parent);
       spoken.set(e.uid, { text: e.text, parent: e.parent, speaker: e.speaker });
@@ -1011,6 +1013,9 @@ function render(e, fresh) {
           onclick: () => setTrophies(true, true) }));
     case "system":
       return el("li", { className: "note" }, e.text);
+    case "asked":
+      learn(e);
+      return null;
     default:
       return null;
   }
@@ -1097,15 +1102,26 @@ const BADGES = {
 let learned = false;
 
 function noteOf(id) {
-  return notes[id] || { status: "none", hint: null };
+  return notes[id] || { status: "none", hints: [], passed: [] };
 }
 
+// Hints and what each villager passed on are kept once each, in order.
 function learn(e) {
-  const status = e.kind === "refusal" ? "wary" : STATUS_OF[e.state];
-  if (!status) return;
-  const note = notes[e.villager_id] = { ...noteOf(e.villager_id) };
-  if (status === "wary" || RANK.indexOf(status) > RANK.indexOf(note.status)) note.status = status;
-  if (e.hint) note.hint = e.hint;
+  let status = null, hint = null, passed = null;
+  if (e.kind === "refusal") status = "wary";
+  else if (e.kind === "whisper_status") {
+    status = STATUS_OF[e.state] || null;
+    hint = e.hint || null;
+    if (e.state === "took_the_bait") passed = spoken.get(e.whisper_id)?.text || null;
+  } else if (e.kind === "hop") passed = spoken.get(e.root)?.text || null;
+  else if (e.kind === "asked") hint = e.line || null;
+  if (!status && !hint && !passed) return;
+  const id = e.kind === "hop" ? e.speaker_id : e.villager_id;
+  const old = noteOf(id);
+  const note = notes[id] = { status: old.status, hints: [...old.hints], passed: [...old.passed] };
+  if (status && (status === "wary" || RANK.indexOf(status) > RANK.indexOf(note.status))) note.status = status;
+  if (hint && !note.hints.includes(hint)) note.hints.push(hint);
+  if (passed && !note.passed.includes(passed)) note.passed.push(passed);
   learned = true;
 }
 
@@ -1436,7 +1452,7 @@ function who(v, detail) {
   return el("span", { className: "who" },
     el("b", { textContent: v.name }), known ? el("span", { className: "st", textContent: `, ${known[1]}` }) : null,
     " ", el("small", { textContent: detail }),
-    note.hint ? el("span", { className: "hint", textContent: `“${note.hint}”` }) : null);
+    note.hints.length ? el("span", { className: "hint", textContent: `“${note.hints.at(-1)}”` }) : null);
 }
 
 function focusKey(node) {
@@ -1553,7 +1569,8 @@ function cardBody(body) {
       el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels),
       el("dt", { textContent: "What you know" }), el("dd", {},
         known ? known[1] : "Nothing yet.",
-        note.hint ? el("span", { className: "brush", textContent: ` “${note.hint}”` }) : null)),
+        ...note.hints.map((h) => el("span", { className: "brush", textContent: `“${h}”` })),
+        ...note.passed.map((t) => el("span", { className: "passed", textContent: `Passed on: “${t}”` })))),
     el("div", { className: "actions" },
       el("button", { className: "primary", type: "button", textContent: `Whisper to ${body.name}`, onclick: () => whisperTo(body.name) }),
       el("button", { className: "linkish", type: "button", textContent: "Close", onclick: closeCard })),
