@@ -1,6 +1,8 @@
+import asyncio
 import json
 from contextlib import asynccontextmanager
 
+import anyio
 import pytest
 
 from examples.rumor_mill import contex_client
@@ -118,3 +120,53 @@ async def test_query_sends_max_age_only_when_set():
     await client.query("p", "q", max_age_seconds=240)
     assert "max_age_seconds" not in sent[0]
     assert sent[1]["max_age_seconds"] == 240
+
+
+class DroppingSession:
+    """A session whose background task fails when drop is set, like a streamable-HTTP read error."""
+
+    opened = 0
+
+    def __init__(self, url):
+        self.drop = asyncio.Event()
+
+    async def __aenter__(self):
+        DroppingSession.opened += 1
+        DroppingSession.current = self
+        self._tg = anyio.create_task_group()
+        await self._tg.__aenter__()
+        self._tg.start_soon(self._transport)
+        return self
+
+    async def __aexit__(self, *exc):
+        return await self._tg.__aexit__(*exc)
+
+    async def _transport(self):
+        await self.drop.wait()
+        raise ConnectionError("read error")
+
+    async def read_resource(self, uri):
+        return type("R", (), {"contents": [type("C", (), {"text": json.dumps({"n": []})})]})
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_session_reconnects_without_ending_the_caller(monkeypatch):
+    monkeypatch.setattr(contex_client, "Client", DroppingSession)
+    monkeypatch.setattr(contex_client, "RECONNECT_SECONDS", 0.01)
+    DroppingSession.opened = 0
+    async with ContexClient("url") as client:
+        assert await client.read("uri") == {"n": []}
+        DroppingSession.current.drop.set()
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if DroppingSession.opened == 2:
+                break
+        assert await client.read("uri") == {"n": []}
+    assert DroppingSession.opened == 2
+
+
+@pytest.mark.asyncio
+async def test_a_call_while_disconnected_raises_a_normal_error():
+    client = ContexClient("url")
+    with pytest.raises(ConnectionError):
+        await client.read("uri")

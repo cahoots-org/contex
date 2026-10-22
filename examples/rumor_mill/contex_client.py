@@ -2,12 +2,17 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from mcp import Client
 
 MAX_CONCURRENT_CALLS = 8
+RECONNECT_SECONDS = 1.0
+MAX_RECONNECT_SECONDS = 30.0
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,23 +42,59 @@ def new_matches(seen: set[str], bundle: Bundle) -> list[Match]:
 
 
 class ContexClient:
-    """Contex tools over one shared MCP session, plus per-call listen sessions."""
+    """Contex tools over one shared MCP session, plus per-call listen sessions.
+
+    The shared session lives in its own task and reconnects with backoff when it drops,
+    so a lost connection fails only the calls in flight.
+    """
 
     def __init__(self, url: str):
         self.url = url
         self._client: Client | None = None
         self._slots = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
+        self._connected = asyncio.Event()
+        self._session: asyncio.Task | None = None
 
     async def __aenter__(self) -> "ContexClient":
-        self._client = await Client(self.url).__aenter__()
+        self._session = asyncio.create_task(self._keep_session())
+        ready = asyncio.create_task(self._connected.wait())
+        await asyncio.wait({self._session, ready}, return_when=asyncio.FIRST_COMPLETED)
+        ready.cancel()
+        if self._session.done():
+            self._session.result()
         return self
 
     async def __aexit__(self, *exc) -> None:
-        await self._client.__aexit__(*exc)
+        self._session.cancel()
+        await asyncio.gather(self._session, return_exceptions=True)
+
+    async def _keep_session(self) -> None:
+        """Hold the shared session, reopening it after a drop; the first connect's failure propagates."""
+        delay = RECONNECT_SECONDS
+        while True:
+            try:
+                async with Client(self.url) as client:
+                    self._client = client
+                    self._connected.set()
+                    delay = RECONNECT_SECONDS
+                    await asyncio.Event().wait()
+            except Exception as e:
+                if not self._connected.is_set():
+                    raise
+                cause = e.exceptions[0] if isinstance(e, ExceptionGroup) else e
+                log.warning("Contex session lost (%s); reconnecting in %.0fs", type(cause).__name__, delay)
+            self._client = None
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, MAX_RECONNECT_SECONDS)
+
+    def _session_client(self) -> Client:
+        if self._client is None:
+            raise ConnectionError("not connected to Contex")
+        return self._client
 
     async def _tool(self, name: str, args: dict) -> dict:
         async with self._slots:
-            result = await self._client.call_tool(name, args)
+            result = await self._session_client().call_tool(name, args)
         return json.loads(result.content[0].text)
 
     async def publish(self, project_id: str, data_key: str, data: dict) -> None:
@@ -70,7 +111,7 @@ class ContexClient:
     async def read(self, uri: str) -> Bundle:
         try:
             async with self._slots:
-                result = await self._client.read_resource(uri)
+                result = await self._session_client().read_resource(uri)
         except Exception as e:
             if "Subscription expired" in str(e):
                 raise SubscriptionGone(uri) from e
