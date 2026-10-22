@@ -14,11 +14,11 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
 from examples.rumor_mill.game import Game, Summary
-from examples.rumor_mill.goals import Goal, world_goal
+from examples.rumor_mill.goals import Goal, Trophy, world_goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player
-from examples.rumor_mill.players import Players
+from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_player_id
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
@@ -66,21 +66,38 @@ def game(monkeypatch):
     feed = Feed(lineage, town, out=None)
     config = Config()
     suspicion, game = Suspicion(config, town), Game()
-    player = Player(FakeEngine(feed, suspicion), town, lineage, Ids(), feed, config, game=game, player_id=helpers.PID)
-    player.goals = [GOAL]
+    engine = FakeEngine(feed, suspicion)
+    players = Players(feed)
+
+    def join(owner):
+        player = Player(engine, town, lineage, Ids(), feed, config, game=game, player_id=new_player_id(), owner=owner)
+        players.add(player)
+        player.goals = [GOAL]
+        players.deliver_pending(player)
+        return player
+
     judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD)
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     app = create_app(
-        player=player, players=Players(feed), town=town, feed=feed, judge=judge, usage=usage, port=PORT,
+        players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=PORT,
         suspicion=suspicion, game=game, rumors=rumors,
     )
     with TestClient(app, base_url=BASE) as client:
+        client.get("/")
+        player = players.live(client.cookies[web.COOKIE])
         yield SimpleNamespace(
             client=client, town=town, feed=feed, app=app, usage=usage, suspicion=suspicion, player=player, config=config,
-            rumors=rumors,
+            rumors=rumors, players=players, join=join, judge=judge,
         )
-    player.close()
+    for p in players:
+        p.close()
+
+
+def as_owner(client, owner):
+    """Make the client's cookie name that owner."""
+    client.cookies.clear()
+    client.cookies.set(web.COOKIE, owner)
 
 
 def test_state_lists_goals_villagers_and_replay(game):
@@ -221,7 +238,7 @@ def test_state_carries_the_label_and_no_scores(game):
     state = game.client.get("/api/state").json()
     assert (state["heat"], state["heat_line"]) == ("quiet", HEAT_LINES["quiet"])
     assert state["game"] == {"state": "playing", "summary": None}
-    game.suspicion.bump("v1", helpers.PID, 0.11, "whispered to them directly")
+    game.suspicion.bump("v1", game.player.id, 0.11, "whispered to them directly")
     response = game.client.get("/api/state")
     assert (response.json()["heat"], response.json()["heat_line"]) == ("watched", HEAT_LINES["watched"])
     assert "0.11" not in response.text and "0.055" not in response.text
@@ -270,7 +287,7 @@ def test_whisper_after_game_over_is_refused(game):
 
 
 def test_a_refused_whisper_is_an_error_with_the_sentence_and_nothing_else(game):
-    game.suspicion.bump("v1", helpers.PID, game.config.refuse_threshold, "whispered to them directly")
+    game.suspicion.bump("v1", game.player.id, game.config.refuse_threshold, "whispered to them directly")
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"})
         event = receive(ws)
@@ -296,22 +313,22 @@ def walk(value, key=""):
 def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects(game):
     scores = {"v1": 0.73, "v2": 0.21}
     for vid, amount in scores.items():
-        game.suspicion.bump(vid, helpers.PID, amount, "heard the newcomer named")
+        game.suspicion.bump(vid, game.player.id, amount, "heard the newcomer named")
     responses = []
     with game.client.websocket_connect(WS) as ws:
         responses.append(game.client.post("/api/whisper", json={"villager_id": "v2", "text": "the well is cursed"}).json())
         responses.append(game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the mill is cursed"}).json())
-        game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale", helpers.PID)
-        game.feed.on_heat(game.suspicion.label(helpers.PID), player=helpers.PID)
-        game.player.end(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons(helpers.PID)))
+        game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale", game.player.id)
+        game.feed.on_heat(game.suspicion.label(game.player.id), player=game.player.id)
+        game.player.end(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons(game.player.id)))
         events = [receive(ws) for _ in range(8)]
     kinds = ["whisper", "place", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
     assert [e["kind"] for e in events] == kinds
     assert events[-1]["reasons"][:2] == ["Marta Hale grew wary of the rumors going around.", "Bert Cole grew wary of the rumors going around."]
     responses += [game.client.get("/api/state").json(), *(game.client.get(f"/api/villagers/{v}").json() for v in scores)]
     responses += [game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).json(), *events]
-    raw = {str(game.suspicion.score(v, helpers.PID)) for v in scores} | {str(a) for a in scores.values()}
-    raw |= {str(game.suspicion.level(helpers.PID)), str(game.config.refuse_threshold)}
+    raw = {str(game.suspicion.score(v, game.player.id)) for v in scores} | {str(a) for a in scores.values()}
+    raw |= {str(game.suspicion.level(game.player.id)), str(game.config.refuse_threshold)}
     for response in responses:
         text = re.sub(r'"at": [0-9.e+-]+', '', json.dumps(response))
         assert not any(r in text for r in raw), text
@@ -335,7 +352,7 @@ def test_scene_event_reaches_the_websocket(game):
 
 def test_state_carries_cards_beyond_the_replay_window(game):
     game.client.portal.call(partial(
-        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=helpers.PID,
+        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=game.player.id,
     ))
     hop = Utterance("u-1", "v1", "Marta Hale", "well", "the miller cheats", "w-1")
     game.rumors.record("w-1", hop, {"v2": "Bert Cole"}, True)
@@ -349,9 +366,93 @@ def test_state_carries_cards_beyond_the_replay_window(game):
 def test_card_tallies_reach_the_websocket(game):
     with game.client.websocket_connect(WS) as ws:
         game.client.portal.call(partial(
-        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=helpers.PID,
+        game.rumors.add, "w-1", "the miller waters his flour", datetime.now(UTC), "v1", "Marta Hale", player=game.player.id,
     ))
         event = receive(ws)
         while event["kind"] != "rumors":
             event = receive(ws)
     assert event["rumors"] == [{"uid": "w-1", "heard": 1, "still": 0}]
+
+
+def test_first_visit_sets_an_owner_cookie(game):
+    game.client.cookies.clear()
+    response = game.client.get("/")
+    assert response.cookies[web.COOKIE].startswith("o-")
+    header = response.headers["set-cookie"].lower()
+    assert "httponly" in header and "samesite=strict" in header and "max-age=31536000" in header
+
+
+def test_a_new_run_keeps_the_same_person_and_trophy_case(game):
+    owner = game.client.cookies[web.COOKIE]
+    game.players.cases[owner] = [Trophy("personal", ("a", "b", "c"), 2)]
+    game.player.end(LOSS)
+    game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
+    game.client.get("/")
+    body = game.client.get("/api/state").json()
+    assert game.client.cookies[web.COOKIE] == owner and body["trophies"] == [{"kind": "personal", "goals": ["a", "b", "c"], "day": 2}]
+
+
+def test_two_sessions_play_as_two_players(game):
+    a = game.client.cookies[web.COOKIE]
+    game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})
+    game.client.cookies.clear()
+    b = game.client.get("/").cookies[web.COOKIE]
+    state = game.client.get("/api/state")
+    body = state.json()
+    assert a != b and a not in state.text
+    assert body["rumors"] == [] and body["notes"] == {} and not [e for e in body["events"] if e["kind"] == "whisper"]
+    assert body["world_goal"]["text"] == game.judge.world.text
+
+
+def test_a_players_socket_gets_none_of_another_players_events(game):
+    a = game.client.cookies[web.COOKIE]
+    game.client.cookies.clear()
+    b = game.players.live(game.client.get("/").cookies[web.COOKIE])
+    with game.client.websocket_connect(WS) as ws:
+        as_owner(game.client, a)
+        assert game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"}).json() == {"ok": True}
+        game.feed.say("ping", player=b.id)
+        assert receive(ws)["text"] == "ping"
+
+
+def test_two_tabs_of_one_player_both_get_its_events(game):
+    with game.client.websocket_connect(WS) as ws1, game.client.websocket_connect(WS) as ws2:
+        game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})
+        assert receive(ws1)["kind"] == receive(ws2)["kind"] == "whisper"
+
+
+def test_an_unknown_cookie_asks_for_a_reload(game):
+    as_owner(game.client, "p-forged")
+    response = game.client.get("/api/state")
+    assert (response.status_code, response.json()) == (401, {"error": web.RELOAD})
+    assert game.client.get("/api/villagers/v1").status_code == 401
+    assert game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).status_code == 401
+    with pytest.raises(WebSocketDisconnect):
+        with game.client.websocket_connect(WS) as ws:
+            ws.receive_json()
+    assert game.client.get("/").cookies[web.COOKIE] != "p-forged"
+
+
+def test_a_run_out_player_starts_over_only_after_the_lockout(game):
+    game.player.end(LOSS)
+    assert web.COOKIE not in game.client.get("/").cookies
+    assert game.players.live(game.player.owner) is game.player
+    game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
+    game.client.get("/")
+    assert game.players.live(game.player.owner).id != game.player.id
+
+
+def test_a_new_run_resets_the_page(game):
+    boot = game.client.get("/api/state").json()["boot"]
+    game.player.end(LOSS)
+    game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
+    game.client.get("/")
+    assert game.client.get("/api/state").json()["boot"] != boot
+
+
+def test_state_never_names_or_counts_other_players(game):
+    other = game.join("o-other")
+    game.feed.say("for the other one", player=other.id)
+    response = game.client.get("/api/state")
+    assert other.id not in response.text and "o-other" not in response.text and "for the other one" not in response.text
+    assert "players" not in response.json()

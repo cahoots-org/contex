@@ -55,15 +55,25 @@ async def play(web: bool) -> None:
             baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
             routine=routine,
         )
-        player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=LOCAL_OWNER)
-        if not web:
-            feed.sinks.append(feed.view(player.id, terminal(print)))
         players = Players(feed)
-        players.add(player)
         engine.players = players
+
+        def join(owner: str) -> Player:
+            """Start a new run for the owner and deal it goals."""
+            player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=owner)
+            players.add(player)
+            judge.deal(player)
+            players.deliver_pending(player)
+            return player
+
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         feed.on_world(judge.world)
-        judge.deal(player)
+        if not web:
+            player = join(LOCAL_OWNER)
+            show = terminal(print)
+            for event in feed.replay(player.id):
+                show(event)
+            feed.sinks.append(feed.view(player.id, show))
         places = [p for p in PLACES if p != GATE]
         judging = None
         try:
@@ -78,7 +88,7 @@ async def play(web: bool) -> None:
             await engine.run()
             if web:
                 app = create_app(
-                    player=player, players=players, town=town, feed=feed, judge=judge, usage=usage, port=config.web_port,
+                    players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=config.web_port,
                     suspicion=engine.suspicion, game=game, rumors=engine.rumors,
                 )
                 server = uvicorn.Server(uvicorn.Config(
@@ -94,7 +104,8 @@ async def play(web: bool) -> None:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            player.close()
+            for run in players:
+                run.close()
             await engine.stop()
 
 

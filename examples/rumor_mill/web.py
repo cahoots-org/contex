@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,7 +19,7 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import Player, Refusal
-from examples.rumor_mill.players import Players
+from examples.rumor_mill.players import RUN_OUT_LOCKOUT_SECONDS, Players, new_owner_id
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.suspicion import HEAT_LINES, Suspicion
 from examples.rumor_mill.town import PLACES, Town
@@ -30,6 +32,9 @@ MAX_BODY_BYTES = 8192
 VILLAGER_POLL_SECONDS = 1.0
 USAGE_POLL_SECONDS = 3.0
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
+COOKIE = "rumor_mill_player"
+COOKIE_SECONDS = 365 * 24 * 3600
+RELOAD = "Reload the page to join the village."
 
 
 class Guard:
@@ -89,25 +94,39 @@ def goal_json(judge, goal: Goal, met: bool) -> dict:
             "believers": believers, "needed": needed}
 
 
+def player_for(players: Players, cookie: str | None) -> Player | None:
+    """The run of the owner the cookie names, if it names one."""
+    return players.live(cookie) if cookie else None
+
+
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status)
 
 
 def create_app(
-    *, player: Player, players: Players, town: Town, feed: Feed, judge, usage: Usage, port: int,
+    *, players: Players, join: Callable[[str], Player], town: Town, feed: Feed, judge, usage: Usage, port: int,
     suspicion: Suspicion, game: Game, rumors: Rumors,
 ) -> FastAPI:
     # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
-    clients: set[asyncio.Queue] = set()
+    clients: dict[asyncio.Queue, str] = {}
     boot = uuid.uuid4().hex
-    notes = Notes(feed, player.id)
+    notes: dict[str, Notes] = {}
+    # The rumor tallies last sent to each player's tabs.
+    sent: dict[str, list[dict]] = {}
+
+    def notes_of(player: Player) -> Notes:
+        if player.id not in notes:
+            notes[player.id] = Notes(feed, player.id)
+        return notes[player.id]
 
     def broadcast(message: dict) -> None:
         for queue in clients:
             queue.put_nowait(message)
 
     def on_event(event: Event) -> None:
-        broadcast(event_json(event))
+        for queue, pid in clients.items():
+            if feed.sees(pid, event):
+                queue.put_nowait(event_json(event))
 
     async def watch(kind: str, snapshot, seconds: float) -> None:
         """Send the snapshot whenever it has changed, checking every few seconds."""
@@ -119,19 +138,29 @@ def create_app(
                 last = now
                 broadcast({"kind": kind, kind: now})
 
+    async def watch_tallies() -> None:
+        """Send each player's tabs their rumor tallies whenever those have changed."""
+        while True:
+            await asyncio.sleep(VILLAGER_POLL_SECONDS)
+            for pid in set(clients.values()):
+                now = tallies(rumors, pid)
+                if now != sent.get(pid):
+                    sent[pid] = now
+                    for queue in [q for q, p in clients.items() if p == pid]:
+                        queue.put_nowait({"kind": "rumors", "rumors": now})
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        sink = feed.view(player.id, on_event)
-        feed.sinks.append(sink)
+        feed.sinks.append(on_event)
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch("usage", usage.to_json, USAGE_POLL_SECONDS)),
-            asyncio.create_task(watch("rumors", lambda: tallies(rumors, player.id), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch_tallies()),
         ]
         try:
             yield
         finally:
-            feed.sinks.remove(sink)
+            feed.sinks.remove(on_event)
             for w in watchers:
                 w.cancel()
             await asyncio.gather(*watchers, return_exceptions=True)
@@ -141,13 +170,26 @@ def create_app(
     app.state.clients = clients
 
     @app.get("/")
-    async def page():
-        return FileResponse(PAGE)
+    async def page(request: Request):
+        """Serve the page, starting a run for a new visitor or for one whose lockout has passed."""
+        owner = request.cookies.get(COOKIE)
+        player = player_for(players, owner)
+        fresh = player is None
+        if fresh:
+            owner = new_owner_id()
+        if fresh or (player.over() and time.time() - player.ended_at >= RUN_OUT_LOCKOUT_SECONDS):
+            join(owner)
+        response = FileResponse(PAGE)
+        if fresh:
+            response.set_cookie(COOKIE, owner, max_age=COOKIE_SECONDS, httponly=True, samesite="strict")
+        return response
 
     @app.get("/api/state")
-    async def state():
+    async def state(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
         return {
-            "boot": boot,
+            "boot": f"{boot}:{player.id}",
             "places": list(PLACES),
             "place": player.place,
             "time": {"day": game.day, "phase": game.phase},
@@ -156,7 +198,7 @@ def create_app(
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.replay(player.id)],
             "rumors": rumors.cards(player.id),
-            "notes": notes.all(),
+            "notes": notes_of(player).all(),
             "usage": usage.to_json(),
             "heat": (label := suspicion.label(player.id)),
             "heat_line": HEAT_LINES[label],
@@ -165,7 +207,9 @@ def create_app(
         }
 
     @app.get("/api/villagers/{vid}")
-    async def inspect(vid: str):
+    async def inspect(vid: str, request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
         if vid not in town:
             name = town.name_of(vid)
             return _error(404, f"{name} has left town." if name else "No villager with that id.")
@@ -181,11 +225,13 @@ def create_app(
                 {"id": rid, "name": town.name_of(rid) or "someone who left", "kind": kind}
                 for rid, kind in v.relationships.items()
             ],
-            "note": notes.get(v.id),
+            "note": notes_of(player).get(v.id),
         }
 
     @app.post("/api/whisper")
     async def whisper(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
         body = b""
         async for chunk in request.stream():
             body += chunk
@@ -204,10 +250,14 @@ def create_app(
 
     @app.websocket("/ws")
     async def events(socket: WebSocket):
-        """Send events until the client goes away; reading is what notices a closed tab."""
+        """Send the player's events until the client goes away; reading is what notices a closed tab."""
+        if (player := player_for(players, socket.cookies.get(COOKIE))) is None:
+            await socket.close(1008)
+            return
         await socket.accept()
         queue: asyncio.Queue = asyncio.Queue()
-        clients.add(queue)
+        sent.setdefault(player.id, tallies(rumors, player.id))
+        clients[queue] = player.id
 
         async def pump() -> None:
             while True:
@@ -218,7 +268,7 @@ def create_app(
             while (await socket.receive())["type"] != "websocket.disconnect":
                 pass
         finally:
-            clients.discard(queue)
+            del clients[queue]
             sender.cancel()
             await asyncio.gather(sender, return_exceptions=True)
 
