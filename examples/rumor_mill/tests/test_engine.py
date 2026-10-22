@@ -1846,3 +1846,16 @@ async def test_concurrent_turns_charge_each_their_own_player(monkeypatch):
     assert usage.cost("p-a") + usage.cost("p-b") == pytest.approx(usage.cost())
     assert usage.cost("p-b") - usage.cost("p-a") == pytest.approx(0.04)
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_no_turn_while_nobody_is_playing_and_turns_resume_when_a_player_joins(turns):
+    engine, minds, feed = await setup("v1")
+    engine.players = Players(feed)
+    push(minds["v1"])
+    await asyncio.sleep(SETTLE)
+    assert minds["v1"].polls == 0 and turns.views == []
+    engine.players.add(stub_player())
+    push(minds["v1"])
+    await wait_for(lambda: len(turns.views) == 1)
+    await engine.stop()

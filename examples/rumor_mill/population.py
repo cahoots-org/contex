@@ -33,7 +33,7 @@ class Replenisher:
             await self._top_up()
 
     async def _top_up(self) -> None:
-        while self.town.alive_count < self.config.population:
+        while self.town.alive_count < self.config.population and self.engine.players.any_playing():
             try:
                 await self._admit()
             except Exception:

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -237,6 +238,7 @@ async def test_judge_skips_the_goals_of_a_player_whose_game_is_over():
     player.end(Summary("lost", [], []))
     everyone = Players(player.feed)
     everyone.add(player)
+    everyone.add(SimpleNamespace(id="p-2", owner="o-2", goals=[], met=set(), whispered_at=None, over=lambda: False))
     checked = []
 
     async def check(goal):
@@ -437,3 +439,13 @@ async def test_run_out_ends_only_that_players_game():
     await engine.stop()
     assert pa.state == "lost" and pb.state == "playing"
     assert MEETING in [e.line for e in feed.replay(PID)] and MEETING not in [e.line for e in feed.replay("p-b")]
+
+
+@pytest.mark.asyncio
+async def test_villagers_keep_their_places_while_nobody_is_playing():
+    engine, player, _, _ = await start("v1")
+    engine.routine = StubRoutine({"v1": "mill"})
+    player.end(Summary("lost", GOALS, []))
+    await engine._walk("morning", 0.0)
+    assert engine.town.place_of("v1") == "square"
+    await engine.stop()

@@ -374,8 +374,10 @@ class Engine:
     async def _turn(self, mind: Mind) -> bool:
         """Poll the mind, add addressed messages, and if anything fresh is new, decide and act.
 
-        Returns whether a turn ran.
+        Returns whether a turn ran. While nobody is playing, nothing is read and no turn runs.
         """
+        if not self.players.any_playing():
+            return False
         v = mind.villager
         new = await mind.poll()
         self._read_at[v.id] = time.monotonic()
@@ -663,8 +665,8 @@ class Engine:
             log.exception("routine round failed")
 
     def _free_to_walk(self, vid: str) -> bool:
-        """Whether the villager is in town, free of a turn, a scene, or a move of their own."""
-        return vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
+        """Whether someone is playing and the villager is in town, free of a turn, a scene, or a move of their own."""
+        return self.players.any_playing() and vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
             vid not in self._chose_move
         )
 

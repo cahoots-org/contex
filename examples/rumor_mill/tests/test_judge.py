@@ -311,7 +311,7 @@ async def test_world_goal_met_draws_a_new_one():
     judge, _, _, feed, _ = make()
     old = judge.world
     scripted(judge, [1.0] * 10, goal=old)
-    await run_until(judge, players(), lambda: feed.worlds)
+    await run_until(judge, players(holder(PID)), lambda: feed.worlds)
     assert judge.world.id != old.id and feed.worlds == [judge.world.id]
     assert (old.id, None) in feed.met
 
@@ -447,7 +447,7 @@ async def test_a_world_trophy_waits_for_a_run_out_persons_next_run():
     world_met(judge)
     pa = holder("p-a", whispered_at=judge.world_since + 1, over=True)
     feed.close(pa.id)
-    everyone = players(pa, feed=feed)
+    everyone = players(pa, holder("p-b"), feed=feed)
     await run_until(judge, everyone, lambda: everyone.pending)
     assert everyone.pending[pa.owner] and feed.replay(pa.id) == []
     fresh = holder("p-a2")
@@ -465,3 +465,20 @@ async def test_a_whisper_under_the_next_world_goal_does_not_count_for_the_last()
     everyone = players(pa, feed=feed)
     await run_until(judge, everyone, lambda: len(feed.worlds) >= 2)
     assert [t.kind for t in everyone.cases[pa.owner]] == ["world"]
+
+
+@pytest.mark.asyncio
+async def test_no_goal_is_checked_while_nobody_is_playing():
+    judge, _, _, _, _ = make()
+    checked = []
+
+    async def check(goal):
+        checked.append(goal.id)
+        return 0.0
+
+    judge.check = check
+    running = asyncio.create_task(judge.run(players(holder(PID, BELIEF, over=True))))
+    await asyncio.sleep(10 * CONFIG.judge_every_days * CONFIG.day_seconds)
+    running.cancel()
+    await asyncio.gather(running, return_exceptions=True)
+    assert checked == []

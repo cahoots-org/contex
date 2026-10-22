@@ -45,6 +45,10 @@ class Players:
     def __iter__(self) -> Iterator[Player]:
         return iter(self._by_id.values())
 
+    def any_playing(self) -> bool:
+        """Whether some player's game is not over."""
+        return any(not p.over() for p in self._by_id.values())
+
     def at(self, place: str) -> list[Player]:
         """The players at place whose game is not over."""
         return [p for p in self._by_id.values() if p.place == place and not p.over()]

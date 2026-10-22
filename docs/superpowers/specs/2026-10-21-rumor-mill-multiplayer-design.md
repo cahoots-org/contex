@@ -22,7 +22,7 @@ same way now and then.
 
 ## Goals
 
-- One world holds many players at once; it keeps running when nobody is playing.
+- One world holds many players at once; it idles while nobody is playing: no villager turns, routine walks, arrivals or goal checks until a player is in play.
 - Each player has the full single-player game: their own whispers, rumor cards, notes, goals,
   suspicion, conversations, and threads.
 - The world goal and its progress are shown to everyone in the world.

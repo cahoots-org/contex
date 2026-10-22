@@ -9,7 +9,9 @@ from examples.rumor_mill import population as population_mod
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Villager
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.population import Replenisher
+from examples.rumor_mill.tests.helpers import stub_player
 from examples.rumor_mill.town import GATE, START_PLACE, Town
 
 TIMEOUT = 2.0
@@ -40,6 +42,8 @@ class StubEngine:
         self.delivered = []
         self.fail_add = False
         self.routine = None
+        self.players = Players(None)
+        self.players.add(stub_player())
 
     async def add_villager(self, v, place):
         if self.routine:
@@ -206,4 +210,14 @@ async def test_a_newcomer_gets_a_routine_on_arrival(newcomers):
     engine.leave("v0")
     await wait_for(lambda: engine.added)
     assert engine.routine.added == ["n1"]
+    await stop(task)
+
+
+@pytest.mark.asyncio
+async def test_no_arrival_while_nobody_is_playing(newcomers):
+    engine, town, task = await start(3, 3)
+    engine.players = Players(None)
+    engine.leave("v0")
+    await asyncio.sleep(SETTLE + 0.05)
+    assert engine.added == []
     await stop(task)

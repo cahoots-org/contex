@@ -10,6 +10,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
@@ -687,3 +688,13 @@ async def test_a_whisper_check_and_brush_off_are_charged_to_the_whisperer():
     assert checked and set(checked) == {PID}
     assert usage.cost(PID) == pytest.approx(usage.cost()) and usage.cost() > 0
     assert charged_to.get() is None
+
+
+def test_someone_is_playing_only_while_a_player_is_not_over():
+    players = Players(None)
+    assert not players.any_playing()
+    p = make("Ann")[0]
+    players.add(p)
+    assert players.any_playing()
+    p.end(Summary("lost", [], []))
+    assert not players.any_playing()

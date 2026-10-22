@@ -147,6 +147,8 @@ class Judge:
         interval = self.config.judge_every_days * self.config.day_seconds
         while True:
             await asyncio.sleep(interval)
+            if not players.any_playing():
+                continue
             self._note_whisperers(players)
             playing = [p for p in players if not p.over()]
             in_play = {g.id: g for p in playing for g in p.goals}
