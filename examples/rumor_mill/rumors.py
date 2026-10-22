@@ -12,6 +12,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
 from examples.rumor_mill.feed import Event
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.town import NEWCOMER
 
@@ -64,6 +65,10 @@ class Card:
     topic_only: bool = False
     # Who holds the rumor now, by villager id: name, state, at, until, told, scene, before and depth.
     frontier: dict[str, dict] = field(default_factory=dict)
+    # Where it was whispered.
+    place: str = ""
+    # The deck goal ids its words serve, best first.
+    claims: list[str] = field(default_factory=list)
 
 
 def _entry(name: str, state: str, **extra) -> dict:
@@ -80,27 +85,32 @@ def _who(names: list[str]) -> str:
 
 
 class Rumors:
-    def __init__(self, contex: ContexClient, baselines: Baselines, config: Config):
+    def __init__(self, contex: ContexClient, baselines: Baselines, config: Config, overhear: Overhear | None = None):
         self.contex = contex
         self.baselines = baselines
         self.config = config
+        self.overhear = overhear
         self.project = f"rumor-mill:{config.session}:rumors"
         self._cards: dict[str, Card] = {}
 
     async def add(
         self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
-        conversation: str | None = None, *, player: str,
+        conversation: str | None = None, *, player: str, place: str = "",
     ) -> None:
-        """Start the whisper's card and its baseline measurement, then publish its words; failures are logged.
+        """Start the whisper's card and its baseline measurement, publish its words, and note the goals they serve.
 
-        A reply in a conversation is shown on the conversation's card instead of its own.
+        A reply in a conversation is shown on the conversation's card instead of its own. Failures are logged.
         """
-        card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at, player)
+        card = self._cards[whisper_uid] = Card(
+            whisper_uid, text, target_id, target_name, published_at, player, place=place,
+        )
         if conversation in self._cards:
             card.part_of = conversation
             self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "A newcomer", "", text, None))
         card.heard.add(target_id)
         await self._start(card)
+        if card.part_of is None and self.overhear is not None:
+            card.claims = await self.overhear.claims(text)
 
     async def add_topic(self, uid: str, text: str, published_at: datetime) -> None:
         """Measure and publish a topic so on_topic can check lines against it; it is never listed in cards."""
@@ -188,7 +198,7 @@ class Rumors:
         if d["state"] != "not_carried":
             self.reached(d["whisper_id"], d["villager_id"], d["name"], TARGET_STATES[d["state"]], until=d.get("until"))
             return
-        card = self._shown(d["whisper_id"])
+        card = self.card(d["whisper_id"])
         if card is not None and card.frontier.get(d["villager_id"], {}).get("state") in OPEN_STATES:
             del card.frontier[d["villager_id"]]
 
@@ -197,7 +207,7 @@ class Rumors:
 
         A listener who heard it before and does not care, or finds it worn, already knew it.
         """
-        card = self._shown(uid)
+        card = self.card(uid)
         if card is None:
             return
         held = card.frontier.get(vid)
@@ -210,7 +220,7 @@ class Rumors:
 
     def in_scene(self, uid: str, scene: Scene, names: dict[str, str]) -> None:
         """Mark the scene's people on the rumor's frontier while it runs, and clear the marks once it ends."""
-        card = self._shown(uid)
+        card = self.card(uid)
         if card is None:
             return
         for held in card.frontier.values():
@@ -222,7 +232,7 @@ class Rumors:
         for vid in sorted(scene.participants):
             card.frontier.setdefault(vid, _entry(names.get(vid, vid), "heard"))["scene"] = mark
 
-    def _shown(self, uid: str) -> Card | None:
+    def card(self, uid: str) -> Card | None:
         """The card that shows uid's whisper."""
         card = self._cards.get(uid)
         return card and self._cards.get(card.part_of, card)
@@ -237,7 +247,7 @@ class Rumors:
 
     def told_only(self, root_uid: str, uid: str, vid: str) -> bool:
         """Whether uid is an on-topic hop on root_uid's card told to vid alone."""
-        card = self._shown(root_uid)
+        card = self.card(root_uid)
         return card is not None and any(hop["uid"] == uid and hop["ids"] == [vid] for hop in card.hops)
 
     def close(self) -> None:
@@ -247,13 +257,13 @@ class Rumors:
 
     def cards(self, player: str) -> list[dict]:
         """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day,
-        who holds it now, why it stopped, and how it touched each villager."""
+        who holds it now, why it stopped, how it touched each villager, the goals it serves, and where it was whispered."""
         cutoff = time.time() - self.config.day_seconds
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
              "conversation": c.conversation, "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
-             "touched": self._touched(c)}
+             "touched": self._touched(c), "claims": c.claims, "place": c.place}
             for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
         ]
 

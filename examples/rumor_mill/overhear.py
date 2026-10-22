@@ -68,6 +68,23 @@ class Overhear:
             return "random"
         return None
 
+    async def claims(self, text: str) -> list[str]:
+        """The deck goal ids whose published evidence the text matches, best first; [] on failure."""
+        if not self._evidence:
+            return []
+        try:
+            found = await self.contex.query(self.project, text, top_k=len(self._evidence), threshold=0)
+        except Exception:
+            log.warning("goal claims check failed")
+            log.debug("goal claims failure", exc_info=True)
+            return []
+        hits = [
+            m for m in found
+            if m.data_key in self._evidence and m.similarity is not None
+            and self.baselines.matches(self._evidence[m.data_key], m.similarity)
+        ]
+        return [m.data_key.removeprefix("goal:") for m in sorted(hits, key=lambda m: m.similarity, reverse=True)]
+
     async def _touches_a_goal(self, u: Utterance, goals: Collection[str]) -> bool:
         keys = {f"goal:{g}" for g in goals} & self._evidence.keys()
         if not keys:

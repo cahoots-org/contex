@@ -76,7 +76,7 @@ def game(monkeypatch):
         players.deliver_pending(player)
         return player
 
-    judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD)
+    judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD, roots={})
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
     feed.sinks.append(rumors.on_event)
@@ -455,8 +455,37 @@ def test_card_tallies_reach_the_websocket(game):
         while event["kind"] != "rumors":
             event = receive(ws)
     assert event["rumors"] == [
-        {"uid": "w-1", "heard": 1, "still": 0, "frontier": [], "stopped": None, "touched": {"v1": "heard"}},
+        {"uid": "w-1", "heard": 1, "still": 0, "frontier": [], "stopped": None, "touched": {"v1": "heard"},
+         "goals": []},
     ]
+
+
+def card_with_claims(game, claims):
+    game.client.portal.call(partial(
+        game.rumors.add, "w-1", "the cat spies by the well", datetime.now(UTC), "v1", "Marta Hale", player=game.player.id,
+    ))
+    game.rumors.card("w-1").claims = claims
+
+
+def test_cards_link_goals_and_count_who_each_convinced(game):
+    card_with_claims(game, ["cat", "well"])
+    game.judge.roots = {"cat": {"v1": "w-1", "v2": None}, WORLD.id: {"v2": "w-1"}}
+    card, = game.client.get("/api/state").json()["rumors"]
+    assert card["goals"] == [
+        {"text": GOAL.text, "claim": "the mayor's cat is a spy", "world": False, "convinced": 1},
+        {"text": WORLD.text, "claim": "the well is cursed", "world": True, "convinced": 1},
+    ]
+    assert card["touched"] == {"v1": "believes", "v2": "believes"}
+
+
+def test_another_players_believers_never_count_on_your_card(game):
+    card_with_claims(game, ["cat"])
+    game.client.portal.call(partial(
+        game.rumors.add, "w-9", "the cat is a spy", datetime.now(UTC), "v2", "Bert Cole", player="p-other",
+    ))
+    game.judge.roots = {"cat": {"v1": "w-9"}}
+    card, = game.client.get("/api/state").json()["rumors"]
+    assert card["goals"][0]["convinced"] == 0 and card["touched"] == {"v1": "heard"}
 
 
 def test_first_visit_sets_an_owner_cookie(game):

@@ -47,12 +47,12 @@ async def play(web: bool) -> None:
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         baselines = Baselines(contex, config)
-        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng)
+        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage)
         overhear = Overhear(contex, baselines, config, rng)
         routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(p.goals),
-            baselines=baselines, rumors=Rumors(contex, baselines, config), overhear=overhear,
+            baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,
             routine=routine,
         )
         players = Players(feed)

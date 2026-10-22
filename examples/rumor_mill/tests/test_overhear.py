@@ -140,3 +140,24 @@ async def test_listening_hears_every_line_but_not_whispers_hops_or_other_places(
     assert await overhear.keep(line(action=WARN), "tavern", listening=True) is None
     assert await overhear.keep(line(place="mill"), "tavern", listening=True) is None
     assert contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_claims_are_the_goals_whose_evidence_the_words_match_best_first():
+    contex = StubContex({"spooky water": [
+        Match("goal:well-cursed", {}, 0.9), Match("goal:dragon", {}, 0.1), Match("goal:tavern-ghost", {}, 0.95),
+    ]})
+    overhear = Overhear(contex, StubBaselines(0.5), Config(session="s1"), Always(0.99))
+    await overhear.publish([GOALS["tavern-ghost"], WELL, GOALS["dragon"]])
+    assert await overhear.claims("spooky water") == ["tavern-ghost", "well-cursed"]
+    assert contex.queries == [("rumor-mill:s1:goals", "spooky water", {"top_k": 3, "threshold": 0})]
+
+
+@pytest.mark.asyncio
+async def test_claims_fail_quietly(caplog):
+    overhear, _ = await make(error=RuntimeError("down 0.73"))
+    with caplog.at_level(logging.WARNING):
+        assert await overhear.claims("the well is cursed") == []
+    assert "0.73" not in caplog.text and "the well is cursed" not in caplog.text
+    nothing, contex = await make(goals=())
+    assert await nothing.claims("the well is cursed") == [] and contex.queries == []

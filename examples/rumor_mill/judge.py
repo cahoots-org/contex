@@ -5,6 +5,7 @@ import logging
 import math
 import random
 import time
+from collections import Counter
 
 from typesafe_sdk import Noul
 
@@ -12,6 +13,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, claim, deal, trophy_line, world_goal
+from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player
@@ -44,7 +46,7 @@ def _last_claim(player: Player, last: Goal) -> str | None:
 class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
-        rng: random.Random | None = None,
+        rng: random.Random | None = None, lineage: Lineage | None = None,
     ):
         self.contex = contex
         self.jev = jev
@@ -54,8 +56,11 @@ class Judge:
         self.game = game
         self.baselines = baselines
         self.rng = rng or random.Random()
+        self.lineage = lineage
         self.progress: dict[str, float] = {}
         self.counts: dict[str, tuple[int, int]] = {}
+        # By goal id, each believer's id and the player whisper behind their best-matching memory, if one is.
+        self.roots: dict[str, dict[str, str | None]] = {}
         self.world = self._next_world()
         self.world_since = time.time()
         # The owners who whispered while the world goal was in play.
@@ -85,7 +90,18 @@ class Judge:
             except Exception:
                 log.exception("judging %s failed for %s", goal.id, villager.id)
                 return None
-            return believes if villager.id in self.town else None
+            if villager.id not in self.town:
+                return None
+            if believes:
+                self.roots[goal.id][villager.id] = self._root(max(matches, key=lambda m: m.similarity or 0.0))
+            return believes
+
+    def _root(self, memory: Match) -> str | None:
+        """The player whisper the memory descends from, or None."""
+        uid = memory.data_key.removeprefix("utt:")
+        if self.lineage is None or self.lineage.player_of(uid) is None:
+            return None
+        return self.lineage.root(uid)
 
     async def _group_qualifies(self, goal: Goal, gid: str, members: int) -> bool:
         if members < goal.min_group_members:
@@ -107,6 +123,7 @@ class Judge:
         if goal.kind == "state":
             return max(0.0, min(1.0, goal.state_check(self.town)))
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
+        self.roots[goal.id] = {}
         results = await asyncio.gather(*(self._believes(goal, v) for v in self.town.villagers))
         counted = [r for r in results if r is not None]
         if not counted:
@@ -154,6 +171,7 @@ class Judge:
             in_play = {g.id: g for p in playing for g in p.goals}
             in_play[self.world.id] = self.world
             for goal in in_play.values():
+                before = dict(self.roots.get(goal.id, {}))
                 try:
                     progress = await self.check(goal)
                 except Exception:
@@ -164,7 +182,7 @@ class Judge:
                 if int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100):
                     counts = self.counts.get(goal.id)
                     for p in holders:
-                        self.feed.on_progress(goal, progress, counts, player=p.id)
+                        self.feed.on_progress(goal, progress, counts, player=p.id, rumor=self._moved(goal.id, p.id, before))
                     if world:
                         self.feed.on_progress(goal, progress, counts)
                 self.progress[goal.id] = progress
@@ -191,6 +209,14 @@ class Judge:
                     self.feed.on_world(self.world)
             self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
 
+    def _moved(self, goal_id: str, player_id: str, before: dict[str, str | None]) -> str | None:
+        """The player's whisper that gained the goal the most believers since before, or None if none gained any."""
+        gained = Counter(
+            root for vid, root in self.roots.get(goal_id, {}).items()
+            if root is not None and before.get(vid) != root and self.lineage.player_of(root) == player_id
+        )
+        return gained.most_common(1)[0][0] if gained else None
+
     def _note_whisperers(self, players: Players) -> None:
         """Remember the owner of each player who has whispered since the world goal was drawn."""
         self.whisperers |= {
@@ -202,7 +228,7 @@ class Judge:
 
     def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
-        for known in (self.progress, self.counts, holds):
+        for known in (self.progress, self.counts, self.roots, holds):
             for gid in known.keys() - in_play:
                 del known[gid]
 

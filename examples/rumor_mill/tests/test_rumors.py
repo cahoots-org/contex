@@ -362,3 +362,32 @@ async def test_frontier_entries_carry_no_internal_fields():
     rumors.reached("w-1", "v4", "Dee", "worn", depth=2)
     for entry in rumors.cards(PID)[0]["frontier"]:
         assert set(entry) == {"id", "name", "state", "until", "told", "crowd", "scene"}
+
+
+class StubOverhear:
+    def __init__(self, claims):
+        self.result = claims
+        self.calls = []
+
+    async def claims(self, text):
+        self.calls.append(text)
+        return self.result
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_card_keeps_its_place_and_claims_and_a_reply_asks_nothing():
+    overhear = StubOverhear(["tavern-ghost"])
+    rumors = Rumors(StubContex(), StubBaselines(0.5), Config(session="s1"), overhear)
+    await rumors.add("w-1", "a ghost in the tavern", AT, "v1", "Marta", player=PID, place="tavern")
+    await rumors.add("w-2", "it moans", AT, "v1", "Marta", conversation="w-1", player=PID, place="tavern")
+    assert overhear.calls == ["a ghost in the tavern"]
+    card, = rumors.cards(PID)
+    assert card["claims"] == ["tavern-ghost"] and card["place"] == "tavern"
+
+
+@pytest.mark.asyncio
+async def test_card_follows_a_reply_to_its_conversation_card():
+    rumors, _ = await make()
+    await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1", player=PID)
+    assert rumors.card("w-2").uid == "w-1" and rumors.card("w-1").uid == "w-1"
+    assert rumors.card("w-9") is None

@@ -112,13 +112,18 @@ class Feed:
 
     def on_progress(
         self, goal: Goal, fraction: float, counts: tuple[int, int] | None = None, player: str | None = None,
+        rumor: str | None = None,
     ) -> None:
-        """Progress on a player's goal, or on the world goal when player is None."""
+        """Progress on a player's goal, or on the world goal when player is None.
+
+        rumor, the player's whisper that moved it, goes out only to that player.
+        """
         percent = int(fraction * 100)
         believers, needed = counts or (None, None)
         shown = f"{believers} of {needed} believe it" if counts else f"{percent}%"
         self.emit("goal", f'Goal "{goal.text}": {shown}', player=player, goal_id=goal.id, text=goal.text, percent=percent,
-                  met=False, believers=believers, needed=needed, world=player is None)
+                  met=False, believers=believers, needed=needed, world=player is None,
+                  **({} if player is None else {"rumor": rumor}))
 
     def on_met(self, goal: Goal, player: str | None = None) -> None:
         """A player's goal met, or the world goal when player is None."""

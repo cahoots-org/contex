@@ -17,7 +17,7 @@ from starlette.websockets import WebSocketClose
 
 from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import Goal
+from examples.rumor_mill.goals import Goal, claim
 from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal
@@ -39,6 +39,7 @@ BAD_ASK = 'Send JSON like {"villager_id": "v1", "topic": "the mill"}.'
 COOKIE = "rumor_mill_player"
 COOKIE_SECONDS = 365 * 24 * 3600
 RELOAD = "Reload the page to join the village."
+TALLY_KEYS = ("uid", "heard", "still", "frontier", "stopped", "touched", "goals")
 
 
 class Guard:
@@ -71,13 +72,29 @@ def villagers(town: Town) -> list[dict]:
     )
 
 
-def tallies(rumors: Rumors, player: str) -> list[dict]:
-    """Each card's counts and frontier, so the live snapshot changes only when one of them does."""
-    return [
-        {"uid": c["uid"], "heard": c["heard"], "still": c["still"], "frontier": c["frontier"], "stopped": c["stopped"],
-         "touched": c["touched"]}
-        for c in rumors.cards(player)
-    ]
+def card_view(card: dict, player: Player, judge, rumors: Rumors) -> dict:
+    """The card with the goals it serves for the player, each with how many it convinced, who become believers in touched.
+
+    That is the first claim in the player's hand, and the world goal when the card makes its claim.
+    """
+    hand = {g.id: g for g in player.goals}
+    goals = [hand[c] for c in card["claims"] if c in hand][:1]
+    goals += [judge.world for c in card["claims"] if judge.world.id == f"world-{c}"]
+    links = []
+    for goal in goals:
+        convinced = [
+            vid for vid, root in judge.roots.get(goal.id, {}).items()
+            if root is not None and (shown := rumors.card(root)) is not None and shown.uid == card["uid"]
+        ]
+        card["touched"].update(dict.fromkeys(convinced, "believes"))
+        links.append({"text": goal.text, "claim": claim(goal), "world": goal is judge.world, "convinced": len(convinced)})
+    return {**card, "goals": links}
+
+
+def tallies(rumors: Rumors, judge, players: Players, player_id: str) -> list[dict]:
+    """Each card's counts, frontier and goal links, so the live snapshot changes only when one of them does."""
+    player = players.get(player_id)
+    return [{k: v[k] for k in TALLY_KEYS} for v in (card_view(c, player, judge, rumors) for c in rumors.cards(player_id))]
 
 
 def event_json(event: Event) -> dict:
@@ -177,7 +194,7 @@ def create_app(
         watchers = [
             asyncio.create_task(watch("villagers", lambda: villagers(town), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch_each("usage", usage.to_json, USAGE_POLL_SECONDS)),
-            asyncio.create_task(watch_each("rumors", partial(tallies, rumors), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch_each("rumors", partial(tallies, rumors, judge, players), VILLAGER_POLL_SECONDS)),
         ]
         try:
             yield
@@ -219,7 +236,7 @@ def create_app(
             "world_goal": goal_json(judge, judge.world, False),
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.replay(player.id)],
-            "rumors": rumors.cards(player.id),
+            "rumors": [card_view(c, player, judge, rumors) for c in rumors.cards(player.id)],
             "notes": notes_of(player).all(),
             "usage": usage.to_json(player.id),
             "heat": (label := suspicion.label(player.id)),
@@ -319,7 +336,7 @@ def create_app(
             await socket.close(1008)
             return
         queue: asyncio.Queue = asyncio.Queue()
-        sent["rumors"].setdefault(player.id, tallies(rumors, player.id))
+        sent["rumors"].setdefault(player.id, tallies(rumors, judge, players, player.id))
         sent["usage"].setdefault(player.id, usage.to_json(player.id))
         clients[queue] = player.id
 

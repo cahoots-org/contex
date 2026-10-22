@@ -291,3 +291,13 @@ def test_an_answer_reaches_only_the_asker():
     assert event.data == {"villager_id": "v2", "name": "Marta", "topic": "the mill", "line": "Tom told me so."}
     assert lines == ['Marta, asked about the mill: "Tom told me so."']
     assert not feed.sees("p-2", event)
+
+
+def test_progress_carries_the_rumor_only_for_its_player():
+    feed, lines = make()
+    goal = Goal("cat", "the cat is a spy", "belief")
+    feed.on_progress(goal, 0.42, player=PID, rumor="w-1")
+    feed.on_progress(goal, 0.42, rumor="w-1")
+    mine, everyone = list(feed.recent)[-2:]
+    assert mine.data["rumor"] == "w-1" and "rumor" not in everyone.data
+    assert lines == ['Goal "the cat is a spy": 42%'] * 2

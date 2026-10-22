@@ -62,9 +62,11 @@ class Lines:
         self.deals: list[tuple[list[str], str]] = []
         self.worlds: list[str] = []
         self.trophies: list[tuple[Trophy, str, str]] = []
+        self.rumors: list[tuple[str | None, str | None]] = []
 
-    def on_progress(self, goal, fraction, counts=None, player=None):
+    def on_progress(self, goal, fraction, counts=None, player=None, rumor=None):
         self.progress.append((goal.id, fraction, player))
+        self.rumors.append((player, rumor))
 
     def on_met(self, goal, player=None):
         self.met.append((goal.id, player))
@@ -482,3 +484,39 @@ async def test_no_goal_is_checked_while_nobody_is_playing():
     running.cancel()
     await asyncio.gather(running, return_exceptions=True)
     assert checked == []
+
+
+@pytest.mark.asyncio
+async def test_believers_are_traced_to_the_rumor_behind_their_best_memory():
+    _, contex, jev, feed, town = make(n=3)
+    lineage = Lineage()
+    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    lineage.record("w-1", None, "p-1")
+    lineage.record("u-1", "w-1")
+    lineage.record("u-2", None)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [
+        Match("utt:u-2", {"text": "a"}, 0.8), Match("utt:u-1", {"text": "b"}, 0.9),
+    ]
+    contex.minds[mind_project(CONFIG.session, "v1")] = [Match("utt:u-2", {"text": "a"}, 0.8)]
+    await judge.check(BELIEF)
+    assert judge.roots[BELIEF.id] == {"v0": "w-1", "v1": None}
+
+
+@pytest.mark.asyncio
+async def test_progress_names_the_players_rumor_that_moved_it():
+    judge, _, _, feed, _ = make()
+    judge.world = QUIET
+    judge.lineage = lineage = Lineage()
+    lineage.record("w-1", None, "p-1")
+    lineage.record("w-2", None, "p-2")
+    gains = iter([{"v0": "w-1"}, {"v0": "w-1", "v1": "w-1", "v2": "w-2"}])
+
+    async def check(goal):
+        if goal.id != BELIEF.id:
+            return 0.0
+        judge.roots[goal.id] = next(gains)
+        return len(judge.roots[goal.id]) / 4
+
+    judge.check = check
+    await run_until(judge, players(holder("p-1", BELIEF), holder("p-2", BELIEF)), lambda: len(feed.rumors) >= 4)
+    assert feed.rumors[:4] == [("p-1", "w-1"), ("p-2", None), ("p-1", "w-1"), ("p-2", "w-2")]

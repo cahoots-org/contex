@@ -366,7 +366,7 @@ class Player:
         if self.engine.rumors is not None:
             await self.engine.rumors.add(
                 utterance.id, utterance.text, published_at, target.id, target.name, utterance.conversation,
-                player=self.id,
+                player=self.id, place=utterance.place,
             )
 
     def over(self) -> bool:
