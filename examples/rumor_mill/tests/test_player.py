@@ -627,6 +627,15 @@ async def test_a_near_miss_on_the_last_try_is_a_brush_off():
 
 
 @pytest.mark.asyncio
+async def test_a_miss_says_whether_the_next_whisper_continues_it():
+    player = near_missing_player("Wheel's groaning.", "Girl wants the city.")
+    await miss(player)
+    player.engine.contex = StubContex({NEEDS[1]: landing(0.495, "utt:w-2")})
+    await miss(player)
+    assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True, True, False, False]
+
+
+@pytest.mark.asyncio
 async def test_a_whisper_about_a_story_they_heard_lands_without_a_need_match():
     player = hinted_player("Wheel's groaning.")
     player.engine.heard = [Match("utt:u-3", {"id": "u-3", "text": "Bo said at the well: the miller waters his flour"}, 0.9)]

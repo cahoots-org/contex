@@ -235,9 +235,10 @@ class Player:
             else:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
-            leaning = bool(near_misses) and not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)
+            continues = not (thread and thread["whispers"] + 1 >= THREAD_WHISPERS)
+            leaning = bool(near_misses) and continues
             state = "near_miss" if leaning else "brushed_off"
-            self.feed.on_whisper_status(uid, target.id, target.name, state)
+            self.feed.on_whisper_status(uid, target.id, target.name, state, continues=continues)
             open_now = self.engine.conversations.get((target.id, self.id))
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
                 self.engine.end_conversation(target.id, self.id)
@@ -246,7 +247,7 @@ class Player:
             else:
                 concern = self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
-            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text))
+            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues))
             self._track(task)
         return None
 
@@ -394,7 +395,7 @@ class Player:
         task.add_done_callback(self._tasks.discard)
 
     async def _hint(
-        self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str,
+        self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str, continues: bool,
     ) -> None:
         """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
         if self.over():
@@ -409,7 +410,7 @@ class Player:
             line = None
         if self.over():
             return
-        self.feed.on_whisper_status(uid, villager_id, name, state, hint=line)
+        self.feed.on_whisper_status(uid, villager_id, name, state, hint=line, continues=continues)
         if line:
             await self.engine.hints.add(self.id, villager_id, line)
 

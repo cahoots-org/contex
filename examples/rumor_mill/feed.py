@@ -168,7 +168,8 @@ class Feed:
 
         A whisper already resolved only takes another outcome: a late heard, brush-off, near miss or not-carried is
         dropped. An answered whisper drops a late listening state, brush-off or near miss.
-        The terminal prints only a brush-off or near miss once its hint is settled.
+        The terminal prints only a brush-off or near miss once its hint is settled. A miss also carries continues,
+        whether the villager's next whisper continues the exchange.
         """
         if whisper_id in self._resolved and state not in RESOLVED:
             return

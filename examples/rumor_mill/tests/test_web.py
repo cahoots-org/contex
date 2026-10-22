@@ -646,3 +646,15 @@ def test_the_panel_has_selection_sort_and_draft_marks(game):
     for text in ('id="sort"', "By what you know", "By influence", "/api/hints", "this might interest them", "touched", '"beliefs"'):
         assert text in html
     assert "innerHTML" not in html
+
+
+def test_the_page_has_the_conversation_dock(game):
+    html = game.client.get("/").text
+    for needle in ('id="dock"', 'id="chat"', "continues", "Talking with"):
+        assert needle in html
+    assert 'ariaControls: "chat"' in html or 'aria-controls", "chat"' in html
+    dock = re.search(r"const DOCK = \{(.*?)\};", html, re.S).group(1)
+    assert set(re.findall(r"(\w+): \[", dock)) == {"near_miss", "answered", "brushed_off", "busy"}
+    for gone in ("const talks", "startTalk", "innerHTML"):
+        assert gone not in html
+    assert ".reply" not in re.search(r"const ROVE = (.*);", html).group(1)

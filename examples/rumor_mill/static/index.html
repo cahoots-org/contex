@@ -33,6 +33,7 @@
   --wait: #2b5d8a;
   --kept: #5a6152;
   --talk: #6a4c93;
+  --lean: #a87412;
   --sun: #e2a52a;
   --moon: #f3f1e4;
   --day-sky: #bcd8ea;
@@ -72,6 +73,7 @@
     --r4: #7fcf8a;
     --r5: #6fb3e6;
     --on-mark: #1a2226;
+    --lean: #94650c;
   }
 }
 * { box-sizing: border-box; }
@@ -199,7 +201,7 @@ mark.kept {
 .gameover .restart { margin: .75rem 0 0; color: var(--muted); font-size: .875rem; }
 @keyframes settle { from { opacity: 0; } to { opacity: 1; } }
 .feed.tracing .hop:not(.lit), .feed.tracing .whisper:not(.lit), .feed.tracing .note { opacity: .35; }
-.feed.tracing .vt, .feed.tracing .drift, .feed.tracing .reply { opacity: .35; }
+.feed.tracing .vt, .feed.tracing .drift { opacity: .35; }
 .lit .rails { background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 1rem); }
 .rumor {
   border: 1px solid var(--rail); border-radius: 8px; padding: .45rem .9rem .6rem; margin: .75rem 0; max-width: 46rem;
@@ -236,7 +238,7 @@ mark.kept {
 .frontier:not(.open) { display: none; }
 .rumor:not(.open) .thread { display: none; }
 .reuse { margin-left: .5rem; font-size: .75rem; }
-.thread, .talk, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
+.thread, .vt-lines, .scenes, .scene-lines { list-style: none; margin: 0; padding: 0; }
 .scene { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
 .scenes:not(.open) .scene[data-ended] { display: none; }
 .scenes-more { display: block; margin-top: .3rem; font-size: .8rem; }
@@ -244,9 +246,6 @@ mark.kept {
 .scene:not(.open) .scene-lines { display: none; }
 .scene-end { margin: .1rem 0 0; font-size: .85rem; font-style: italic; color: var(--muted); }
 .drift { padding: .2rem 0 0 .35rem; font-size: .85rem; font-style: italic; color: var(--muted); }
-.talk:not(:empty) { border-top: 1px solid var(--rail); margin-top: .4rem; padding-top: .1rem; }
-.talk .mine { margin-top: .2rem; }
-.reply { padding: .3rem 0 .3rem 1.5rem; }
 .vt {
   max-width: 46rem; margin: .5rem 0; padding: .2rem 0 .2rem .6rem;
   border-left: 2px dashed var(--rail); font-size: .875rem; color: var(--muted);
@@ -268,11 +267,36 @@ mark.kept {
 .sky .sun { fill: var(--sun); stroke: var(--sun); stroke-width: 1.6; stroke-linecap: round; }
 .sky .moon, .sky .star { fill: var(--moon); }
 
-.composer {
-  border-top: 1px solid var(--rail);
-  padding: .75rem 1.25rem 1rem;
-  background: var(--bg);
+.bottom { border-top: 1px solid var(--rail); background: var(--bg); }
+.composer { padding: .75rem 1.25rem 1rem; }
+.dock { display: flex; flex-wrap: wrap; gap: .5rem 1rem; list-style: none; margin: 0; padding: .6rem 1.25rem 0; }
+.dock:empty { display: none; }
+.dock-face {
+  display: grid; justify-items: center; gap: .25rem; background: none; border: 0; border-radius: 6px;
+  padding: .25rem .35rem; cursor: pointer;
 }
+.dock-face canvas {
+  grid-area: 1 / 1; width: 36px; height: 36px; border-radius: 7px; image-rendering: pixelated;
+  outline: 1px solid var(--face-edge); outline-offset: -1px;
+}
+.dock-face[aria-expanded="true"] canvas { outline: 2px solid var(--ink); outline-offset: 2px; }
+.dock-badge {
+  grid-area: 1 / 1; align-self: end; justify-self: end; margin: 0 -7px -7px 0;
+  width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: content-box;
+  display: grid; place-items: center; font: 700 10px/1 var(--ui); color: #fff;
+}
+.dock-badge[data-s="near_miss"] { background: var(--lean); }
+.dock-badge[data-s="answered"] { background: var(--talk); }
+.dock-badge[data-s="brushed_off"] { background: var(--off); }
+.dock-badge[data-s="busy"] { background: var(--kept); }
+.dock-face small { font-size: .75rem; color: var(--muted); }
+.chat { max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
+.chat[hidden] { display: none; }
+.chat-about { margin: 0 0 .3rem; font-size: .8rem; color: var(--muted); }
+.chat-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.msg { max-width: min(36rem, 85%); padding: .3rem .7rem; border-radius: 10px; overflow-wrap: anywhere; }
+.msg.you { align-self: flex-end; background: var(--panel); }
+.msg.them { align-self: flex-start; border: 1px solid var(--rail); font: italic 1.05rem/1.4 var(--rumor); }
 .composer form { position: relative; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .composer label { font-size: .875rem; color: var(--muted); }
 input[type="text"], input[type="search"] {
@@ -477,6 +501,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
+  .dock { padding: .5rem 1rem 0; }
+  .chat { margin: .4rem 1rem 0; }
   #target { flex: 1 1 100%; width: auto; }
   .tile-act, .walk-there { min-height: 2.25rem; }
   #text { flex-basis: 10rem; }
@@ -584,6 +610,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   </aside>
 
   <div class="bottom">
+    <ul class="dock" id="dock" aria-label="Talking with you"></ul>
+    <section class="chat" id="chat" aria-label="Conversation" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
     <div class="composer">
       <form id="whisper">
         <label for="target" id="to-label">Whisper to</label>
@@ -627,7 +655,7 @@ let cardOpener = null;
 let here = null;
 let listenUntil = null;
 const statuses = new Map();
-// Rumor cards by whisper id; each whisper and reply id to its card's id; hop and line ids already on a card.
+// Rumor cards by whisper id; each whisper and reply id to its card's id; hop ids already on a card.
 const cards = new Map();
 const cardOf = new Map();
 const shown = new Set();
@@ -636,8 +664,12 @@ const tallies = new Map();
 const MARKS = ["◆", "●", "▲", "■", "★", "✚"];
 const markOf = new Map();
 const rumorRows = new Map();
-// Open conversations: villager id to their name and card, newest last.
-const talks = new Map();
+// Villagers talking with you, newest last: villager id to their name, the rumor's card id, where things stand, whether
+// it is a missed whisper's exchange that ends with the part of the day, the whisper ids it holds, and its lines.
+const DOCK = { near_miss: ["…", "leaning in"], answered: ["✓", "answered"], brushed_off: ["–", "brushed you off"], busy: ["–", "busy"] };
+const DOCK_ENDS = new Set(["kept", "took_the_bait", "warned", "moved_on", "not_carried"]);
+const dock = new Map();
+let chatWith = null;
 const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // Where each person stands with a rumor, by frontier state.
@@ -657,7 +689,7 @@ const FRONTIER = {
 };
 // What the feed's arrow keys move between; the feed itself is one tab stop.
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
-const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .scenes-more, .frontier-more, .trophy-open";
+const ROVE = ".hop, .whisper, .vt-more, .vt-talk, .thread-more, .scene-more, .scenes-more, .frontier-more, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const SORT_KEY = "rumor-mill-sort";
@@ -828,7 +860,7 @@ function newCard(uid, target, place, text) {
       onclick: () => toggleScenes(card) }),
     el("button", { type: "button", className: "linkish thread-more", tabIndex: -1, hidden: true, ariaExpanded: "false",
       onclick: () => toggleThread(card) }),
-    el("ol", { className: "thread" }), el("ol", { className: "talk" }));
+    el("ol", { className: "thread" }));
   cards.set(uid, card);
   setTally(uid);
   return card;
@@ -1039,23 +1071,8 @@ function addTo(card, where, node, fresh) {
   if (where === ".thread") countThread(card);
 }
 
-// The newcomer's line in a conversation, with its own chip.
-function mine(uid, text) {
-  spoken.set(uid, { text, parent: null, speaker: "you" });
-  const status = statuses.get(uid);
-  return el("li", { className: "ev whisper mine", tabIndex: -1, dataset: { uid } },
-    el("span", { className: "rails", style: "--d:0" }),
-    el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: "You" }), reuseButton(text)),
-      ...quoted(text), status && chip(status)));
-}
-
-function theirs(name, text) {
-  return el("li", { className: "reply", tabIndex: -1 }, el("p", { className: "meta" }, el("b", { textContent: name }), " answers you"),
-    el("p", { className: "said", textContent: `“${text}”` }));
-}
-
 // A card from /api/state, for a whisper older than the replay; its hops lack the replay's detail.
-// Hops and lines still in the replay are left to it.
+// Hops still in the replay are left to it.
 function restoredCard(c, replayed) {
   const card = newCard(c.uid, c.target_name, null, c.text);
   for (const h of c.hops) {
@@ -1068,12 +1085,6 @@ function restoredCard(c, replayed) {
       el("div", { className: "body" }, el("p", { className: "meta" }, el("b", { textContent: h.speaker }), ...told), ...quoted(h.text))));
   }
   if (c.drifted) addTo(card, ".thread", el("li", { className: "drift", textContent: DRIFT }));
-  for (const line of c.conversation) {
-    if (replayed.has(line.uid)) continue;
-    shown.add(line.uid);
-    if (line.speaker_id === "newcomer") cardOf.set(line.uid, c.uid);
-    addTo(card, ".talk", line.speaker_id === "newcomer" ? mine(line.uid, line.text) : theirs(line.speaker, line.text));
-  }
   return card;
 }
 
@@ -1165,26 +1176,122 @@ function talkAbout(name, text) {
   setComposer();
 }
 
-// The composer says "Talking with" while the To box names a villager in an open conversation.
+// The composer says "Talking with" while the To box names a villager in the dock.
+function talkingWith(name) {
+  return [...dock.values()].some((t) => t.name.toLowerCase() === name.trim().toLowerCase());
+}
+
 function setComposer() {
-  const name = $("target").value.trim().toLowerCase();
-  const on = [...talks.values()].some((t) => t.name.toLowerCase() === name);
+  const on = talkingWith($("target").value);
   $("to-label").textContent = on ? "Talking with" : "Whisper to";
   $("whisper").querySelector("button").textContent = on ? "Reply" : "Whisper";
   if (!over) $("text").placeholder = on ? "Say something back" : "the miller waters his flour";
 }
 
-// Only a live answer fills the To box; a replayed one may have been closed since.
-function startTalk(e, fresh) {
+function dockEntry(e) {
+  if (!dock.has(e.villager_id)) {
+    const said = spoken.get(e.whisper_id)?.text;
+    dock.set(e.villager_id, { name: e.name, rumor: cardOf.get(e.whisper_id), state: e.state, thread: false,
+      whispers: new Set(), lines: said ? [{ you: true, text: said }] : [] });
+  }
+  return dock.get(e.villager_id);
+}
+
+// Where a whisper stands moves its villager's face in the dock. Only a live answer or lean fills the To box; a
+// replayed one may have been closed since.
+function dockStatus(e, fresh) {
   if (over) return;
-  talks.delete(e.villager_id);
-  talks.set(e.villager_id, { name: e.name, card: cardOf.get(e.whisper_id) });
-  if (fresh && !$("whisper").contains(document.activeElement)) $("target").value = e.name;
+  const entry = dock.get(e.villager_id);
+  if (e.state === "near_miss" || e.state === "brushed_off") {
+    if (e.continues === false) return dockEnd(e.villager_id);
+    if (e.continues === true) Object.assign(dockEntry(e), { state: e.state, thread: true, whispers: new Set([e.whisper_id]) });
+    if (e.hint) dock.get(e.villager_id)?.lines.push({ you: false, text: e.hint });
+  } else if (e.state === "answered") {
+    Object.assign(dockEntry(e), { state: "answered", thread: false }).whispers.add(e.whisper_id);
+  } else if (e.state === "busy" && entry) {
+    Object.assign(entry, { state: "busy", thread: false });
+  } else if (e.state === "heard" && entry) {
+    entry.thread = false;
+  } else if (DOCK_ENDS.has(e.state) && entry?.whispers.has(e.whisper_id)) {
+    return dockEnd(e.villager_id);
+  } else {
+    return;
+  }
+  if (fresh && dock.has(e.villager_id) && (e.state === "answered" || e.state === "near_miss")
+    && !$("whisper").contains(document.activeElement)) $("target").value = e.name;
+  renderDock();
   setComposer();
 }
 
-function endTalk(villagerId) {
-  if (talks.delete(villagerId)) setComposer();
+// A whisper in an open exchange joins its villager's lines; it gets no row and no feed line of its own.
+function dockWhisper(e) {
+  spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
+  cardOf.set(e.uid, cardOf.get(e.conversation));
+  const entry = dock.get(e.target_id);
+  if (!entry) return;
+  entry.whispers.add(e.uid);
+  entry.lines.push({ you: true, text: e.text });
+  renderDock();
+}
+
+function dockReply(e) {
+  const entry = dock.get(e.villager_id);
+  if (entry) {
+    entry.lines.push({ you: false, text: e.text });
+    renderDock();
+  }
+  return el("li", { className: "note" }, el("b", { textContent: e.name }), " answers you: ",
+    el("span", { className: "brush", textContent: `“${e.text}”` }));
+}
+
+function dockEnd(villagerId) {
+  dock.delete(villagerId);
+  if (chatWith === villagerId) openChat(null);
+  renderDock();
+  setComposer();
+}
+
+// A missed whisper's exchange lasts until the next part of the day.
+function closeThreads() {
+  for (const [id, entry] of dock) if (entry.thread) dockEnd(id);
+}
+
+function renderDock() {
+  const focused = document.activeElement?.closest?.(".dock-face")?.dataset.id;
+  $("dock").replaceChildren(...[...dock].map(([id, t]) => el("li", {},
+    el("button", { type: "button", className: "dock-face", ariaExpanded: String(chatWith === id), ariaControls: "chat",
+      dataset: { id }, onclick: () => openChat(chatWith === id ? null : id) },
+      faceFor(id, villagers.find((v) => v.id === id)?.occupation || ""),
+      el("span", { className: "dock-badge", ariaHidden: "true", textContent: DOCK[t.state][0], dataset: { s: t.state } }),
+      el("small", { textContent: `${t.name} · ${DOCK[t.state][1]}` })))));
+  if (focused) $("dock").querySelector(`[data-id="${CSS.escape(focused)}"]`)?.focus();
+  if (chatWith != null) renderChat();
+}
+
+function openChat(villagerId) {
+  chatWith = villagerId;
+  $("chat").hidden = villagerId == null;
+  renderDock();
+  if (villagerId == null) return;
+  $("target").value = dock.get(villagerId).name;
+  setComposer();
+  $("text").focus();
+}
+
+function renderChat() {
+  const t = dock.get(chatWith);
+  const about = opening(t.rumor);
+  $("chat-about").replaceChildren(rumorMark(t.rumor), about ? `About “${about}”` : "");
+  $("chat-lines").replaceChildren(...t.lines.map((line) => el("li", { className: line.you ? "msg you" : "msg them" },
+    el("span", { className: "visually-hidden", textContent: line.you ? "You: " : `${t.name}: ` }),
+    line.you ? line.text : `“${line.text}”`)));
+  $("chat").scrollTop = $("chat").scrollHeight;
+}
+
+// The first eight words of a rumor's whisper.
+function opening(uid) {
+  const said = words(spoken.get(uid)?.text || "");
+  return `${said.slice(0, 8).join(" ")}${said.length > 8 ? "…" : ""}`;
 }
 
 function render(e, fresh) {
@@ -1192,10 +1299,8 @@ function render(e, fresh) {
     case "whisper": {
       lastTarget = e.target_id;
       if (cardOf.has(e.uid)) return null;
-      const home = e.conversation && cards.get(cardOf.get(e.conversation));
-      if (!home) return newCard(e.uid, e.target, e.place, e.text);
-      cardOf.set(e.uid, home.dataset.card);
-      addTo(home, ".talk", mine(e.uid, e.text), fresh);
+      if (!e.conversation || !cardOf.has(e.conversation)) return newCard(e.uid, e.target, e.place, e.text);
+      dockWhisper(e);
       return null;
     }
     case "hop": {
@@ -1228,14 +1333,8 @@ function render(e, fresh) {
       if (card && !card.querySelector(".drift")) addTo(card, ".thread", el("li", { className: "drift", textContent: DRIFT }), fresh);
       return null;
     }
-    case "reply": {
-      if (shown.has(e.uid)) return null;
-      const card = cards.get(cardOf.get(e.conversation));
-      if (!card) return theirs(e.name, e.text);
-      shown.add(e.uid);
-      addTo(card, ".talk", theirs(e.name, e.text), fresh);
-      return null;
-    }
+    case "reply":
+      return dockReply(e);
     case "overheard":
       return overheard(e, fresh);
     case "place":
@@ -1245,13 +1344,14 @@ function render(e, fresh) {
       return listened(e, fresh);
     case "time":
       setClock(e);
+      closeThreads();
       return null;
     case "warning":
       return el("li", { className: "note against" },
         el("b", { textContent: e.speaker }), " warned ", el("b", { textContent: e.target }), " about you.");
     case "refusal":
       learn(e);
-      endTalk(e.villager_id);
+      dockEnd(e.villager_id);
       if (!e.line) return el("li", { className: "note against" }, el("b", { textContent: e.name }), " turns away from you.");
       return el("li", { className: "note against" },
         el("b", { textContent: e.name }), " turns away from you: ", el("span", { className: "brush", textContent: `“${e.line}”` }));
@@ -1310,9 +1410,7 @@ function render(e, fresh) {
 // The opening words of the whisper that moved a goal, when its card is on the page.
 function movedBy(uid) {
   const card = uid && cards.get(cardOf.get(uid));
-  if (!card) return "";
-  const said = spoken.get(card.dataset.card).text.split(/\s+/);
-  return ` · moved by “${said.slice(0, 8).join(" ")}${said.length > 8 ? "…" : ""}”`;
+  return card ? ` · moved by “${opening(card.dataset.card)}”` : "";
 }
 
 // What a whisper's status chip says, by state.
@@ -1360,8 +1458,7 @@ function chip(e) {
 
 function showStatus(e, fresh) {
   statuses.set(e.whisper_id, e);
-  if (e.state === "answered") startTalk(e, fresh);
-  else if (e.state === "moved_on" || e.state === "brushed_off" || e.state === "near_miss") endTalk(e.villager_id);
+  dockStatus(e, fresh);
   const item = feed.querySelector(`.whisper[data-uid="${CSS.escape(e.whisper_id)}"]`);
   if (!item) return;
   const old = item.querySelector(".chip");
@@ -1511,11 +1608,8 @@ function showGameOver(summary, live) {
   $("text").value = "";
   draftChanged();
   $("text").placeholder = "The game is over.";
-  for (const t of talks.values()) {
-    const card = cards.get(t.card);
-    if (card) card.querySelector(".talk").append(el("li", { className: "drift", textContent: "The conversation ended with the game." }));
-  }
-  talks.clear();
+  dock.clear();
+  openChat(null);
   setComposer();
   setActions();
   setAsk();
@@ -1634,6 +1728,7 @@ feed.addEventListener("keydown", (ev) => {
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented) return;
   if (!$("card").hidden) closeCard();
+  else if (chatWith != null) openChat(null);
   else if (!$("trophies").hidden) setTrophies(false);
   else if (pinned != null) togglePin(null);
 });
@@ -2195,7 +2290,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   if (!name || !text) return setStatus("Pick a villager and write what to whisper.", true);
   const match = villagers.find((v) => v.name.toLowerCase() === name.toLowerCase());
   const button = ev.submitter || $("whisper").querySelector("button");
-  const reply = [...talks.values()].some((t) => t.name.toLowerCase() === name.toLowerCase());
+  const reply = talkingWith(name);
   button.disabled = true;
   setStatus("Whispering…");
   const { ok, error } = await post("/api/whisper", match ? { villager_id: match.id, text } : { name, text });
@@ -2281,7 +2376,8 @@ function reset() {
   markOf.clear();
   rumorRows.clear();
   $("rumor-list").replaceChildren();
-  talks.clear();
+  dock.clear();
+  openChat(null);
   setComposer();
   $("where").textContent = "";
   here = null;
@@ -2332,16 +2428,9 @@ async function loadState() {
   renderWorld();
   trophies = state.trophies;
   renderTrophies();
-  const open = [...talks.values()].pop();
+  const open = [...dock.values()].pop();
   if (open && !$("target").value.trim()) $("target").value = open.name;
   setComposer();
-  // The game-over line on conversations whose last word was the villager's, when the replay no longer holds it.
-  if (over) {
-    for (const card of cards.values()) {
-      const last = card.querySelector(".talk").lastElementChild;
-      if (last && last.matches(".reply")) card.querySelector(".talk").append(el("li", { className: "drift", textContent: "The conversation ended with the game." }));
-    }
-  }
   if (stick) feed.scrollTop = feed.scrollHeight;
   setTimeout(() => feed.setAttribute("aria-live", "polite"));
   setHere(state.place);
