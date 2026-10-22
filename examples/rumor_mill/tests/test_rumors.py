@@ -10,8 +10,10 @@ from examples.rumor_mill import rumors as rumors_mod
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
+from examples.rumor_mill.feed import Event
 from examples.rumor_mill.models import Utterance
-from examples.rumor_mill.rumors import Rumors
+from examples.rumor_mill.rumors import TARGET_STATES, Rumors
+from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex
 from examples.rumor_mill.town import NEWCOMER
 
@@ -154,7 +156,8 @@ async def test_tallies(monkeypatch):
     )
     assert [h["uid"] for h in card["hops"]] == ["u-1", "u-2"]
     assert card["hops"][1] == {
-        "uid": "u-2", "speaker": "Ann", "listeners": ["Cal", "Dee"], "text": "the miller waters his flour",
+        "uid": "u-2", "speaker_id": "v1", "speaker": "Ann", "listeners": ["Cal", "Dee"], "ids": ["v3", "v4"],
+        "place": "tavern", "text": "the miller waters his flour",
     }
     assert (card["heard"], card["still"], card["drifted"]) == (4, 2, True)
 
@@ -219,3 +222,143 @@ async def test_cards_list_only_the_players_own_rumors():
     await rumors.add("w-2", "the baker skims the till", AT, "v2", "Bert", player="p-b")
     assert [c["uid"] for c in rumors.cards("p-a")] == ["w-1"]
     assert [c["uid"] for c in rumors.cards("p-b")] == ["w-2"]
+
+
+def status(state, vid="v1", name="Marta", **extra):
+    return Event(1, 0.0, "whisper_status", "", {"whisper_id": "w-1", "villager_id": vid, "name": name, "state": state, **extra},
+                 PID)
+
+
+def said(uid, speaker, name, text="the miller waters his flour", place="tavern"):
+    return Utterance(uid, speaker, name, place, text, "w-1")
+
+
+def frontier(rumors):
+    return {e["id"]: e for e in rumors.cards(PID)[0]["frontier"]}
+
+
+@pytest.mark.asyncio
+async def test_a_hop_makes_its_teller_pass_it_on_and_its_listener_hear_it():
+    rumors, _ = await make()
+    rumors.on_event(status("checking"))
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    card, = rumors.cards(PID)
+    assert [(e["id"], e["state"], e["told"]) for e in card["frontier"]] == [("v1", "passed", ["Bert"]), ("v2", "heard", [])]
+    assert card["hops"][0]["speaker_id"] == "v1" and card["hops"][0]["ids"] == ["v2"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", [*TARGET_STATES, "not_carried"])
+async def test_target_outcomes_follow_the_whisper_status(state):
+    rumors, _ = await make()
+    rumors.on_event(status("heard"))
+    rumors.on_event(status(state, until=5.0) if state == "busy" else status(state))
+    if state == "not_carried":
+        assert frontier(rumors) == {}
+    else:
+        entry = frontier(rumors)["v1"]
+        assert (entry["name"], entry["state"]) == ("Marta", TARGET_STATES[state])
+        assert entry["until"] == (5.0 if state == "busy" else None)
+
+
+@pytest.mark.asyncio
+async def test_a_room_hop_is_one_summary_on_its_teller():
+    rumors, _ = await make()
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert", "v3": "Cal", "v4": "Dee"}, True)
+    rumors.record("w-1", said("u-2", "v3", "Cal"), {"v5": "Eve"}, True)
+    entries = frontier(rumors)
+    assert entries["v1"]["crowd"] == {"place": "tavern", "heard": 3, "passed": 1}
+    assert "v2" not in entries and "v4" not in entries
+    assert entries["v3"]["crowd"] is None and entries["v5"]["state"] == "heard"
+    assert set(rumors.cards(PID)[0]["touched"]) == {"v1", "v2", "v3", "v4", "v5"}
+
+
+@pytest.mark.asyncio
+async def test_a_late_check_never_undoes_an_outcome():
+    rumors, _ = await make()
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    rumors.reached("w-1", "v2", "Bert", "kept")
+    rumors.reached("w-1", "v2", "Bert", "busy", until=5.0)
+    assert frontier(rumors)["v2"]["state"] == "kept"
+    rumors.record("w-1", said("u-2", "v3", "Cal"), {"v2": "Bert"}, True)
+    assert frontier(rumors)["v2"]["state"] == "heard"
+    rumors.reached("w-1", "v1", "Marta", "uncared")
+    rumors.record("w-1", said("u-3", "v3", "Cal"), {"v1": "Marta"}, True)
+    assert frontier(rumors)["v1"]["state"] == "passed"
+
+
+def heard_back(rumors):
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    rumors.record("w-1", said("u-2", "v3", "Cal"), {"v2": "Bert"}, True)
+    rumors.reached("w-1", "v2", "Bert", "uncared")
+
+
+def kept_by_two(rumors):
+    for uid, vid, name in (("u-1", "v2", "Bert"), ("u-2", "v3", "Ida")):
+        rumors.record("w-1", said(uid, "v1", "Marta"), {vid: name}, True)
+        rumors.reached("w-1", vid, name, "kept")
+
+
+def told_bert(then):
+    def scenario(rumors):
+        rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+        then(rumors)
+    return scenario
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario, line", [
+    (told_bert(lambda r: r.reached("w-1", "v2", "Bert", "uncared")),
+     "It stopped with Bert: it didn't touch anything they care about."),
+    (kept_by_two, "It stopped with Bert and Ida, who kept it quiet."),
+    (told_bert(lambda r: r.reached("w-1", "v2", "Bert", "worn", depth=5)), "It wore out after 5 tellings."),
+    (heard_back, "Everyone who heard it had heard it before."),
+    (lambda r: r.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert", "v3": "Cal", "v4": "Dee"}, True),
+     "It stopped at the tavern: 3 heard it and no one passed it on."),
+    (told_bert(lambda r: r.reached("w-1", "v2", "Bert", "warned")), "It stopped with Bert, who warned others about you."),
+    (told_bert(lambda r: r.record("w-1", said("u-2", "v2", "Bert", "the weather"), {"v3": "Cal"}, False)),
+     "It turned into another story with Bert."),
+])
+async def test_stopped_says_why(scenario, line):
+    rumors, _ = await make()
+    scenario(rumors)
+    assert rumors.cards(PID)[0]["stopped"] == line
+
+
+@pytest.mark.asyncio
+async def test_no_stop_line_while_anyone_still_holds_it(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(rumors_mod.time, "time", lambda: now[0])
+    rumors, _ = await make(day=100.0)
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    assert rumors.cards(PID)[0]["stopped"] is None
+    now[0] = 1101.0
+    assert rumors.cards(PID)[0]["stopped"] == "It stopped with Bert, who kept it quiet."
+
+
+@pytest.mark.asyncio
+async def test_a_scene_marks_its_people_until_it_ends():
+    rumors, _ = await make()
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    rumors.reached("w-1", "v2", "Bert", "kept")
+    scene = Scene("s-1", "tavern", "w-1", "w-1", True, "u-1", {"v2", "v3"}, {"v2"}, ["u-1"], 0.5)
+    rumors.in_scene("w-1", scene, {"v2": "Bert", "v3": "Cal"})
+    card, = rumors.cards(PID)
+    entries = {e["id"]: e for e in card["frontier"]}
+    assert entries["v2"]["scene"] == {"tone": "argument", "place": "tavern"}
+    assert entries["v3"]["state"] == "heard" and entries["v3"]["scene"] == {"tone": "argument", "place": "tavern"}
+    assert card["touched"]["v2"] == "scene" and card["stopped"] is None
+    scene.ended = "cooled"
+    rumors.in_scene("w-1", scene, {"v2": "Bert", "v3": "Cal"})
+    assert all(e["scene"] is None for e in rumors.cards(PID)[0]["frontier"])
+
+
+@pytest.mark.asyncio
+async def test_frontier_entries_carry_no_internal_fields():
+    rumors, _ = await make()
+    rumors.on_event(status("heard"))
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert", "v3": "Cal"}, True)
+    rumors.record("w-1", said("u-2", "v2", "Bert"), {"v4": "Dee"}, True)
+    rumors.reached("w-1", "v4", "Dee", "worn", depth=2)
+    for entry in rumors.cards(PID)[0]["frontier"]:
+        assert set(entry) == {"id", "name", "state", "until", "told", "crowd", "scene"}

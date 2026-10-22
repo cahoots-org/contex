@@ -1870,3 +1870,93 @@ async def test_no_turn_while_nobody_is_playing_and_turns_resume_when_a_player_jo
     push(minds["v1"])
     await wait_for(lambda: len(turns.views) == 1)
     await engine.stop()
+
+
+class HangingContex(StubContex):
+    async def query(self, project_id, query, **kwargs):
+        self.queries.append((project_id, query, kwargs))
+        await asyncio.Event().wait()
+
+
+async def following(turns, contex=None, baselines=True, listeners=("v2",), depth=0, **config):
+    """An engine with a card for w-1 that delivers hop u-1 from v1 to listeners; v2 needs bread and ale."""
+    rumors = await stub_rumors(0.9)
+    engine, minds, feed = await setup(
+        "v1", "v2", "v3", rumors=rumors, contex=contex, config=Config(**{"cooldown_seconds": 0.05, **config}),
+    )
+    if baselines:
+        engine.baselines = StubBaselines(0.5)
+    engine.town.get("v2").needs = ["bread", "ale"]
+    engine.lineage.record("w-1", None, player=PID)
+    engine.lineage.record("u-1", "w-1")
+    await engine.deliver(Utterance("u-1", "v1", "V1", "square", "psst again", "w-1", depth=depth), list(listeners))
+    return engine, minds, rumors
+
+
+def entry(rumors, vid):
+    return rumors._cards["w-1"].frontier.get(vid)
+
+
+def mind_queries(engine, vid):
+    return [q for q in engine.contex.queries if q[0] == mind_project(engine.config.session, vid)]
+
+
+@pytest.mark.asyncio
+async def test_a_listener_who_does_not_care_is_marked_with_queries_only(turns):
+    engine, _, rumors = await following(turns)
+    await wait_for(lambda: (entry(rumors, "v2") or {}).get("state") == "uncared")
+    assert [(q, kw["threshold"], kw["top_k"]) for _, q, kw in mind_queries(engine, "v2")] == [
+        ("bread", 0.5, engine.config.top_k), ("ale", 0.5, engine.config.top_k),
+    ]
+    assert turns.views == []
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_listener_who_cares_but_is_busy_shows_when_they_hear_it(turns):
+    contex = StubContex({"bread": [Match("utt:u-1", {}, 0.9)]})
+    rumors = await stub_rumors(0.9)
+    engine, _, _ = await setup("v1", "v2", rumors=rumors, contex=contex, config=Config(cooldown_seconds=5))
+    engine.baselines = StubBaselines(0.5)
+    engine._last_turn["v2"] = time.monotonic()
+    engine.lineage.record("w-1", None, player=PID)
+    engine.lineage.record("u-1", "w-1")
+    await engine.deliver(Utterance("u-1", "v1", "V1", "square", "psst again", "w-1"), ["v2"])
+    await wait_for(lambda: (entry(rumors, "v2") or {}).get("state") == "busy")
+    assert entry(rumors, "v2")["until"] > time.time()
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_retelling_too_tired_to_wake_is_worn(turns):
+    contex = StubContex({"bread": [Match("utt:u-1", {}, 0.505)]})
+    engine, _, rumors = await following(turns, contex=contex, depth=3, fatigue_per_hop=0.01)
+    await wait_for(lambda: (entry(rumors, "v2") or {}).get("state") == "worn")
+    assert entry(rumors, "v2")["depth"] == 3
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_room_hop_runs_no_check(turns):
+    engine, _, _ = await following(turns, listeners=("v2", "v3"))
+    await asyncio.sleep(SETTLE)
+    assert not mind_queries(engine, "v2") and not mind_queries(engine, "v3")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_listener_whose_turn_does_not_retell_kept_it_quiet(turns):
+    engine, minds, rumors = await following(turns, baselines=False)
+    minds["v2"].results = [[Match("utt:u-1", {"id": "u-1", "text": "psst again"})]]
+    push(minds["v2"])
+    await wait_for(lambda: (entry(rumors, "v2") or {}).get("state") == "kept")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_pending_checks(turns):
+    engine, _, _ = await following(turns, contex=HangingContex())
+    await wait_for(lambda: mind_queries(engine, "v2"))
+    task, = engine._following
+    await engine.stop()
+    assert task.cancelled()

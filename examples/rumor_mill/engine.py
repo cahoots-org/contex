@@ -4,9 +4,9 @@ import asyncio
 import logging
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import aclosing, suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from examples.rumor_mill.actions import ANSWER, MOVE, WARN
 from examples.rumor_mill.calibration import Baselines
@@ -110,6 +110,10 @@ class Engine:
         # Villagers whose own turn moved them this part of the day, so the round leaves them be.
         self._chose_move: set[str] = set()
         self._turns = asyncio.Semaphore(config.turn_concurrency)
+        # Care checks on the listeners of one-to-one rumor hops.
+        self._following: set[asyncio.Task] = set()
+        if rumors is not None:
+            feed.sinks.append(rumors.on_event)
 
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
         mind = self.mind_factory(v)
@@ -158,6 +162,7 @@ class Engine:
     async def stop(self) -> None:
         tasks = [t for ts in self._tasks.values() for t in ts]
         tasks += [t for t in (self._renewal, self._checks, self._clock, self._walking) if t]
+        tasks += self._following
         self._tasks.clear()
         self._renewal = self._checks = self._clock = self._walking = None
         if self.rumors is not None:
@@ -303,7 +308,56 @@ class Engine:
         on_topic = await self.rumors.on_topic(root, utterance.text)
         if self.rumors.record(root, utterance, {i: self.town.name_of(i) or i for i in heard}, on_topic):
             self.feed.on_drift(root)
+        if on_topic and len(heard) == 1 and self.baselines is not None:
+            since = (datetime.now(UTC) - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
+            task = asyncio.create_task(self._follow(root, utterance, heard[0], since))
+            self._following.add(task)
+            task.add_done_callback(self._following.discard)
         return on_topic
+
+    async def cares(self, vid: str, uid: str, depth: int, since: str) -> str | None:
+        """Whether the line uid in vid's mind touches a need: cares, worn (too retold to wake them) or uncared.
+
+        One query per need, as a whisper's check; None when the check fails.
+        """
+        project = mind_project(self.config.session, vid)
+        try:
+            needs = self.town.get(vid).needs
+            found = await asyncio.gather(*(
+                self.contex.query(project, need, top_k=self.config.top_k, since=since, threshold=self.baselines.threshold(need))
+                for need in needs
+            ))
+        except Exception:
+            log.warning("care check of %s for %s failed", uid, vid)
+            log.debug("care check failure", exc_info=True)
+            return None
+        key = f"utt:{uid}"
+        clearances = [
+            m.similarity - self.baselines.threshold(need)
+            for need, matches in zip(needs, found) for m in matches if m.data_key == key and m.similarity is not None
+        ]
+        if not clearances:
+            return "uncared"
+        log.debug("care check of %s for %s: %.4f", uid, vid, max(clearances))
+        return "cares" if max(clearances) >= self.config.fatigue_per_hop * depth else "worn"
+
+    async def _follow(self, root: str, u: Utterance, vid: str, since: str) -> None:
+        """Mark on the rumor's frontier a listener who will not hear the hop now: busy, uncared or worn."""
+        verdict = await self.cares(vid, u.id, u.depth, since)
+        name = self.town.name_of(vid) or vid
+        if verdict == "cares":
+            until = self.cooldown_ends(vid)
+            if until > time.time():
+                self.rumors.reached(root, vid, name, "busy", until=until)
+        elif verdict in ("uncared", "worn"):
+            self.rumors.reached(root, vid, name, verdict, depth=u.depth)
+
+    def _carried(self, uid: str | None) -> bool:
+        """Whether uid is an on-topic hop shown on a player whisper's card."""
+        if uid is None or self.rumors is None:
+            return False
+        root = self.lineage.root(uid)
+        return root != uid and self.lineage.is_whisper(root) and self.rumors.carries(root, uid)
 
     def hear_directly(self, vid: str, match: Match) -> bool:
         """Add the match to the villager's next turn and wake them; False once they have left."""
@@ -458,7 +512,10 @@ class Engine:
                 if action == ANSWER:
                     answered = decision.source.data["id"]
         finally:
-            self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
+            self._report(
+                v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered,
+                [m.data["id"] for m in new if self._carried(m.data.get("id"))],
+            )
         return True
 
     def _player_behind(self, m: Match | None) -> str | None:
@@ -555,6 +612,7 @@ class Engine:
     def _show_scene(self, scene: Scene) -> None:
         """Report the scene to its rumor's player, or to the players at its place and those who saw it before."""
         if scene.rumor is not None:
+            self.rumors.in_scene(scene.rumor, scene, {vid: self.town.name_of(vid) or vid for vid in scene.participants})
             self.feed.on_scene(scene, player=self.lineage.player_of(scene.rumor))
             return
         scene.seen_by.update(p.id for p in self.players.at(scene.place))
@@ -586,16 +644,20 @@ class Engine:
 
     def _report(
         self, v: Villager, whispers: list[str], action: str | None, said: list[tuple[str, int]],
-        answered: str | None = None,
+        answered: str | None = None, hops: Sequence[str] = (),
     ) -> None:
         """Tell the feed what the villager did with the whispers this turn heard and any they kept before.
 
         said holds (utterance id, listeners who heard it) for what this turn said, in order; answered is the
         whisper the villager answered, if any. A reply in an open conversation ends it unless the turn answered.
+        hops are the rumor hops this turn heard; outside a scene, one not retold was kept quiet.
         """
         told: dict[str, int] = {}
         for uid, heard in said:
             told.setdefault(self.lineage.root(uid), heard)
+        if self.scenes.of(v.id) is None:
+            for root in {self.lineage.root(uid) for uid in hops} - told.keys():
+                self.rumors.reached(root, v.id, v.name, "kept")
         kept = self._kept.setdefault(v.id, {})
         for wid in [w for w in kept if w in told]:
             del kept[wid]

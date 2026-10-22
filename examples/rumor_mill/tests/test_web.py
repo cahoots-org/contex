@@ -79,6 +79,7 @@ def game(monkeypatch):
     judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD)
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
+    feed.sinks.append(rumors.on_event)
     app = create_app(
         players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=PORT,
         suspicion=suspicion, game=game, rumors=rumors, hints=engine.hints,
@@ -453,7 +454,9 @@ def test_card_tallies_reach_the_websocket(game):
         event = receive(ws)
         while event["kind"] != "rumors":
             event = receive(ws)
-    assert event["rumors"] == [{"uid": "w-1", "heard": 1, "still": 0}]
+    assert event["rumors"] == [
+        {"uid": "w-1", "heard": 1, "still": 0, "frontier": [], "stopped": None, "touched": {"v1": "heard"}},
+    ]
 
 
 def test_first_visit_sets_an_owner_cookie(game):

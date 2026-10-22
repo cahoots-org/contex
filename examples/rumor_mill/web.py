@@ -72,8 +72,12 @@ def villagers(town: Town) -> list[dict]:
 
 
 def tallies(rumors: Rumors, player: str) -> list[dict]:
-    """Each card's counts only, so the live snapshot changes only when a count does."""
-    return [{"uid": c["uid"], "heard": c["heard"], "still": c["still"]} for c in rumors.cards(player)]
+    """Each card's counts and frontier, so the live snapshot changes only when one of them does."""
+    return [
+        {"uid": c["uid"], "heard": c["heard"], "still": c["still"], "frontier": c["frontier"], "stopped": c["stopped"],
+         "touched": c["touched"]}
+        for c in rumors.cards(player)
+    ]
 
 
 def event_json(event: Event) -> dict:

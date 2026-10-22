@@ -3,19 +3,41 @@
 import asyncio
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient
+from examples.rumor_mill.feed import Event
 from examples.rumor_mill.models import Utterance
+from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.town import NEWCOMER
 
 log = logging.getLogger(__name__)
 
 # ponytail: Contex caps top_k at 100, so a whisper followed by 100 closer ones can read as off topic.
 TOP_K = 100
+FRONTIER_STATES = ("heard", "busy", "answered", "uncared", "worn", "knew", "kept", "warned", "drifted", "passed")
+# States a later check or outcome may still replace.
+OPEN_STATES = ("heard", "busy", "answered")
+# The frontier state each whisper status gives the whisper's target.
+TARGET_STATES = {
+    "checking": "heard", "heard": "heard", "busy": "busy", "answered": "answered", "brushed_off": "uncared",
+    "near_miss": "uncared", "kept": "kept", "moved_on": "kept", "warned": "warned", "took_the_bait": "passed",
+}
+STOP_LINES = {
+    "worn": "It wore out after {tellings}.",
+    "knew": "Everyone who heard it had heard it before.",
+    "uncared": "It stopped with {who}: it didn't touch anything they care about.",
+    "warned": "It stopped with {who}, who warned others about you.",
+    "kept": "It stopped with {who}, who kept it quiet.",
+    "drifted": "It turned into another story with {who}.",
+    "crowd": "It stopped at the {place}: {heard} heard it and no one passed it on.",
+}
+# How a tie between the commonest ends is broken.
+STOP_ORDER = ("worn", "uncared", "warned", "drifted", "kept")
 
 
 @dataclass
@@ -40,6 +62,21 @@ class Card:
     part_of: str | None = None
     # A topic is measured and checked against like a whisper but never listed.
     topic_only: bool = False
+    # Who holds the rumor now, by villager id: name, state, at, until, told, scene, before and depth.
+    frontier: dict[str, dict] = field(default_factory=dict)
+
+
+def _entry(name: str, state: str, **extra) -> dict:
+    return {"name": name, "state": state, "at": time.time(), "until": None, "told": [], "scene": None, "before": False,
+            "depth": 0, **extra}
+
+
+def _who(names: list[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{len(names)} people"
 
 
 class Rumors:
@@ -122,14 +159,73 @@ class Rumors:
         if card is None:
             return False
         shown = self._cards.get(card.part_of, card)
+        teller = shown.frontier.get(hop.speaker)
         if not on_topic:
+            if hop.speaker in shown.heard and (teller is None or teller["state"] != "passed"):
+                shown.frontier[hop.speaker] = _entry(hop.speaker_name, "drifted", scene=teller and teller["scene"])
             drifted, shown.drifted = shown.drifted, True
             return not drifted
-        shown.hops.append({"uid": hop.id, "speaker": hop.speaker_name, "listeners": list(listeners.values()),
+        shown.hops.append({"uid": hop.id, "speaker_id": hop.speaker, "speaker": hop.speaker_name,
+                           "listeners": list(listeners.values()), "ids": list(listeners), "place": hop.place,
                            "text": hop.text})
+        told = teller["told"] if teller and teller["state"] == "passed" else []
+        shown.frontier[hop.speaker] = _entry(hop.speaker_name, "passed", told=told, scene=teller and teller["scene"])
+        if len(listeners) == 1:
+            (vid, name), = listeners.items()
+            told.append(name)
+            held = shown.frontier.get(vid)
+            if held is None or held["state"] != "passed":
+                shown.frontier[vid] = _entry(name, "heard", before=vid in shown.heard, scene=held and held["scene"])
         shown.heard.update(listeners)
         shown.told_at.update(dict.fromkeys(listeners, time.time()))
         return False
+
+    def on_event(self, event: Event) -> None:
+        """Feed sink: a whisper status sets where the whisper's target stands on its card."""
+        if event.kind != "whisper_status" or event.data["state"] not in (*TARGET_STATES, "not_carried"):
+            return
+        d = event.data
+        if d["state"] != "not_carried":
+            self.reached(d["whisper_id"], d["villager_id"], d["name"], TARGET_STATES[d["state"]], until=d.get("until"))
+            return
+        card = self._shown(d["whisper_id"])
+        if card is not None and card.frontier.get(d["villager_id"], {}).get("state") in OPEN_STATES:
+            del card.frontier[d["villager_id"]]
+
+    def reached(self, uid: str, vid: str, name: str, state: str, **extra) -> None:
+        """Set where vid stands with the rumor uid belongs to, unless an outcome already settled it.
+
+        A listener who heard it before and does not care, or finds it worn, already knew it.
+        """
+        card = self._shown(uid)
+        if card is None:
+            return
+        held = card.frontier.get(vid)
+        if held is not None and held["state"] not in OPEN_STATES:
+            return
+        before = bool(held and held["before"])
+        if state in ("uncared", "worn") and before:
+            state = "knew"
+        card.frontier[vid] = _entry(name, state, before=before, scene=held and held["scene"], **extra)
+
+    def in_scene(self, uid: str, scene: Scene, names: dict[str, str]) -> None:
+        """Mark the scene's people on the rumor's frontier while it runs, and clear the marks once it ends."""
+        card = self._shown(uid)
+        if card is None:
+            return
+        for held in card.frontier.values():
+            if held["scene"] and held["scene"]["id"] == scene.id:
+                held["scene"] = None
+        if scene.ended:
+            return
+        mark = {"id": scene.id, "tone": "argument" if scene.heated else "conversation", "place": scene.place}
+        for vid in sorted(scene.participants):
+            card.frontier.setdefault(vid, _entry(names.get(vid, vid), "heard"))["scene"] = mark
+
+    def _shown(self, uid: str) -> Card | None:
+        """The card that shows uid's whisper."""
+        card = self._cards.get(uid)
+        return card and self._cards.get(card.part_of, card)
 
     def carries(self, root_uid: str, uid: str) -> bool:
         """Whether uid is an on-topic hop shown on the card that root_uid belongs to."""
@@ -145,11 +241,62 @@ class Rumors:
             card.measuring.cancel()
 
     def cards(self, player: str) -> list[dict]:
-        """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day."""
+        """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day,
+        who holds it now, why it stopped, and how it touched each villager."""
         cutoff = time.time() - self.config.day_seconds
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
-             "conversation": c.conversation}
+             "conversation": c.conversation, "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
+             "touched": self._touched(c)}
             for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
         ]
+
+    def _frontier(self, card: Card) -> list[dict]:
+        held = sorted(card.frontier.items(), key=lambda item: item[1]["at"])
+        return [
+            {"id": vid, "name": e["name"], "state": e["state"], "until": e["until"], "told": list(e["told"]),
+             "crowd": self._crowd(card, vid),
+             "scene": e["scene"] and {"tone": e["scene"]["tone"], "place": e["scene"]["place"]}}
+            for vid, e in held
+        ]
+
+    def _crowd(self, card: Card, vid: str) -> dict | None:
+        """The teller's latest room hop: where, how many heard it, and how many of them passed it on."""
+        hop = next((h for h in reversed(card.hops) if h["speaker_id"] == vid and len(h["ids"]) > 1), None)
+        if hop is None:
+            return None
+        passed = sum(card.frontier.get(i, {}).get("state") == "passed" for i in hop["ids"])
+        return {"place": hop["place"], "heard": len(hop["ids"]), "passed": passed}
+
+    def _stopped(self, card: Card, cutoff: float) -> str | None:
+        """Why the rumor stopped, or None while anyone may still pass it on.
+
+        Someone who heard it more than a game day ago and did nothing kept it quiet.
+        """
+        held = card.frontier.values()
+        if not held or any(e["scene"] or (e["state"] in OPEN_STATES and e["at"] >= cutoff) for e in held):
+            return None
+        ends = [e for e in held if e["state"] != "passed"]
+        if not ends:
+            room = next((h for h in reversed(card.hops) if len(h["ids"]) > 1), None)
+            if room is None:
+                return None
+            return STOP_LINES["crowd"].format(place=room["place"], heard=len(room["ids"]))
+        if all(e["state"] == "knew" for e in ends):
+            return STOP_LINES["knew"]
+        states = {"knew": "uncared", **dict.fromkeys(OPEN_STATES, "kept")}
+        counts = Counter(states.get(e["state"], e["state"]) for e in ends)
+        state = max(STOP_ORDER, key=lambda s: (counts[s], -STOP_ORDER.index(s)))
+        names = [e["name"] for e in ends if states.get(e["state"], e["state"]) == state]
+        tellings = max((e["depth"] for e in ends if e["state"] == "worn"), default=0)
+        return STOP_LINES[state].format(who=_who(names), tellings="1 telling" if tellings == 1 else f"{tellings} tellings")
+
+    def _touched(self, card: Card) -> dict[str, str]:
+        touched = dict.fromkeys(sorted(card.heard), "heard")
+        for vid, e in card.frontier.items():
+            if e["state"] == "passed":
+                touched[vid] = "passed"
+            if e["scene"]:
+                touched[vid] = "scene"
+        return touched
