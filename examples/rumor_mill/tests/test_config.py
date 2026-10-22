@@ -69,3 +69,7 @@ def test_scene_defaults_and_env_overrides(monkeypatch):
     monkeypatch.setenv("RUMOR_MILL_JOIN_RATE", "0.5")
     cfg = Config.from_env()
     assert (cfg.max_scenes, cfg.join_rate) == (2, 0.5)
+
+
+def test_listen_lasts_twenty_seconds_by_default():
+    assert Config().listen_seconds == 20.0

@@ -13,6 +13,7 @@ from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
+from examples.rumor_mill.overhear import audible
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.town import NEWCOMER, PLACES, START_PLACE, Town
 from examples.rumor_mill.usage import charging
@@ -24,6 +25,9 @@ ECHO_WORDS = 4
 GAME_OVER = "The game is over."
 NOT_CARRIED = "The whisper didn't carry; try again."
 THREAD_WHISPERS = 2
+LISTEN_OPENING = 5
+LISTEN_LOOKBACK_DAYS = 1 / 4
+ALREADY_LISTENING = "You're already listening."
 
 
 class Refusal(str):
@@ -66,7 +70,9 @@ class Player:
         self.goals: list[Goal] = []
         # The ids of this hand's goals met so far.
         self.met: set[str] = set()
-        self._brush_offs: set[asyncio.Task] = set()
+        self._tasks: set[asyncio.Task] = set()
+        # When the running listen ends, or None when the player is not listening.
+        self._listen_until: float | None = None
         self._hinted: dict[str, set[int]] = {}
         self._threads: dict[str, dict] = {}
 
@@ -106,7 +112,43 @@ class Player:
         self._move(place)
         return None
 
+    def listen(self) -> str | None:
+        """Listen to everything said where the player stands for a while; returns why it could not be done, if it couldn't.
+
+        It opens with the last few lines said here in this part of the day.
+        """
+        if self.over():
+            return GAME_OVER
+        if self.listening():
+            return ALREADY_LISTENING
+        now = time.time()
+        until = self._listen_until = now + self.config.listen_seconds
+        since = now - self.config.day_seconds * LISTEN_LOOKBACK_DAYS
+        heard = [
+            u for u in self.engine.facts.recent(self.place, since)
+            if audible(u) and self.lineage.player_of(u.id) != self.id
+        ]
+        self.feed.on_listen(self.place, heard[-LISTEN_OPENING:], until, player=self.id)
+        self._track(asyncio.create_task(self._end_listen(until)))
+        return None
+
+    def listening(self) -> bool:
+        """Whether the player is listening now."""
+        return self._listen_until is not None
+
+    async def _end_listen(self, until: float) -> None:
+        await asyncio.sleep(self.config.listen_seconds)
+        if self._listen_until == until:
+            self._stop_listening()
+
+    def _stop_listening(self) -> None:
+        if self._listen_until is None:
+            return
+        self._listen_until = None
+        self.feed.on_listen_end(self.place, player=self.id)
+
     def _move(self, place: str) -> None:
+        self._stop_listening()
         self.place = place
         self.feed.on_place(place, player=self.id)
 
@@ -204,8 +246,7 @@ class Player:
                 concern = self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
             task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text))
-            self._brush_offs.add(task)
-            task.add_done_callback(self._brush_offs.discard)
+            self._track(task)
         return None
 
     def _now(self) -> tuple[int, str] | None:
@@ -283,9 +324,14 @@ class Player:
         self.feed.close(self.id)
 
     def close(self) -> None:
-        for task in self._brush_offs:
+        """Cancel every background task this player started."""
+        for task in self._tasks:
             task.cancel()
-        self._brush_offs.clear()
+        self._tasks.clear()
+
+    def _track(self, task: asyncio.Task) -> None:
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def _hint(
         self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str,

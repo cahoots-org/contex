@@ -175,6 +175,12 @@ def test_walk_moves_the_player_and_reports_problems(game):
     assert post("/api/walk", content=b"x" * 10000).status_code == 413
 
 
+def test_listen_starts_and_a_second_is_refused(game):
+    assert game.client.post("/api/listen").json() == {"ok": True}
+    again = game.client.post("/api/listen")
+    assert again.status_code == 400 and again.json() == {"error": "You're already listening."}
+
+
 def test_websocket_receives_the_whisper(game):
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})

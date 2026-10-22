@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from examples.rumor_mill.actions import CONFRONT, DENY, RETELL, SPEAK
+from examples.rumor_mill.actions import CONFRONT, DENY, RETELL, SPEAK, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -129,3 +129,14 @@ async def test_live_goal_relevance(tmp_path):
         await overhear.publish(goals)
         assert await overhear.keep(line("They say a curse lies on the well and its water is poisoned."), "tavern", goals=["well-cursed"]) == "goal"
         assert await overhear.keep(line("My back has ached since the frost came."), "tavern") is None
+
+
+@pytest.mark.asyncio
+async def test_listening_hears_every_line_but_not_whispers_hops_or_other_places():
+    overhear, contex = await make(roll=0.99)
+    assert await overhear.keep(line(), "tavern", listening=True) == "listen"
+    assert await overhear.keep(line(speaker=NEWCOMER), "tavern", listening=True) is None
+    assert await overhear.keep(line(), "tavern", hop=True, listening=True) is None
+    assert await overhear.keep(line(action=WARN), "tavern", listening=True) is None
+    assert await overhear.keep(line(place="mill"), "tavern", listening=True) is None
+    assert contex.queries == []

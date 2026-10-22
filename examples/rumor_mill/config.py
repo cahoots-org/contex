@@ -43,6 +43,8 @@ class Config:
     lively_rate: float = 0.4
     # How far news must clear a need for a villager who walks off to share it wherever their nature lets them.
     share_clearance: float = 0.02
+    # How long one Listen lasts.
+    listen_seconds: float = 20.0
     # How many times a villager answers the newcomer in one conversation.
     talk_turns: int = 3
     # Where need baselines are cached; empty means the seed path plus .baselines.json.

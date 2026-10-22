@@ -213,12 +213,27 @@ class Feed:
         """The player is now at place; the terminal prints nothing."""
         self.emit("place", player=player, place=place)
 
+    def on_listen(self, place: str, lines: list[Utterance], until: float, *, player: str) -> None:
+        """The player starts listening at place until then, hearing first the lines said there lately."""
+        heard = [f'{u.speaker_name}: "{u.text}"' for u in lines]
+        text = "\n".join([f"You listen at the {place}.", *heard]) if heard else f"You listen at the {place}. It has been quiet here."
+        self.emit("listen", text, player=player, place=place, until=until, ended=False,
+                  lines=[{"speaker": u.speaker, "speaker_name": u.speaker_name, "text": u.text} for u in lines])
+
+    def on_listen_end(self, place: str, *, player: str) -> None:
+        """The player stops listening at place."""
+        self.emit("listen", "You stop listening.", player=player, place=place, ended=True)
+
     def on_overheard(
         self, utterance: Utterance, reason: str, scene: str | None = None, player: str | None = None,
     ) -> None:
-        """A line the player overheard at their place, and the scene it belongs to if any; the terminal prints nothing."""
+        """A line the player overheard at their place, and the scene it belongs to if any.
+
+        The terminal prints only a line heard while listening.
+        """
         u = utterance
-        self.emit("overheard", player=player, speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
+        line = f'{u.speaker_name}: "{u.text}"' if reason == "listen" else ""
+        self.emit("overheard", line, player=player, speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
                   reason=reason, uid=u.id, scene=scene)
 
     def on_scene(self, scene: Scene, player: str | None = None) -> None:

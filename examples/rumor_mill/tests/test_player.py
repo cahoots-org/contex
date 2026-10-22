@@ -7,8 +7,9 @@ from datetime import datetime
 
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
-from examples.rumor_mill.models import Villager
-from examples.rumor_mill.player import GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
+from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.actions import SPEAK, WARN
+from examples.rumor_mill.player import ALREADY_LISTENING, GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.config import Config
@@ -76,7 +77,7 @@ async def test_failed_whisper_says_so_and_leaves_no_brush_off():
     assert await player.whisper("Marta", "hello") == "The whisper didn't carry; try again."
     await asyncio.sleep(0.2)
     assert lines == []
-    assert player._brush_offs == set()
+    assert player._tasks == set()
     assert not [e for e in player.feed.recent if e.kind == "whisper_status"]
     assert player.whispered_at is None
 
@@ -217,7 +218,7 @@ async def test_whisper_to_a_suspicious_villager_is_refused_and_not_delivered():
     assert await player.whisper("Marta", "hello") == Refusal("Marta turns away from you.")
     await asyncio.sleep(0.15)
     assert engine.delivered == []
-    assert player._brush_offs == set()
+    assert player._tasks == set()
     assert [e.kind for e in player.feed.recent] == ["refusal"]
 
 
@@ -307,7 +308,7 @@ async def test_hit_hands_the_whisper_to_the_engine_and_reports_heard():
     assert match.data == engine.delivered[0][0].to_data()
     assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
     assert "until" not in statuses(player)[-1]
-    assert lines == [] and player._brush_offs == set()
+    assert lines == [] and player._tasks == set()
     assert engine.recalls == []
 
 
@@ -332,7 +333,7 @@ async def test_check_error_reports_not_carried_and_leaves_no_pending():
     await asyncio.sleep(0.05)
     assert engine.direct == []
     assert [s["state"] for s in statuses(player)] == ["checking", "not_carried"]
-    assert lines == [] and player._brush_offs == set()
+    assert lines == [] and player._tasks == set()
     assert player.engine.suspicion.score("v1", PID) == pytest.approx(player.config.suspicion_whisper_bump)
 
 
@@ -388,7 +389,7 @@ async def test_hit_on_a_villager_who_just_left_reports_nothing_more():
     engine.hear_directly = lambda vid, match: False
     assert await player.whisper_to("v1", "the oven is cold") is None
     assert [s["state"] for s in statuses(player)] == ["checking"]
-    assert lines == [] and player._brush_offs == set()
+    assert lines == [] and player._tasks == set()
 
 
 @pytest.mark.asyncio
@@ -525,7 +526,7 @@ def hinted_player(*lines):
 
 async def miss(player):
     await player.whisper_to("v1", "the tide tables were misprinted")
-    await wait_for(lambda: player._brush_offs == set())
+    await wait_for(lambda: player._tasks == set())
 
 
 def conversations(player):
@@ -634,7 +635,7 @@ async def test_a_whisper_about_a_story_they_heard_lands_without_a_need_match():
     assert (vid, match.data_key, match.clearance) == ("v1", "utt:w-1", 0.0)
     assert match.data == player.engine.delivered[0][0].to_data()
     assert [s["state"] for s in statuses(player)] == ["checking", "heard"]
-    assert player._brush_offs == set() and "v1" not in player._threads
+    assert player._tasks == set() and "v1" not in player._threads
 
 
 @pytest.mark.asyncio
@@ -718,3 +719,77 @@ async def test_walk_refuses_an_unknown_place_the_same_place_and_a_finished_game(
     assert player.walk("square") == "You're already at the square."
     player.end(Summary("lost", [], []))
     assert player.walk("mill") == GAME_OVER
+
+
+def square_line(uid, text, speaker="v1", place="square", action=SPEAK):
+    return Utterance(uid, speaker, speaker.upper(), place, text, None, action=action)
+
+
+@pytest.mark.asyncio
+async def test_listen_opens_with_the_last_five_lines_of_this_part_of_the_day(monkeypatch):
+    player, _, _, engine, lineage = make("Marta")
+    with monkeypatch.context() as m:
+        m.setattr(time, "time", lambda: 1.0)
+        engine.facts.record(square_line("u-0", "long ago"))
+    for i in range(1, 7):
+        engine.facts.record(square_line(f"u-{i}", f"line {i}"))
+    lineage.record("w-1", None, player=PID)
+    lineage.record("h-1", "w-1")
+    engine.facts.record(square_line("h-1", "my own rumor"))
+    engine.facts.record(square_line("t-1", "tavern talk", place="tavern"))
+    engine.facts.record(square_line("n-1", "psst", speaker=NEWCOMER))
+    engine.facts.record(square_line("x-1", "beware", action=WARN))
+    assert player.listen() is None
+    event = next(e for e in player.feed.replay(PID) if e.kind == "listen")
+    assert event.player == PID and event.data["ended"] is False and event.data["place"] == "square"
+    assert [line["text"] for line in event.data["lines"]] == [f"line {i}" for i in range(2, 7)]
+    assert event.data["lines"][0] == {"speaker": "v1", "speaker_name": "V1", "text": "line 2"}
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_one_listen_at_a_time_and_it_ends_after_listen_seconds():
+    player, _, _, _, _ = make("Marta")
+    player.config = Config(listen_seconds=0.05)
+    assert player.listen() is None
+    assert player.listening()
+    assert player.listen() == ALREADY_LISTENING
+    await wait_for(lambda: any(e.kind == "listen" and e.data["ended"] for e in player.feed.replay(PID)))
+    assert not player.listening()
+    assert player.listen() is None
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_walking_away_stops_listening():
+    player, _, _, _, _ = make("Marta")
+    player.listen()
+    player.walk("mill")
+    *_, ended, moved = player.feed.replay(PID)
+    assert (ended.kind, ended.data["ended"], ended.data["place"]) == ("listen", True, "square")
+    assert (moved.kind, moved.data["place"]) == ("place", "mill")
+    assert not player.listening()
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_a_listen_ending_after_game_over_sends_nothing():
+    player, _, _, _, _ = make("Marta")
+    player.config = Config(listen_seconds=0.05)
+    player.listen()
+    player.end(Summary("lost", [], []))
+    assert player.listen() == GAME_OVER
+    await asyncio.sleep(0.1)
+    assert not any(e.kind == "listen" and e.data["ended"] for e in player.feed.recent)
+
+
+@pytest.mark.asyncio
+async def test_listen_makes_no_model_calls_and_raises_no_suspicion():
+    player, _, _, engine, _ = make("Marta")
+    client = StubClient()
+    player.writer = Writer(client, "haiku-test")
+    engine.facts.record(square_line("u-1", "the well is dry"))
+    assert player.listen() is None
+    assert client.messages.calls == []
+    assert engine.suspicion.level(PID) == 0
+    player.close()

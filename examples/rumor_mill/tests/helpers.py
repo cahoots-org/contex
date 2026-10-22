@@ -161,9 +161,9 @@ class FakeEngine:
         return self.free_at
 
 
-def stub_player(pid=PID, place="square"):
+def stub_player(pid=PID, place="square", listening=False):
     """A player standing at place whose game is not over."""
-    return SimpleNamespace(id=pid, owner=pid, place=place, goals=[], over=lambda: False)
+    return SimpleNamespace(id=pid, owner=pid, place=place, goals=[], over=lambda: False, listening=lambda: listening)
 
 
 def make_player(*names, cooldown=0.0):

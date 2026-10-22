@@ -272,6 +272,14 @@ def create_app(
             return _error(400, problem)
         return {"ok": True}
 
+    @app.post("/api/listen")
+    async def listen(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        if problem := player.listen():
+            return _error(400, problem)
+        return {"ok": True}
+
     @app.websocket("/ws")
     async def events(socket: WebSocket):
         """Send the player's events until the client goes away; reading is what notices a closed tab."""

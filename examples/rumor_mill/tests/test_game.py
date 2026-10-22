@@ -224,7 +224,7 @@ async def test_whisper_after_game_over_is_refused():
     assert engine.delivered == []
     assert not lineage.is_player_rooted("w-1")
     assert engine.suspicion.score("v1", PID) == 0.0
-    assert player._brush_offs == set()
+    assert player._tasks == set()
     assert len(lines) == 1
 
 

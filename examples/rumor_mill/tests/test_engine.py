@@ -841,10 +841,21 @@ async def test_each_player_overhears_only_talk_at_their_own_place(turns):
 
 
 @pytest.mark.asyncio
+async def test_a_listening_player_hears_every_line_at_their_place(turns):
+    overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=0.0), Always(0.99))
+    engine, feed = await overhearing_engine(
+        overhear, stub_player("p-1", "tavern", listening=True), stub_player("p-2", "tavern"),
+    )
+    await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
+    assert [(e.player, e.data["reason"]) for e in feed.recent if e.kind == "overheard"] == [("p-1", "listen")]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
 async def test_a_rumor_hop_is_village_talk_to_another_player(turns):
     hops = []
 
-    async def keep(utterance, place, hop, goals=()):
+    async def keep(utterance, place, hop, goals=(), listening=False):
         hops.append((hop, goals))
         return None
 

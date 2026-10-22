@@ -13,7 +13,7 @@ from examples.rumor_mill.town import Town
 
 HELP = (
     "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
-    "Other commands: go <place>, villagers, inspect <name>, goals, trophies, usage, help, quit"
+    "Other commands: go <place>, listen, villagers, inspect <name>, goals, trophies, usage, help, quit"
 )
 
 
@@ -31,7 +31,7 @@ class Command:
 def parse_command(line: str) -> Command:
     """Turn one typed line into a Command."""
     line = line.strip()
-    if line in ("villagers", "goals", "trophies", "usage", "help", "quit"):
+    if line in ("listen", "villagers", "goals", "trophies", "usage", "help", "quit"):
         return Command(line)
     if line.startswith("inspect ") and line[8:].strip():
         return Command("inspect", line[8:].strip())
@@ -101,6 +101,9 @@ async def repl(
                 feed.say(problem)
         elif cmd.kind == "go":
             if problem := player.walk(cmd.text):
+                feed.say(problem)
+        elif cmd.kind == "listen":
+            if problem := player.listen():
                 feed.say(problem)
         elif cmd.kind == "villagers":
             for v in sorted(town.find(""), key=lambda v: v.name):

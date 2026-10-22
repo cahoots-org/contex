@@ -262,3 +262,22 @@ def test_a_trophy_reaches_only_its_player():
 def test_the_page_shows_the_servers_world_met_line():
     page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
     assert 'textContent: e.line' in page and "The village now holds" not in page
+
+
+def test_listen_events_reach_only_the_listener_and_print_the_lines():
+    feed, lines = make()
+    said = Utterance("u-9", "v3", "Ada", "square", "the well is dry", None)
+    feed.on_listen("square", [said], 123.0, player=PID)
+    event = feed.recent[-1]
+    assert (event.kind, event.player, event.data["ended"], event.data["until"]) == ("listen", PID, False, 123.0)
+    assert event.data["lines"] == [{"speaker": "v3", "speaker_name": "Ada", "text": "the well is dry"}]
+    assert lines == ["You listen at the square.\nAda: \"the well is dry\""]
+    assert not feed.sees("p-2", event)
+    feed.on_listen("mill", [], 124.0, player=PID)
+    assert lines[-1] == "You listen at the mill. It has been quiet here."
+    feed.on_listen_end("mill", player=PID)
+    assert (feed.recent[-1].data["ended"], feed.recent[-1].player, lines[-1]) == (True, PID, "You stop listening.")
+    feed.on_overheard(said, "listen", player=PID)
+    assert lines[-1] == 'Ada: "the well is dry"'
+    feed.on_overheard(said, "heated", player=PID)
+    assert lines[-1] == 'Ada: "the well is dry"' and len(lines) == 4

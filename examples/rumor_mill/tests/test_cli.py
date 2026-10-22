@@ -27,6 +27,7 @@ def test_parse_command_forms():
     assert parse_command("go Tavern") == Command("go", text="tavern")
     assert parse_command("go ") == Command("unknown")
     assert parse_command("goals") == Command("goals")
+    assert parse_command("listen") == Command("listen")
     assert parse_command("help") == Command("help")
     assert parse_command("usage") == Command("usage")
     assert parse_command("trophies") == Command("trophies")
