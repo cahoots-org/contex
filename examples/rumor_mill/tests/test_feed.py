@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from examples.rumor_mill.feed import REPLAY_EVENTS, Feed
 from examples.rumor_mill.goals import Goal, Trophy
 from examples.rumor_mill.lineage import Lineage
@@ -99,9 +101,10 @@ def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
     assert lines == [
         'World goal: "Two thirds of the village believes the cat is a spy"',
         'Goal "Two thirds of the village believes the cat is a spy": 50%',
-        'The village now holds: "Two thirds of the village believes the cat is a spy"',
+        "The whole village now holds that the cat is a spy.",
         "Goal: A\nGoal: B",
     ]
+    assert feed.recent[2].data["line"] == "The whole village now holds that the cat is a spy."
     assert feed.recent[-1].data["goals"] == [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}]
 
 
@@ -254,3 +257,8 @@ def test_a_trophy_reaches_only_its_player():
     assert [e.kind for e in feed.replay("p-a")] == ["trophy"] and feed.replay("p-b") == []
     assert feed.replay("p-a")[0].to_json()["trophy"] == {"kind": "personal", "goals": ["a", "b", "c"], "day": 3}
     assert lines == ["A trophy for your case."]
+
+
+def test_the_page_shows_the_servers_world_met_line():
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    assert 'textContent: e.line' in page and "The village now holds" not in page

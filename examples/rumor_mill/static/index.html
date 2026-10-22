@@ -949,7 +949,7 @@ function render(e, fresh) {
       if (e.world) {
         world = { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed };
         renderWorld();
-        return e.met ? el("li", { className: "note goal", textContent: `The village now holds: ${e.text}` }) : null;
+        return e.met ? el("li", { className: "note goal", textContent: e.line }) : null;
       }
       goals.set(e.goal_id, { text: e.text, percent: e.percent, met: e.met, believers: e.believers, needed: e.needed });
       renderGoals();

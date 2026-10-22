@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from examples.rumor_mill.game import Summary
-from examples.rumor_mill.goals import Goal, Trophy
+from examples.rumor_mill.goals import Goal, Trophy, claim
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.scenes import Scene
@@ -122,9 +122,9 @@ class Feed:
 
     def on_met(self, goal: Goal, player: str | None = None) -> None:
         """A player's goal met, or the world goal when player is None."""
-        line = f'The village now holds: "{goal.text}"' if player is None else f'Goal met: "{goal.text}"'
+        line = f"The whole village now holds that {claim(goal)}." if player is None else f'Goal met: "{goal.text}"'
         self.emit("goal", line, player=player, goal_id=goal.id, text=goal.text, percent=100, met=True,
-                  world=player is None)
+                  world=player is None, line=line)
 
     def on_deal(self, goals: list[Goal], player: str) -> None:
         """A new hand of goals for the player."""
