@@ -628,8 +628,18 @@ def test_the_page_renders_moments_and_goal_links(game):
     html = game.client.get("/").text
     rove = re.search(r"const ROVE = (.*);", html).group(1)
     assert 'case "moment"' in html and "frontier-more" not in rove
-    assert "Spreading: " in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
-    assert "innerHTML" not in html
+    assert "Spreading: " in html and "Good news: " in html and "Trouble: " in html
+    assert "moved by" not in html and "innerHTML" not in html
+
+
+def test_the_feed_has_three_kinds_of_line(game):
+    html = game.client.get("/").text
+    rove = re.search(r"const ROVE = \"(.*)\";", html).group(1)
+    assert set(rove.split(", ")) == {".fold-more", ".fold-talk", ".trophy-open"}
+    for needle in ('"loud"', '"speech"', '"quiet"', "retold("):
+        assert needle in html
+    for gone in ("moved by", "rails", "toggleThread", "cardScene", "innerHTML"):
+        assert gone not in html
 
 
 def test_a_rumor_opens_in_place(game):

@@ -15,7 +15,6 @@ from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.rumors import TARGET_STATES, Rumors
 from examples.rumor_mill.scenes import Scene
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex
-from examples.rumor_mill.town import NEWCOMER
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
 AT = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
@@ -165,15 +164,10 @@ async def test_tallies(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_reply_joins_its_conversation_card():
     rumors, _ = await make({"close": [Match("rumor:w-2", {}, 0.9)]})
-    rumors.add_line("w-1", Utterance("u-1", "v1", "Marta", "tavern", "Who told you that?", "w-1"))
     await rumors.add("w-2", "the baker", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.record("w-2", hop("u-2"), {"v2": "Ann"}, True) is False
     card, = rumors.cards(PID)
     assert card["uid"] == "w-1"
-    assert card["conversation"] == [
-        {"uid": "u-1", "speaker_id": "v1", "speaker": "Marta", "text": "Who told you that?"},
-        {"uid": "w-2", "speaker_id": NEWCOMER, "speaker": "A newcomer", "text": "the baker"},
-    ]
     assert [h["uid"] for h in card["hops"]] == ["u-2"]
     assert await rumors.on_topic("w-2", "close")
 

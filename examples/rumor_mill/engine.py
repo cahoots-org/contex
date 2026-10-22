@@ -238,8 +238,6 @@ class Engine:
         await self._remember_said(utterance.speaker, f"said:{utterance.id}", utterance.to_data())
         whisper = self.facts.get(utterance.parent)
         conversation = (whisper and whisper.conversation) or utterance.parent
-        if self.rumors is not None:
-            self.rumors.add_line(conversation, utterance)
         self.feed.on_reply(conversation, utterance)
 
     def end_conversation(self, vid: str, player: str | None = None) -> None:

@@ -261,7 +261,7 @@ def test_a_trophy_reaches_only_its_player():
 
 def test_the_page_shows_the_servers_world_met_line():
     page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
-    assert 'textContent: e.line' in page and "The village now holds" not in page
+    assert 'line("loud", null, e.line)' in page and "The village now holds" not in page
 
 
 def test_listen_events_reach_only_the_listener_and_print_the_lines():

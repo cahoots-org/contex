@@ -14,7 +14,6 @@ from examples.rumor_mill.feed import Event
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.scenes import Scene
-from examples.rumor_mill.town import NEWCOMER
 
 log = logging.getLogger(__name__)
 
@@ -56,8 +55,6 @@ class Card:
     # When each listener last heard an on-topic hop.
     told_at: dict[str, float] = field(default_factory=dict)
     drifted: bool = False
-    # The newcomer's replies and the villager's answers after the first whisper, in order.
-    conversation: list[dict] = field(default_factory=list)
     # For a reply whisper, the first whisper whose card shows it.
     part_of: str | None = None
     # A topic is measured and checked against like a whisper but never listed.
@@ -107,7 +104,6 @@ class Rumors:
         )
         if conversation in self._cards:
             card.part_of = conversation
-            self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "A newcomer", "", text, None))
         card.heard.add(target_id)
         await self._start(card)
         if card.part_of is None and self.overhear is not None:
@@ -156,13 +152,6 @@ class Rumors:
         bar = card.baseline + self.config.on_topic_margin
         log.debug("topic check for %s: %s against %.3f", root_uid, similarity, bar)
         return similarity is not None and similarity >= bar
-
-    def add_line(self, conversation: str, utterance: Utterance) -> None:
-        """Append a line to the conversation shown on that whisper's card."""
-        if card := self._cards.get(conversation):
-            card.conversation.append(
-                {"uid": utterance.id, "speaker_id": utterance.speaker, "speaker": utterance.speaker_name, "text": utterance.text}
-            )
 
     def record(self, root_uid: str, hop: Utterance, listeners: dict[str, str], on_topic: bool) -> bool:
         """Note a retelling of root_uid heard by listeners (id to name); True when it first turns the card."""
@@ -271,7 +260,7 @@ class Rumors:
         return [
             {"uid": c.uid, "text": c.text, "target_id": c.target_id, "target_name": c.target_name, "hops": c.hops,
              "heard": len(c.heard), "still": sum(at >= cutoff for at in c.told_at.values()), "drifted": c.drifted,
-             "conversation": c.conversation, "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
+             "frontier": self._frontier(c), "stopped": self._stopped(c, cutoff),
              "touched": self._touched(c), "place": c.place}
             for c in self._cards.values() if c.player == player and c.part_of is None and not c.topic_only
         ]
