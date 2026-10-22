@@ -1790,12 +1790,14 @@ function connect() {
     held.forEach(receive);
     held = null;
     retry = 1000;
-    unknown = false;
     setConn("live", "Live");
   };
   socket.onclose = (ev) => {
-    if (ev.code === 1008) unknown = true;
-    setConn("down", unknown ? "Reload the page to join the village." : "Can't reach the game; retrying");
+    if (ev.code === 1008 || unknown) {
+      setConn("down", "Reload the page to join the village.");
+      return;
+    }
+    setConn("down", "Can't reach the game; retrying");
     setTimeout(connect, retry);
     retry = Math.min(retry * 2, 8000);
   };

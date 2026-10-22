@@ -252,10 +252,11 @@ def create_app(
     @app.websocket("/ws")
     async def events(socket: WebSocket):
         """Send the player's events until the client goes away; reading is what notices a closed tab."""
+        await socket.accept()
+        # Accepted first so the browser sees 1008, not a refused handshake; nothing is sent before closing.
         if (player := player_for(players, socket.cookies.get(COOKIE))) is None:
             await socket.close(1008)
             return
-        await socket.accept()
         queue: asyncio.Queue = asyncio.Queue()
         sent["rumors"].setdefault(player.id, tallies(rumors, player.id))
         sent["usage"].setdefault(player.id, usage.to_json(player.id))

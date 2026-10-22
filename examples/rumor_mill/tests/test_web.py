@@ -450,9 +450,10 @@ def test_an_unknown_cookie_asks_for_a_reload(game):
     assert (response.status_code, response.json()) == (401, {"error": web.RELOAD})
     assert game.client.get("/api/villagers/v1").status_code == 401
     assert game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).status_code == 401
-    with pytest.raises(WebSocketDisconnect):
-        with game.client.websocket_connect(WS) as ws:
+    with game.client.websocket_connect(WS) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
+    assert closed.value.code == 1008
     assert game.client.get("/").cookies[web.COOKIE] != "p-forged"
 
 
