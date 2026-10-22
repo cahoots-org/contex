@@ -836,8 +836,8 @@ function setRow(uid) {
     el("b", { className: "heard", textContent: t?.heard ?? 1 }),
     el("span", { className: "visually-hidden", textContent: " heard, " }),
     el("span", { className: "rbar", ariaHidden: "true" }, el("i", { style: `width:${goal.value}%` })),
-    el("span", { className: "goal-word", textContent: goal.word }),
-    goal.said === goal.word ? null : el("span", { className: "visually-hidden", textContent: `, ${goal.said}` }));
+    el("span", { className: "goal-word" }, goal.word,
+      goal.said === goal.word ? null : el("span", { className: "visually-hidden", textContent: `, ${goal.said}` })));
 }
 
 // Opens one rumor in place, or closes the open one, and rings the villagers it touched in its colour.
@@ -875,25 +875,26 @@ function setDetail(uid) {
   const reuse = reuseButton(text, target);
   reuse.tabIndex = 0;
   const talking = t ? talkingNow(t.frontier) : [];
-  detail.replaceChildren(
+  detail.replaceChildren(...[
     t?.heard > 1 ? el("p", { className: "story", textContent: story(t) })
       : status ? chip(status) : el("p", { className: "story", textContent: "Waiting to hear back." }),
     link ? el("p", { className: "goal-line", textContent: goalLine(link) }) : null,
     t?.heard > 1 && !t.stopped ? el("ul", { className: "frontier" }, ...whoHasIt(t.frontier)) : null,
     talking.length ? el("ul", { className: "talking" }, ...talking) : null,
     el("p", { className: "whispered" }, "You whispered to ", el("b", { textContent: target }), place ? ` at the ${place}` : "",
-      ": ", el("span", { className: "brush", textContent: `“${text}”` }), " ", reuse));
+      ": ", el("span", { className: "brush", textContent: `“${text}”` }), " ", reuse),
+  ].filter(Boolean));
   if (focused) reuse.focus();
 }
 
 // A whisper's card: the whisper as its title, then its scenes and retellings. Its row opens in place on a click.
 function newCard(uid, target, place, text) {
-  spoken.set(uid, { text, parent: null, speaker: "you" });
+  spoken.set(uid, { text, speaker: "you" });
   cardOf.set(uid, uid);
   if (!markOf.has(uid)) {
     const index = markOf.size;
     markOf.set(uid, index);
-    const button = el("button", { type: "button", className: "rumor-row", title: text, ariaExpanded: "false",
+    const button = el("button", { type: "button", className: "rumor-row", ariaExpanded: "false",
       dataset: { card: uid }, onclick: () => selectRumor(selectedRumor === uid ? null : uid) });
     button.setAttribute("aria-controls", `rumor-detail-${index}`);
     const row = el("li", { className: "rumor-item", dataset: { r: index % MARKS.length, text, target, place: place || "" } },
@@ -1124,7 +1125,7 @@ function restoredCard(c, replayed) {
   for (const h of c.hops) {
     if (replayed.has(h.uid)) continue;
     shown.add(h.uid);
-    spoken.set(h.uid, { text: h.text, parent: null, speaker: h.speaker });
+    spoken.set(h.uid, { text: h.text, speaker: h.speaker });
     const told = h.listeners.length === 1 ? [" told ", el("b", { textContent: h.listeners[0] })] : [` told ${h.listeners.length} people`];
     addTo(card, ".thread", el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: h.uid } },
       el("span", { className: "rails", style: "--d:1" }),
@@ -1273,7 +1274,7 @@ function dockStatus(e, fresh) {
 
 // A whisper in an exchange in the dock joins its villager's lines; it gets no row and no feed line of its own.
 function dockWhisper(e) {
-  spoken.set(e.uid, { text: e.text, parent: null, speaker: "you" });
+  spoken.set(e.uid, { text: e.text, speaker: "you" });
   cardOf.set(e.uid, cardOf.get(e.conversation));
   const entry = dock.get(e.target_id);
   entry.whispers.add(e.uid);
@@ -1365,7 +1366,7 @@ function render(e, fresh) {
       learn(e);
       if (shown.has(e.uid)) return null;
       const parent = spoken.get(e.parent);
-      spoken.set(e.uid, { text: e.text, parent: e.parent, speaker: e.speaker });
+      spoken.set(e.uid, { text: e.text, speaker: e.speaker });
       const node = el("li", { className: "ev hop", tabIndex: -1, dataset: { uid: e.uid } },
         el("span", { className: "rails", style: `--d:${Math.min(e.depth, 8)}` }),
         el("div", { className: "body" }, hopMeta(e, parent), ...quoted(e.text, parent && parent.text, e.root)));
@@ -2399,10 +2400,10 @@ function reset() {
   cardOf.clear();
   shown.clear();
   tallies.clear();
-  selectRumor(null);
   markOf.clear();
   rumorRows.clear();
   $("rumor-list").replaceChildren();
+  selectRumor(null);
   dock.clear();
   openChat(null);
   setComposer();

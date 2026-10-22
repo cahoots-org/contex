@@ -640,6 +640,39 @@ def test_a_rumor_opens_in_place(game):
         assert gone not in html
 
 
+def outside_brackets(text: str) -> str:
+    """text with everything inside (), [] and {} dropped."""
+    out, depth = [], 0
+    for ch in text:
+        depth -= ch in ")]}"
+        if depth == 0:
+            out.append(ch)
+        depth += ch in "([{"
+    return "".join(out)
+
+
+def bracketed(text: str, at: int) -> str:
+    """What sits inside the bracket opened at text[at]."""
+    depth, i = 1, at + 1
+    while depth:
+        depth += (text[i] in "([{") - (text[i] in ")]}")
+        i += 1
+    return text[at + 1:i - 1]
+
+
+def test_no_replace_children_call_can_render_null(game):
+    """replaceChildren, unlike el, writes a null child as the text "null"."""
+    html = game.client.get("/").text
+    calls = [bracketed(html, m.end() - 1) for m in re.finditer(r"replaceChildren\(", html)]
+    assert len(calls) > 10
+    for args in calls:
+        assert "null" not in outside_brackets(args), args
+        for spread in re.finditer(r"\.\.\.\[", args):
+            items = bracketed(args, spread.end() - 1)
+            after = args[spread.end() + len(items) + 1:]
+            assert "null" not in outside_brackets(items) or after.startswith(".filter(Boolean)"), items
+
+
 def test_the_page_marks_each_rumor(game):
     html = game.client.get("/").text
     marks = re.search(r"const MARKS = \[(.*?)\];", html).group(1)
