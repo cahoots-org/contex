@@ -68,7 +68,7 @@ body {
   font: 16px/1.5 var(--ui);
   overflow: hidden;
 }
-button, input { font: inherit; color: inherit; }
+button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -341,6 +341,15 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .badge[data-s="answered"] { background: var(--talk); }
 .searching .pick:not(.hit) { opacity: .35; }
 .pick.hit canvas { outline: 2px solid var(--accent); outline-offset: 1px; }
+.touched > .face canvas, .legend .touched { outline: 2px solid var(--ink); outline-offset: 1px; }
+.might > .face::before, .legend .might {
+  content: ""; position: absolute; left: -4px; top: -4px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--mark); border: 1px solid var(--ink);
+}
+.legend .touched, .legend .might { position: static; display: inline-block; vertical-align: -.1rem; margin-right: .3rem; }
+.legend .touched { width: 10px; height: 10px; border-radius: 3px; }
+.sort { display: flex; align-items: center; gap: .5rem; margin: .1rem 0 0; font-size: .85rem; color: var(--muted); }
+.sort select { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: .2rem .4rem; }
 .rows { list-style: none; margin: .3rem 0 0; padding: 0; max-height: min(18rem, 40dvh); overflow-y: auto; }
 .row {
   display: flex; gap: .6rem; align-items: flex-start; width: 100%; text-align: left;
@@ -349,7 +358,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .row:hover, .row[aria-current="true"] { background: var(--panel); }
 .who { min-width: 0; font-size: .875rem; line-height: 1.35; overflow-wrap: anywhere; }
 .who small { color: var(--muted); }
-.who .st { font-size: .8rem; color: var(--muted); }
+.who .st, .who .touch { font-size: .8rem; color: var(--muted); }
+.who .might-word { display: block; font-size: .8rem; font-style: italic; color: var(--ink); }
 .scroll-more { margin: .2rem 0 0; min-height: 1rem; font-size: .75rem; color: var(--muted); text-align: center; }
 .who .hint { display: block; font: italic .95rem/1.35 var(--rumor); color: var(--ink); }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem .75rem; margin: .6rem 0 0; font-size: .75rem; color: var(--muted); }
@@ -372,7 +382,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .card dl { margin: .35rem 0; font-size: .9rem; }
 .card dt { color: var(--muted); font-size: .8rem; }
 .card dd { margin: 0 0 .35rem; }
-.card dd .brush, .card dd .passed { display: block; }
+.card dd .brush, .card dd .passed, .card dd .known { display: block; }
 .card .rel { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }
 .card .actions { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
 .ask { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .5rem; }
@@ -523,6 +533,13 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
     <label for="search" class="visually-hidden">Find a villager</label>
     <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
     <p class="find-status" id="find-status" role="status"></p>
+    <p class="sort"><label for="sort">Sort</label>
+      <select id="sort">
+        <option value="place">By place</option>
+        <option value="notes">By what you know</option>
+        <option value="influence">By influence</option>
+      </select>
+    </p>
     <div class="tiles" id="people"></div>
     <p class="legend">
       <span><span class="badge" data-s="took_the_bait" aria-hidden="true">✓</span>took the bait</span>
@@ -531,6 +548,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
       <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
       <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
+      <span><span class="touched" aria-hidden="true"></span>touched by the rumor you picked</span>
+      <span><span class="might" aria-hidden="true"></span>this might interest them</span>
     </p>
     <section class="card" id="card" role="dialog" aria-labelledby="card-title" hidden></section>
   </aside>
@@ -594,7 +613,18 @@ const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 const ROVE = ".hop, .whisper, .reply, .vt-more, .vt-talk, .thread-more, .scene-more, .frontier-more, .trophy-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
+const SORT_KEY = "rumor-mill-sort";
 const FACES_SHOWN = 11;
+// The rumor whose touch the village panel shows: the card of the pinned whisper or hop.
+let selectedRumor = null;
+const TOUCH = { heard: "heard it", passed: "passed it on", believes: "believes it", scene: "in a scene" };
+// Villager id to the claims of the player's goals they believe.
+let beliefs = {};
+// Villagers whose hints match the whisper being written.
+let drafted = new Set();
+const DRAFT_MIN = 12;
+const DRAFT_WAIT = 400;
+const MIGHT = "this might interest them";
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -853,6 +883,7 @@ function reuse(text, target) {
   if (over) return;
   if (target) $("target").value = target;
   $("text").value = text;
+  draftChanged();
   setComposer();
   $("text").focus();
 }
@@ -869,10 +900,17 @@ function setTally(uid) {
 }
 
 function setTallies(list) {
+  const was = JSON.stringify(touchedBy());
   for (const c of list) {
     tallies.set(c.uid, c);
     setTally(c.uid);
   }
+  if (JSON.stringify(touchedBy()) !== was) refreshVillagers();
+}
+
+// How the selected rumor touched each villager, by id.
+function touchedBy() {
+  return (selectedRumor && tallies.get(selectedRumor)?.touched) || {};
 }
 
 function addTo(card, where, node, fresh) {
@@ -999,6 +1037,7 @@ function talkAbout(name, text) {
   if (over) return;
   $("target").value = name;
   $("text").value = `You said: "${text}" `;
+  draftChanged();
   showSuggestions([]);
   setDrawer(false);
   $("text").focus();
@@ -1350,6 +1389,7 @@ function showGameOver(summary, live) {
   $("whisper").classList.add("over");
   for (const node of $("whisper").elements) node.disabled = true;
   $("text").value = "";
+  draftChanged();
   $("text").placeholder = "The game is over.";
   for (const t of talks.values()) {
     const card = cards.get(t.card);
@@ -1444,6 +1484,10 @@ feed.addEventListener("mouseleave", () => { if (pinned == null) trace(null); });
 function togglePin(item) {
   pinned = item && pinned !== item.dataset.uid ? item.dataset.uid : null;
   trace(pinned);
+  const rumor = (pinned && item.closest(".rumor")?.dataset.card) || null;
+  if (rumor === selectedRumor) return;
+  selectedRumor = rumor;
+  refreshVillagers();
 }
 feed.addEventListener("click", (ev) => {
   const item = ev.target.closest(ROVE);
@@ -1471,7 +1515,7 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented) return;
   if (!$("card").hidden) closeCard();
   else if (!$("trophies").hidden) setTrophies(false);
-  else if (pinned != null) { pinned = null; trace(null); }
+  else if (pinned != null) togglePin(null);
 });
 
 function goalProgress(g) {
@@ -1549,11 +1593,49 @@ function openPlace(order) {
 let chosenPlace = storedPlace();
 let searchPlace = null;
 
+// Ways to order villagers inside a tile; each falls back to name order.
+const NOTE_ORDER = ["took_the_bait", "answered", "kept", "listening", "brushed_off", "none", "wary"];
+const SORTS = {
+  place: () => 0,
+  notes: (a, b) => noteRank(a) - noteRank(b),
+  influence: (a, b) => Number(!a.influence) - Number(!b.influence),
+};
+
+function noteRank(v) {
+  const note = noteOf(v.id);
+  return NOTE_ORDER.indexOf(note.passed.length ? "took_the_bait" : note.status);
+}
+
+function sorted(crowd) {
+  const by = SORTS[$("sort").value] || SORTS.place;
+  return [...crowd].sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
+}
+
+try { if (SORTS[localStorage.getItem(SORT_KEY)]) $("sort").value = localStorage.getItem(SORT_KEY); } catch { /* name order */ }
+$("sort").addEventListener("change", () => {
+  try { localStorage.setItem(SORT_KEY, $("sort").value); } catch { /* the choice lasts until reload */ }
+  renderVillagers();
+});
+
+// A villager's marks in the panel: how the selected rumor touched them, and whether the draft might interest them.
+function marks(v) {
+  const kind = touchedBy()[v.id];
+  const touch = TOUCH[kind];
+  return {
+    touch, might: drafted.has(v.id), dataset: { id: v.id, ...(touch && { touch: kind }) },
+    className: `${touch ? " touched" : ""}${drafted.has(v.id) ? " might" : ""}`,
+  };
+}
+
 function faceButton(v, hits) {
+  const m = marks(v);
+  const said = [m.touch, m.might ? MIGHT : null].filter(Boolean).map((w) => `, ${w}`).join("");
   return el("button", {
-    type: "button", tabIndex: -1, className: hits.has(v.id) ? "pick hit" : "pick", title: `${v.name}, ${v.occupation}`,
-    dataset: { id: v.id }, onclick: (ev) => inspect(v.id, ev.currentTarget),
-  }, faceWith(v), el("span", { className: "visually-hidden", textContent: knownAs(v) }));
+    type: "button", tabIndex: -1, className: `${hits.has(v.id) ? "pick hit" : "pick"}${m.className}`,
+    title: `${v.name}, ${v.occupation}${said}`, dataset: m.dataset,
+    onclick: (ev) => inspect(v.id, ev.currentTarget),
+  }, faceWith(v), el("span", { className: "visually-hidden", textContent: knownAs(v) }),
+  said ? el("span", { className: "visually-hidden", textContent: said }) : null);
 }
 
 function closedTile(place, crowd, hits) {
@@ -1567,10 +1649,13 @@ function closedTile(place, crowd, hits) {
 function openTile(crowd, hits) {
   const list = hits.size ? crowd.filter((v) => hits.has(v.id)) : crowd;
   if (!list.length) return el("p", { className: "meta", textContent: hits.size ? "No one here matches." : "No one is here." });
-  const rows = el("ul", { className: "rows" }, ...list.map((v) => el("li", {}, el("button", {
-    type: "button", className: "row", dataset: { id: v.id }, ariaCurrent: String(v.id === selected),
-    onclick: (ev) => inspect(v.id, ev.currentTarget),
-  }, faceWith(v, true), who(v, v.occupation)))));
+  const rows = el("ul", { className: "rows" }, ...list.map((v) => {
+    const m = marks(v);
+    return el("li", {}, el("button", {
+      type: "button", className: `row${m.className}`, dataset: m.dataset,
+      ariaCurrent: String(v.id === selected), onclick: (ev) => inspect(v.id, ev.currentTarget),
+    }, faceWith(v, true), who(v, v.occupation, m)));
+  }));
   const more = el("p", { className: "scroll-more", ariaHidden: "true" });
   // Says how many rows are below the fold, so the list never looks cut off.
   const cue = () => {
@@ -1583,14 +1668,22 @@ function openTile(crowd, hits) {
   return el("div", {}, rows, more);
 }
 
-// Name, then the status as its own words, then trade or place and the hint.
-function who(v, detail) {
+// Name, the status and the selected rumor's touch as words, then trade or place, influence and beliefs, the hint, and
+// whether the draft might interest them.
+function who(v, detail, m = {}) {
   const note = noteOf(v.id);
   const known = BADGES[note.status];
+  const about = [detail, v.influence, believesText(beliefs[v.id])].filter(Boolean).join(" · ");
   return el("span", { className: "who" },
     el("b", { textContent: v.name }), known ? el("span", { className: "st", textContent: `, ${known[1]}` }) : null,
-    " ", el("small", { textContent: detail }),
-    note.hints.length ? el("span", { className: "hint", textContent: `“${note.hints.at(-1)}”` }) : null);
+    m.touch ? el("span", { className: "touch", textContent: `, ${m.touch}` }) : null,
+    " ", el("small", { textContent: about }),
+    note.hints.length ? el("span", { className: "hint", textContent: `“${note.hints.at(-1)}”` }) : null,
+    m.might ? el("span", { className: "might-word", textContent: MIGHT }) : null);
+}
+
+function believesText(claims) {
+  return claims && claims.length ? `believes ${joined(claims)}` : "";
 }
 
 function focusKey(node) {
@@ -1610,13 +1703,16 @@ function renderVillagers() {
   const open = openPlace(order);
   $("people-heading").textContent = `Village (${villagers.length})`;
   people.classList.toggle("searching", hits.size > 0);
+  const touched = touchedBy();
   people.replaceChildren(...order.map((place) => {
-    const crowd = villagers.filter((v) => v.place === place);
-    const count = hits.size ? `${crowd.filter((v) => hits.has(v.id)).length} of ${crowd.length}` : String(crowd.length);
+    const crowd = sorted(villagers.filter((v) => v.place === place));
+    const count = selectedRumor ? `${crowd.filter((v) => touched[v.id]).length} of ${crowd.length} touched`
+      : hits.size ? `${crowd.filter((v) => hits.has(v.id)).length} of ${crowd.length}` : String(crowd.length);
+    const label = selectedRumor ? `${capital(place)}, ${count}`
+      : hits.size ? `${capital(place)}, ${count} villagers match` : `${capital(place)}, ${count} villagers`;
     return el("section", { className: place === open ? "tile open" : "tile" },
       el("button", {
-        type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open),
-        ariaLabel: hits.size ? `${capital(place)}, ${count} villagers match` : `${capital(place)}, ${count} villagers`,
+        type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open), ariaLabel: label,
         onclick: () => choosePlace(place),
       },
         capital(place), el("span", { textContent: count })),
@@ -1701,6 +1797,8 @@ function cardBody(body) {
     : ["none"];
   const note = notes[body.id] || body.note;
   const known = BADGES[note.status];
+  const believes = believesText(body.believes);
+  const nothing = !known && !body.influence && !believes && !note.hints.length && !note.passed.length;
   return [
     el("h3", { id: "card-title", tabIndex: -1, textContent: body.name }),
     el("p", { className: "meta", textContent: `${body.occupation}, at the ${body.place}` }),
@@ -1710,7 +1808,10 @@ function cardBody(body) {
       body.grudge ? el("dd", { textContent: body.grudge }) : null,
       el("dt", { textContent: "Relationships" }), el("dd", {}, ...rels),
       el("dt", { textContent: "What you know" }), el("dd", {},
-        known ? known[1] : "Nothing yet.",
+        nothing ? "Nothing yet." : null,
+        known ? el("span", { className: "known", textContent: capital(known[1]) }) : null,
+        body.influence ? el("span", { className: "known", textContent: capital(body.influence) }) : null,
+        believes ? el("span", { className: "known", textContent: capital(believes) }) : null,
         ...note.hints.map((h) => el("span", { className: "brush", textContent: `“${h}”` })),
         ...note.passed.map((t) => el("span", { className: "passed", textContent: `Passed on: “${t}”` })))),
     el("div", { className: "ask-slot", dataset: { id: body.id, name: body.name, place: body.place } }),
@@ -1965,6 +2066,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   button.disabled = over;
   if (!ok) return setStatus(error, true);
   $("text").value = "";
+  draftChanged();
   recalled = -1;
   const who = match ? match.name : name;
   setStatus(reply ? `Said to ${who}.` : `Whispered to ${who}. If it touches what they care about, they'll pass it on.`);
@@ -1972,7 +2074,28 @@ $("whisper").addEventListener("submit", async (ev) => {
 
 // ArrowUp and ArrowDown in the whisper box step through what you have said, newest first.
 let recalled = -1;
-$("text").addEventListener("input", () => { recalled = -1; });
+$("text").addEventListener("input", () => { recalled = -1; draftChanged(); });
+
+// After a pause in writing, mark villagers whose hints match the draft; a reply to an older draft is dropped.
+let draftTimer = 0;
+let draftAsk = 0;
+function draftChanged() {
+  clearTimeout(draftTimer);
+  const request = ++draftAsk;
+  const text = $("text").value.trim();
+  if (text.length < DRAFT_MIN) return setDrafted([]);
+  draftTimer = setTimeout(async () => {
+    const res = await fetch(`/api/hints?text=${encodeURIComponent(text)}`).catch(() => null);
+    const body = res && res.ok ? await res.json().catch(() => null) : null;
+    if (request === draftAsk && body) setDrafted(body.ids);
+  }, DRAFT_WAIT);
+}
+
+function setDrafted(ids) {
+  if (ids.length === drafted.size && ids.every((id) => drafted.has(id))) return;
+  drafted = new Set(ids);
+  refreshVillagers();
+}
 $("text").addEventListener("keydown", (ev) => {
   if (ev.key !== "ArrowUp" && ev.key !== "ArrowDown") return;
   const said = [...spoken.values()].filter((s) => s.speaker === "you").map((s) => s.text).reverse();
@@ -1981,6 +2104,7 @@ $("text").addEventListener("keydown", (ev) => {
   ev.preventDefault();
   recalled = next;
   $("text").value = next === -1 ? "" : said[next];
+  draftChanged();
 });
 
 function setDrawer(open) {
@@ -2026,6 +2150,10 @@ function reset() {
   lastTarget = null;
   lastId = 0;
   pinned = null;
+  selectedRumor = null;
+  beliefs = {};
+  draftAsk++;
+  drafted = new Set();
   rover = null;
   feed.classList.remove("tracing");
   over = false;
@@ -2045,6 +2173,7 @@ async function loadState() {
   boot = state.boot;
   places = state.places;
   notes = state.notes;
+  beliefs = state.beliefs;
   $("usage").textContent = state.usage.summary;
   if (state.game.summary) showGameOver(state.game.summary, false);
   setClock(state.time);
@@ -2087,6 +2216,9 @@ function receive(e) {
     setVillagers(e.villagers);
   } else if (e.kind === "rumors") {
     setTallies(e.rumors);
+  } else if (e.kind === "beliefs") {
+    beliefs = e.beliefs;
+    refreshVillagers();
   } else if (e.kind === "usage") {
     $("usage").textContent = e.usage.summary;
   } else {

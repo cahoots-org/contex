@@ -621,3 +621,10 @@ def test_the_page_renders_moments_and_goal_links(game):
     assert 'case "moment"' in html and "frontier-more" in rove
     assert "For your goal" in html and "moved by" in html and "Good news: " in html and "Trouble: " in html
     assert "innerHTML" not in html
+
+
+def test_the_panel_has_selection_sort_and_draft_marks(game):
+    html = game.client.get("/").text
+    for text in ('id="sort"', "By what you know", "By influence", "/api/hints", "this might interest them", "touched", '"beliefs"'):
+        assert text in html
+    assert "innerHTML" not in html
