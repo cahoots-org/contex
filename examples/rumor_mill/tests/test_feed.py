@@ -92,10 +92,10 @@ def test_goal_events_and_replay_is_bounded():
 def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
     feed, lines = make()
     world = Goal("world-cat", "Two thirds of the village believes the cat is a spy", "belief")
-    feed.on_world(world)
+    feed.on_world(world, (0, 8))
     feed.on_progress(world, 0.5)
     feed.on_met(world)
-    feed.on_deal([Goal("a", "A", "belief"), Goal("b", "B", "state")], player=PID)
+    feed.on_deal([Goal("a", "A", "belief"), Goal("b", "B", "state")], player=PID, counts={"a": (0, 6)})
     assert [(e.kind, e.player, e.data.get("world")) for e in feed.recent] == [
         ("world_goal", None, None), ("goal", None, True), ("goal", None, True), ("deal", PID, None),
     ]
@@ -106,7 +106,10 @@ def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
         "Goal: A\nGoal: B",
     ]
     assert feed.recent[2].data["line"] == "The whole village now holds that the cat is a spy."
-    assert feed.recent[-1].data["goals"] == [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}]
+    assert feed.recent[-1].data["goals"] == [
+        {"id": "a", "text": "A", "believers": 0, "needed": 6}, {"id": "b", "text": "B", "believers": None, "needed": None},
+    ]
+    assert (feed.recent[0].data["believers"], feed.recent[0].data["needed"]) == (0, 8)
 
 
 def test_refusal_event_and_terminal_lines():

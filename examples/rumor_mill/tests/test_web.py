@@ -109,7 +109,7 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12,
                               "doubt": None}]
     assert state["world_goal"] == {
-        "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": None, "needed": None,
+        "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": 0, "needed": 2,
         "doubt": None,
     }
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
@@ -756,6 +756,15 @@ def test_a_phone_gets_three_tabs(game):
     # The columns are tab panels only on a phone, so a wide screen keeps its landmarks and names.
     assert 'role="tabpanel"' not in html and 'matchMedia("(max-width: 760px)")' in html
     assert '<main id="hear-panel">' in html and 'aria-label="Villagers"' in html and 'aria-label="Your rumors"' in html
+
+
+def test_a_state_goal_shows_a_percent_and_an_unchecked_belief_goal_its_target(game):
+    dog = Goal("dog", "Half the village believes the dog is a thief", "belief", target_fraction=0.5)
+    game.player.goals = [dog, Goal("quiet", "Nobody leaves the village", "state")]
+    state = game.client.get("/api/state").json()
+    assert [(g["believers"], g["needed"]) for g in state["goals"]] == [(0, 1), (None, None)]
+    html = game.client.get("/").text
+    assert "g.needed == null ? `${g.percent}%` : `${g.believers} of ${g.needed} believe it`" in html
 
 
 def test_every_goal_card_has_a_label_a_claim_and_a_bar(game):

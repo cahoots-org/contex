@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import math
 import random
 import time
 from collections import Counter
@@ -13,7 +12,9 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, claim, deal, trophy_line, world_goal
+from examples.rumor_mill.goals import (
+    WORLD_CANDIDATES, Goal, Trophy, claim, deal, goal_counts, needed, trophy_line, world_goal,
+)
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.models import Villager
@@ -156,9 +157,9 @@ class Judge:
         counted = [r for r in results if r is not None]
         if not counted:
             return 0.0
-        believers, needed = sum(counted), math.ceil(goal.target_fraction * len(counted))
-        self.counts[goal.id] = (believers, needed)
-        progress = min(1.0, believers / needed)
+        believers, target = sum(counted), needed(goal, len(counted))
+        self.counts[goal.id] = (believers, target)
+        progress = min(1.0, believers / target)
         if goal.creed_question is not None:
             groups = await asyncio.gather(
                 *(self._group_qualifies(goal, g.id, len(g.members)) for g in self.town.groups)
@@ -175,7 +176,12 @@ class Judge:
         """Give the player three new goals, none held now nor the world goal's claim."""
         player.goals = deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")})
         player.met = set()
-        self.feed.on_deal(player.goals, player=player.id)
+        counts = {g.id: c for g in player.goals if (c := self.counts_of(g)) is not None}
+        self.feed.on_deal(player.goals, player=player.id, counts=counts)
+
+    def counts_of(self, goal: Goal) -> tuple[int, int] | None:
+        """The goal's believers and how many it needs, or None for a state goal."""
+        return goal_counts(goal, self.counts, len(self.town.villagers))
 
     def _next_world(self) -> Goal:
         held = self.held()
@@ -211,7 +217,7 @@ class Judge:
                 doubt = self.doubt.get(goal.id)
                 moved = int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100)
                 if moved or self.doubt.get(goal.id, {}).get("count") != doubted:
-                    counts = self.counts.get(goal.id)
+                    counts = self.counts_of(goal)
                     for p in holders:
                         self.feed.on_progress(
                             goal, progress, counts, player=p.id, rumor=self._moved(goal.id, p.id, before), doubt=doubt,
@@ -239,7 +245,7 @@ class Judge:
                     self.world = self._next_world()
                     self.world_since = time.time()
                     self.whisperers = set()
-                    self.feed.on_world(self.world)
+                    self.feed.on_world(self.world, self.counts_of(self.world))
             self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
 
     def _moved(self, goal_id: str, player_id: str, before: dict[str, str | None]) -> str | None:

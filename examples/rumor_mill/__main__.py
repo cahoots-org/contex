@@ -69,7 +69,7 @@ async def play(web: bool) -> None:
             return player
 
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
-        feed.on_world(judge.world)
+        feed.on_world(judge.world, judge.counts_of(judge.world))
         if not web:
             player = join(LOCAL_OWNER)
             show = terminal(print)

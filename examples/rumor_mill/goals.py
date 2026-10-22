@@ -1,5 +1,6 @@
 """The goal deck: town-wide outcomes players try to cause with whispers, and the world goal drawn from it."""
 
+import math
 import random
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, replace
@@ -92,6 +93,21 @@ DECK: tuple[Goal, ...] = (
 
 WORLD_FRACTION = 2 / 3
 WORLD_CANDIDATES: tuple[Goal, ...] = tuple(g for g in DECK if g.kind == "belief" and g.creed_question is None)
+
+
+def needed(goal: Goal, counted: int) -> int:
+    """How many of the counted villagers must believe a belief goal's claim to meet it."""
+    return math.ceil(goal.target_fraction * counted)
+
+
+def goal_counts(goal: Goal, known: dict[str, tuple[int, int]], villagers: int) -> tuple[int, int] | None:
+    """A belief goal's believers and how many it needs, none of the whole village before its first check.
+
+    None for a state goal, which has only a percent.
+    """
+    if goal.kind != "belief":
+        return None
+    return known.get(goal.id) or (0, needed(goal, villagers))
 
 
 def claim(goal: Goal) -> str | None:

@@ -1,4 +1,5 @@
 import asyncio
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -74,10 +75,11 @@ class Lines:
     def on_met(self, goal, player=None):
         self.met.append((goal.id, player))
 
-    def on_deal(self, goals, player):
+    def on_deal(self, goals, player, counts=None):
         self.deals.append(([g.id for g in goals], player))
+        self.deal_counts = counts
 
-    def on_world(self, goal):
+    def on_world(self, goal, counts=None):
         self.worlds.append(goal.id)
 
     def on_trophy(self, trophy, line, player):
@@ -316,6 +318,22 @@ async def test_progress_is_believer_fraction_over_target():
     judge, *_ = make(n=4, believers=1)
     assert await judge.check(BELIEF) == pytest.approx(0.5)
     assert judge.counts["g"] == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_a_belief_goal_counts_against_the_village_before_its_first_check():
+    judge, *_ = make(n=4, believers=1)
+    assert judge.counts_of(BELIEF) == (0, 2)
+    assert judge.counts_of(QUIET) is None
+    await judge.check(BELIEF)
+    assert judge.counts_of(BELIEF) == (1, 2)
+
+
+def test_a_deal_sends_counts_for_its_belief_goals_only():
+    judge, _, _, feed, _ = make(n=4)
+    p = SimpleNamespace(id=PID, goals=[], met=set())
+    judge.deal(p)
+    assert feed.deal_counts == {g.id: (0, math.ceil(g.target_fraction * 4)) for g in p.goals if g.kind == "belief"}
 
 
 @pytest.mark.asyncio

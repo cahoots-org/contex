@@ -139,14 +139,19 @@ class Feed:
         self.emit("goal", line, player=player, goal_id=goal.id, text=goal.text, percent=100, met=True,
                   world=player is None, line=line)
 
-    def on_deal(self, goals: list[Goal], player: str) -> None:
-        """A new hand of goals for the player."""
-        self.emit("deal", "\n".join(f"Goal: {g.text}" for g in goals), player=player,
-                  goals=[{"id": g.id, "text": g.text} for g in goals])
+    def on_deal(self, goals: list[Goal], player: str, counts: dict[str, tuple[int, int]] | None = None) -> None:
+        """A new hand of goals for the player, each belief goal with its believers and how many it needs."""
+        hand = []
+        for g in goals:
+            believers, needed = (counts or {}).get(g.id, (None, None))
+            hand.append({"id": g.id, "text": g.text, "believers": believers, "needed": needed})
+        self.emit("deal", "\n".join(f"Goal: {g.text}" for g in goals), player=player, goals=hand)
 
-    def on_world(self, goal: Goal) -> None:
-        """A new world goal, for everyone."""
-        self.emit("world_goal", f'World goal: "{goal.text}"', goal_id=goal.id, text=goal.text)
+    def on_world(self, goal: Goal, counts: tuple[int, int] | None = None) -> None:
+        """A new world goal, for everyone, with its believers and how many it needs."""
+        believers, needed = counts or (None, None)
+        self.emit("world_goal", f'World goal: "{goal.text}"', goal_id=goal.id, text=goal.text, believers=believers,
+                  needed=needed)
 
     def on_trophy(self, trophy: Trophy, line: str, player: str) -> None:
         """A trophy won by the player."""

@@ -17,7 +17,7 @@ from starlette.websockets import WebSocketClose
 
 from examples.rumor_mill.feed import Event, Feed
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import Goal, claim
+from examples.rumor_mill.goals import Goal, claim, goal_counts
 from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal
@@ -131,9 +131,9 @@ def game_json(player: Player) -> dict:
     return {"state": player.state, "summary": summary}
 
 
-def goal_json(judge, goal: Goal, met: bool) -> dict:
+def goal_json(judge, goal: Goal, met: bool, villagers: int) -> dict:
     """The goal's text, whole percent, believer counts and doubt, as the page shows it."""
-    believers, needed = judge.counts.get(goal.id, (None, None))
+    believers, needed = goal_counts(goal, judge.counts, villagers) or (None, None)
     return {"id": goal.id, "text": goal.text, "percent": int(judge.progress.get(goal.id, 0.0) * 100), "met": met,
             "believers": believers, "needed": needed, "doubt": judge.doubt.get(goal.id)}
 
@@ -252,8 +252,8 @@ def create_app(
             "places": list(PLACES),
             "place": player.place,
             "time": game.clock(),
-            "goals": [goal_json(judge, g, g.id in player.met) for g in player.goals],
-            "world_goal": goal_json(judge, judge.world, False),
+            "goals": [goal_json(judge, g, g.id in player.met, len(town.villagers)) for g in player.goals],
+            "world_goal": goal_json(judge, judge.world, False, len(town.villagers)),
             "villagers": villagers(town),
             "events": [event_json(e) for e in feed.replay(player.id)],
             "rumors": [card_view(c, player, judge, rumors) for c in rumors.cards(player.id)],
