@@ -8,7 +8,7 @@ from datetime import datetime
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
+from examples.rumor_mill.player import GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.config import Config
@@ -698,3 +698,23 @@ def test_someone_is_playing_only_while_a_player_is_not_over():
     assert players.any_playing()
     p.end(Summary("lost", [], []))
     assert not players.any_playing()
+
+
+@pytest.mark.asyncio
+async def test_walk_moves_the_player_and_tells_only_them():
+    player, town, _, engine, _ = make("Marta")
+    assert player.walk("mill") is None
+    assert player.place == "mill"
+    last = player.feed.replay(PID)[-1]
+    assert (last.kind, last.player, last.data["place"]) == ("place", PID, "mill")
+    assert engine.delivered == []
+    assert all(engine.suspicion.score(v.id, PID) == 0 for v in town.find(""))
+
+
+@pytest.mark.asyncio
+async def test_walk_refuses_an_unknown_place_the_same_place_and_a_finished_game():
+    player, _, _, _, _ = make("Marta")
+    assert "There's no moon here" in player.walk("moon")
+    assert player.walk("square") == "You're already at the square."
+    player.end(Summary("lost", [], []))
+    assert player.walk("mill") == GAME_OVER

@@ -13,7 +13,7 @@ from examples.rumor_mill.town import Town
 
 HELP = (
     "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
-    "Other commands: villagers, inspect <name>, goals, trophies, usage, help, quit"
+    "Other commands: go <place>, villagers, inspect <name>, goals, trophies, usage, help, quit"
 )
 
 
@@ -35,6 +35,8 @@ def parse_command(line: str) -> Command:
         return Command(line)
     if line.startswith("inspect ") and line[8:].strip():
         return Command("inspect", line[8:].strip())
+    if line.startswith("go ") and line[3:].strip():
+        return Command("go", text=line[3:].strip().lower())
     if line.startswith("whisper ") and ":" in line:
         line = line[8:]
     name, sep, text = line.partition(":")
@@ -96,6 +98,9 @@ async def repl(
         if cmd.kind == "whisper":
             problem = await player.whisper(cmd.name, cmd.text)
             if problem and not isinstance(problem, Refusal):
+                feed.say(problem)
+        elif cmd.kind == "go":
+            if problem := player.walk(cmd.text):
                 feed.say(problem)
         elif cmd.kind == "villagers":
             for v in sorted(town.find(""), key=lambda v: v.name):

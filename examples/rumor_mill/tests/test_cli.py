@@ -24,6 +24,8 @@ def test_parse_command_forms():
     assert parse_command("Old Bert: hello") == Command("whisper", "Old Bert", "hello")
     assert parse_command("villagers") == Command("villagers")
     assert parse_command("inspect Old Bert") == Command("inspect", "Old Bert")
+    assert parse_command("go Tavern") == Command("go", text="tavern")
+    assert parse_command("go ") == Command("unknown")
     assert parse_command("goals") == Command("goals")
     assert parse_command("help") == Command("help")
     assert parse_command("usage") == Command("usage")
@@ -33,6 +35,14 @@ def test_parse_command_forms():
     assert parse_command("dance") == Command("unknown")
     assert parse_command("") == Command("unknown")
     assert parse_command(": nobody") == Command("unknown")
+
+
+def make_walker():
+    town, lineage, out = Town(), Lineage(), []
+    feed = Feed(lineage, town, out=out.append)
+    config = Config()
+    player = Player(None, town, lineage, Ids(), feed, config, player_id=PID)
+    return player, town, out
 
 
 def scripted(lines):
@@ -128,3 +138,12 @@ async def test_trophies_lists_the_case(monkeypatch):
     monkeypatch.setattr(cli, "_readline", scripted(["trophies\n", ""]))
     await cli.repl(player, town, feed, players=everyone)
     assert out[-1] == "Day 3: a; b; c"
+
+
+@pytest.mark.asyncio
+async def test_go_walks_and_prints_problems(monkeypatch):
+    player, _, out = make_walker()
+    monkeypatch.setattr(cli, "_readline", scripted(["go moon\n", "go mill\n", ""]))
+    await cli.repl(player, player.town, player.feed)
+    assert [line for line in out if "There's no moon" in line]
+    assert player.place == "mill"

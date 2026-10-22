@@ -14,7 +14,7 @@ from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Utterance, Villager
-from examples.rumor_mill.town import NEWCOMER, START_PLACE, Town
+from examples.rumor_mill.town import NEWCOMER, PLACES, START_PLACE, Town
 from examples.rumor_mill.usage import charging
 
 log = logging.getLogger(__name__)
@@ -80,13 +80,35 @@ class Player:
         name = name.strip()
         if not name or not text.strip():
             return "Whisper to whom, and what? Try: Marta: the miller waters his flour"
+        found = self.find(name)
+        if isinstance(found, str):
+            return found
+        return await self.whisper_to(found.id, text)
+
+    def find(self, name: str) -> Villager | str:
+        """The one villager called name, or the message saying why there isn't one."""
         matches = self.town.find(name)
         if not matches:
             gone = [v for v in self.town.departed if v.name.lower() == name.lower()]
             return f"{gone[0].name} has left town." if gone else f"No one in town is called {name}."
         if len(matches) > 1:
             return f"Which {name}? " + ", ".join(v.name for v in matches)
-        return await self.whisper_to(matches[0].id, text)
+        return matches[0]
+
+    def walk(self, place: str) -> str | None:
+        """Move to place for free; returns why it could not be done, if it couldn't."""
+        if self.over():
+            return GAME_OVER
+        if place not in PLACES:
+            return f"There's no {place} here. Try one of: {', '.join(PLACES)}."
+        if place == self.place:
+            return f"You're already at the {place}."
+        self._move(place)
+        return None
+
+    def _move(self, place: str) -> None:
+        self.place = place
+        self.feed.on_place(place, player=self.id)
 
     async def whisper_to(self, villager_id: str, text: str) -> str | None:
         """Whisper text to the villager with this id; returns why it could not be done, if it couldn't.
@@ -140,8 +162,7 @@ class Player:
         if self.game is not None:
             self.game.moved(self.id)
         if utterance.place != self.place:
-            self.place = utterance.place
-            self.feed.on_place(self.place, player=self.id)
+            self._move(utterance.place)
         self.engine.suspicion.bump(
             target.id, self.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid,
         )

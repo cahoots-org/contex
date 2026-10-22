@@ -164,6 +164,17 @@ def test_whisper_validation_errors_come_back_as_messages(game):
     assert post("/api/whisper", json={"villager_id": "v2", "text": "hi"}).json() == {"error": "Bert Cole has left town."}
 
 
+def test_walk_moves_the_player_and_reports_problems(game):
+    post = game.client.post
+    assert post("/api/walk", json={"place": "mill"}).json() == {"ok": True}
+    assert game.client.get("/api/state").json()["place"] == "mill"
+    moon = post("/api/walk", json={"place": "moon"})
+    assert moon.status_code == 400 and "There's no moon" in moon.json()["error"]
+    bad = post("/api/walk", content=b"nope")
+    assert bad.status_code == 400 and bad.json() == {"error": web.BAD_WALK}
+    assert post("/api/walk", content=b"x" * 10000).status_code == 413
+
+
 def test_websocket_receives_the_whisper(game):
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})

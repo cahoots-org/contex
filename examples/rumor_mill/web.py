@@ -33,6 +33,7 @@ MAX_BODY_BYTES = 8192
 VILLAGER_POLL_SECONDS = 1.0
 USAGE_POLL_SECONDS = 3.0
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
+BAD_WALK = 'Send JSON like {"place": "tavern"}.'
 COOKIE = "rumor_mill_player"
 COOKIE_SECONDS = 365 * 24 * 3600
 RELOAD = "Reload the page to join the village."
@@ -102,6 +103,20 @@ def player_for(players: Players, cookie: str | None) -> Player | None:
 
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status)
+
+
+async def _payload(request: Request, bad: str, too_long: str) -> dict | JSONResponse:
+    """The request's JSON object, or the 413 or 400 response for a body that is too big or not one."""
+    body = b""
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_BODY_BYTES:
+            return _error(413, too_long)
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return _error(400, bad)
+    return payload if isinstance(payload, dict) else _error(400, bad)
 
 
 def create_app(
@@ -233,20 +248,28 @@ def create_app(
     async def whisper(request: Request):
         if (player := player_for(players, request.cookies.get(COOKIE))) is None:
             return _error(401, RELOAD)
-        body = b""
-        async for chunk in request.stream():
-            body += chunk
-            if len(body) > MAX_BODY_BYTES:
-                return _error(413, "That whisper is too long.")
-        try:
-            payload = json.loads(body)
-            text, vid, name = payload["text"], payload.get("villager_id"), payload.get("name", "")
-        except (ValueError, KeyError, TypeError, AttributeError):
-            return _error(400, BAD_WHISPER)
-        if not all(isinstance(x, str) for x in (text, name)) or not isinstance(vid, str | None):
+        payload = await _payload(request, BAD_WHISPER, "That whisper is too long.")
+        if isinstance(payload, JSONResponse):
+            return payload
+        text, vid, name = payload.get("text"), payload.get("villager_id"), payload.get("name", "")
+        if not isinstance(text, str) or not isinstance(name, str) or not isinstance(vid, str | None):
             return _error(400, BAD_WHISPER)
         if problem := await (player.whisper_to(vid, text) if vid else player.whisper(name, text)):
             return _error(409 if isinstance(problem, Refusal) else 400, problem)
+        return {"ok": True}
+
+    @app.post("/api/walk")
+    async def walk(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        payload = await _payload(request, BAD_WALK, "That request is too long.")
+        if isinstance(payload, JSONResponse):
+            return payload
+        place = payload.get("place")
+        if not isinstance(place, str):
+            return _error(400, BAD_WALK)
+        if problem := player.walk(place.strip().lower()):
+            return _error(400, problem)
         return {"ok": True}
 
     @app.websocket("/ws")
