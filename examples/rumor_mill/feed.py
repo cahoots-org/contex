@@ -183,19 +183,21 @@ class Feed:
         """The player is now at place; the terminal prints nothing."""
         self.emit("place", player=player, place=place)
 
-    def on_overheard(self, utterance: Utterance, reason: str, scene: str | None = None) -> None:
+    def on_overheard(
+        self, utterance: Utterance, reason: str, scene: str | None = None, player: str | None = None,
+    ) -> None:
         """A line the player overheard at their place, and the scene it belongs to if any; the terminal prints nothing."""
         u = utterance
-        self.emit("overheard", speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
+        self.emit("overheard", player=player, speaker=u.speaker, speaker_name=u.speaker_name, place=u.place, text=u.text,
                   reason=reason, uid=u.id, scene=scene)
 
-    def on_scene(self, scene: Scene) -> None:
+    def on_scene(self, scene: Scene, player: str | None = None) -> None:
         """A scene with at least two people went on or ended; the terminal prints nothing."""
         if len(scene.people) < 2:
             return
         tone = "argument" if scene.heated else "conversation"
         self.emit(
-            "scene", scene_id=scene.id, rumor=scene.rumor, opening=scene.opening, place=scene.place, tone=tone,
+            "scene", player=player, scene_id=scene.id, rumor=scene.rumor, opening=scene.opening, place=scene.place, tone=tone,
             people=len(scene.people), lines=len(scene.lines),
             ended=SCENE_ENDS[scene.ended].format(kind=tone) if scene.ended else None,
         )

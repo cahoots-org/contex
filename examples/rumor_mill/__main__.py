@@ -24,7 +24,7 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
-from examples.rumor_mill.players import new_player_id
+from examples.rumor_mill.players import Players, new_player_id
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
@@ -59,7 +59,9 @@ async def play(web: bool) -> None:
         player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id())
         if not web:
             feed.sinks.append(feed.view(player.id, terminal(print)))
-        engine.player_place = lambda: player.place
+        players = Players()
+        players.add(player)
+        engine.players = players
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         if not web:
             for goal in goals:

@@ -21,9 +21,12 @@ from examples.rumor_mill.mind import Mind, mind_project, said_project
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH
-from examples.rumor_mill.tests.helpers import PID, TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, wait_for
+from examples.rumor_mill.tests.helpers import (
+    PID, TIMEOUT, Always, FakeMind, StubBaselines, StubContex, make, stub_player, wait_for,
+)
 from examples.rumor_mill.town import NEWCOMER, Town
 
 SETTLE = 0.1
@@ -78,6 +81,7 @@ async def setup(*vids, cooldown=0.05, game=None, rumors=None, contex=None, confi
         config or Config(cooldown_seconds=cooldown), Town(), contex or StubContex(), None, None, Lineage(), Ids(), feed,
         mind_factory=factory, game=game, rumors=rumors,
     )
+    engine.players.add(stub_player())
     for vid in vids:
         await engine.add_villager(make(vid))
     await engine.run()
@@ -851,13 +855,41 @@ class RaisingBaselines:
         raise RuntimeError("no baseline")
 
 
-async def overhearing_engine(overhear):
+async def overhearing_engine(overhear, *players):
     lineage, town = Lineage(), Town()
     feed = Feed(lineage, town, out=lambda line: None)
     engine = Engine(Config(), town, None, None, None, lineage, Ids(), feed, mind_factory=FakeMind, overhear=overhear)
     await engine.add_villager(make("v1"), "tavern")
-    engine.player_place = lambda: "tavern"
+    for player in players or [stub_player(place="tavern")]:
+        engine.players.add(player)
     return engine, feed
+
+
+@pytest.mark.asyncio
+async def test_each_player_overhears_only_talk_at_their_own_place(turns):
+    overhear = Overhear(StubContex(), StubBaselines(0.5), Config(overhear_rate=1.0), random.Random(1))
+    engine, feed = await overhearing_engine(overhear, stub_player("p-a", "tavern"), stub_player("p-b", "well"))
+    await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "the weather", None, action=SPEAK), ["v1"])
+    assert [e.player for e in feed.recent if e.kind == "overheard"] == ["p-a"]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_rumor_hop_is_village_talk_to_another_player(turns):
+    hops = []
+
+    async def keep(utterance, place, hop):
+        hops.append(hop)
+        return None
+
+    overhear = Overhear(StubContex(), StubBaselines(0.5), Config(), random.Random(1))
+    overhear.keep = keep
+    engine, _ = await overhearing_engine(overhear, stub_player("p-a", "tavern"), stub_player("p-b", "tavern"))
+    engine.lineage.record("w-1", None, player="p-a")
+    engine.lineage.record("u-1", "w-1")
+    await engine.deliver(Utterance("u-1", "v2", "V2", "tavern", "psst again", "w-1", action=SPEAK), ["v1"])
+    assert sorted(hops) == [False, True]
+    await engine.stop()
 
 
 @pytest.mark.asyncio
@@ -898,7 +930,7 @@ async def test_overheard_lines_reach_the_feed_but_card_hops_do_not(turns):
     )
     for vid in ("v1", "v2"):
         await engine.add_villager(make(vid), "tavern")
-    engine.player_place = lambda: "tavern"
+    engine.players.add(stub_player(place="tavern"))
     lineage.record("w-1", None, player=PID)
     lineage.record("u-1", "w-1")
     lineage.record("u-2", None)
@@ -1270,7 +1302,7 @@ async def test_an_answered_line_at_the_players_place_starts_a_scene(talkers):
 @pytest.mark.asyncio
 async def test_village_talk_away_from_the_player_starts_no_scene(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
-    engine.player_place = lambda: "tavern"
+    engine.players.get(PID).place = "tavern"
     talkers.plan = {"v2": [(SPEAK, 1.0)]}
     said_by(engine, "o-1", "v1")
     hand(engine, "v2", "o-1")
@@ -1284,7 +1316,7 @@ async def test_village_talk_away_from_the_player_starts_no_scene(talkers):
 @pytest.mark.asyncio
 async def test_an_on_card_hop_starts_a_scene_anywhere_and_an_off_card_one_does_not(talkers):
     engine, _, feed = await talk(talkers, "v1", "v2")
-    engine.player_place = lambda: "tavern"
+    engine.players.get(PID).place = "tavern"
     engine.lineage.record("w-1", None, player=PID)
     talkers.plan = {"v2": [(SPEAK, 1.0), (SPEAK, 1.0)]}
     engine.lineage.record("o-2", "w-1")
@@ -1501,6 +1533,42 @@ async def test_a_scene_that_ends_while_a_line_is_checked_is_not_ended_again_or_a
     assert [e["ended"] for e in scene_events(feed)] == ["The conversation broke up."]
     assert scene.lines == ["o-1"]
     assert "v1" not in engine._pending
+    await engine.stop()
+
+
+def scene_players(feed):
+    return [e.player for e in feed.recent if e.kind == "scene"]
+
+
+@pytest.mark.asyncio
+async def test_a_village_talk_scene_shows_only_to_players_at_its_place(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2")
+    engine.players = Players()
+    engine.players.add(stub_player("p-a"))
+    engine.players.add(stub_player("p-b", "well"))
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: scene_events(feed))
+    assert scene_players(feed) and all(p == "p-a" for p in scene_players(feed))
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_scene_end_reaches_a_player_who_walked_away(talkers):
+    engine, _, feed = await talk(talkers, "v1", "v2", scene_cooldown_seconds=5)
+    engine._last_turn["v1"] = time.monotonic()
+    engine.players = Players()
+    walker = stub_player("p-a")
+    engine.players.add(walker)
+    talkers.plan = {"v2": [(SPEAK, 1.0)]}
+    said_by(engine, "o-1", "v1")
+    hand(engine, "v2", "o-1")
+    await wait_for(lambda: scene_events(feed))
+    walker.place = "well"
+    engine._end_scene(engine.scenes.of("v2"), "cooled")
+    ended = [e.player for e in feed.recent if e.kind == "scene" and e.data["ended"]]
+    assert ended == ["p-a"]
     await engine.stop()
 
 

@@ -63,7 +63,7 @@ class Player:
 
         A villager turning the whisper away comes back as a Refusal.
         """
-        if self._over():
+        if self.over():
             return GAME_OVER
         name = name.strip()
         if not name or not text.strip():
@@ -81,7 +81,7 @@ class Player:
 
         A villager turning the whisper away comes back as a Refusal.
         """
-        if self._over():
+        if self.over():
             return GAME_OVER
         text = text.strip()
         if villager_id not in self.town:
@@ -228,7 +228,8 @@ class Player:
                 utterance.id, utterance.text, published_at, target.id, target.name, utterance.conversation,
             )
 
-    def _over(self) -> bool:
+    def over(self) -> bool:
+        """Whether this player's game is over."""
         return self.game is not None and self.game.finished.is_set()
 
     def close(self) -> None:
@@ -240,7 +241,7 @@ class Player:
         self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str,
     ) -> None:
         """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
-        if self._over():
+        if self.over():
             return
         try:
             if state == "near_miss":
@@ -250,7 +251,7 @@ class Player:
         except Exception:
             log.exception("%s line for %s failed", state, villager_id)
             line = None
-        if not self._over():
+        if not self.over():
             self.feed.on_whisper_status(uid, villager_id, name, state, hint=line)
 
     def _next_concern(self, villager_id: str) -> str | None:

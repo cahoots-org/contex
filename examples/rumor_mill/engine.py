@@ -20,6 +20,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
 from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
+from examples.rumor_mill.players import Players
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
@@ -74,7 +75,7 @@ class Engine:
         self.rumors = rumors
         self.overhear = overhear
         self.routine = routine
-        self.player_place: Callable[[], str] = lambda: START_PLACE
+        self.players = Players()
         self.mind_factory = mind_factory or (lambda v: Mind(contex, v, config, baselines))
         self.game = game
         self.summary_source = summary_source
@@ -163,7 +164,7 @@ class Engine:
         """Publish the utterance to each listener's mind; raises only if every listener failed.
 
         An addressed utterance also wakes each listener and joins their next turn unmatched. A line that goes on
-        with a scene is heard by those it addresses too, and wakes them while it stays on the scene's topic. The player
+        with a scene is heard by those it addresses too, and wakes them while it stays on the scene's topic. Each player
         overhears every such line of a village-talk scene where they stand.
         """
         scene = self.scenes.speaking(utterance)
@@ -203,18 +204,20 @@ class Engine:
                 self._end_scene(scene, "veered")
                 scene = None
         self.feed.on_delivery(utterance, heard, on_topic, scene=scene and scene.id)
-        if scene is not None and scene.rumor is None and scene.place == self.player_place():
-            self.feed.on_overheard(utterance, "scene", scene.id)
+        if scene is not None and scene.rumor is None:
+            for player in self.players.at(scene.place):
+                self.feed.on_overheard(utterance, "scene", scene.id, player=player.id)
         elif self.overhear is not None:
-            hop = on_topic and self.lineage.is_player_rooted(utterance.id)
-            try:
-                reason = await self.overhear.keep(utterance, self.player_place(), hop)
-            except Exception:
-                log.warning("overhearing %s failed", utterance.id)
-                log.debug("overhearing failure", exc_info=True)
-            else:
-                if reason:
-                    self.feed.on_overheard(utterance, reason)
+            for player in self.players.at(utterance.place):
+                hop = on_topic and self.lineage.player_of(utterance.id) == player.id
+                try:
+                    reason = await self.overhear.keep(utterance, player.place, hop)
+                except Exception:
+                    log.warning("overhearing %s failed", utterance.id)
+                    log.debug("overhearing failure", exc_info=True)
+                else:
+                    if reason:
+                        self.feed.on_overheard(utterance, reason, player=player.id)
 
     async def reply(self, utterance: Utterance) -> None:
         """Remember a villager's answer to the newcomer and show it on its conversation; no mind hears it."""
@@ -466,7 +469,7 @@ class Engine:
         """The villager's scene, the one they join by answering its line, or a new one when their speech answers an
         exchange, and whether they just joined.
 
-        A line that carries the newcomer's rumor starts one anywhere; village talk only where the player is. An answer
+        A line that carries a newcomer's rumor starts one anywhere; village talk only where a player is. An answer
         to a full scene's line, or to someone already in another scene, is ordinary talk.
         """
         self._end_stalled_scenes()
@@ -484,12 +487,12 @@ class Engine:
         root = self.lineage.root(opening.id)
         if self.rumors.carries(root, opening.id):
             scene = self.scenes.start(opening, v.id, root, root)
-        elif place == self.player_place():
+        elif self.players.at(place):
             scene = self.scenes.start(opening, v.id, opening.id, None)
             if scene is not None:
                 await self.rumors.add_topic(opening.id, opening.text, datetime.now(UTC))
         if scene is not None:
-            self.feed.on_scene(scene)
+            self._show_scene(scene)
         return scene, False
 
     def _scene_turn(self, scene: Scene, vid: str, decision: Decision, joined: bool) -> None:
@@ -500,7 +503,7 @@ class Engine:
         if reason:
             self._end_scene(scene, reason)
         else:
-            self.feed.on_scene(scene)
+            self._show_scene(scene)
 
     def _leave_scene(self, vid: str) -> None:
         """Take the villager out of their scene, ending it if that was its last turn."""
@@ -520,7 +523,16 @@ class Engine:
         if scene.ended:
             return
         self.scenes.end(scene, reason)
-        self.feed.on_scene(scene)
+        self._show_scene(scene)
+
+    def _show_scene(self, scene: Scene) -> None:
+        """Report the scene to its rumor's player, or to the players at its place and those who saw it before."""
+        if scene.rumor is not None:
+            self.feed.on_scene(scene, player=self.lineage.player_of(scene.rumor))
+            return
+        scene.seen_by.update(p.id for p in self.players.at(scene.place))
+        for player_id in sorted(scene.seen_by):
+            self.feed.on_scene(scene, player=player_id)
 
     def share_chance(self, vid: str, source: Match | None) -> float:
         """How likely a villager who walks off is to share source where they arrive: their nature times its pull."""

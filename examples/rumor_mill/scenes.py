@@ -54,6 +54,8 @@ class Scene:
     ended: str | None = None
     # When its last line was said, on the monotonic clock.
     last_line: float = field(default_factory=time.monotonic)
+    # The players a village-talk scene has been shown to.
+    seen_by: set[str] = field(default_factory=set)
 
 
 @dataclass
