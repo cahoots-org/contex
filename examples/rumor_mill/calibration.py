@@ -41,7 +41,7 @@ CALIBRATION = (
 
 
 def _calibration_data(i: int, sentence: str) -> dict:
-    return Utterance(f"cal-{i}", "newcomer", "The newcomer", "square", sentence, None, "whispered to you").to_data()
+    return Utterance(f"cal-{i}", "newcomer", "A newcomer", "square", sentence, None, "whispered to you").to_data()
 
 
 # Baselines cached under other calibration keys or payloads are not reused.

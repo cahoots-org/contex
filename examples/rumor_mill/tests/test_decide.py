@@ -284,7 +284,7 @@ async def test_answer_offered_only_after_a_landed_newcomer_line():
     jev = StubJev({"action": IGNORE})
     await decide(jev, view())
     assert ANSWER not in jev.questions["action"].criteria
-    line = match("utt:w-1", "The newcomer whispered to you at the square: psst")
+    line = match("utt:w-1", "A newcomer whispered to you at the square: psst")
     jev = StubJev({"action": ANSWER, "source": "m1", "style": "mock", "villager_target": "v2"})
     decision = await decide(jev, view(new=[match("m1"), line], answerable=[line]))
     assert ANSWER in jev.questions["action"].criteria

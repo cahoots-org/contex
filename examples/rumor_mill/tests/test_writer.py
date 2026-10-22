@@ -7,7 +7,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill.tests.helpers import StubClient
-from examples.rumor_mill.writer import Writer, first_line
+from examples.rumor_mill.writer import WHISPER_FRAMING, Writer, first_line
 
 
 def villager():
@@ -112,7 +112,7 @@ async def test_warn_asks_for_one_line_and_never_says_how_suspicious_anyone_is():
 async def test_reply_answers_the_newcomer_in_one_line():
     client = StubClient('"Aye, the well has been off since spring."\nShe wipes her hands.', "Hm.")
     writer = Writer(client, "haiku-test")
-    line = "The newcomer whispered to you at the square: the well water tastes odd"
+    line = "A newcomer whispered to you at the square: the well water tastes odd"
     assert await writer.reply(villager(), line, []) == "Aye, the well has been off since spring."
     await writer.reply(villager(), line, ["Ada said at the square: the well is fine"])
     plain, with_said = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
@@ -125,7 +125,7 @@ async def test_reply_answers_the_newcomer_in_one_line():
 async def test_reply_mentions_what_they_heard_only_when_there_is_something():
     client = StubClient("Hm.", "Hm.")
     writer = Writer(client, "haiku-test")
-    line = "The newcomer whispered to you at the square: the miller waters his flour"
+    line = "A newcomer whispered to you at the square: the miller waters his flour"
     await writer.reply(villager(), line, [])
     await writer.reply(villager(), line, [], ["Bo said at the well: the miller waters his flour", "Cy said: flour is thin"])
     plain, with_heard = (c["system"] + c["messages"][0]["content"] for c in client.messages.calls)
@@ -174,3 +174,7 @@ async def test_go_on_urges_the_newcomer_on_in_one_line():
     assert "owes me flour" not in call["system"]
     assert "the oven looks tired" in call["messages"][0]["content"]
     assert call["max_tokens"] == 40
+
+
+def test_whisper_framing_is_a_newcomer():
+    assert WHISPER_FRAMING.sub("", "A newcomer whispered to you at the well: hi") == "hi"

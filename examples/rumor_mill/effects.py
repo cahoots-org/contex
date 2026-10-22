@@ -31,7 +31,7 @@ class Hub(Protocol):
 
     async def publish_group(self, group: Group) -> None: ...
 
-    def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None: ...
+    def suspect(self, vid: str, player: str, amount: float, reason: str, uid: str | None = None) -> None: ...
 
     async def reply(self, utterance: Utterance) -> None: ...
 
@@ -51,10 +51,12 @@ async def act(
     heard: Sequence[str] = (),
     suspicion_hear_max: float = Config.suspicion_hear_max,
     share_chance: float = 0.0,
+    about: str | None = None,
 ) -> None:
     """Apply the decision to the town and deliver any speech it produces.
 
-    A villager who moves shares the news with someone where they arrive with share_chance.
+    A villager who moves shares the news with someone where they arrive with share_chance. A warning is about the
+    player about; a line retelling a warning is about the same player.
     """
     action = decision.action
     vid = villager.id
@@ -67,6 +69,7 @@ async def act(
     )
     # Only a faithful retelling of the whisper, or of a line naming the newcomer, keeps the newcomer named.
     names = from_newcomer and decision.style == "faithful"
+    told_about = heard_from.about if heard_from else None
 
     async def say(
         text: str, listeners: list[str], audience: str, verb: str = "said", addressed: bool = False,
@@ -80,6 +83,7 @@ async def act(
         utterance = Utterance(
             uid, vid, villager.name, place, text, parent, verb,
             depth=depth, names_newcomer=names_newcomer, audience=audience, action=action, style=decision.style,
+            about=about if root else told_about,
         )
         facts.record(utterance)
         await hub.deliver(utterance, [i for i in listeners if i != vid], addressed=addressed)
@@ -105,11 +109,13 @@ async def act(
             text = await writer.say(villager, decision, source_text, audience, names)
             await say(text, [decision.target], ONE, names_newcomer=names)
     elif action == WARN:
-        if decision.target in others():
+        if decision.target in others() and about is not None:
             text = await writer.warn(villager, town.get(decision.target))
             uid = await say(text, [decision.target], ONE, "warned", addressed=True, root=True, names_newcomer=True)
             try:
-                hub.suspect(decision.target, WARNED_SHARE * suspicion_hear_max, "was warned about the newcomer", uid)
+                hub.suspect(
+                    decision.target, about, WARNED_SHARE * suspicion_hear_max, "was warned about the newcomer", uid,
+                )
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
     elif action == ANSWER:

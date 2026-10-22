@@ -323,8 +323,9 @@ class Engine:
             return time.time()
         return time.time() + last + cooldown - time.monotonic()
 
-    def suspect(self, vid: str, amount: float, reason: str, uid: str | None = None) -> None:
-        self.suspicion.bump(vid, amount, reason, uid)
+    def suspect(self, vid: str, player: str, amount: float, reason: str, uid: str | None = None) -> None:
+        """Raise the villager's suspicion of player."""
+        self.suspicion.bump(vid, player, amount, reason, uid)
 
     async def publish_group(self, group: Group) -> None:
         data = {"id": group.id, "name": group.name, "creed": group.creed, "founder": group.founder}
@@ -399,6 +400,8 @@ class Engine:
         heard = await self._recall_heard_all(v.id, whispers)
         answerable = [m for m in whispers if self._can_answer(v.id, m.data["id"])]
         place = self.town.place_of(v.id)
+        front = {self._about(m) for m in new} - {None}
+        suspect = self.suspicion.most_suspected(v.id, front)
         view = TurnView(
             villager=v,
             place=place,
@@ -407,7 +410,7 @@ class Engine:
             visible_groups=self.town.visible_groups(v.id),
             new=new,
             recent=stale + [m for m in mind.matches if m.data_key not in keys | stale_keys],
-            suspicion=self.suspicion.score(v.id),
+            suspicion=self.suspicion.score(v.id, suspect) if suspect else 0.0,
             warn_threshold=self.config.warn_threshold,
             names_newcomer=[m for m in new if m in whispers or self._names_newcomer(m)],
             said=said,
@@ -422,13 +425,7 @@ class Engine:
                 decision = await decide(self.jev, view)
                 action = decision.action
                 if decision.suspicion_strength is not None:
-                    try:
-                        self.suspicion.rate(
-                            v.id, decision.suspicion_strength, "heard the newcomer named",
-                            view.names_newcomer[0].data.get("id"),
-                        )
-                    except Exception:
-                        log.exception("suspicion rating failed for %s", v.id)
+                    self._rate(v.id, decision.suspicion_strength, view.names_newcomer)
                 if decision.gossip is not None:
                     self._gossip[v.id] = decision.gossip
                 scene, joined = await self._enter_scene(v, decision, place)
@@ -440,6 +437,7 @@ class Engine:
                     heard=[m.data.get("text", "") for m in heard],
                     suspicion_hear_max=self.config.suspicion_hear_max,
                     share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
+                    about=suspect,
                 )
                 if action == MOVE:
                     self._chose_move.add(v.id)
@@ -450,6 +448,24 @@ class Engine:
         finally:
             self._report(v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered)
         return True
+
+    def _about(self, m: Match) -> str | None:
+        """The player the item's lineage roots in, or else the player it warns of."""
+        uid = m.data.get("id")
+        fact = self.facts.get(uid)
+        return self.lineage.player_of(uid) or (fact.about if fact else None)
+
+    def _rate(self, vid: str, strength: float, named: list[Match]) -> None:
+        """Raise the villager's suspicion of each player the named lines are about by strength."""
+        first: dict[str, str | None] = {}
+        for m in named:
+            if (player := self._about(m)) is not None:
+                first.setdefault(player, m.data.get("id"))
+        for player, uid in first.items():
+            try:
+                self.suspicion.rate(vid, player, strength, "heard the newcomer named", uid)
+            except Exception:
+                log.exception("suspicion rating failed for %s", vid)
 
     def _exchange(self, m: Match, vid: str, place: str) -> Utterance | None:
         """The line m holds when someone else still here spoke it at this place, so answering it could start a scene."""
@@ -665,26 +681,29 @@ class Engine:
             self._strolling.discard(vid)
 
     async def _suspicion_loop(self) -> None:
-        """Decay suspicion, report label changes, and run every player out once the town holds at the run-out level."""
+        """Decay suspicion, then check where each player who is still playing stands with the town."""
         days = self.config.suspicion_check_days
-        label, held = "quiet", 0
+        labels: dict[str, str] = {}
+        held: dict[str, int] = {}
         while True:
             await asyncio.sleep(days * self.config.day_seconds)
             try:
                 self.suspicion.decay(days)
-                if (now := self.suspicion.label()) != label:
-                    label = now
-                    self.feed.on_heat(label)
-                held = held + 1 if self.suspicion.level() >= self.config.run_out_level else 0
-                if held >= self.config.run_out_checks:
-                    for p in self.players:
-                        if p.over():
-                            continue
-                        summary = Summary("lost", self.summary_source(p), self.suspicion.reasons())
-                        self.feed.say(MEETING, player=p.id)
-                        p.end(summary)
+                for p in self.players:
+                    if not p.over():
+                        self._check(p, labels, held)
             except Exception:
                 log.exception("town check failed")
+
+    def _check(self, p: Player, labels: dict[str, str], held: dict[str, int]) -> None:
+        """Report the player's label if it changed, and run them out after enough checks at the run-out level."""
+        if (now := self.suspicion.label(p.id)) != labels.get(p.id, "quiet"):
+            labels[p.id] = now
+            self.feed.on_heat(now, player=p.id)
+        held[p.id] = held.get(p.id, 0) + 1 if self.suspicion.level(p.id) >= self.config.run_out_level else 0
+        if held[p.id] >= self.config.run_out_checks:
+            self.feed.say(MEETING, player=p.id)
+            p.end(Summary("lost", self.summary_source(p), self.suspicion.reasons(p.id)))
 
     async def _renew_loop(self) -> None:
         """Renew the lease of every mind not read within renew_seconds."""

@@ -214,7 +214,7 @@ def test_state_carries_the_label_and_no_scores(game):
     state = game.client.get("/api/state").json()
     assert (state["heat"], state["heat_line"]) == ("quiet", HEAT_LINES["quiet"])
     assert state["game"] == {"state": "playing", "summary": None}
-    game.suspicion.bump("v1", 0.11, "whispered to them directly")
+    game.suspicion.bump("v1", helpers.PID, 0.11, "whispered to them directly")
     response = game.client.get("/api/state")
     assert (response.json()["heat"], response.json()["heat_line"]) == ("watched", HEAT_LINES["watched"])
     assert "0.11" not in response.text and "0.055" not in response.text
@@ -263,7 +263,7 @@ def test_whisper_after_game_over_is_refused(game):
 
 
 def test_a_refused_whisper_is_an_error_with_the_sentence_and_nothing_else(game):
-    game.suspicion.bump("v1", game.config.refuse_threshold, "whispered to them directly")
+    game.suspicion.bump("v1", helpers.PID, game.config.refuse_threshold, "whispered to them directly")
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"})
         event = receive(ws)
@@ -289,22 +289,22 @@ def walk(value, key=""):
 def test_no_api_response_contains_a_suspicion_number_or_villager_id_for_suspects(game):
     scores = {"v1": 0.73, "v2": 0.21}
     for vid, amount in scores.items():
-        game.suspicion.bump(vid, amount, "heard the newcomer named")
+        game.suspicion.bump(vid, helpers.PID, amount, "heard the newcomer named")
     responses = []
     with game.client.websocket_connect(WS) as ws:
         responses.append(game.client.post("/api/whisper", json={"villager_id": "v2", "text": "the well is cursed"}).json())
         responses.append(game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the mill is cursed"}).json())
-        game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale")
-        game.feed.on_heat(game.suspicion.label())
-        game.player.end(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons()))
+        game.feed.on_warning("v2", "Bert Cole", "v1", "Marta Hale", helpers.PID)
+        game.feed.on_heat(game.suspicion.label(helpers.PID), player=helpers.PID)
+        game.player.end(Summary("lost", [(GOAL.text, 42)], game.suspicion.reasons(helpers.PID)))
         events = [receive(ws) for _ in range(8)]
     kinds = ["whisper", "place", "whisper_status", "whisper_status", "refusal", "warning", "heat", "gameover"]
     assert [e["kind"] for e in events] == kinds
     assert events[-1]["reasons"][:2] == ["Marta Hale grew wary of the rumors going around.", "Bert Cole grew wary of the rumors going around."]
     responses += [game.client.get("/api/state").json(), *(game.client.get(f"/api/villagers/{v}").json() for v in scores)]
     responses += [game.client.post("/api/whisper", json={"villager_id": "v1", "text": "hi"}).json(), *events]
-    raw = {str(game.suspicion.score(v)) for v in scores} | {str(a) for a in scores.values()}
-    raw |= {str(game.suspicion.level()), str(game.config.refuse_threshold)}
+    raw = {str(game.suspicion.score(v, helpers.PID)) for v in scores} | {str(a) for a in scores.values()}
+    raw |= {str(game.suspicion.level(helpers.PID)), str(game.config.refuse_threshold)}
     for response in responses:
         text = re.sub(r'"at": [0-9.e+-]+', '', json.dumps(response))
         assert not any(r in text for r in raw), text

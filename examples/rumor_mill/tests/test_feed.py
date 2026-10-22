@@ -27,7 +27,7 @@ def test_only_player_rooted_deliveries_print():
     assert lines == []
     feed.on_delivery(utt("u-1"), ["v2"])
     assert len(lines) == 1
-    whisper = Utterance("w-1", "newcomer", "The newcomer", "tavern", "psst", None, "whispered to you")
+    whisper = Utterance("w-1", "newcomer", "A newcomer", "tavern", "psst", None, "whispered to you")
     feed.on_delivery(whisper, ["v2"])
     assert len(lines) == 1
 
@@ -46,7 +46,7 @@ def test_single_and_group_line_formats():
 def test_events_carry_ids_depth_and_listener_names():
     feed, lines = make()
     feed.lineage.record("u-3", "u-1")
-    whisper = Utterance("w-1", "newcomer", "The newcomer", "tavern", "psst", None, "whispered to you")
+    whisper = Utterance("w-1", "newcomer", "A newcomer", "tavern", "psst", None, "whispered to you")
     feed.on_delivery(whisper, ["v1"])
     feed.on_delivery(Utterance("u-3", "v2", "Marta", "well", "the miller drowns flour", "u-1"), ["v1"])
     w, hop = feed.recent
@@ -96,7 +96,8 @@ def test_refusal_event_and_terminal_lines():
 
 def test_warning_event_has_names_and_no_line_or_score():
     feed, lines = make()
-    feed.on_delivery(Utterance("u-9", "v1", "Bert", "tavern", "the newcomer is behind it", None, "warned"), ["v2"])
+    warning = Utterance("u-9", "v1", "Bert", "tavern", "the newcomer is behind it", None, "warned", about=PID)
+    feed.on_delivery(warning, ["v2"])
     assert lines == ["Bert warned Marta about you."]
     (event,) = feed.recent
     assert event.kind == "warning"
@@ -217,3 +218,10 @@ def test_a_view_passes_only_what_its_player_sees():
     feed.emit("system", "theirs", player="p-b")
     feed.say("everyone")
     assert [e.line for e in seen] == ["mine", "everyone"]
+
+
+def test_a_warning_reaches_only_the_player_it_is_about():
+    feed, _ = make()
+    warning = Utterance("u-9", "v1", "Bert", "tavern", "the newcomer is behind it", None, "warned", about="p-a")
+    feed.on_delivery(warning, ["v2"])
+    assert [e.kind for e in feed.replay("p-a")] == ["warning"] and feed.replay("p-b") == []

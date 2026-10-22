@@ -13,7 +13,7 @@ TURN_AWAY_MAX_TOKENS = 60
 WARN_MAX_TOKENS = 60
 GO_ON_MAX_TOKENS = 40
 # How a player whisper reads when it reaches a villager.
-WHISPER_FRAMING = re.compile(r"^The newcomer whispered to you at the [^:]*: ")
+WHISPER_FRAMING = re.compile(r"^A newcomer whispered to you at the [^:]*: ")
 
 
 STAGE_DIRECTION = re.compile(r"\*[^*]*\*")
@@ -136,7 +136,7 @@ class Writer:
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
             f"Your personality: {villager.personality}. "
-            "You have come to believe the newcomer in town is behind the rumors going around. "
+            "You have come to believe a newcomer in town is behind the rumors going around. "
             "Warn the person you are talking to in one short sentence, under 25 words, in your own voice. "
             "Never say how sure you are or how many people suspect the newcomer. "
             "No stage directions, no quotation marks, no preamble."

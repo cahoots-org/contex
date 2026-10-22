@@ -154,7 +154,7 @@ def create_app(
             "rumors": rumors.cards(player.id),
             "notes": notes.all(),
             "usage": usage.to_json(),
-            "heat": (label := suspicion.label()),
+            "heat": (label := suspicion.label(player.id)),
             "heat_line": HEAT_LINES[label],
             "game": game_json(player),
         }

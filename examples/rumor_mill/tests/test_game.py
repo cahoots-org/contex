@@ -51,7 +51,7 @@ def script(engine, scores):
         decay(100)
         score = scores[len(seen)] if len(seen) < len(scores) else 0.0
         seen.append(days)
-        suspicion.bump("v1", score, "whispered to them directly")
+        suspicion.bump("v1", PID, score, "whispered to them directly")
 
     suspicion.decay = scripted
     return seen
@@ -126,10 +126,10 @@ async def test_label_event_only_when_it_changes():
 async def test_loss_summary_names_what_gave_you_away_and_includes_goal_progress():
     engine, player, feed, lines = await start("v1", "v2", "v3")
     s = engine.suspicion
-    s.bump("v1", 0.9, "whispered to them directly")
-    s.bump("v2", 0.6, "was warned about the newcomer")
-    s.bump("v3", 0.5, "tried to whisper again")
-    s.bump("v3", 0.1, "a reason the summary has no words for")
+    s.bump("v1", PID, 0.9, "whispered to them directly")
+    s.bump("v2", PID, 0.6, "was warned about the newcomer")
+    s.bump("v3", PID, 0.5, "tried to whisper again")
+    s.bump("v3", PID, 0.1, "a reason the summary has no words for")
     engine.town.remove("v2")
     await engine.run()
     await asyncio.wait_for(player.finished.wait(), 2)
@@ -146,7 +146,7 @@ async def test_loss_summary_names_what_gave_you_away_and_includes_goal_progress(
 @pytest.mark.asyncio
 async def test_unknown_reason_reads_as_growing_suspicion():
     engine, player, _, _ = await start("v1")
-    engine.suspicion.bump("v1", 0.9, "something new")
+    engine.suspicion.bump("v1", PID, 0.9, "something new")
     await engine.run()
     await asyncio.wait_for(player.finished.wait(), 2)
     assert player.summary.reasons == ["V1 grew suspicious of you."]
@@ -165,7 +165,7 @@ async def test_a_failed_check_is_logged_and_the_next_one_can_end_the_game(caplog
         return GOALS
 
     engine.summary_source = flaky
-    engine.suspicion.bump("v1", 0.9, "whispered to them directly")
+    engine.suspicion.bump("v1", PID, 0.9, "whispered to them directly")
     await engine.run()
     await asyncio.wait_for(player.finished.wait(), 2)
     assert (player.state, player.summary.goals, len(calls)) == ("lost", GOALS, 2)
@@ -220,7 +220,7 @@ async def test_whisper_after_game_over_is_refused():
     await asyncio.sleep(0.05)
     assert engine.delivered == []
     assert not lineage.is_player_rooted("w-1")
-    assert engine.suspicion.score("v1") == 0.0
+    assert engine.suspicion.score("v1", PID) == 0.0
     assert player._brush_offs == set()
     assert len(lines) == 1
 
@@ -432,3 +432,16 @@ async def test_phases_stay_evenly_spaced_with_a_routine(monkeypatch):
     await wait_for(lambda: len(ticks) >= 4)
     await engine.stop()
     assert all(b - a < 1.0 for a, b in zip(ticks, ticks[1:4]))
+
+
+@pytest.mark.asyncio
+async def test_run_out_ends_only_that_players_game():
+    engine, pa, feed, _ = await start("v1")
+    pb = Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-b")
+    engine.players.add(pb)
+    engine.suspicion.bump("v1", PID, 0.9, "whispered to them directly")
+    await engine.run()
+    await asyncio.wait_for(pa.finished.wait(), 2)
+    await engine.stop()
+    assert pa.state == "lost" and pb.state == "playing"
+    assert MEETING in [e.line for e in feed.replay(PID)] and MEETING not in [e.line for e in feed.replay("p-b")]

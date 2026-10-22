@@ -8,7 +8,7 @@ from datetime import datetime
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.player import MAX_WHISPER_CHARS, Refusal, echoes
+from examples.rumor_mill.player import MAX_WHISPER_CHARS, Player, Refusal, echoes
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
@@ -53,7 +53,7 @@ async def test_whisper_is_delivered_and_rooted_in_lineage():
     assert await player.whisper("Marta", "the miller waters his flour") is None
     (utterance, listeners), = engine.delivered
     assert listeners == ["v1"]
-    assert (utterance.id, utterance.speaker, utterance.speaker_name) == ("w-1", NEWCOMER, "The newcomer")
+    assert (utterance.id, utterance.speaker, utterance.speaker_name) == ("w-1", NEWCOMER, "A newcomer")
     assert (utterance.verb, utterance.place, utterance.parent) == ("whispered to you", "tavern", None)
     assert utterance.text == "the miller waters his flour"
     assert lineage.is_player_rooted("w-1")
@@ -186,7 +186,7 @@ def test_echoes_needs_four_consecutive_words():
 
 
 def suspect(player, vid="v1"):
-    player.engine.suspicion.bump(vid, player.config.refuse_threshold, "test")
+    player.engine.suspicion.bump(vid, PID, player.config.refuse_threshold, "test")
 
 
 @pytest.mark.asyncio
@@ -194,14 +194,14 @@ async def test_whisper_raises_the_recipients_suspicion_even_when_it_shrugs():
     player, _, lines, _, _ = make("Marta")
     suspicion = player.engine.suspicion
     await player.whisper("Marta", "hello")
-    assert suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
+    assert suspicion.score("v1", PID) == pytest.approx(player.config.suspicion_whisper_bump)
     for _ in range(100):
         if lines:
             break
         await asyncio.sleep(0.01)
     assert lines == ["Marta shrugs it off."]
-    assert suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
-    assert suspicion.top_evidence()[0].uid == "w-1"
+    assert suspicion.score("v1", PID) == pytest.approx(player.config.suspicion_whisper_bump)
+    assert suspicion.top_evidence(PID)[0].uid == "w-1"
 
 
 @pytest.mark.asyncio
@@ -220,10 +220,10 @@ async def test_refusal_bumps_suspicion_and_prints_a_line():
     player, _, lines, _, _ = make("Marta")
     player.writer = StubWriter("Not another word.")
     suspect(player)
-    before = player.engine.suspicion.score("v1")
+    before = player.engine.suspicion.score("v1", PID)
     await player.whisper("Marta", "hello")
     assert lines == ['Marta turns away from you: "Not another word."']
-    after = player.engine.suspicion.score("v1")
+    after = player.engine.suspicion.score("v1", PID)
     assert after == pytest.approx(min(1.0, before + player.config.suspicion_whisper_bump))
     assert "tried to whisper again" in {e.reason for e in player.engine.suspicion._evidence}
 
@@ -262,7 +262,7 @@ async def test_failed_delivery_does_not_bump():
 
     engine.deliver = boom
     assert await player.whisper("Marta", "hello")
-    assert player.engine.suspicion.score("v1") == 0.0
+    assert player.engine.suspicion.score("v1", PID) == 0.0
 
 
 def statuses(player):
@@ -327,7 +327,7 @@ async def test_check_error_reports_not_carried_and_leaves_no_pending():
     assert engine.direct == []
     assert [s["state"] for s in statuses(player)] == ["checking", "not_carried"]
     assert lines == [] and player._brush_offs == set()
-    assert player.engine.suspicion.score("v1") == pytest.approx(player.config.suspicion_whisper_bump)
+    assert player.engine.suspicion.score("v1", PID) == pytest.approx(player.config.suspicion_whisper_bump)
 
 
 @pytest.mark.asyncio
@@ -576,7 +576,7 @@ async def test_a_reply_raises_suspicion_like_any_whisper():
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
     await miss(player)
     await miss(player)
-    assert player.engine.suspicion.score("v1") == pytest.approx(2 * player.config.suspicion_whisper_bump)
+    assert player.engine.suspicion.score("v1", PID) == pytest.approx(2 * player.config.suspicion_whisper_bump)
 
 
 @pytest.mark.asyncio
@@ -656,3 +656,12 @@ async def test_a_whisper_is_recorded_under_its_player():
     assert lineage.player_of("w-1") == PID
     assert engine.delivered[0][0].speaker == NEWCOMER
     player.close()
+
+
+@pytest.mark.asyncio
+async def test_a_villager_turns_away_only_the_player_they_suspect():
+    player, town, _, engine, lineage = make("Marta")
+    other = Player(engine, town, lineage, player.ids, player.feed, player.config, player_id="p-b")
+    engine.suspicion.bump("v1", PID, player.config.refuse_threshold, "test")
+    assert isinstance(await player.whisper_to("v1", "hi"), Refusal)
+    assert await other.whisper_to("v1", "hi") is None

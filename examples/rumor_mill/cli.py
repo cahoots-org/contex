@@ -107,7 +107,7 @@ async def repl(
             if not goals:
                 feed.say("No goals yet.")
             if suspicion:
-                feed.say(HEAT_LINES[suspicion.label()])
+                feed.say(HEAT_LINES[suspicion.label(player.id)])
         elif cmd.kind == "usage" and usage:
             feed.say(usage.summary())
         elif cmd.kind == "help" or line.strip():

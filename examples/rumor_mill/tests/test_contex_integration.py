@@ -131,9 +131,9 @@ async def test_default_threshold_lets_only_whispers_on_a_need_in():
         ], {})
         mind = Mind(client, marta, config, StubBaselines(0.815))
         await mind.open()
-        off = Utterance("w-1", "newcomer", "The newcomer", "square",
+        off = Utterance("w-1", "newcomer", "A newcomer", "square",
                         "lattice gauge theory predicts quark confinement at low energies", None, "whispered to you")
-        on = Utterance("w-2", "newcomer", "The newcomer", "square",
+        on = Utterance("w-2", "newcomer", "A newcomer", "square",
                        "the well has been cursed and everyone who drinks from it falls ill", None, "whispered to you")
         await mind.hear("utt:w-1", off.to_data())
         await mind.hear("utt:w-2", on.to_data())

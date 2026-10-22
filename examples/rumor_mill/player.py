@@ -96,8 +96,8 @@ class Player:
         if len(text) > MAX_WHISPER_CHARS:
             return f"Too long: a whisper is at most {MAX_WHISPER_CHARS} characters."
         target = self.town.get(villager_id)
-        if self.engine.suspicion.score(target.id) >= self.config.refuse_threshold:
-            self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "tried to whisper again")
+        if self.engine.suspicion.score(target.id, self.id) >= self.config.refuse_threshold:
+            self.engine.suspicion.bump(target.id, self.id, self.config.suspicion_whisper_bump, "tried to whisper again")
             self.engine.end_conversation(target.id, self.id)
             self.feed.on_refusal(target.id, target.name, await self._turn_away(target), player=self.id)
             return Refusal(f"{target.name} turns away from you.")
@@ -113,7 +113,7 @@ class Player:
         else:
             thread_id = None
         utterance = Utterance(
-            uid, NEWCOMER, "The newcomer", self.town.place_of(target.id), text, None, "whispered to you",
+            uid, NEWCOMER, "A newcomer", self.town.place_of(target.id), text, None, "whispered to you",
             conversation=thread_id,
         )
         self.engine.facts.record(utterance)
@@ -129,7 +129,9 @@ class Player:
         if utterance.place != self.place:
             self.place = utterance.place
             self.feed.on_place(self.place, player=self.id)
-        self.engine.suspicion.bump(target.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid)
+        self.engine.suspicion.bump(
+            target.id, self.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid,
+        )
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
         found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))
         if found is None:

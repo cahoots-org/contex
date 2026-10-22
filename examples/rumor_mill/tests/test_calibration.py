@@ -43,7 +43,7 @@ async def test_baseline_is_mean_of_calibration_scores(tmp_path):
     assert len(contex.published) == len(CALIBRATION)
     project, key, data = contex.published[0]
     assert (project, key) == ("rumor-mill:s1:calibration", "cal:0")
-    assert data["text"] == f"The newcomer whispered to you at the square: {CALIBRATION[0]}"
+    assert data["text"] == f"A newcomer whispered to you at the square: {CALIBRATION[0]}"
     assert data["id"] == "cal-0"
 
 

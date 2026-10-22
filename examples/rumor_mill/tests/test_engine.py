@@ -377,7 +377,7 @@ async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fai
     view = turns.views[0]
     assert view.names_newcomer == view.new
     assert (view.suspicion, view.warn_threshold) == (0.0, engine.config.warn_threshold)
-    assert engine.suspicion.score("v1") == engine.config.suspicion_hear_max
+    assert engine.suspicion.score("v1", PID) == engine.config.suspicion_hear_max
 
     def broken(*args):
         raise RuntimeError("rating down")
@@ -387,8 +387,8 @@ async def test_suspicion_strength_updates_scores_and_a_rating_error_does_not_fai
     await wait_for(lambda: len(turns.acts) == 2)
     assert turns.views[1].suspicion == engine.config.suspicion_hear_max
     assert "rating down" in caplog.text
-    engine.suspect("v1", 0.1, "was warned about the newcomer", "u-1")
-    assert engine.suspicion.score("v1") == pytest.approx(engine.config.suspicion_hear_max + 0.1)
+    engine.suspect("v1", PID, 0.1, "was warned about the newcomer", "u-1")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(engine.config.suspicion_hear_max + 0.1)
     await engine.stop()
 
 
@@ -629,7 +629,7 @@ async def test_hurtful_gossip_raises_no_suspicion(monkeypatch):
     push(minds["v1"])
     await wait_for(lambda: engine.jev.asked)
     assert engine.jev.asked == [False]
-    assert engine.suspicion.score("v1") == 0.0
+    assert engine.suspicion.score("v1", PID) == 0.0
     await engine.stop()
 
 
@@ -642,12 +642,12 @@ async def test_a_warning_asks_no_score_question(monkeypatch):
     engine, minds, _ = await setup("v1")
     engine.jev = Rater()
     engine.facts.record(Utterance("u-0", "v2", "V2", "square", "Mind the newcomer", None, "warned",
-                                  names_newcomer=True, action=WARN))
-    engine.suspect("v1", 0.1, "was warned about the newcomer", "u-0")
+                                  names_newcomer=True, action=WARN, about=PID))
+    engine.suspect("v1", PID, 0.1, "was warned about the newcomer", "u-0")
     engine.hear_directly("v1", Match("utt:u-0", {"id": "u-0", "text": "V2 warned at the square: Mind the newcomer"}))
     await wait_for(lambda: engine.jev.asked)
     assert engine.jev.asked == [False]
-    assert engine.suspicion.score("v1") == pytest.approx(0.1)
+    assert engine.suspicion.score("v1", PID) == pytest.approx(0.1)
     await engine.stop()
 
 
@@ -940,7 +940,7 @@ async def test_a_town_crier_line_is_not_remembered_as_said(turns):
 async def test_the_players_whispers_are_not_remembered_as_said(turns):
     contex = StubContex()
     engine, _, _ = await setup("v1", contex=contex)
-    utt = Utterance("w-1", NEWCOMER, "The newcomer", "square", "psst", None, "whispered to you")
+    utt = Utterance("w-1", NEWCOMER, "A newcomer", "square", "psst", None, "whispered to you")
     await engine.deliver(utt, ["v1"])
     assert contex.published == []
     await engine.stop()
@@ -968,7 +968,7 @@ async def whisper_turn(turns, contex, **config):
     engine, minds, _ = await setup("v1", contex=contex, config=Config(**{"cooldown_seconds": 0.05, **config}))
     minds["v1"].results = [[]]
     engine.lineage.record("w-1", None, player=PID)
-    text = "The newcomer whispered to you at the square: psst"
+    text = "A newcomer whispered to you at the square: psst"
     engine.hear_directly("v1", Match("utt:w-1", {"id": "w-1", "text": text}, 0.8))
     await wait_for(lambda: len(turns.views) == 1)
     await engine.stop()
@@ -1059,7 +1059,7 @@ def talks(monkeypatch):
 
 
 def reply_whisper(engine, vid, wid, conversation):
-    engine.facts.record(Utterance(wid, NEWCOMER, "The newcomer", "square", "psst", None, conversation=conversation))
+    engine.facts.record(Utterance(wid, NEWCOMER, "A newcomer", "square", "psst", None, conversation=conversation))
     whisper(engine, vid, wid)
 
 
@@ -1155,7 +1155,7 @@ async def test_a_reply_is_remembered_and_reaches_the_feed_not_minds(turns):
     engine, minds, _ = await setup("v1", "v2", contex=contex)
     lines = []
     engine.feed = Feed(engine.lineage, engine.town, out=lines.append)
-    engine.facts.record(Utterance("w-2", NEWCOMER, "The newcomer", "square", "psst", None, conversation="w-1"))
+    engine.facts.record(Utterance("w-2", NEWCOMER, "A newcomer", "square", "psst", None, conversation="w-1"))
     utt = Utterance("u-5", "v1", "V1", "square", "Aye, the well.", "w-2", "answered", action=ANSWER)
     await engine.reply(utt)
     assert minds["v2"].heard == [] and minds["v1"].heard == []
@@ -1655,7 +1655,7 @@ async def test_recall_heard_skips_the_whisper_itself_and_weak_matches():
     contex = StubContex()
     contex.default = [heard_line("w-1", 0.99), heard_line("u-3", 0.85), heard_line("u-2", 0.9), heard_line("u-4", 0.82)]
     engine, _, _ = await setup("v1", contex=contex)
-    found = await engine.recall_heard("v1", "The newcomer whispered to you at the square: psst", "w-1")
+    found = await engine.recall_heard("v1", "A newcomer whispered to you at the square: psst", "w-1")
     assert [m.data_key for m in found] == ["utt:u-2", "utt:u-3"]
     [(project, query, kwargs)] = contex.queries
     assert (project, query) == (mind_project(engine.config.session, "v1"), "psst")
@@ -1712,4 +1712,51 @@ async def test_recall_heard_leaves_out_the_newcomers_earlier_whispers():
     engine.lineage.record("w-1", None, player=PID)
     found = await engine.recall_heard("v1", "psst", "w-2")
     assert [m.data_key for m in found] == ["utt:u-2"]
+    await engine.stop()
+
+
+async def skip_act(*args, **kw):
+    pass
+
+
+def player_whisper(engine, wid, player):
+    engine.lineage.record(wid, None, player=player)
+    return Match(f"utt:{wid}", {"id": wid, "text": f"A newcomer whispered to you at the square: {wid}"})
+
+
+@pytest.mark.asyncio
+async def test_a_named_line_raises_suspicion_of_the_player_it_roots_in(monkeypatch):
+    monkeypatch.setattr(engine_mod, "act", skip_act)
+    engine, minds, _ = await setup("v1")
+    engine.jev = Rater()
+    minds["v1"].results = [[player_whisper(engine, "w-1", "p-a")]]
+    push(minds["v1"])
+    await wait_for(lambda: engine.jev.asked)
+    await wait_for(lambda: engine.suspicion.score("v1", "p-a") > 0)
+    assert engine.suspicion.score("v1", "p-b") == 0.0
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_one_turn_naming_two_players_raises_each(monkeypatch):
+    monkeypatch.setattr(engine_mod, "act", skip_act)
+    engine, minds, _ = await setup("v1")
+    engine.jev = Rater()
+    minds["v1"].results = [[player_whisper(engine, "w-1", "p-a"), player_whisper(engine, "w-2", "p-b")]]
+    push(minds["v1"])
+    await wait_for(lambda: engine.suspicion.score("v1", "p-b") > 0)
+    hear_max = engine.config.suspicion_hear_max
+    assert engine.suspicion.score("v1", "p-a") == engine.suspicion.score("v1", "p-b") == hear_max
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_turn_weighs_suspicion_of_the_player_in_front(turns):
+    engine, minds, _ = await setup("v1")
+    engine.suspect("v1", "p-b", 0.6, "r")
+    engine.suspect("v1", "p-a", 0.1, "r")
+    minds["v1"].results = [[player_whisper(engine, "w-1", "p-a")]]
+    push(minds["v1"])
+    await wait_for(lambda: turns.views)
+    assert turns.views[0].suspicion == pytest.approx(0.1)
     await engine.stop()

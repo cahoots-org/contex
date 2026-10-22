@@ -169,9 +169,10 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
-    def on_warning(self, speaker_id: str, speaker_name: str, target_id: str, target_name: str) -> None:
+    def on_warning(self, speaker_id: str, speaker_name: str, target_id: str, target_name: str, player: str) -> None:
+        """A villager warned another about player."""
         self.emit(
-            "warning", f"{speaker_name} warned {target_name} about you.",
+            "warning", f"{speaker_name} warned {target_name} about you.", player=player,
             speaker_id=speaker_id, speaker=speaker_name, target_id=target_id, target=target_name,
         )
 
@@ -227,8 +228,10 @@ class Feed:
                           place=u.place, text=u.text, conversation=u.conversation)
             return
         if u.verb == "warned":
-            if listener_ids:
-                self.on_warning(u.speaker, u.speaker_name, listener_ids[0], names[0] if names else listener_ids[0])
+            if listener_ids and u.about is not None:
+                self.on_warning(
+                    u.speaker, u.speaker_name, listener_ids[0], names[0] if names else listener_ids[0], u.about,
+                )
             return
         player = self.lineage.player_of(u.id)
         if listener_ids and player is not None:

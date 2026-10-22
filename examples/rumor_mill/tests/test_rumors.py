@@ -169,7 +169,7 @@ async def test_a_reply_joins_its_conversation_card():
     assert card["uid"] == "w-1"
     assert card["conversation"] == [
         {"uid": "u-1", "speaker_id": "v1", "speaker": "Marta", "text": "Who told you that?"},
-        {"uid": "w-2", "speaker_id": NEWCOMER, "speaker": "The newcomer", "text": "the baker"},
+        {"uid": "w-2", "speaker_id": NEWCOMER, "speaker": "A newcomer", "text": "the baker"},
     ]
     assert [h["uid"] for h in card["hops"]] == ["u-2"]
     assert await rumors.on_topic("w-2", "close")

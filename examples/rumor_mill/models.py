@@ -30,6 +30,8 @@ class Utterance:
     style: str | None = None
     # The first whisper of the conversation a newcomer's reply belongs to.
     conversation: str | None = None
+    # The player a warning is about.
+    about: str | None = None
 
     def to_data(self) -> dict:
         """Payload for Contex, which embeds every field, so it holds only what the game reads back."""

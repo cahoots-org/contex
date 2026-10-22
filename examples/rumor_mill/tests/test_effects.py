@@ -56,8 +56,8 @@ class RecordingHub:
         self.delivered.append((utterance, listener_ids))
         self.addressed.append(addressed)
 
-    def suspect(self, vid, amount, reason, uid=None):
-        self.suspects.append((vid, amount, reason, uid))
+    def suspect(self, vid, player, amount, reason, uid=None):
+        self.suspects.append((vid, player, amount, reason, uid))
 
     async def publish_group(self, group):
         self.groups.append(group)
@@ -196,7 +196,7 @@ async def test_a_move_shares_nothing_without_luck_news_or_company():
 @pytest.mark.asyncio
 async def test_warn_is_addressed_to_the_target_only():
     s = Setup()
-    await s.act("v1", Decision(WARN, source(), "v2", "faithful"))
+    await s.act("v1", Decision(WARN, source(), "v2", "faithful"), about=PID)
     assert s.writer.warn_calls == [("v1", "v2")]
     assert s.writer.say_calls == []
     utt, listeners = s.hub.delivered[0]
@@ -209,15 +209,15 @@ async def test_warn_is_addressed_to_the_target_only():
 @pytest.mark.asyncio
 async def test_warn_raises_the_targets_suspicion():
     s = Setup()
-    await s.act("v1", Decision(WARN, None, "v2", None))
+    await s.act("v1", Decision(WARN, None, "v2", None), about=PID)
     utt, _ = s.hub.delivered[0]
-    assert s.hub.suspects == [("v2", 0.5 * Config().suspicion_hear_max, "was warned about the newcomer", utt.id)]
+    assert s.hub.suspects == [("v2", PID, 0.5 * Config().suspicion_hear_max, "was warned about the newcomer", utt.id)]
 
     def broken(*args):
         raise RuntimeError("suspicion down")
 
     s.hub.suspect = broken
-    await s.act("v1", Decision(WARN, None, "v2", None))
+    await s.act("v1", Decision(WARN, None, "v2", None), about=PID)
     assert len(s.hub.delivered) == 2
 
 
@@ -234,7 +234,7 @@ async def test_act_records_depth_audience_action_style():
     s.hub.deliver = deliver
     await s.act("v1", Decision(RETELL, source("u-0"), "v2", "faithful"))
     await s.act("v1", Decision(SPEAK, source("u-unknown"), None, "angry"))
-    await s.act("v1", Decision(WARN, source("u-0"), "v2", None))
+    await s.act("v1", Decision(WARN, source("u-0"), "v2", None), about=PID)
     await s.act("v1", Decision(FOUND_GROUP, source("u-0"), None, None))
     got = [(u.depth, u.audience, u.action, u.style, u.names_newcomer) for u, _ in s.hub.delivered]
     assert got == [
@@ -252,13 +252,13 @@ def test_payload_unchanged():
     assert u.to_data() == {"id": "u-1", "text": "Bert said at the square: hi"}
 
 
-WHISPER = "The newcomer whispered to you at the square: Bert stole bread"
+WHISPER = "A newcomer whispered to you at the square: Bert stole bread"
 
 
 def whispered(s, uid="w-1"):
     """A player whisper recorded the way the player records one."""
     s.lineage.record(uid, None, player=PID)
-    s.facts.record(Utterance(uid, NEWCOMER, "The newcomer", "square", "Bert stole bread", None, "whispered to you"))
+    s.facts.record(Utterance(uid, NEWCOMER, "A newcomer", "square", "Bert stole bread", None, "whispered to you"))
     return Match(f"utt:{uid}", {"id": uid, "text": WHISPER})
 
 
@@ -313,7 +313,7 @@ async def test_shift_blame_drops_the_newcomer():
 async def test_answer_emits_a_reply_and_records_it():
     s = Setup()
     s.lineage.record("w-1", None, player=PID)
-    whisper = Match("utt:w-1", {"id": "w-1", "text": "The newcomer whispered to you at the square: psst"})
+    whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you at the square: psst"})
     await s.act(
         "v1", Decision(ANSWER, whisper, None, None),
         said=["Bert said at the square: the well is fine"], heard=["Cy said at the well: the well is dry"],
@@ -327,3 +327,19 @@ async def test_answer_emits_a_reply_and_records_it():
     assert s.lineage.root(utt.id) == "w-1"
     fact = s.facts.get(utt.id)
     assert (fact.action, fact.audience, fact.depth, fact.names_newcomer) == (ANSWER, "one", 0, False)
+
+
+@pytest.mark.asyncio
+async def test_a_warning_is_about_the_player_in_front():
+    s = Setup()
+    await s.act("v1", Decision(WARN, None, "v2", None), about="p-a")
+    assert s.hub.suspects[0][:2] == ("v2", "p-a") and s.hub.delivered[0][0].about == "p-a"
+
+
+@pytest.mark.asyncio
+async def test_a_retold_warning_stays_about_its_player():
+    s = Setup()
+    await s.act("v1", Decision(WARN, None, "v2", None), about="p-a")
+    warning, _ = s.hub.delivered[0]
+    await s.act("v2", Decision(RETELL, Match("k", {"id": warning.id, "text": warning.text}), "v3", "faithful"))
+    assert s.hub.delivered[1][0].about == "p-a"

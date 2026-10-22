@@ -69,10 +69,10 @@ async def test_a_refused_whisper_prints_once(monkeypatch):
 async def test_goals_also_prints_the_heat_label(monkeypatch):
     town, feed, out = village()
     suspicion = Suspicion(Config(), town)
-    suspicion.bump("v1", 0.9, "whispered to them directly")
+    suspicion.bump("v1", PID, 0.9, "whispered to them directly")
     monkeypatch.setattr(cli, "_readline", scripted(["goals\n", ""]))
     goal = Goal("g", "cat is a spy", "belief", ("cat spy",), "q", 0.5)
-    await cli.repl(None, town, feed, [goal], {"g": 0.4}, suspicion=suspicion)
+    await cli.repl(SimpleNamespace(id=PID), town, feed, [goal], {"g": 0.4}, suspicion=suspicion)
     assert out[-2:] == ["cat is a spy: 40%", "The village is hunting for you."]
 
 

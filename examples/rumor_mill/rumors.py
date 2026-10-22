@@ -61,7 +61,7 @@ class Rumors:
         card = self._cards[whisper_uid] = Card(whisper_uid, text, target_id, target_name, published_at, player)
         if conversation in self._cards:
             card.part_of = conversation
-            self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "The newcomer", "", text, None))
+            self.add_line(conversation, Utterance(whisper_uid, NEWCOMER, "A newcomer", "", text, None))
         card.heard.add(target_id)
         await self._start(card)
 

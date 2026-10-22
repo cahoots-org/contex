@@ -1,6 +1,7 @@
-"""How much each villager suspects the newcomer, and what the town does about it."""
+"""How much each villager suspects each newcomer, and what the town does about it."""
 
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from examples.rumor_mill.config import Config
@@ -31,72 +32,88 @@ REASON_LINES = {
 @dataclass
 class Evidence:
     vid: str
+    player: str
     amount: float
     reason: str
     uid: str | None = None
 
 
 class Suspicion:
+    """Each villager's suspicion of each player."""
+
     def __init__(self, config: Config, town: Town) -> None:
         self.config = config
         self.town = town
-        self._scores: dict[str, float] = {}
+        self._scores: dict[tuple[str, str], float] = {}
         self._evidence: list[Evidence] = []
 
-    def bump(self, vid: str, amount: float, reason: str, uid: str | None = None) -> float:
-        """Add suspicion for a villager, clamped to [0, 1]; unknown villagers and non-positive amounts are ignored."""
+    def bump(self, vid: str, player: str, amount: float, reason: str, uid: str | None = None) -> float:
+        """Raise the villager's suspicion of player, clamped to [0, 1]; ignores unknown villagers and amounts <= 0."""
         if vid not in self.town or amount <= 0:
-            return self.score(vid)
-        self._scores[vid] = max(0.0, min(1.0, self.score(vid) + amount))
-        self._evidence.append(Evidence(vid, amount, reason, uid))
-        return self._scores[vid]
+            return self.score(vid, player)
+        self._scores[(vid, player)] = max(0.0, min(1.0, self.score(vid, player) + amount))
+        self._evidence.append(Evidence(vid, player, amount, reason, uid))
+        return self._scores[(vid, player)]
 
-    def rate(self, vid: str, strength: float, reason: str, uid: str | None = None) -> float:
+    def rate(self, vid: str, player: str, strength: float, reason: str, uid: str | None = None) -> float:
         """Bump by a Jev strength in [0, 1], scaled by the most one hearing can add."""
-        return self.bump(vid, min(1.0, max(0.0, strength)) * self.config.suspicion_hear_max, reason, uid)
+        return self.bump(vid, player, min(1.0, max(0.0, strength)) * self.config.suspicion_hear_max, reason, uid)
 
-    def score(self, vid: str) -> float:
-        return self._scores.get(vid, 0.0) if vid in self.town else 0.0
+    def score(self, vid: str, player: str) -> float:
+        """How much the villager suspects player, in [0, 1]."""
+        return self._scores.get((vid, player), 0.0) if vid in self.town else 0.0
 
     def decay(self, days: float) -> None:
+        """Lower every villager's suspicion of every player."""
         drop = self.config.suspicion_decay_per_day * days
-        self._scores = {vid: max(0.0, s - drop) for vid, s in self._scores.items()}
+        self._scores = {key: max(0.0, s - drop) for key, s in self._scores.items()}
+
+    def most_suspected(self, vid: str, among: Collection[str] = ()) -> str | None:
+        """The player the villager suspects most among those given, or among everyone; None when they suspect none."""
+        scores = {p: s for (v, p), s in self._scores.items() if v == vid and s > 0 and (not among or p in among)}
+        if vid not in self.town or not scores:
+            return None
+        return max(scores, key=scores.__getitem__)
 
     def weight(self, villager: Villager) -> float:
+        """How much the villager's suspicion counts, by their occupation."""
         job = villager.occupation.lower()
         return max((w for key, w in WEIGHTS.items() if key in job), default=1.0)
 
-    def level(self) -> float:
-        """Weighted mean suspicion over the living villagers."""
+    def level(self, player: str) -> float:
+        """Weighted mean suspicion of player over the living villagers."""
         villagers = self.town.villagers
         total = sum(self.weight(v) for v in villagers)
         if not total:
             return 0.0
-        return sum(self.score(v.id) * self.weight(v) for v in villagers) / total
+        return sum(self.score(v.id, player) * self.weight(v) for v in villagers) / total
 
-    def label(self) -> str:
+    def label(self, player: str) -> str:
+        """How hunted player is, in words."""
         if self.config.run_out_level <= 0:
             return "hunted"
-        ratio = self.level() / self.config.run_out_level
+        ratio = self.level(player) / self.config.run_out_level
         return next((name for bound, name in LABELS if ratio < bound), "hunted")
 
-    def over(self, threshold: float) -> list[str]:
-        return [v.id for v in self.town.villagers if self.score(v.id) >= threshold]
+    def over(self, threshold: float, player: str) -> list[str]:
+        """The villagers whose suspicion of player is at or above threshold."""
+        return [v.id for v in self.town.villagers if self.score(v.id, player) >= threshold]
 
-    def top_evidence(self, n: int = 3) -> list[Evidence]:
-        """The largest contributions, summed per villager and reason."""
+    def top_evidence(self, player: str, n: int = 3) -> list[Evidence]:
+        """The largest contributions to suspicion of player, summed per villager and reason."""
         sums: dict[tuple[str, str], float] = defaultdict(float)
         uids: dict[tuple[str, str], str | None] = {}
         for e in self._evidence:
-            sums[(e.vid, e.reason)] += e.amount
-            uids.setdefault((e.vid, e.reason), e.uid)
+            if e.player == player:
+                sums[(e.vid, e.reason)] += e.amount
+                uids.setdefault((e.vid, e.reason), e.uid)
         ranked = sorted(sums, key=sums.__getitem__, reverse=True)
-        return [Evidence(vid, sums[(vid, reason)], reason, uids[(vid, reason)]) for vid, reason in ranked[:n]]
+        return [Evidence(vid, player, sums[(vid, r)], r, uids[(vid, r)]) for vid, r in ranked[:n]]
 
-    def reasons(self, n: int = 3) -> list[str]:
-        """Plain sentences for the top evidence, skipping villagers whose name is unknown."""
+    def reasons(self, player: str, n: int = 3) -> list[str]:
+        """Plain sentences for the top evidence against player, skipping villagers whose name is unknown."""
         lines = []
-        for e in self.top_evidence(n):
+        for e in self.top_evidence(player, n):
             if name := self.town.name_of(e.vid):
                 lines.append(REASON_LINES.get(e.reason, "{} grew suspicious of you.").format(name))
         return lines
