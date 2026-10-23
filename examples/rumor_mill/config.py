@@ -53,13 +53,13 @@ class Config:
     talk_hold_seconds: float = 60.0
     # Where need baselines are cached; empty means rumor_mill_baselines.json, shared by every village.
     calibration_path: str = ""
-    haiku_model: str = "claude-haiku-4-5-20251001"
+    haiku_model: str = "claude-haiku-5-5"
     # A saved village to play again; empty means a new village, saved under rumor_mill_worlds/.
     seed_path: str = ""
     web_port: int = 8765
     # Estimated list prices in dollars per million tokens.
-    haiku_input_per_mtok: float = 1.0
-    haiku_output_per_mtok: float = 5.0
+    haiku_input_per_mtok: float = 0.1
+    haiku_output_per_mtok: float = 0.5
     jev_input_per_mtok: float = 0.04
     jev_output_per_mtok: float = 0.0
     suspicion_whisper_bump: float = 0.12

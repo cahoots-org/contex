@@ -334,7 +334,7 @@ def test_whisper_by_id_picks_the_right_namesake(game):
 def test_usage_is_in_state_and_reaches_the_websocket(game):
     assert game.client.get("/api/state").json()["usage"]["summary"] == "Your rumors have cost about $0.00 so far"
     with game.client.websocket_connect(WS) as ws:
-        game.usage.record("haiku", 10_000, 2_000, player=game.player.id)
+        game.usage.record("haiku", 100_000, 20_000, player=game.player.id)
         event = receive(ws)
     assert event["kind"] == "usage"
     assert event["usage"]["summary"] == "Your rumors have cost about $0.02 so far"
@@ -344,12 +344,12 @@ def test_each_session_sees_only_its_own_cost(game):
     a = game.player
     game.client.cookies.clear()
     b = game.players.live(game.client.get("/").cookies[web.COOKIE])
-    game.usage.record("haiku", 1_000_000, 0, player=a.id)
+    game.usage.record("haiku", 10_000_000, 0, player=a.id)
     game.usage.record("haiku", 1_000_000, 0)
     with game.client.websocket_connect(WS) as ws:
         assert game.client.get("/api/state").json()["usage"]["summary"] == "Your rumors have cost about $0.00 so far"
-        game.usage.record("haiku", 2_000_000, 0, player=a.id)
-        game.usage.record("haiku", 3_000_000, 0, player=b.id)
+        game.usage.record("haiku", 20_000_000, 0, player=a.id)
+        game.usage.record("haiku", 30_000_000, 0, player=b.id)
         event = receive(ws)
     assert event == {"kind": "usage", "usage": {"summary": "Your rumors have cost about $3.00 so far", "cost": 3.0}}
     as_owner(game.client, a.owner)
@@ -409,7 +409,7 @@ def test_nothing_reaches_the_page_after_the_game_is_over(game):
         game.player.end(LOSS)
         assert receive(ws)["kind"] == "gameover"
         game.feed.on_time(2, "morning")
-        game.usage.record("haiku", 10_000, 2_000, player=game.player.id)
+        game.usage.record("haiku", 100_000, 20_000, player=game.player.id)
         assert receive(ws)["kind"] == "usage"
     assert game.client.get("/api/state").json()["events"][-1]["kind"] == "gameover"
 

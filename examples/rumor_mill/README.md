@@ -319,8 +319,8 @@ whispers and a three-reply conversation, under $0.004.
 
 | Variable | Default (dollars per million tokens) |
 |---|---|
-| `RUMOR_MILL_HAIKU_INPUT_PER_MTOK` | `1.0` |
-| `RUMOR_MILL_HAIKU_OUTPUT_PER_MTOK` | `5.0` |
+| `RUMOR_MILL_HAIKU_INPUT_PER_MTOK` | `0.1` |
+| `RUMOR_MILL_HAIKU_OUTPUT_PER_MTOK` | `0.5` |
 | `RUMOR_MILL_JEV_INPUT_PER_MTOK` | `0.04` |
 | `RUMOR_MILL_JEV_OUTPUT_PER_MTOK` | `0.0` |
 
@@ -352,7 +352,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_JUDGE_CONCURRENCY` | `10` | goal-check calls in flight |
 | `RUMOR_MILL_TURN_CONCURRENCY` | `20` | villager turns in flight |
 | `RUMOR_MILL_RENEW_SECONDS` | `1200` | read quiet villagers' subscriptions this often so they don't expire |
-| `RUMOR_MILL_HAIKU_MODEL` | `claude-haiku-4-5-20251001` | model for speech and village generation |
+| `RUMOR_MILL_HAIKU_MODEL` | `claude-haiku-5-5` | model for speech and village generation |
 | `RUMOR_MILL_SEED_PATH` | empty: a new village | a saved village to play again |
 | `RUMOR_MILL_WEB_PORT` | `8765` | port for `--web` |
 | `RUMOR_MILL_SUSPICION_WHISPER_BUMP` | `0.12` | suspicion a whisper adds to the villager you whisper to |
