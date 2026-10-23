@@ -217,6 +217,7 @@ async def test_writer_goals_parses_and_tolerates_junk():
     assert raws == [{"kind": "personal", "mark": "Ada"}, {"kind": "circle", "subject": "Hob Miller"}]
     prompt = client.messages.calls[0]["system"] + client.messages.calls[0]["messages"][0]["content"]
     assert "owes me flour" in prompt and "Ada (rival)" in prompt and "the well is cursed" in prompt
+    assert '"members"' in prompt and 'Never use "you"' in prompt
     assert await writer.goals([villager()], []) == []
     assert await writer.goals([villager()], []) == []
 

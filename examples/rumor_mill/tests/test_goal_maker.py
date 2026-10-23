@@ -17,13 +17,13 @@ HOB = Villager("v2", "Hob Miller", "miller", "gruff", "", [], {"v1": "rival"})
 FARMERS = [Villager(f"v{i}", f"Farmer{i} Field", "farmer", "calm", "", [], {}) for i in (3, 4, 5)]
 
 PERSONAL = {
-    "kind": "personal", "text": "Convince Agnes that Hob is stealing her geese", "claim": "Hob is stealing Agnes's geese",
+    "kind": "personal", "claim": "Hob is stealing Agnes's geese",
     "question": "Does this villager believe Hob is stealing Agnes's geese?", "mark": "Agnes Thatch",
     "subject": "Hob Miller",
 }
 CIRCLE = {
     "kind": "circle", "claim": "Hob waters his flour", "question": "Does this villager believe Hob waters his flour?",
-    "label": "the farmers", "circle": {"by": "occupation", "value": "Farmer"}, "subject": "Hob Miller",
+    "label": "the farmers", "members": [f.name for f in FARMERS], "subject": "Hob Miller",
 }
 
 
@@ -83,7 +83,7 @@ async def test_hand_has_personal_circle_and_deck_goal():
     dealt = await hand(maker)
     assert [g.audience_label != "" for g in dealt[:2]] == [True, True]
     assert dealt[0].audience == (AGNES.id,) and dealt[0].subject == HOB.id and dealt[0].owner == "p-1"
-    assert dealt[0].text == PERSONAL["text"] and dealt[0].audience_label == "Agnes"
+    assert dealt[0].text == "Convince Agnes that Hob is stealing Agnes's geese" and dealt[0].audience_label == "Agnes"
     assert dealt[0].evidence == (PERSONAL["claim"],) and dealt[0].believer_question == PERSONAL["question"]
     assert set(dealt[1].audience) == {f.id for f in FARMERS} and HOB.id not in dealt[1].audience
     assert dealt[1].text == "Get a third of the farmers to believe Hob waters his flour"
@@ -100,16 +100,11 @@ async def test_far_fetched_generated_goals_are_long_shots():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("circle", [
-    {"by": "ties", "value": "Agnes Thatch"}, {"by": "family", "value": "field"}, {"by": "occupation", "value": "FARMER"},
-])
-async def test_circles_resolve_to_villagers_in_town(circle):
-    agnes = Villager("v1", "Agnes Thatch", "weaver", "nosy", "", [], {"v2": "rival", "v3": "friend", "v4": "friend", "v5": "friend", "v9": "friend"})
-    maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, circle=circle)))
-    maker.town.remove("v1")
-    maker.town.add(agnes)
+async def test_circle_members_resolve_by_full_name_without_the_subject():
+    names = ["farmer3 field", "Farmer4 Field", "Farmer5 Field", "Farmer5 Field", "Hob Miller"]
+    maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, members=names)))
     dealt = await hand(maker)
-    assert set(dealt[1].audience) == {f.id for f in FARMERS} and dealt[1].owner == "p-1"
+    assert dealt[1].audience == tuple(f.id for f in FARMERS) and dealt[1].owner == "p-1"
 
 
 @pytest.mark.asyncio
@@ -117,7 +112,9 @@ async def test_invalid_generated_goals_fall_back_to_deck():
     bad = [
         dict(PERSONAL, mark="Nobody Atall"),
         dict(PERSONAL, mark="Hob Miller"),
-        dict(CIRCLE, circle={"by": "ties", "value": "Hob Miller"}),
+        dict(CIRCLE, members=["Farmer3 Field", "Farmer4 Field", "Hob Miller"]),
+        dict(CIRCLE, members=["Farmer3 Field", "Farmer4 Field", "Nobody Atall"]),
+        dict(CIRCLE, members="Farmer3 Field"),
         dict(CIRCLE, claim="the miller waters his flour"),
         {"kind": "circle"},
         {"kind": "personal", "mark": 3},
@@ -173,8 +170,7 @@ async def test_sample_prefers_villagers_with_grudges_or_ties():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [
     dict(PERSONAL, claim="Hobbes is stealing Agnes's geese"),
-    dict(PERSONAL, text="Convince Agnesia that Hob is stealing her geese"),
-    dict(PERSONAL, text="Convince Agnes that Hob is stealing her geese" + " truly" * 40),
+    dict(PERSONAL, claim="Hob is stealing your geese"),
     dict(PERSONAL, claim="Hob is stealing Agnes's geese" + " truly" * 40),
 ])
 async def test_personal_goal_needs_whole_names_and_short_fields(bad):
@@ -188,3 +184,12 @@ async def test_circle_label_over_the_cap_is_rejected():
     maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, label="the farmers" + " x" * 100)))
     dealt = await hand(maker)
     assert [g.owner for g in dealt] == ["p-1", None, None]
+
+
+@pytest.mark.asyncio
+async def test_a_mark_sharing_a_first_name_is_called_by_full_name():
+    maker, _, _, _ = make()
+    maker.town.add(Villager("v9", "Agnes Reed", "baker", "kind", "", [], {}))
+    dealt = await hand(maker)
+    assert dealt[0].text == "Convince Agnes Thatch that Hob is stealing Agnes's geese"
+    assert dealt[0].audience_label == "Agnes Thatch"

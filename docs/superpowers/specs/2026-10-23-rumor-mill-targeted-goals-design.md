@@ -36,7 +36,7 @@ optional **subject** (the villager the claim is about).
 | Kind | Example | Audience | Bar |
 |---|---|---|---|
 | Personal | "Convince Agnes that Hob is stealing her geese" | one villager (the mark) | 1 |
-| Circle | "Get the farmers to believe the miller waters his flour" | an occupation, a family (shared surname) or the people tied to one villager in `relationships`, 3 or more members | from believability, of the audience |
+| Circle | "Get the farmers to believe the miller waters his flour" | 3 to 5 villagers Haiku names, who share a trade, family, haunt or cause; 3 or more in town | from believability, of the audience |
 | Village-wide | "A third of the village believes the well is cursed" | everyone | from believability |
 
 A hand is one of each. Only the village-wide slot may be a state goal instead, so a hand always
@@ -61,7 +61,8 @@ player is told why in one quiet feed line. *(My call.)*
 - Code validates every goal and rejects any that fail these checks:
   - every named villager is in town;
   - the mark is not the subject;
-  - a circle resolves to 3 or more villagers in town;
+  - a circle's named members are all villagers in town, 3 or more besides the subject;
+  - the claim is in the third person (no "you" or "your");
   - the claim names the subject when there is a subject;
   - the claim does not repeat a goal another player holds now or the current world goal.
 - Each rejected goal is replaced from the fixed deck. If the call itself fails, the whole hand

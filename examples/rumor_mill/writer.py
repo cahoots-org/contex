@@ -62,23 +62,23 @@ GOALS_SYSTEM = (
     "specific village intrigue that grows out of their grudges and ties, such as \"Convince Agnes that Hob "
     "is stealing her geese\" or \"Get the farmers to believe the miller waters his flour\".\n"
     "Reply with only a JSON array of two objects:\n"
-    '[{"kind": "personal", "text": "Convince <mark> that ...", "claim": "...", "question": "...", '
+    '[{"kind": "personal", "claim": "...", "question": "...", '
     '"mark": "<full name>", "subject": "<full name>"}, '
     '{"kind": "circle", "claim": "...", "question": "...", "label": "...", '
-    '"circle": {"by": "occupation" | "family" | "ties", "value": "..."}, "subject": "<full name>"}]\n'
+    '"members": ["<full name>", ...], "subject": "<full name>"}]\n'
     "Rules:\n"
     "- The personal goal is to convince one villager, the mark, of a claim about another, the subject. "
-    "Its text names the mark by first name.\n"
-    "- The circle goal is to turn a group against the subject. The group is an occupation (value: the "
-    "occupation, shared by at least three villagers), a family (value: a surname shared by at least three) "
-    "or the people tied to one villager (value: that villager's full name). label is how the group reads "
-    "in a sentence, such as \"the farmers\", \"the Thatches\" or \"Agnes's friends\". The subject is "
-    "not one of the group.\n"
+    "The player is told \"Convince <mark's first name> that <claim>\".\n"
+    "- The circle goal is to turn a group of three to five listed villagers against the subject: people "
+    "who share a trade, a family, a haunt or a cause. members are their full names. label is how the group "
+    "reads in a sentence, such as \"the tradesfolk\", \"the chapel faithful\" or \"Agnes's friends\". The "
+    "subject is not one of the group.\n"
     "- The claim is the rumor as a plain statement that names the subject by first name, such as "
     "\"Hob is stealing Agnes's geese\".\n"
     "- The question is a yes or no question asked about one villager, such as \"Does this villager "
     "believe Hob is stealing Agnes's geese?\"\n"
     "- Use full names exactly as listed. The mark and the subject are different people.\n"
+    "- Write in the third person. Never use \"you\" or \"your\".\n"
     "- Never repeat a claim already in play."
 )
 

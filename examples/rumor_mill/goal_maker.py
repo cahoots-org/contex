@@ -27,6 +27,9 @@ def _field(raw: dict, key: str) -> str:
     return value.strip() if isinstance(value, str) and len(value.strip()) <= MAX_FIELD else ""
 
 
+SECOND_PERSON = re.compile(r"\byou(rs?|rself)?\b", re.IGNORECASE)
+
+
 def _first(villager: Villager) -> str:
     return villager.name.split()[0]
 
@@ -36,31 +39,31 @@ def _names(villager: Villager, text: str) -> bool:
     return re.search(rf"\b{re.escape(_first(villager))}\b", text, re.IGNORECASE) is not None
 
 
+def _called(villager: Villager, town: Town) -> str:
+    """How the player is told of the villager: by first name, or full name when another in town shares it."""
+    shared = sum(_first(v) == _first(villager) for v in town.villagers) > 1
+    return villager.name if shared else _first(villager)
+
+
 def _one(town: Town, name: str) -> Villager | None:
     """The one villager in town with this full name, or None."""
     found = [v for v in town.villagers if v.name.lower() == name.lower()]
     return found[0] if len(found) == 1 else None
 
 
-def _circle(spec, town: Town) -> list[Villager]:
-    """The villagers in town the circle spec names, or [] if it names none."""
-    if not isinstance(spec, dict) or not isinstance(spec.get("value"), str):
+def _circle(members, town: Town) -> list[str]:
+    """The ids of the villagers in town named in members by full name, or [] if any is unknown."""
+    if not isinstance(members, list) or not all(isinstance(n, str) for n in members):
         return []
-    by, value = spec.get("by"), spec["value"].strip().lower()
-    if by == "occupation":
-        return [v for v in town.villagers if v.occupation.lower() == value]
-    if by == "family":
-        return [v for v in town.villagers if v.name.split()[-1].lower() == value]
-    if by == "ties" and (hub := _one(town, value)):
-        return [town.get(vid) for vid in hub.relationships if vid in town]
-    return []
+    found = [_one(town, n) for n in members]
+    return [] if None in found else list(dict.fromkeys(v.id for v in found))
 
 
 def _validate(raw: dict, town: Town, taken: Collection[str]) -> Goal | None:
     """The raw goal as an unnumbered, unbanded Goal, or None if it names anyone not in town or breaks a rule."""
     claim, question = _field(raw, "claim"), _field(raw, "question")
     subject = _one(town, _field(raw, "subject"))
-    if not (claim and question and subject) or not _names(subject, claim):
+    if not (claim and question and subject) or not _names(subject, claim) or SECOND_PERSON.search(claim):
         return None
     if claim.lower() in {t.lower() for t in taken}:
         return None
@@ -69,12 +72,13 @@ def _validate(raw: dict, town: Town, taken: Collection[str]) -> Goal | None:
         claim_text=claim,
     )
     if raw.get("kind") == "personal":
-        mark, text = _one(town, _field(raw, "mark")), _field(raw, "text")
-        if mark is None or mark.id == subject.id or not _names(mark, text):
+        mark = _one(town, _field(raw, "mark"))
+        if mark is None or mark.id == subject.id:
             return None
-        return replace(base, text=text, audience=(mark.id,), audience_label=_first(mark))
+        called = _called(mark, town)
+        return replace(base, text=f"Convince {called} that {claim}", audience=(mark.id,), audience_label=called)
     label = _field(raw, "label")
-    members = [v.id for v in _circle(raw.get("circle"), town) if v.id != subject.id]
+    members = [vid for vid in _circle(raw.get("members"), town) if vid != subject.id]
     if not label or len(members) < MIN_CIRCLE:
         return None
     return replace(base, audience=tuple(members), audience_label=label)
