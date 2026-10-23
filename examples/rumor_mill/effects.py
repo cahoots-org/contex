@@ -54,6 +54,7 @@ async def act(
     suspicion_hear_max: float = Config.suspicion_hear_max,
     share_chance: float = 0.0,
     about: str | None = None,
+    mood: str = "",
 ) -> None:
     """Apply the decision to the town and deliver any speech it produces.
 
@@ -123,7 +124,8 @@ async def act(
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
     elif action == ANSWER:
-        text = await writer.reply(villager, source_text, list(said), list(heard), neighbours(town, villager, source_text or ""))
+        known = neighbours(town, villager, source_text or "")
+        text = await writer.reply(villager, source_text, list(said), list(heard), known, mood)
         uid = ids.next("u")
         lineage.record(uid, source_id)
         utterance = Utterance(uid, vid, villager.name, place, text, source_id, "answered", audience=ONE, action=action)

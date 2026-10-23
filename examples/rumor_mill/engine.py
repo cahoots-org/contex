@@ -579,6 +579,7 @@ class Engine:
                         suspicion_hear_max=self.config.suspicion_hear_max,
                         share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                         about=suspect,
+                        mood=self._mood(v.id, decision) if action == ANSWER else "",
                     )
                 if action == MOVE:
                     self._chose_move.add(v.id)
@@ -609,6 +610,15 @@ class Engine:
         """Tell the judge of the villager's action and the player whose rumor is behind it."""
         if self.judge is not None:
             self.judge.record_action(vid, decision.action, target, self._player_behind(decision.source), creed)
+
+    def _mood(self, vid: str, decision: Decision) -> str:
+        """How the villager feels about the rumor behind the newcomer line she is answering."""
+        uid = decision.source.data["id"]
+        player = self._player_behind(decision.source)
+        if player is None:
+            return ""
+        fact = self.facts.get(uid)
+        return self.rapport.mood(vid, player, (fact and fact.conversation) or uid)
 
     def _player_behind(self, m: Match | None) -> str | None:
         """The player whose whisper the item's lineage roots in."""

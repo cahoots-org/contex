@@ -1063,6 +1063,7 @@ class Talks:
     def __init__(self):
         self.plan = []
         self.views = []
+        self.moods = []
 
     async def decide(self, jev, view):
         self.views.append(view)
@@ -1072,7 +1073,7 @@ class Talks:
         return Decision(action, view.answerable[-1] if action == ANSWER else view.new[0], None, None)
 
     async def act(self, decision, villager, **kw):
-        pass
+        self.moods.append(kw.get("mood"))
 
 
 @pytest.fixture
@@ -2071,3 +2072,16 @@ async def test_an_off_topic_line_is_no_moment(turns):
     await retell(engine, 1, ["v2"], names_newcomer=True)
     assert moments(feed) == []
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_answer_carries_how_taken_the_villager_is_with_the_rumor(talks):
+    engine, minds, feed = await setup("v1")
+    minds["v1"].results = [[]]
+    talks.plan = [ANSWER]
+    engine.lineage.record("w-1", None, player=PID)
+    engine.rapport.move("v1", PID, "w-1", 0.6)
+    whisper(engine, "v1", "w-1")
+    await wait_for(lambda: statuses(feed))
+    await engine.stop()
+    assert talks.moods == ["eager to hear more"]

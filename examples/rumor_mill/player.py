@@ -195,6 +195,7 @@ class Player:
         exchange = self._exchange(target.id)
         rumor = rumors.rumor_of(self.id, text, exchange) if rumors is not None else exchange
         key = rumor or uid
+        first = not self.engine.rapport.started(target.id, self.id, key)
         bar_drop = max(0.0, self.engine.rapport.interest(target.id, self.id, key)) * self.config.near_miss_band
         place = self.town.place_of(target.id)
         utterance = Utterance(uid, NEWCOMER, "A newcomer", place, text, None, "whispered to you", conversation=rumor)
@@ -262,7 +263,8 @@ class Player:
                 return None
             concern = closest[0] if closest else self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
-            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues))
+            mood = self.engine.rapport.mood(target.id, self.id, key, greet=first)
+            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues, mood))
             self._track(task)
         return None
 
@@ -412,8 +414,12 @@ class Player:
         """Whether the villager has had enough of this player: wary of them, or tired of their open rumor."""
         if self.engine.suspicion.score(villager_id, self.id) >= self.config.warn_threshold:
             return True
-        rumor = self._exchange(villager_id)
-        return rumor is not None and self.engine.rapport.interest(villager_id, self.id, rumor) <= self.config.interest_annoyed
+        exchange = self._exchange(villager_id)
+        if exchange is None:
+            return False
+        rumors = self.engine.rumors
+        rumor = rumors.rumor_of(self.id, "", exchange) if rumors is not None else exchange
+        return self.engine.rapport.interest(villager_id, self.id, rumor) <= self.config.interest_annoyed
 
     def part(self, villager_id: str) -> None:
         """End every exchange this player has open with the villager."""
@@ -497,15 +503,16 @@ class Player:
 
     async def _hint(
         self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str, continues: bool,
+        mood: str,
     ) -> None:
         """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
         if self.over():
             return
         try:
             if state == "near_miss":
-                line = await self._go_on(villager_id, text)
+                line = await self._go_on(villager_id, text, mood)
             else:
-                line = await self._brush_off(villager_id, concern)
+                line = await self._brush_off(villager_id, concern, mood)
         except Exception:
             log.exception("%s line for %s failed", state, villager_id)
             line = None
@@ -537,13 +544,13 @@ class Player:
             log.exception("turn-away for %s failed", villager.id)
             return None
 
-    async def _brush_off(self, villager_id: str, concern: str | None) -> str | None:
+    async def _brush_off(self, villager_id: str, concern: str | None, mood: str = "") -> str | None:
         """An in-character line hinting at a concern, or None for a plain shrug."""
         if self.writer is None or concern is None or villager_id not in self.town:
             return None
         for _ in range(2):
             try:
-                line = await self.writer.brush_off(self.town.get(villager_id), concern)
+                line = await self.writer.brush_off(self.town.get(villager_id), concern, mood)
             except Exception:
                 log.exception("brush-off for %s failed", villager_id)
                 return None
@@ -551,12 +558,12 @@ class Player:
                 return line
         return None
 
-    async def _go_on(self, villager_id: str, text: str) -> str | None:
+    async def _go_on(self, villager_id: str, text: str, mood: str = "") -> str | None:
         """An in-character line urging the newcomer on, or None for a plain lean-in."""
         if self.writer is None or villager_id not in self.town:
             return None
         try:
-            return await self.writer.go_on(self.town.get(villager_id), text) or None
+            return await self.writer.go_on(self.town.get(villager_id), text, mood) or None
         except Exception:
             log.exception("go-on for %s failed", villager_id)
             return None

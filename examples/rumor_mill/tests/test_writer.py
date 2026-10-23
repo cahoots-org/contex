@@ -258,3 +258,19 @@ async def test_reply_is_told_who_the_neighbours_in_the_line_are():
     call = client.messages.calls[0]
     assert "Neighbours you know: Everard Coke, the tanner" in call["messages"][0]["content"]
     assert "You know everyone in the village" in call["system"]
+
+
+@pytest.mark.asyncio
+async def test_writer_lines_carry_the_mood():
+    client = StubClient("Go on.", "Not now.", "Aye.", "Go on.", "Not now.", "Aye.")
+    writer = Writer(client, "haiku-test")
+    v = villager()
+    await writer.go_on(v, "the oven looks tired", mood="curious")
+    await writer.brush_off(v, "my oven is cracked", mood="curious")
+    await writer.reply(v, "the well is dry", [], mood="curious")
+    for call in client.messages.calls:
+        assert "How you feel: curious." in call["system"] and "set the tone" in call["system"]
+    await writer.go_on(v, "the oven looks tired")
+    await writer.brush_off(v, "my oven is cracked")
+    await writer.reply(v, "the well is dry", [])
+    assert all("How you feel" not in c["system"] for c in client.messages.calls[3:])

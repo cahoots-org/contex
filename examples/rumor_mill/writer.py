@@ -45,6 +45,11 @@ def _grudge(villager: Villager, aside: str = "") -> str:
     return f"Your grudge: {villager.grudge}. {aside}" if villager.grudge else ""
 
 
+def _mood(mood: str) -> str:
+    """How the villager feels for a prompt, or nothing when it is not set."""
+    return f" How you feel: {mood}. Let it set the tone of what you say." if mood else ""
+
+
 POOL_SYSTEM = (
     "You write the rumors for a village gossip game. Given the villagers, reply with only a JSON object "
     '{"accusations": ["..."], "claims": ["..."]}.\n'
@@ -106,7 +111,7 @@ class Writer:
             lines.append("Do not say or hint who started this story.")
         return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
 
-    async def brush_off(self, villager: Villager, concern: str) -> str:
+    async def brush_off(self, villager: Villager, concern: str, mood: str = "") -> str:
         """The villager waving off the newcomer in character, alluding to their concern, in one line."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
@@ -118,10 +123,11 @@ class Writer:
             "You may name the subject itself, such as strange lights or the vines, but never a "
             "name, a number, or any particular. Never repeat its wording. "
             "No stage directions, no quotation marks, no preamble."
+            + _mood(mood)
         )
         return first_line(await self.complete(system, f"What is really on your mind: {concern}", max_tokens=SAY_MAX_TOKENS))
 
-    async def go_on(self, villager: Villager, newcomer_line: str) -> str:
+    async def go_on(self, villager: Villager, newcomer_line: str, mood: str = "") -> str:
         """The villager leaning in to urge the newcomer on, in one line, without saying what interests them."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
@@ -130,6 +136,7 @@ class Writer:
             "in one short sentence, under 15 words, in your own voice. "
             "Never say what interests you or what you want to hear. "
             "No stage directions, no quotation marks, no preamble."
+            + _mood(mood)
         )
         return first_line(await self.complete(system, f"The newcomer said: {newcomer_line}", max_tokens=GO_ON_MAX_TOKENS))
 
@@ -203,7 +210,8 @@ class Writer:
         return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
     async def reply(
-        self, villager: Villager, newcomer_line: str, said: list[str], heard: Sequence[str] = (), known: Sequence[str] = (),
+        self, villager: Villager, newcomer_line: str, said: list[str], heard: Sequence[str] = (),
+        known: Sequence[str] = (), mood: str = "",
     ) -> str:
         """The villager answering what the newcomer just said to them, in one line; known as for answer."""
         system = (
@@ -215,6 +223,7 @@ class Writer:
             "in one short sentence, under 30 words, in your own voice, responding to what they said. "
             "Never mention suspicion. "
             "No stage directions, no quotation marks, no preamble."
+            + _mood(mood)
         )
         lines = [f"The newcomer said: {WHISPER_FRAMING.sub('', newcomer_line)}"]
         if said:

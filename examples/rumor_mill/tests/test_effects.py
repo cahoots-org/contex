@@ -21,6 +21,7 @@ class StubWriter:
         self.group_calls = []
         self.warn_calls = []
         self.reply_calls = []
+        self.reply_moods = []
         self.names_newcomer = []
 
     async def say(self, villager, decision, source_text, audience, names_newcomer=False):
@@ -32,8 +33,9 @@ class StubWriter:
         self.warn_calls.append((villager.id, target.id))
         return "Mind the newcomer."
 
-    async def reply(self, villager, newcomer_line, said, heard=(), known=()):
+    async def reply(self, villager, newcomer_line, said, heard=(), known=(), mood=""):
         self.reply_calls.append((villager.id, newcomer_line, said, heard))
+        self.reply_moods.append(mood)
         return "Aye, I heard that too."
 
     async def describe_group(self, villager, inspiration):
@@ -326,6 +328,7 @@ async def test_answer_emits_a_reply_and_records_it():
         ("v1", whisper.data["text"], ["Bert said: the well is fine"], ["Cy said: the well is dry"]),
     ]
     assert s.hub.delivered == [] and s.writer.say_calls == []
+    assert s.writer.reply_moods == [""]
     utt, = s.hub.replies
     assert (utt.speaker, utt.parent, utt.text, utt.verb) == ("v1", "w-1", "Aye, I heard that too.", "answered")
     assert s.lineage.root(utt.id) == "w-1"
@@ -369,3 +372,12 @@ async def test_actions_are_reported_before_their_announcement():
         (CONFRONT, "v3", "v2", None), (LEAVE_TOWN, "v1", None, None),
     ]
     assert seen[0] == s.hub.acts[:1] and seen[-1] == s.hub.acts
+
+
+@pytest.mark.asyncio
+async def test_answer_carries_the_mood_to_the_reply():
+    s = Setup()
+    s.lineage.record("w-1", None, player=PID)
+    whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you: psst"})
+    await s.act("v1", Decision(ANSWER, whisper, None, None), mood="curious")
+    assert s.writer.reply_moods == ["curious"]

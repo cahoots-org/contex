@@ -18,6 +18,7 @@ from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.config import Config
+from examples.rumor_mill.rapport import interest_words
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
 from examples.rumor_mill.town import NEWCOMER
@@ -109,6 +110,7 @@ class StubWriter:
     def __init__(self, *lines, gate=None):
         self.lines = list(lines)
         self.concerns = []
+        self.moods = []
         self.gate = gate
 
     async def turn_away(self, villager):
@@ -120,14 +122,16 @@ class StubWriter:
     async def lose_patience(self, villager):
         return self.lines.pop(0)
 
-    async def go_on(self, villager, newcomer_line):
+    async def go_on(self, villager, newcomer_line, mood=""):
+        self.moods.append(mood)
         line = self.lines.pop(0)
         if isinstance(line, Exception):
             raise line
         return line
 
-    async def brush_off(self, villager, concern):
+    async def brush_off(self, villager, concern, mood=""):
         self.concerns.append(concern)
+        self.moods.append(mood)
         if self.gate:
             await self.gate.wait()
         line = self.lines.pop(0)
@@ -1333,3 +1337,29 @@ async def test_whisper_to_an_action_goals_actor_asks_nothing():
     await player.whisper("Marta", "Hob is a thief, don't trust him")
     await asyncio.sleep(0.05)
     assert jev.states == [] and worked_on(player) == []
+
+
+@pytest.mark.asyncio
+async def test_first_line_of_a_rumor_greets_by_rapport():
+    player = near_missing_player("Go on.", "Tell me more.")
+    player.engine.rapport.sour("v1", PID, 0.5)
+    await player.whisper_to("v1", "the wheel looks tired")
+    await wait_for(lambda: player._tasks == set())
+    await player.whisper_to("v1", "the wheel looks very tired")
+    await wait_for(lambda: player._tasks == set())
+    first, second = player.writer.moods
+    assert "curious" in first and "fond of the newcomer" in first and "Greet the newcomer" in first
+    assert second == interest_words(interest(player)) and "newcomer" not in second
+
+
+@pytest.mark.asyncio
+async def test_a_retold_rumor_is_annoying_by_its_root_interest():
+    player = await missed_once()
+    engine = player.engine
+    engine.rumors = Rumors(StubContex(), StubBaselines(0.5), Config(session="s1"))
+    now = datetime.now()
+    engine.rumors.open("w-1", "the tide tables", now, "v1", "Aldwin", None, player=PID)
+    engine.rumors.open("w-2", "the tide tables again", now, "v1", "Aldwin", "w-1", player=PID)
+    engine.rapport.move("v1", PID, "w-1", -0.5)
+    engine.conversations[("v1", PID)] = {"id": "w-2", "answered": ["w-2"]}
+    assert player.annoyed("v1")

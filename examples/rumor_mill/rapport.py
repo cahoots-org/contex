@@ -7,6 +7,32 @@ def _clamp(value: float) -> float:
     return max(-1.0, min(1.0, value))
 
 
+def interest_words(x: float) -> str:
+    """How taken a villager is with a rumor, in words."""
+    if x >= 0.5:
+        return "eager to hear more"
+    if x >= 0.15:
+        return "curious"
+    if x > -0.15:
+        return "lukewarm"
+    if x > -0.45:
+        return "losing interest"
+    return "about out of patience"
+
+
+def rapport_words(x: float) -> str:
+    """How a villager feels about a player, in words."""
+    if x >= 0.4:
+        return "fond of the newcomer"
+    if x >= 0.1:
+        return "warm toward the newcomer"
+    if x > -0.1:
+        return "neutral toward the newcomer"
+    if x > -0.4:
+        return "cool toward the newcomer"
+    return "tired of the newcomer"
+
+
 class Rapport:
     """Each villager's interest in each player's rumors, and her rapport with each player, all in [-1, 1]."""
 
@@ -36,3 +62,14 @@ class Rapport:
     def forget(self, vid: str, player: str, rumor: str) -> None:
         """Drop her interest in the rumor, so it starts again from her rapport."""
         self._interest.pop((vid, player, rumor), None)
+
+    def started(self, vid: str, player: str, rumor: str) -> bool:
+        """Whether she has taken any interest in the rumor yet."""
+        return (vid, player, rumor) in self._interest
+
+    def mood(self, vid: str, player: str, rumor: str, greet: bool = False) -> str:
+        """How she feels about the rumor in words; greet adds how she feels about the player, to greet them by."""
+        mood = interest_words(self.interest(vid, player, rumor))
+        if greet:
+            mood += f", and {rapport_words(self.rapport(vid, player))}. Greet the newcomer the way you feel about them"
+        return mood
