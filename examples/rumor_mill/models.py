@@ -28,7 +28,7 @@ class Utterance:
     audience: str = "one"
     action: str | None = None
     style: str | None = None
-    # The first whisper of the conversation a newcomer's reply belongs to.
+    # The first whisper of the rumor a newcomer's whisper joins: a reply, or the same words told to someone new.
     conversation: str | None = None
     # The player a warning is about.
     about: str | None = None
