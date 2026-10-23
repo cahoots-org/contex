@@ -108,21 +108,29 @@ def _write(path: str, pool: Pool) -> None:
 
 
 def _parts(item) -> tuple[str, int | None]:
-    """A stored entry's text and band, the band None when it has none."""
+    """A stored entry's stripped text and band, the band None when it has none."""
     if isinstance(item, dict):
         band = item.get("band")
-        return str(item.get("text", "")), band if isinstance(band, int) and 0 <= band <= 3 else None
-    return str(item), None
+        return str(item.get("text", "")).strip(), band if isinstance(band, int) and 0 <= band <= 3 else None
+    return str(item).strip(), None
 
 
-async def _entries(items: list, names: Collection[str], believability, prefix: str) -> tuple[Entry, ...]:
+async def _entries(items: list, defaults: tuple[str, ...], names: Collection[str], believability, prefix: str):
+    """The cleaned, scored entries, and whether the defaults stood in because none survived."""
     bands = dict(_parts(item) for item in items)
-    texts = clean([_parts(item)[0] for item in items], names)
-    return tuple([Entry(t, bands[t] if bands[t] is not None else await believability.band(prefix + t)) for t in texts])
+    texts = clean(bands, names)
+    fell_back = not texts
+    if fell_back:
+        bands, texts = {}, clean(defaults, names)
+    entries = tuple([Entry(t, bands[t] if bands.get(t) is not None else await believability.band(prefix + t)) for t in texts])
+    return entries, fell_back
 
 
 async def load_pool(path: str, writer, believability, villagers: list[Villager]) -> Pool:
-    """The village's pool from path, written by Haiku or taken from the defaults when there is none."""
+    """The village's pool from path or Haiku, with defaults for a list that has nothing usable.
+
+    Only a pool made wholly of real entries is saved, so a fallback is retried on the next launch.
+    """
     raw = _read(path)
     if not raw:
         try:
@@ -130,13 +138,14 @@ async def load_pool(path: str, writer, believability, villagers: list[Villager])
         except Exception:
             log.warning("could not write a goal pool", exc_info=True)
             raw = {}
-        raw = {k: raw.get(k) if isinstance(raw.get(k), list) else [] for k in ("accusations", "claims")}
-        if not any(raw.values()):
-            raw = {"accusations": list(DEFAULT_ACCUSATIONS), "claims": list(DEFAULT_CLAIMS)}
     names = [v.name.split()[0] for v in villagers]
-    pool = Pool(
-        await _entries(raw.get("accusations", []), names, believability, "someone "),
-        await _entries(raw.get("claims", []), names, believability, ""),
-    )
-    _write(path, pool)
+    accusations, fell_a = await _entries(_listed(raw, "accusations"), DEFAULT_ACCUSATIONS, names, believability, "someone ")
+    claims, fell_c = await _entries(_listed(raw, "claims"), DEFAULT_CLAIMS, names, believability, "")
+    pool = Pool(accusations, claims)
+    if not (fell_a or fell_c):
+        _write(path, pool)
     return pool
+
+
+def _listed(raw: dict, key: str) -> list:
+    return raw.get(key) if isinstance(raw.get(key), list) else []

@@ -90,11 +90,29 @@ async def test_load_pool_falls_back_to_defaults_when_writer_fails(tmp_path):
 
     assert {e.text for e in pool.accusations} == set(DEFAULT_ACCUSATIONS)
     assert {e.text for e in pool.claims} == set(DEFAULT_CLAIMS)
+    assert not (tmp_path / "goals.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_load_pool_strips_padded_entries(tmp_path):
+    reply = {"accusations": ["  is late \n"], "claims": [" the well is cursed "]}
+    pool = await load_pool(str(tmp_path / "goals.json"), FakeWriter(reply), CountingBelief(), villagers())
+    assert pool.accusations == (Entry("is late", 1),)
+    assert pool.claims == (Entry("the well is cursed", 1),)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", [{"accusations": ["is late"], "claims": []}, {"accusations": ["owes you"], "claims": ["Ada did it"]}])
+async def test_load_pool_defaults_a_list_with_nothing_usable_and_saves_nothing(tmp_path, reply):
+    pool = await load_pool(str(tmp_path / "goals.json"), FakeWriter(reply), CountingBelief(), villagers())
+    assert {e.text for e in pool.claims} == set(DEFAULT_CLAIMS)
+    assert pool.accusations
+    assert not (tmp_path / "goals.json").exists()
 
 
 @pytest.mark.asyncio
 async def test_load_pool_survives_an_unwritable_path(tmp_path):
     path = str(tmp_path / "missing" / "goals.json")
-    pool = await load_pool(path, FakeWriter({"accusations": ["is late"], "claims": []}), CountingBelief(), villagers())
+    pool = await load_pool(path, FakeWriter({"accusations": ["is late"], "claims": ["the well is cursed"]}), CountingBelief(), villagers())
     assert pool.accusations == (Entry("is late", 1),)
-    assert pool.claims == ()
+    assert pool.claims == (Entry("the well is cursed", 1),)
