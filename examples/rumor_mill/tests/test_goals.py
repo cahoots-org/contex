@@ -3,7 +3,9 @@ import random
 import pytest
 
 from examples.rumor_mill import goals
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, WORLD_FRACTION, Goal, claim, deal, rebar, world_goal
+from examples.rumor_mill.goals import (
+    DECK, WORLD_CANDIDATES, WORLD_FRACTION, Goal, Trophy, claim, deal, rebar, trophy_line, world_goal,
+)
 
 
 def test_deck_is_well_formed():
@@ -77,3 +79,14 @@ async def test_rebar_deck_rewrites_deck_and_world_candidates(monkeypatch):
     village = [g for g in goals.DECK if g.kind == "belief" and g.creed_question is None]
     assert village and all(g.long_shot for g in village)
     assert all(g.long_shot for g in goals.WORLD_CANDIDATES)
+
+
+def test_trophy_line_never_knew():
+    line = trophy_line(Trophy("personal", ("x",), 1), "Hob steals geese", unseen="Hob")
+    assert line.endswith(" And Hob never knew.")
+    assert "never knew" not in trophy_line(Trophy("personal", ("x",), 1), "Hob steals geese")
+
+
+def test_trophy_json_carries_long_shot():
+    assert Trophy("personal", ("x",), 1).to_json()["long_shot"] is False
+    assert Trophy("world", ("x",), 1, long_shot=True).to_json()["long_shot"] is True

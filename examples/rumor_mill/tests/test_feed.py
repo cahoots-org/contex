@@ -107,7 +107,8 @@ def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
     ]
     assert feed.recent[2].data["line"] == "The whole village now holds that the cat is a spy."
     assert feed.recent[-1].data["goals"] == [
-        {"id": "a", "text": "A", "believers": 0, "needed": 6}, {"id": "b", "text": "B", "believers": None, "needed": None},
+        {"id": "a", "text": "A", "believers": 0, "needed": 6, "long_shot": False, "marks": [], "subject": None},
+            {"id": "b", "text": "B", "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None},
     ]
     assert (feed.recent[0].data["believers"], feed.recent[0].data["needed"]) == (0, 8)
 
@@ -259,7 +260,9 @@ def test_a_trophy_reaches_only_its_player():
     feed, lines = make()
     feed.on_trophy(Trophy("personal", ("a", "b", "c"), 3), "A trophy for your case.", player="p-a")
     assert [e.kind for e in feed.replay("p-a")] == ["trophy"] and feed.replay("p-b") == []
-    assert feed.replay("p-a")[0].to_json()["trophy"] == {"kind": "personal", "goals": ["a", "b", "c"], "day": 3}
+    assert feed.replay("p-a")[0].to_json()["trophy"] == {
+        "kind": "personal", "goals": ["a", "b", "c"], "day": 3, "long_shot": False,
+    }
     assert lines == ["A trophy for your case."]
 
 
@@ -323,4 +326,19 @@ def test_goal_void_reaches_only_its_player():
     event = feed.recent[-1]
     assert (event.kind, event.player) == ("goal_void", PID)
     assert event.line == '"Marta believes it" is off: Marta has left town. New goal: "Half of the village believes it"'
-    assert event.data["goal_id"] == "o" and event.data["new"] == {"id": "n", "text": new.text, "believers": None, "needed": None}
+    assert event.data["goal_id"] == "o" and event.data["new"] == {
+        "id": "n", "text": new.text, "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None,
+    }
+
+
+def test_deal_and_void_carry_each_goals_targets():
+    feed, lines = make()
+    about = Goal("gen-1", "Hob steals geese", "belief", audience=("v1", "v2"), subject="v2", owner=PID, long_shot=True)
+    feed.on_deal([about, Goal("b", "B", "state")], player=PID, counts={"gen-1": (0, 3)})
+    a, b = feed.recent[-1].data["goals"]
+    assert (a["long_shot"], a["marks"], a["subject"]) == (True, ["v1", "v2"], "v2")
+    assert (b["long_shot"], b["marks"], b["subject"]) == (False, [], None)
+    feed.on_goal_void(Goal("old", "Old", "state"), about, "gone", player=PID, counts=(1, 3))
+    assert feed.recent[-1].data["text"] == feed.recent[-1].line
+    new = feed.recent[-1].data["new"]
+    assert (new["believers"], new["needed"], new["marks"], new["subject"], new["long_shot"]) == (1, 3, ["v1", "v2"], "v2", True)

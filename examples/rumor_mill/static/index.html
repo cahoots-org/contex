@@ -380,6 +380,12 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   display: inline-grid; place-items: center; font: 700 10px/1 var(--ui); color: #fff;
   border: 2px solid var(--bg); box-sizing: content-box;
 }
+.badge.aim { right: -5px; top: -5px; bottom: auto; }
+.badge.aim[data-s="mark"] { background: var(--accent); color: var(--on-accent); }
+.badge.aim[data-s="subject"] { background: var(--r3); }
+.badge.aim[data-s="subject"]:not(:only-of-type) { right: auto; left: -5px; top: auto; bottom: -5px; }
+.tag { margin-left: .4rem; padding: 0 .35rem; border-radius: 3px; background: var(--mark); color: var(--on-mark); font-weight: 700; }
+.glyph { color: var(--mark); font-weight: 700; margin-right: .25rem; }
 .badge[data-s="took_the_bait"] { background: var(--bait); }
 .badge[data-s="brushed_off"] { background: var(--off); }
 .badge[data-s="wary"] { background: var(--wary); }
@@ -1343,6 +1349,15 @@ function render(e, fresh) {
     case "stormed_off":
       dockEnd(e.villager_id);
       return line("speech", null, e.line ? `${e.name} storms off: “${e.line}”` : `${e.name} storms off.`);
+    case "denied":
+      return line("speech", null, e.line ? `${e.name}: “${e.line}”` : `${e.name} denies it.`);
+    case "goal_void": {
+      const kept = [...goals].map(([id, g]) => (id === e.goal_id ? [e.new.id, goalOf(e.new)] : [id, g]));
+      goals.clear();
+      for (const [id, g] of kept) goals.set(id, g);
+      renderGoals();
+      return line("quiet", null, e.text);
+    }
     case "heat":
       $("heat").textContent = e.text;
       return null;
@@ -1362,7 +1377,8 @@ function render(e, fresh) {
         return e.met ? line("loud", null, e.line) : null;
       }
       const was = goals.get(e.goal_id);
-      goals.set(e.goal_id, goalOf(e));
+      // Progress events leave out who the goal is aimed at, which the deal gave.
+      goals.set(e.goal_id, { ...goalOf(e), longShot: was?.longShot ?? false, marks: was?.marks ?? [], subject: was?.subject ?? null });
       renderGoals();
       if (e.met) return line("loud", null, `Goal met: ${e.text}`);
       // Progress that only brings news of doubt updates the card, not the feed.
@@ -1558,15 +1574,30 @@ function faceFor(id, occupation) {
   return canvas;
 }
 
+// The villagers an unmet goal works on, and the ones its claim is about.
+function targets() {
+  const live = [...goals.values()].filter((g) => !g.met);
+  return { marks: new Set(live.flatMap((g) => g.marks)), subjects: new Set(live.map((g) => g.subject).filter(Boolean)) };
+}
+
+function aim(kind, title, glyph) {
+  return el("span", { className: "badge aim", ariaHidden: "true", title, textContent: glyph, dataset: { s: kind } });
+}
+
 function faceWith(v, big = false) {
   const status = noteOf(v.id).status;
-  return el("span", { className: big ? "face big" : "face", ariaHidden: "true" }, faceFor(v.id, v.occupation), BADGES[status] && badge(status));
+  const { marks, subjects } = targets();
+  return el("span", { className: big ? "face big" : "face", ariaHidden: "true" }, faceFor(v.id, v.occupation),
+    BADGES[status] && badge(status),
+    marks.has(v.id) ? aim("mark", "your mark", "→") : null,
+    subjects.has(v.id) ? aim("subject", "the one it's about", "?") : null);
 }
 
 // The villager's name and, when the player knows something, the status in words.
 function knownAs(v) {
   const b = BADGES[noteOf(v.id).status];
-  return b ? `${v.name}, ${b[1]}` : v.name;
+  const { marks, subjects } = targets();
+  return [v.name, b && b[1], marks.has(v.id) && "your mark", subjects.has(v.id) && "the one it's about"].filter(Boolean).join(", ");
 }
 
 const OUTCOMES = { lost: "The village ran you out of town." };
@@ -1678,8 +1709,8 @@ document.addEventListener("keydown", (ev) => {
   else if (selectedRumor != null) selectRumor(null);
 });
 
-function goalOf({ text, percent = 0, met = false, believers = null, needed = null, doubt = null }) {
-  return { text, percent, met, believers, needed, doubt };
+function goalOf({ text, percent = 0, met = false, believers = null, needed = null, doubt = null, long_shot = false, marks = [], subject = null }) {
+  return { text, percent, met, believers, needed, doubt, longShot: long_shot, marks, subject };
 }
 
 function goalProgress(g) {
@@ -1704,7 +1735,7 @@ function doubtLine(g) {
 function goalCard(g, label) {
   const shown = g.met ? "Met" : goalProgress(g);
   return [
-    el("div", { className: "goal-label", textContent: label }),
+    el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null),
     el("div", { className: "goal-text", textContent: g.text, title: g.text }),
     doubtLine(g),
     el("div", { className: "bar" },
@@ -1719,6 +1750,7 @@ function renderGoals() {
   $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
   $("goals").replaceChildren(...all.map((g) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalCard(g, "Your goal"))));
   for (const uid of rumorRows.keys()) setRow(uid);
+  refreshVillagers();
 }
 
 function renderWorld() {
@@ -1730,7 +1762,10 @@ function renderWorld() {
 function renderTrophies() {
   $("trophies-toggle").textContent = `Trophies (${trophies.length})`;
   $("trophy-list").replaceChildren(...(trophies.length
-    ? trophies.map((t) => el("li", { textContent: `${t.kind === "world" ? "World: " : ""}Day ${t.day}: ${t.goals.join("; ")}` }))
+    ? trophies.map((t) => el("li", {},
+      t.long_shot ? el("span", { className: "glyph", title: "Long shot", textContent: "✦" }) : null,
+      t.long_shot ? el("span", { className: "visually-hidden", textContent: "Long shot. " }) : null,
+      `${t.kind === "world" ? "World: " : ""}Day ${t.day}: ${t.goals.join("; ")}`))
     : [el("li", { className: "none", textContent: "No trophies yet." })]));
 }
 

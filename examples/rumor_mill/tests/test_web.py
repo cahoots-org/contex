@@ -107,10 +107,10 @@ def test_state_lists_goals_villagers_and_replay(game):
     game.feed.say("hello")
     state = game.client.get("/api/state").json()
     assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12,
-                              "doubt": None}]
+                              "doubt": None, "long_shot": False, "marks": [], "subject": None}]
     assert state["world_goal"] == {
         "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": 0, "needed": 2,
-        "doubt": None,
+        "doubt": None, "long_shot": False, "marks": [], "subject": None,
     }
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
@@ -558,7 +558,9 @@ def test_a_new_run_keeps_the_same_person_and_trophy_case(game):
     game.player.ended_at -= RUN_OUT_LOCKOUT_SECONDS
     game.client.get("/")
     body = game.client.get("/api/state").json()
-    assert game.client.cookies[web.COOKIE] == owner and body["trophies"] == [{"kind": "personal", "goals": ["a", "b", "c"], "day": 2}]
+    assert game.client.cookies[web.COOKIE] == owner and body["trophies"] == [
+        {"kind": "personal", "goals": ["a", "b", "c"], "day": 2, "long_shot": False}
+    ]
 
 
 def test_two_sessions_play_as_two_players(game):
@@ -803,3 +805,36 @@ def test_a_villager_who_storms_off_leaves_the_dock_with_a_parting_line(game):
     html = game.client.get("/").text
     case = re.search(r'case "stormed_off":(.*?)case ', html, re.S).group(1)
     assert "dockEnd(e.villager_id);" in case and 'line("speech"' in case and "storms off" in case
+
+
+def test_goal_json_carries_marks_subject_long_shot(game):
+    about = Goal("gen-1", "Hob steals geese", "belief", audience=("v1", "v2"), subject="v2", owner=game.player.id,
+                 long_shot=True)
+    game.player.goals = [about]
+    [goal] = game.client.get("/api/state").json()["goals"]
+    assert (goal["long_shot"], goal["marks"], goal["subject"]) == (True, ["v1", "v2"], "v2")
+
+
+def test_marks_only_come_with_a_subject(game):
+    circle = Goal("gen-2", "The bakers", "belief", audience=("v1", "v2"), owner=game.player.id)
+    game.player.goals = [circle]
+    [goal] = game.client.get("/api/state").json()["goals"]
+    assert (goal["marks"], goal["subject"]) == ([], None)
+
+
+def test_state_hides_other_players_marks(game):
+    mine = Goal("gen-1", "Hob steals geese", "belief", audience=("v1",), subject="v2", owner=game.player.id)
+    game.player.goals = [mine]
+    other = game.join("o-2")
+    other.goals = [GOAL]
+    as_owner(game.client, "o-2")
+    state = game.client.get("/api/state")
+    assert [g["id"] for g in state.json()["goals"]] == ["cat"]
+    assert state.json()["goals"][0]["marks"] == [] and "gen-1" not in state.text
+
+
+def test_page_renders_badges_and_long_shot(game):
+    html = game.client.get("/").text
+    for needle in ("your mark", "the one it's about", "Long shot", "long_shot", "goal_void", '"denied"', "was?.marks"):
+        assert needle in html
+    assert "innerHTML" not in html

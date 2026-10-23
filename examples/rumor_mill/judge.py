@@ -250,7 +250,7 @@ class Judge:
             skip = self.held() | {g.id for g in player.goals}
             new = deal(self.rng, 1, skip=skip, never={self.world.id.removeprefix("world-")})[0]
             player.goals[i] = new
-            self.feed.on_goal_void(old, new, reason, player=player.id)
+            self.feed.on_goal_void(old, new, reason, player=player.id, counts=self.counts_of(new))
 
     def counts_of(self, goal: Goal) -> tuple[int, int] | None:
         """The goal's believers and how many it needs, or None for a state goal."""
@@ -311,13 +311,17 @@ class Judge:
                         p.met.add(goal.id)
                         self.feed.on_met(goal, player=p.id)
                         if all(g.id in p.met for g in p.goals):
-                            trophy = Trophy("personal", tuple(g.text for g in p.goals), self._day())
-                            players.award(p.owner, trophy, trophy_line(trophy, _last_claim(p, goal)))
+                            trophy = Trophy(
+                                "personal", tuple(g.text for g in p.goals), self._day(),
+                                long_shot=any(g.long_shot for g in p.goals),
+                            )
+                            line = trophy_line(trophy, _last_claim(p, goal), unseen=self._unseen(p))
+                            players.award(p.owner, trophy, line)
                             self._start_redeal(p)
                 if world:
                     self.feed.on_met(goal)
                     self._note_whisperers(players)
-                    trophy = Trophy("world", (goal.text,), self._day())
+                    trophy = Trophy("world", (goal.text,), self._day(), long_shot=goal.long_shot)
                     for owner in sorted(self.whisperers):
                         players.award(owner, trophy, trophy_line(trophy, claim(goal)))
                     self.world = self._next_world()
@@ -325,6 +329,15 @@ class Judge:
                     self.whisperers = set()
                     self.feed.on_world(self.world, self.counts_of(self.world))
             self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
+
+    def _unseen(self, player: Player) -> str | None:
+        """The name of the first subject among the player's goals whose suspicion of them stayed below the warn line."""
+        if self.engine is None:
+            return None
+        for g in player.goals:
+            if g.subject and self.engine.suspicion.score(g.subject, player.id) < self.config.warn_threshold:
+                return self.town.name_of(g.subject)
+        return None
 
     def _start_redeal(self, player: Player) -> None:
         """Write the player's next hand in the background, unless it is already being written."""

@@ -722,7 +722,7 @@ def test_void_reason_cases():
 async def test_void_goal_replaced_when_mark_leaves():
     judge, _, _, feed, town = make(n=4)
     feed.voids = []
-    feed.on_goal_void = lambda old, new, reason, player: feed.voids.append((old.id, new.id, reason, player))
+    feed.on_goal_void = lambda old, new, reason, player, counts=None: feed.voids.append((old.id, new.id, reason, player))
     mark = audience_goal("v0", fraction=0.0)
     other = holder("p-2", BELIEF)
     mine = holder(PID, mark, QUIET, BELIEF)
@@ -800,7 +800,7 @@ async def pending_redeal(judge, pa, feed, town=None):
 async def test_no_void_line_for_a_won_hand_while_its_redeal_is_pending():
     judge, _, _, feed, town = make()
     feed.voids = []
-    feed.on_goal_void = lambda old, new, reason, player: feed.voids.append(old.id)
+    feed.on_goal_void = lambda old, new, reason, player, counts=None: feed.voids.append(old.id)
     mark = audience_goal("v0", fraction=0.0, owner="p-a")
     pa = holder("p-a", mark)
     running = await pending_redeal(judge, pa, feed)
@@ -871,3 +871,28 @@ async def test_subject_trace_makes_no_jev_call_and_skips_goals_without_owner_or_
     await judge.check(audience_goal("v0", fraction=0.0, owner="p-1"))
     await judge.check(audience_goal("v0", fraction=0.0, subject="v1"))
     assert len(seen) == 1
+
+
+def clean_win_judge(scores, long_shot=False):
+    judge, _, _, feed, _ = make(n=4)
+    judge.world = QUIET
+    judge.engine = SimpleNamespace(suspicion=SimpleNamespace(score=lambda vid, pid: scores.get((vid, pid), 0.0)))
+    goal = audience_goal("v0", fraction=0.0, owner="p-a", subject="v3", long_shot=long_shot)
+    scripted(judge, [1.0] * 10, goal=goal)
+    return judge, feed, holder("p-a", goal)
+
+
+@pytest.mark.asyncio
+async def test_a_personal_trophy_credits_a_subject_who_never_suspected_the_player():
+    judge, feed, pa = clean_win_judge({})
+    await run_until(judge, players(pa, feed=feed), lambda: feed.trophies)
+    assert feed.trophies[0][1].endswith(" And Vi Name3 never knew.")
+    assert feed.trophies[0][0].long_shot is False
+
+
+@pytest.mark.asyncio
+async def test_a_subject_who_suspected_the_player_is_not_credited_and_a_long_shot_marks_the_trophy():
+    judge, feed, pa = clean_win_judge({("v3", "p-a"): CONFIG.warn_threshold}, long_shot=True)
+    await run_until(judge, players(pa, feed=feed), lambda: feed.trophies)
+    assert "never knew" not in feed.trophies[0][1]
+    assert feed.trophies[0][0].long_shot is True

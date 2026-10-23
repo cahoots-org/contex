@@ -192,15 +192,23 @@ class Trophy:
     # The texts of the goals it was won for.
     goals: tuple[str, ...]
     day: int
+    long_shot: bool = False
 
     def to_json(self) -> dict:
-        return {"kind": self.kind, "goals": list(self.goals), "day": self.day}
+        return {"kind": self.kind, "goals": list(self.goals), "day": self.day, "long_shot": self.long_shot}
 
 
-def trophy_line(trophy: Trophy, claim: str | None) -> str:
-    """What the player is told on winning the trophy, naming the claim the village now holds."""
+def trophy_line(trophy: Trophy, claim: str | None, unseen: str | None = None) -> str:
+    """What the player is told on winning the trophy, naming the claim the village now holds and who never knew."""
     if trophy.kind == "world":
         return f"The whole village now holds that {claim}. A world trophy for your case."
     if claim is None:
-        return "The village is not what it was, and it all began with a whisper. A trophy for your case."
-    return f"The village now swears {claim}, and it all began with a whisper. A trophy for your case."
+        line = "The village is not what it was, and it all began with a whisper. A trophy for your case."
+    else:
+        line = f"The village now swears {claim}, and it all began with a whisper. A trophy for your case."
+    return f"{line} And {unseen} never knew." if unseen else line
+
+
+def goal_targets(goal: Goal) -> dict:
+    """What the page needs to mark a goal's targets: its long shot, the villagers it works on and the one it is about."""
+    return {"long_shot": goal.long_shot, "marks": list(goal.audience) if goal.subject else [], "subject": goal.subject}
