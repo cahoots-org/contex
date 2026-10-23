@@ -2338,7 +2338,15 @@ $("whisper").addEventListener("submit", async (ev) => {
 
 // ArrowUp and ArrowDown in the whisper box step through what you have said, newest first.
 let recalled = -1;
-$("text").addEventListener("input", () => { recalled = -1; draftChanged(); });
+// While the player types, the villagers they are talking with wait; told at most once every few seconds.
+const TYPING_EVERY_MS = 5000;
+let typedAt = 0;
+function typed() {
+  if (Date.now() - typedAt < TYPING_EVERY_MS) return;
+  typedAt = Date.now();
+  fetch("/api/typing", { method: "POST" }).catch(() => {});
+}
+$("text").addEventListener("input", () => { recalled = -1; draftChanged(); typed(); });
 
 // After a pause in writing, mark villagers whose hints match the draft; a reply to an older draft is dropped.
 let draftTimer = 0;

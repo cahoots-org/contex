@@ -1144,6 +1144,25 @@ async def test_a_hold_lapses_once_you_say_nothing_new_for_talk_hold_seconds():
 
 
 @pytest.mark.asyncio
+async def test_typing_keeps_the_hold_until_you_stop_for_talk_hold_seconds():
+    player = await missed_once()
+    player.config = replace(player.config, talk_hold_seconds=0.05)
+    await asyncio.sleep(0.04)
+    player.typing()
+    await asyncio.sleep(0.04)
+    assert player.holds("v1")
+    await asyncio.sleep(0.02)
+    assert not player.holds("v1")
+
+
+@pytest.mark.asyncio
+async def test_typing_holds_no_one_you_have_not_talked_with():
+    player, *_ = make("Marta")
+    player.typing()
+    assert not player.holds("v1")
+
+
+@pytest.mark.asyncio
 async def test_no_hold_without_an_open_exchange():
     player = await missed_once()
     await player.whisper_to("v1", "the tide tables were misprinted again")

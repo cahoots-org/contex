@@ -242,6 +242,14 @@ def test_walk_moves_the_player_and_reports_problems(game):
     assert post("/api/walk", content=b"x" * 10000).status_code == 413
 
 
+def test_typing_is_acknowledged(game):
+    assert game.client.post("/api/typing").json() == {"ok": True}
+
+
+def test_page_tells_the_game_while_the_player_types(game):
+    assert "/api/typing" in game.client.get("/").text
+
+
 def test_listen_starts_and_a_second_is_refused(game):
     assert game.client.post("/api/listen").json() == {"ok": True}
     again = game.client.post("/api/listen")

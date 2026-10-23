@@ -357,6 +357,13 @@ def create_app(
             return _error(409 if isinstance(problem, Refusal) else 400, problem)
         return {"ok": True}
 
+    @app.post("/api/typing")
+    async def typing(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        player.typing()
+        return {"ok": True}
+
     @app.post("/api/listen")
     async def listen(request: Request):
         if (player := player_for(players, request.cookies.get(COOKIE))) is None:

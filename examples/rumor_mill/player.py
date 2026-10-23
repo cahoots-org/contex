@@ -84,6 +84,8 @@ class Player:
         self._held: dict[str, tuple[str, str]] = {}
         # Per villager, when the player last whispered to them.
         self._said_at: dict[str, float] = {}
+        # When the player last typed in the whisper box.
+        self._typed_at = 0.0
         # Per villager, the player's misses in a row in their current exchange.
         self._misses: dict[str, int] = {}
 
@@ -373,12 +375,17 @@ class Player:
                 return rumor
         return None
 
+    def typing(self) -> None:
+        """The player is writing, which keeps whoever they are talking with where they are."""
+        self._typed_at = time.time()
+
     def holds(self, villager_id: str) -> bool:
         """Whether the villager stays put for this player: they share a place and an open exchange, and the player
-        spoke to them within talk_hold_seconds."""
+        spoke to them or typed within talk_hold_seconds."""
         said = self._said_at.get(villager_id)
         return (
-            not self.over() and said is not None and time.time() - said < self.config.talk_hold_seconds
+            not self.over() and said is not None
+            and time.time() - max(said, self._typed_at) < self.config.talk_hold_seconds
             and villager_id in self.town and self.town.place_of(villager_id) == self.place
             and self._exchange(villager_id) is not None
         )
