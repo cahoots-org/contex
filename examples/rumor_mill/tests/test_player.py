@@ -590,11 +590,33 @@ async def test_a_thread_takes_two_whispers_then_starts_a_new_card():
 
 
 @pytest.mark.asyncio
-async def test_a_thread_closes_at_the_next_part_of_the_day():
+async def test_a_thread_outlasts_the_part_of_the_day():
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
     player.game = Game()
     await miss(player)
     player.game.tick()
+    await miss(player)
+    assert conversations(player) == [None, "w-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_thread_stays_open_while_you_type():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    player.config = replace(player.config, talk_hold_seconds=0.05)
+    await miss(player)
+    await asyncio.sleep(0.04)
+    player.typing()
+    await asyncio.sleep(0.04)
+    await miss(player)
+    assert conversations(player) == [None, "w-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_thread_closes_after_a_quiet_talk_hold():
+    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    player.config = replace(player.config, talk_hold_seconds=0.05)
+    await miss(player)
+    await asyncio.sleep(0.06)
     await miss(player)
     assert conversations(player) == [None, None]
 
@@ -658,15 +680,15 @@ async def test_a_miss_says_whether_the_next_whisper_continues_it():
 @pytest.mark.asyncio
 async def test_a_miss_reads_the_thread_as_it_stands_after_the_check():
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
-    player.game = Game()
+    player.config = replace(player.config, talk_hold_seconds=0.05)
     await miss(player)
     check = player.check
 
-    async def tick_then_check(*args):
-        player.game.tick()
+    async def lapse_then_check(*args):
+        await asyncio.sleep(0.06)
         return await check(*args)
 
-    player.check = tick_then_check
+    player.check = lapse_then_check
     await miss(player)
     assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True] * 4
     assert player._threads["v1"]["whispers"] == 1

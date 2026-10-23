@@ -357,9 +357,6 @@ class Player:
             return f"{villager.name} heard {heard[0].speaker_name} talking about it at the {heard[0].place}."
         return f"{villager.name} hasn't heard anything about that."
 
-    def _now(self) -> tuple[int, str] | None:
-        return (self.game.day, self.game.phase) if self.game is not None else None
-
     def _exchange(self, villager_id: str) -> str | None:
         """The rumor of the player's open exchange with the villager: their conversation, a missed whisper's thread, or
         a landed whisper the villager has not acted on yet."""
@@ -406,9 +403,10 @@ class Player:
         self.engine.end_conversation(villager_id, self.id)
 
     def _thread(self, villager_id: str) -> dict | None:
-        """The villager's open thread, dropped once the day has moved on to its next part."""
+        """The villager's open thread, dropped once the player has neither whispered on it nor typed for
+        talk_hold_seconds."""
         thread = self._threads.get(villager_id)
-        if thread and thread["at"] != self._now():
+        if thread and time.time() - max(thread["at"], self._typed_at) >= self.config.talk_hold_seconds:
             del self._threads[villager_id]
             return None
         return thread
@@ -417,9 +415,10 @@ class Player:
         """Open a thread on a missed whisper, or count one more on it, closing it at THREAD_WHISPERS."""
         thread = self._thread(villager_id)
         if thread is None:
-            self._threads[villager_id] = {"id": uid, "need": concern, "whispers": 1, "at": self._now()}
+            self._threads[villager_id] = {"id": uid, "need": concern, "whispers": 1, "at": time.time()}
             return
         thread["whispers"] += 1
+        thread["at"] = time.time()
         thread["need"] = concern
         if thread["whispers"] >= THREAD_WHISPERS:
             del self._threads[villager_id]
