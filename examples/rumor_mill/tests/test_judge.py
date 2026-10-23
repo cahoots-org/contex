@@ -837,3 +837,37 @@ async def test_a_hand_written_after_the_game_ended_is_dropped():
     pa = holder("p-a", BELIEF, over=True)
     await judge.redeal(pa)
     assert pa.goals == [BELIEF] and feed.deals == [] and dropped == ["t"]
+
+
+def traced_judge(roots):
+    """A judge whose subject v1 remembers each uid in roots; lineage w1 is p-1's whisper, w2 p-2's."""
+    judge, contex, _, _, _ = make(n=3)
+    lineage = Lineage()
+    lineage.record("w1", None, player="p-1")
+    lineage.record("w2", None, player="p-2")
+    lineage.record("u1", "w1")
+    judge.lineage = lineage
+    seen = []
+    judge.engine = SimpleNamespace(
+        suspicion=SimpleNamespace(score=lambda vid, pid: 0.0), traced=lambda *args: seen.append(args[1:]),
+    )
+    contex.minds[mind_project(CONFIG.session, "v1")] = [Match(f"utt:{uid}", {"id": uid}) for uid in roots]
+    return judge, seen
+
+
+@pytest.mark.asyncio
+async def test_subject_remembering_the_owners_rumor_is_traced():
+    judge, seen = traced_judge(["u1", "w2"])
+    goal = audience_goal("v0", fraction=0.0, owner="p-1", subject="v1")
+    await judge.check(goal)
+    assert seen == [("v1", "u1")]
+
+
+@pytest.mark.asyncio
+async def test_subject_trace_makes_no_jev_call_and_skips_goals_without_owner_or_subject():
+    judge, seen = traced_judge(["w1"])
+    await judge.check(audience_goal("v0", fraction=0.0, owner="p-1", subject="v1"))
+    assert seen == [("v1", "w1")] and judge.jev.calls == []
+    await judge.check(audience_goal("v0", fraction=0.0, owner="p-1"))
+    await judge.check(audience_goal("v0", fraction=0.0, subject="v1"))
+    assert len(seen) == 1

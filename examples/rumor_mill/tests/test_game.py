@@ -574,3 +574,83 @@ async def test_an_annoyed_villager_who_stays_does_not_storm_off(monkeypatch):
     engine, feed, _ = await storming(monkeypatch, IGNORE)
     assert kinds(feed, "stormed_off") == [] and ("v1", PID) in engine.conversations
     await engine.stop()
+
+
+async def traced_engine():
+    """An engine with v1 the subject and v2, v3 the marks of PID's goal, and rumors of PID's at 1 to 4 hops."""
+    engine, player, feed, lines = await start("v1", "v2", "v3", suspicion_decay_per_day=1.0)
+    for n in range(1, 5):
+        parent = None
+        for hop in range(n):
+            uid = f"w{n}" if hop == 0 else f"w{n}-{hop}"
+            engine.lineage.record(uid, parent, player=PID if hop == 0 else None)
+            parent = uid
+    spoken = []
+
+    async def deny(villager, claim):
+        spoken.append((villager.id, claim))
+        return "Never happened."
+
+    engine.writer = SimpleNamespace(deny=deny)
+    goal = Goal(
+        "gen-1", "t", "belief", ("hob steals",), "?", 0.0, audience=("v2", "v3"), subject="v1", owner=PID,
+        claim_text="Hob steals geese",
+    )
+    return engine, goal, feed, spoken
+
+
+@pytest.mark.asyncio
+async def test_subject_hearing_owner_rumor_bumps_by_hops():
+    engine, goal, _, _ = await traced_engine()
+    bump = engine.config.suspicion_whisper_bump
+    for uid, share in (("w1", 1), ("w2-1", 1 / 2), ("w3-2", 1 / 4), ("w4-3", 0)):
+        engine.suspicion.decay(100)
+        engine.traced(goal, "v1", uid)
+        assert engine.suspicion.score("v1", PID) == pytest.approx(bump * share)
+    engine.suspicion.decay(100)
+    engine.traced(goal, "v1", "w1")
+    engine.traced(goal, "v1", "w2")
+    assert engine.suspicion.reasons(PID)[0] == "V1 traced a rumor back to you."
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_trace_bump_once_per_root():
+    engine, goal, _, _ = await traced_engine()
+    engine.traced(goal, "v1", "w3-2")
+    engine.traced(goal, "v1", "w3-1")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(engine.config.suspicion_whisper_bump / 4)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_crossing_warn_threshold_denies_to_marks_once():
+    engine, goal, feed, spoken = await traced_engine()
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold - 0.01, "x")
+    engine.traced(goal, "v1", "w1")
+    await wait_for(lambda: engine.minds["v2"].heard)
+    key, data = engine.minds["v2"].heard[0]
+    assert data["text"] == "V1 said: Never happened." and spoken == [("v1", "Hob steals geese")]
+    assert engine.minds["v3"].heard and not engine.minds["v1"].heard
+    await wait_for(lambda: kinds(feed, "denied"))
+    assert [e.data["line"] for e in kinds(feed, "denied")] == ["Never happened."]
+    engine.traced(goal, "v1", "w2")
+    await asyncio.sleep(0.05)
+    assert len(spoken) == 1 and len(engine.minds["v2"].heard) == 1
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_denial_is_logged(caplog):
+    engine, goal, feed, _ = await traced_engine()
+
+    async def boom(villager, claim):
+        raise RuntimeError("down")
+
+    engine.writer = SimpleNamespace(deny=boom)
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold - 0.01, "x")
+    with caplog.at_level(logging.ERROR):
+        engine.traced(goal, "v1", "w1")
+        await wait_for(lambda: "denial" in caplog.text)
+    assert not kinds(feed, "denied")
+    await engine.stop()

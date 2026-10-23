@@ -17,6 +17,7 @@ from examples.rumor_mill.effects import act
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import MOMENTS
 from examples.rumor_mill.game import PHASES, Game, Summary
+from examples.rumor_mill.goals import Goal, audience_of
 from examples.rumor_mill.hints import Hints
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import Mind, group_project, mind_project, said_project
@@ -44,6 +45,8 @@ KEPT_WHISPERS = 50
 # How many villagers set off together on their daily round, and how much of each part of the day the round spans.
 ROUTINE_BATCH = 5
 ROUTINE_SPREAD = 0.5
+# How much of a whisper's suspicion a subject takes on, by hops from the whisper.
+TRACE_SCALE = {1: 1, 2: 0.5, 3: 0.25}
 MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
@@ -116,6 +119,10 @@ class Engine:
         self._turns = asyncio.Semaphore(config.turn_concurrency)
         # Care checks on the listeners of one-to-one rumor hops.
         self._following: set[asyncio.Task] = set()
+        # Each (subject, player, rumor root) already traced, the goals whose subject has denied, and the denials running.
+        self._traced: set[tuple[str, str, str]] = set()
+        self._denied: set[str] = set()
+        self._denials: set[asyncio.Task] = set()
         if rumors is not None:
             feed.sinks.append(rumors.on_event)
 
@@ -405,6 +412,42 @@ class Engine:
     def suspect(self, vid: str, player: str, amount: float, reason: str, uid: str | None = None) -> None:
         """Raise the villager's suspicion of player."""
         self.suspicion.bump(vid, player, amount, reason, uid)
+
+    def traced(self, goal: Goal, subject_id: str, uid: str) -> None:
+        """The goal's subject holds a memory descending from the owner's whisper: they suspect the owner of it.
+
+        Counts once per rumor, by hops from the whisper. A subject who crosses into wariness of the owner denies the
+        rumor to the goal's audience, once per goal.
+        """
+        key = (subject_id, goal.owner, self.lineage.root(uid))
+        if key in self._traced:
+            return
+        self._traced.add(key)
+        before = self.suspicion.score(subject_id, goal.owner)
+        scale = TRACE_SCALE.get(self.lineage.depth(uid) + 1, 0)
+        after = self.suspicion.bump(
+            subject_id, goal.owner, self.config.suspicion_whisper_bump * scale, "traced it to you", uid,
+        )
+        if before < self.config.warn_threshold <= after and goal.id not in self._denied:
+            self._denied.add(goal.id)
+            task = asyncio.create_task(self._deny(goal, subject_id))
+            self._denials.add(task)
+            task.add_done_callback(self._denials.discard)
+
+    async def _deny(self, goal: Goal, subject_id: str) -> None:
+        """The subject tells the goal's marks the rumor is false, and the owner sees them do it."""
+        try:
+            subject = self.town.get(subject_id)
+            with charging(goal.owner):
+                line = await self.writer.deny(subject, goal.claim_text)
+            utterance = Utterance(
+                self.ids.next("u"), subject_id, subject.name, self.town.place_of(subject_id), line, None, "said",
+            )
+            self.lineage.record(utterance.id, None)
+            await self.deliver(utterance, [v.id for v in audience_of(goal, self.town)])
+            self.feed.on_denied(subject.name, line, player=goal.owner)
+        except Exception:
+            log.exception("denial by %s failed", subject_id)
 
     async def publish_group(self, group: Group) -> None:
         data = {"id": group.id, "name": group.name, "creed": group.creed, "founder": group.founder}

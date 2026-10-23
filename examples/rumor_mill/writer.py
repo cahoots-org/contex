@@ -185,6 +185,19 @@ class Writer:
             await self.complete(system, "You walk away from the newcomer.", max_tokens=TURN_AWAY_MAX_TOKENS)
         )
 
+    async def deny(self, villager: Villager, claim: str) -> str:
+        """The villager flatly denying the claim about them, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "A rumor is going around about you and you deny it flatly. Say so in one short sentence, under 20 words, "
+            "in your own voice. "
+            "Never name or describe the newcomer or anyone who might be behind it. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        user = f"The rumor: {claim}"
+        return first_line(await self.complete(system, user, max_tokens=SAY_MAX_TOKENS))
+
     async def warn(self, villager: Villager, target: Villager) -> str:
         """The villager warning the target that the newcomer is behind the rumors, in one line."""
         system = (

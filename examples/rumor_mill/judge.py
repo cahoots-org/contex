@@ -135,6 +135,24 @@ class Judge:
             return None
         return self.lineage.root(uid)
 
+    async def _trace(self, goal: Goal) -> None:
+        """Tell the engine of each memory the goal's subject holds that descends from the owner's whisper."""
+        if self.engine is None or self.lineage is None or not goal.owner or goal.subject not in self.town:
+            return
+        async with self._semaphore:
+            try:
+                matches = await self.contex.query(
+                    mind_project(self.config.session, goal.subject), goal.evidence[0], top_k=3,
+                    threshold=self.baselines.threshold(goal.evidence[0]), since=self.game and self.game.memory_since(),
+                )
+            except Exception:
+                log.exception("tracing %s to its subject failed", goal.id)
+                return
+        for m in matches:
+            uid = m.data_key.removeprefix("utt:")
+            if self.lineage.player_of(uid) == goal.owner:
+                self.engine.traced(goal, goal.subject, uid)
+
     def _wary(self, vid: str, goal: Goal) -> bool:
         """Whether the villager suspects the goal's owner too much to be won over for it."""
         return (
@@ -165,7 +183,9 @@ class Judge:
         roots: dict[str, str | None] = {}
         doubters: dict[str, Match | None] = {}
         audience = audience_of(goal, self.town)
-        results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in audience))
+        results, _ = await asyncio.gather(
+            asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in audience)), self._trace(goal),
+        )
         for i, v in enumerate(audience):
             if results[i] and self._wary(v.id, goal):
                 del roots[v.id]

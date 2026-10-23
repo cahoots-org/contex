@@ -219,3 +219,15 @@ async def test_writer_goals_parses_and_tolerates_junk():
     assert "owes me flour" in prompt and "Ada (rival)" in prompt and "the well is cursed" in prompt
     assert await writer.goals([villager()], []) == []
     assert await writer.goals([villager()], []) == []
+
+
+@pytest.mark.asyncio
+async def test_deny_is_one_flat_line_naming_no_newcomer():
+    client = StubClient('"That is a lie, plain and simple."\nMore.')
+    line = await Writer(client, "haiku-test").deny(villager(), "Ada steals geese")
+    assert line == "That is a lie, plain and simple."
+    call = client.messages.calls[0]
+    prompt = call["system"] + call["messages"][0]["content"]
+    assert all(s in prompt for s in ("Ada", "baker", "sharp-tongued", "Ada steals geese", "deny"))
+    assert "newcomer" in call["system"] and "Never name" in call["system"]
+    assert call["max_tokens"] == 80
