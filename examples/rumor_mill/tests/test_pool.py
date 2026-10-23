@@ -152,3 +152,9 @@ async def test_load_pool_scores_missing_bands_concurrently(tmp_path):
     writer = FakeWriter({"accusations": ["waters down the ale", "cheats at dice"], "claims": ["the well is cursed"]})
     pool = await load_pool(str(tmp_path / "goals.json"), writer, Gated(), villagers())
     assert [e.band for e in pool.accusations] == [1, 1]
+
+
+def test_entries_are_tidied_to_read_mid_sentence():
+    assert clean(["The well water has turned bitter.", "  waters the ale! ", "UFOs land at the mill."], []) == [
+        "the well water has turned bitter", "waters the ale", "UFOs land at the mill",
+    ]

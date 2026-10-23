@@ -70,12 +70,18 @@ class Pool:
     claims: tuple[Entry, ...]
 
 
+def tidy(text: str) -> str:
+    """The text as it reads mid-sentence: trimmed, no closing stop, lower-case first letter unless an acronym."""
+    text = text.strip().rstrip(".!")
+    return text[0].lower() + text[1:] if text[:2].istitle() else text
+
+
 def clean(texts: Iterable[str], names: Collection[str]) -> list[str]:
     """The texts that fit the pool: short, third person, naming no villager, each once."""
     named = re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b", re.IGNORECASE) if names else None
     kept: list[str] = []
     for text in texts:
-        text = text.strip()
+        text = tidy(text)
         if not text or len(text) > MAX_LENGTH or text in kept or SECOND_PERSON.search(text):
             continue
         if named and named.search(text):
@@ -113,8 +119,8 @@ def _parts(item) -> tuple[str, int | None]:
     """A stored entry's stripped text and band, the band None when it has none."""
     if isinstance(item, dict):
         band = item.get("band")
-        return str(item.get("text", "")).strip(), band if isinstance(band, int) and 0 <= band <= 3 else None
-    return str(item).strip(), None
+        return tidy(str(item.get("text", ""))), band if isinstance(band, int) and 0 <= band <= 3 else None
+    return tidy(str(item)), None
 
 
 async def _entries(items: list, defaults: tuple[str, ...], names: Collection[str], believability, prefix: str):
