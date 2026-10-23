@@ -28,6 +28,19 @@ class StubWriter:
         return self.text
 
 
+class FreshBatches:
+    """A writer whose every reply is a fenced batch of n villagers with names not used before."""
+
+    def __init__(self, n):
+        self.n = n
+        self.calls = 0
+
+    async def complete(self, system, user, max_tokens=400):
+        self.calls += 1
+        start = (self.calls - 1) * self.n
+        return "```json\n" + json.dumps([entry(i) for i in range(start, start + self.n)]) + "\n```"
+
+
 def fenced(n):
     return "Here you go:\n```json\n" + json.dumps([entry(i) for i in range(n)]) + "\n```"
 
@@ -38,7 +51,7 @@ def ring(n):
 
 @pytest.mark.asyncio
 async def test_generate_villagers_parses_fenced_json_and_assigns_ids():
-    writer = StubWriter(fenced(10))
+    writer = FreshBatches(10)
 
     villagers = await generate_villagers(writer, 12, random.Random(1))
 
@@ -49,7 +62,7 @@ async def test_generate_villagers_parses_fenced_json_and_assigns_ids():
 
 @pytest.mark.asyncio
 async def test_generate_villagers_makes_more_batches_than_the_failure_cap():
-    writer = StubWriter(fenced(10))
+    writer = FreshBatches(10)
 
     villagers = await generate_villagers(writer, 100, random.Random(1))
 
@@ -76,7 +89,35 @@ async def test_generation_asks_for_the_mayor_and_miller_until_the_village_has_th
     assert "village mayor and the miller among" in prompts[0]
     assert "village mayor among" in prompts[1]
     assert "Include the village" not in prompts[2]
-    assert "Name10 (Mayor of the village)" in prompts[2]
+    assert "Mayor of the village" in prompts[2] and "Name10" in prompts[2]
+
+
+@pytest.mark.asyncio
+async def test_generation_names_the_taken_first_names_and_skips_a_repeat():
+    prompts = []
+    batches = [
+        [{**entry(i), "name": f"Ada Name{i}"} if i == 0 else entry(i) for i in range(3)],
+        [{**entry(9), "name": "Ada Other"}, entry(3)],
+    ]
+
+    class RecordingWriter:
+        async def complete(self, system, user, max_tokens=400):
+            prompts.append(user)
+            return json.dumps(batches[len(prompts) - 1])
+
+    villagers = await generate_villagers(RecordingWriter(), 4, random.Random(1))
+
+    assert [v.name for v in villagers] == ["Ada Name0", "Name1", "Name2", "Name3"]
+    assert "these are taken: Ada, Name1, Name2" in prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_newcomer_with_a_taken_first_name_is_asked_again_then_refused():
+    taken = json.dumps({**entry(99), "name": "N1 Newman"})
+    writer = SequenceWriter(taken, json.dumps(entry(99)))
+    assert (await generate_newcomer(writer, ring(3), random.Random(3))).name == "Name99"
+    with pytest.raises(ValueError, match="reuses a first name"):
+        await generate_newcomer(StubWriter(taken), ring(3), random.Random(3))
 
 
 @pytest.mark.asyncio

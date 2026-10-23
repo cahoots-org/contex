@@ -100,6 +100,20 @@ def _villager(vid: str, raw: dict) -> Villager:
     )
 
 
+# How many times to ask for a newcomer whose first name is already taken.
+NEWCOMER_TRIES = 3
+
+
+def _first(name: str) -> str:
+    return name.split()[0].lower() if name.split() else ""
+
+
+def _first_names_taken(villagers: list[Villager]) -> str:
+    """The prompt line that keeps every first name in the village unique."""
+    names = ", ".join(sorted({v.name.split()[0] for v in villagers if v.name.split()}))
+    return f"Give each villager a first name no one else in the village has; these are taken: {names}."
+
+
 async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> list[Villager]:
     """Ask Haiku for villagers in batches of 10, with ids v001... and no relationships.
 
@@ -112,8 +126,8 @@ async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> 
         n = min(BATCH, count - len(villagers))
         taken = ""
         if villagers:
-            names = ", ".join(f"{v.name} ({v.occupation})" for v in villagers[-30:])
-            taken = f"Do not reuse these names or occupations: {names}."
+            jobs = ", ".join(v.occupation for v in villagers[-30:])
+            taken = f"Do not reuse these occupations: {jobs}. {_first_names_taken(villagers)}"
         text = await writer.complete(SYSTEM, PROMPT.format(n=n, temper=MIX, roles=_missing_roles(villagers), taken=taken), max_tokens=4000)
         try:
             parsed = extract_json(text)
@@ -122,7 +136,11 @@ async def generate_villagers(writer: Writer, count: int, rng: random.Random) -> 
         items = _unwrap(parsed)
         if items is None:
             continue
-        for raw in [r for r in map(_prepare, items) if _valid(r)][:n]:
+        used = {_first(v.name) for v in villagers}
+        for raw in [r for r in map(_prepare, items) if _valid(r)]:
+            if len(villagers) >= count or _first(raw["name"]) in used:
+                continue
+            used.add(_first(raw["name"]))
             villagers.append(_villager(f"v{len(villagers) + 1:03d}", raw))
             failed = 0
     if len(villagers) < count:
@@ -210,15 +228,21 @@ async def generate_newcomer(
 ) -> Villager:
     """A new villager related to one or two living ones; departed ones only reserve their id and name."""
     everyone = [*departed, *existing]
-    taken = "Do not reuse these names: " + ", ".join(v.name for v in everyone[-30:]) + "."
+    taken = _first_names_taken(everyone)
     temper = f"Make this villager {SOUR if rng.random() < SOUR_SHARE else GOOD}. "
-    text = await writer.complete(SYSTEM, PROMPT.format(n=1, temper=temper, roles="", taken=taken), max_tokens=800)
-    raw = extract_json(text)
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    raw = _prepare(raw)
-    if not _valid(raw):
-        raise ValueError(f"newcomer reply is not a valid villager: {text[:200]!r}")
+    used = {_first(v.name) for v in everyone}
+    for _ in range(NEWCOMER_TRIES):
+        text = await writer.complete(SYSTEM, PROMPT.format(n=1, temper=temper, roles="", taken=taken), max_tokens=800)
+        raw = extract_json(text)
+        if isinstance(raw, list):
+            raw = raw[0] if raw else None
+        raw = _prepare(raw)
+        if not _valid(raw):
+            raise ValueError(f"newcomer reply is not a valid villager: {text[:200]!r}")
+        if _first(raw["name"]) not in used:
+            break
+    else:
+        raise ValueError(f"newcomer reuses a first name: {raw['name']!r}")
     last = max((int(v.id[1:]) for v in everyone), default=0)
     newcomer = _villager(f"v{last + 1:03d}", raw)
     for other in rng.sample(existing, min(rng.randint(1, 2), len(existing))):
