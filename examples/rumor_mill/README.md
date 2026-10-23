@@ -157,8 +157,27 @@ you where to aim next. If the line can't be
 written, the whisper just says it was brushed off.
 
 The feed shows each hop of a rumor you started, who told whom and in what
-words, and a line when a goal's percent changes. Goals are checked once a game
-day and are met after they hold at 100% for three checks in a row.
+words, and a line when a goal's percent changes.
+
+## Goals
+
+Each goal is a template filled from the village. Code picks who it is about,
+favouring villagers someone holds a grudge against, and Jev fills the rest. A
+hand mixes the kinds at random:
+
+- Belief goals: convince one villager that someone did something, get a share
+  of a circle (a group, or a place's regulars) to believe it, or get a share of
+  the village to believe a claim.
+- Action goals: get a villager to do something because of your rumor, such as
+  confront someone, leave town, start a group against someone, or join a
+  group. "Drive 2 villagers out of town" counts anyone who leaves because of
+  you.
+
+The accusations and claims come from a pool Haiku writes once per village and
+saves beside the seed as `{seed}.goals.json`. Belief goals are checked once a
+game day and are met after they hold at 100% for three checks in a row. An
+action goal is met the moment its action happens, if what moved the villager
+traces back to one of your whispers.
 
 ## Suspicion
 
@@ -279,8 +298,9 @@ Where the tokens go:
 
 - Setup: Haiku writes the village once per seed file, the goal pool once
   beside it, and each newcomer who arrives after someone leaves.
-- Each hand after the first, and each swap: two Jev requests per goal about a
-  villager, one for the accusation and one for who it works on.
+- Each hand after the first, and each swap: two Jev requests per belief goal
+  about a villager, one for the accusation and one for who it works on, and
+  one per action goal that names who must act.
 - Each time a villager wakes: one Jev request to decide what they do, plus a
   short Haiku call (at most 80 tokens out) when they speak, and a slightly
   longer one when they found a group.

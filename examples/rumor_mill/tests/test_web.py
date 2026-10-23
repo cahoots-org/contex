@@ -788,7 +788,7 @@ def test_a_phone_gets_three_tabs(game):
 
 def test_a_state_goal_shows_a_percent_and_an_unchecked_belief_goal_its_target(game):
     dog = Goal("dog", "Half the village believes the dog is a thief", "belief", target_fraction=0.5)
-    game.player.goals = [dog, Goal("quiet", "Nobody leaves the village", "state")]
+    game.player.goals = [dog, Goal("quiet", "Nobody leaves the village", "action")]
     state = game.client.get("/api/state").json()
     assert [(g["believers"], g["needed"]) for g in state["goals"]] == [(0, 1), (None, None)]
     html = game.client.get("/").text

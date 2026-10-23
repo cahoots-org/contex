@@ -1,4 +1,4 @@
-from examples.rumor_mill.goals import WORLD_FRACTION, Goal, Trophy, claim, trophy_line, world_goal
+from examples.rumor_mill.goals import WORLD_FRACTION, Goal, Trophy, claim, goal_targets, trophy_line, world_goal
 
 
 def test_world_goal_raises_the_bar_on_a_claim():
@@ -20,3 +20,10 @@ def test_trophy_line_never_knew():
 def test_trophy_json_carries_long_shot():
     assert Trophy("personal", ("x",), 1).to_json()["long_shot"] is False
     assert Trophy("world", ("x",), 1, long_shot=True).to_json()["long_shot"] is True
+
+
+def test_an_action_goals_actor_is_its_mark():
+    join = Goal("j", "Get Agnes to join the Watch", "action", audience=("v1",), action="join_group", actor="v1", target="g-1")
+    confront = Goal("c", "Get Agnes to confront Hob", "action", audience=("v1",), subject="v2", action="confront", actor="v1")
+    assert goal_targets(join) == {"long_shot": False, "marks": ["v1"], "subject": None}
+    assert goal_targets(confront)["marks"] == ["v1"] and goal_targets(confront)["subject"] == "v2"

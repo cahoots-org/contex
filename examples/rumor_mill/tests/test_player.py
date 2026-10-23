@@ -1235,3 +1235,15 @@ async def test_whisper_to_non_mark_asks_nothing():
     await player.whisper("Marta", "Hob is a thief")
     await asyncio.sleep(0.05)
     assert jev.states == [] and worked_on(player) == []
+
+
+@pytest.mark.asyncio
+async def test_whisper_to_an_action_goals_actor_asks_nothing():
+    player, _, _, _, _ = make("Marta", "Hob")
+    jev = NoulJev(0.9)
+    player.engine.jev = jev
+    player.goals = [Goal("g-1", "Get Marta to confront Hob", "action", audience=("v1",), subject="v2", owner=PID,
+                         action="confront", actor="v1", target="v2")]
+    await player.whisper("Marta", "Hob is a thief, don't trust him")
+    await asyncio.sleep(0.05)
+    assert jev.states == [] and worked_on(player) == []

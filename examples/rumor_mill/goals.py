@@ -12,7 +12,7 @@ from examples.rumor_mill.town import Town
 class Goal:
     id: str
     text: str
-    kind: Literal["belief"]
+    kind: Literal["belief", "action"]
     evidence: tuple[str, ...] = ()
     believer_question: str = ""
     target_fraction: float = 0.0
@@ -26,6 +26,14 @@ class Goal:
     owner: str | None = None
     claim_text: str = ""
     long_shot: bool = False
+    # What a villager must do for an action goal: confront, leave_town, found_group, join_group or exodus.
+    action: str | None = None
+    # The villager who must do it, where the goal names one.
+    actor: str | None = None
+    # The subject id, or the group id for join_group.
+    target: str | None = None
+    # How many times the action must happen.
+    count: int = 1
 
 
 MIN_CIRCLE = 3
@@ -52,6 +60,8 @@ def void_reason(goal: Goal, town: Town) -> str | None:
     if gone:
         name = next((v.name for v in town.departed if v.id == gone[0]), "A villager")
         return f"{name} has left town"
+    if goal.action == "join_group" and not any(g.id == goal.target and g.members for g in town.groups):
+        return "That group has broken up"
     if len(goal.audience) > 1 and len(audience_of(goal, town)) < MIN_CIRCLE:
         return f"too few of {goal.audience_label} are left"
     return None
@@ -109,5 +119,6 @@ def trophy_line(trophy: Trophy, claim: str | None, unseen: str | None = None) ->
 
 
 def goal_targets(goal: Goal) -> dict:
-    """What the page needs to mark a goal's targets: its long shot, the villagers it works on and the one it is about."""
-    return {"long_shot": goal.long_shot, "marks": list(goal.audience) if goal.subject else [], "subject": goal.subject}
+    """What the page needs to mark a goal's targets: its long shot, the villagers it works on or who must act, and the one it is about."""
+    marks = list(goal.audience) if goal.subject or goal.actor else []
+    return {"long_shot": goal.long_shot, "marks": marks, "subject": goal.subject}

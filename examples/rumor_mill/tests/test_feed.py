@@ -95,7 +95,7 @@ def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
     feed.on_world(world, (0, 8))
     feed.on_progress(world, 0.5)
     feed.on_met(world)
-    feed.on_deal([Goal("a", "A", "belief"), Goal("b", "B", "state")], player=PID, counts={"a": (0, 6)})
+    feed.on_deal([Goal("a", "A", "belief"), Goal("b", "B", "action")], player=PID, counts={"a": (0, 6)})
     assert [(e.kind, e.player, e.data.get("world")) for e in feed.recent] == [
         ("world_goal", None, None), ("goal", None, True), ("goal", None, True), ("deal", PID, None),
     ]
@@ -334,11 +334,11 @@ def test_goal_void_reaches_only_its_player():
 def test_deal_and_void_carry_each_goals_targets():
     feed, lines = make()
     about = Goal("gen-1", "Hob steals geese", "belief", audience=("v1", "v2"), subject="v2", owner=PID, long_shot=True)
-    feed.on_deal([about, Goal("b", "B", "state")], player=PID, counts={"gen-1": (0, 3)})
+    feed.on_deal([about, Goal("b", "B", "action")], player=PID, counts={"gen-1": (0, 3)})
     a, b = feed.recent[-1].data["goals"]
     assert (a["long_shot"], a["marks"], a["subject"]) == (True, ["v1", "v2"], "v2")
     assert (b["long_shot"], b["marks"], b["subject"]) == (False, [], None)
-    feed.on_goal_void(Goal("old", "Old", "state"), about, "gone", player=PID, counts=(1, 3))
+    feed.on_goal_void(Goal("old", "Old", "action"), about, "gone", player=PID, counts=(1, 3))
     assert feed.recent[-1].data["text"] == feed.recent[-1].line
     new = feed.recent[-1].data["new"]
     assert (new["believers"], new["needed"], new["marks"], new["subject"], new["long_shot"]) == (1, 3, ["v1", "v2"], "v2", True)

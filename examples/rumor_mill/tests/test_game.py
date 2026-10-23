@@ -7,7 +7,7 @@ import pytest
 
 from examples.rumor_mill import engine as engine_mod
 from examples.rumor_mill import game as game_mod
-from examples.rumor_mill.actions import IGNORE, LEAVE_TOWN, MOVE
+from examples.rumor_mill.actions import CONFRONT, FOUND_GROUP, IGNORE, JOIN_GROUP, LEAVE_TOWN, MOVE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
@@ -683,4 +683,37 @@ async def test_a_failed_denial_is_logged(caplog):
         engine.traced(goal, "v1", "w1")
         await wait_for(lambda: "denial" in caplog.text)
     assert not kinds(feed, "denied")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", [CONFRONT, LEAVE_TOWN, FOUND_GROUP, JOIN_GROUP, IGNORE])
+async def test_engine_reports_actions_to_judge(monkeypatch, action):
+    engine, _, _, _ = await start("v1", "v2")
+    engine.lineage.record("u-0", None, PID)
+    reported = []
+    engine.judge = SimpleNamespace(
+        record_action=lambda actor, act, target, player, creed=None: reported.append((actor, act, target, player, creed)),
+    )
+    group = engine.town.found_group("v2", "The Watch", "keep watch")
+    target = {CONFRONT: "v2", JOIN_GROUP: group.id}.get(action)
+
+    async def decide(jev, view):
+        return Decision(action, view.new[0], target, None)
+
+    async def act(decision, villager, *, town, **kw):
+        if action == FOUND_GROUP:
+            town.found_group(villager.id, "The Hob Haters", "Hob cheats")
+
+    monkeypatch.setattr(engine_mod, "decide", decide)
+    monkeypatch.setattr(engine_mod, "act", act)
+    await engine.run()
+    engine.minds["v1"].queue.put_nowait(None)
+    if action == IGNORE:
+        await asyncio.sleep(0.1)
+        assert reported == []
+    else:
+        await wait_for(lambda: reported)
+        creed = "Hob cheats" if action == FOUND_GROUP else None
+        assert reported == [("v1", action, "g-2" if action == FOUND_GROUP else target, PID, creed)]
     await engine.stop()

@@ -67,6 +67,7 @@ async def play(web: bool) -> None:
         )
         players = Players(feed)
         engine.players = players
+        engine.judge = judge
 
         def join(owner: str) -> Player:
             """Start a new run for the owner and deal it goals."""

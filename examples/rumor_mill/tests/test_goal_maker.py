@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from examples.rumor_mill import goal_maker as goal_maker_mod
 from examples.rumor_mill.goals import BANDS, WORLD_FRACTION
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
@@ -20,6 +21,11 @@ FARMERS = [Villager(f"v{i}", f"Farmer{i} Field", "farmer", "calm", "", [], {}) f
 ALE = Pool((Entry("waters down the ale", 3),), (Entry("the well is cursed", 3),))
 NO_CLAIMS = Pool((Entry("waters down the ale", 2), Entry("cheats at dice", 2)), ())
 TAVERN = StubRoutine(work={v.id: "tavern" for v in (AGNES, *FARMERS)})
+
+
+@pytest.fixture
+def claims_only(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", goal_maker_mod.CLAIM_TEMPLATES)
 
 
 def town_of(*villagers):
@@ -67,6 +73,7 @@ PATTERNS = (
 )
 
 
+@pytest.mark.usefixtures("claims_only")
 def test_draw_fills_personal_circle_and_village_templates():
     town = town_of(AGNES, HOB, *FARMERS)
     drawn = [g for seed in range(200) for g in goal_maker(town, ALE, TAVERN, rng=random.Random(seed)).draw("p-1", set(), 1)]
@@ -149,6 +156,7 @@ async def test_taken_accusations_not_offered():
     assert goal.claim_text == "Hob cheats at dice"
 
 
+@pytest.mark.usefixtures("claims_only")
 def test_a_subject_with_every_accusation_taken_is_not_drawn():
     maker = goal_maker(town_of(AGNES, HOB), Pool((Entry("waters down the ale", 2),), ()))
     for _ in range(20):
@@ -156,6 +164,7 @@ def test_a_subject_with_every_accusation_taken_is_not_drawn():
         assert goal.subject == AGNES.id
 
 
+@pytest.mark.usefixtures("claims_only")
 def test_subjects_never_repeat_in_a_hand():
     town = town_of(AGNES, HOB, COB, DOT)
     for seed in range(30):
@@ -198,6 +207,7 @@ def test_a_circle_needs_three_besides_the_subject():
     assert all(len(g.audience) <= 1 for g in drawn)
 
 
+@pytest.mark.usefixtures("claims_only")
 @pytest.mark.asyncio
 async def test_hand_loads_baselines_and_publishes_evidence():
     baselines = LoggingBaselines()
@@ -207,6 +217,7 @@ async def test_hand_loads_baselines_and_publishes_evidence():
     assert maker.overhear.generated_ids() == {g.id for g in dealt}
 
 
+@pytest.mark.usefixtures("claims_only")
 @pytest.mark.asyncio
 async def test_drawn_goals_are_published_when_prepared():
     baselines = LoggingBaselines()
@@ -230,9 +241,69 @@ async def test_generated_ids_unique_across_players():
     assert len(set(ids)) == 6 and all(i.startswith(("gen-p-1-", "gen-p-2-")) for i in ids)
 
 
+@pytest.mark.usefixtures("claims_only")
 def test_a_mark_sharing_a_first_name_is_called_by_full_name():
     town = town_of(AGNES, HOB, Villager("v9", "Agnes Reed", "baker", "kind", "", [], {}))
     drawn = [g for seed in range(50) for g in goal_maker(town, NO_CLAIMS, rng=random.Random(seed)).draw("p-1", set(), 1)]
     labels = {g.audience_label for g in drawn}
     assert labels <= {"Agnes Thatch", "Agnes Reed", "Hob"} and "Agnes Thatch" in labels
     assert all("Agnes " in g.claim_text for g in drawn if g.subject in (AGNES.id, "v9"))
+
+
+ACTION_CASES = (
+    ("confront", r"Get Agnes to confront Hob"),
+    ("leave_town", r"Drive Hob out of town"),
+    ("found_group", r"Get someone to start a group against Hob"),
+    ("join_group", r"Get Agnes to join the Plough Guild"),
+    ("exodus", r"Drive [23] villagers out of town"),
+)
+
+
+@pytest.mark.parametrize(("kind", "pattern"), ACTION_CASES)
+def test_draw_fills_action_templates(monkeypatch, kind, pattern):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", (kind,))
+    town = town_of(AGNES, HOB, COB)
+    group = town.found_group(HOB.id, "The Plough Guild", "fair prices")
+    town.join(COB.id, group.id)
+    (goal,) = goal_maker(town).draw("p-1", set(), 1, subjects={AGNES.id, COB.id})
+    assert re.fullmatch(pattern, goal.text)
+    assert (goal.kind, goal.action, goal.hold_checks, goal.claim_text, goal.evidence) == ("action", kind, 1, "", ())
+    assert goal.long_shot == (kind in ("leave_town", "exodus"))
+    if kind in ("confront", "join_group"):
+        assert (goal.actor, goal.audience, goal.audience_label) == (AGNES.id, (AGNES.id,), "Agnes")
+    else:
+        assert goal.actor is None and goal.audience == ()
+    if kind == "exodus":
+        assert goal.count in (2, 3) and goal.subject is None
+    elif kind == "join_group":
+        assert goal.target == group.id and goal.subject is None
+    else:
+        assert goal.subject == goal.target == HOB.id
+
+
+def test_join_needs_a_group_of_two_and_an_outsider(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("join_group",))
+    town = town_of(AGNES, HOB)
+    town.found_group(HOB.id, "The Plough Guild", "fair prices")
+    assert goal_maker(town).draw("p-1", set(), 1) == []
+
+
+@pytest.mark.asyncio
+async def test_jev_picks_the_actor(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("confront",))
+    jev = ChoosingJev("Cob Smith")
+    (goal,) = await goal_maker(town_of(AGNES, HOB, COB), jev=jev).hand("p-1", set(), 1, subjects={AGNES.id, COB.id})
+    assert goal.text == "Get Cob to confront Hob" and goal.actor == COB.id
+    (state, question), = jev.requests
+    assert state["subject"]["name"] == "Hob Miller" and HOB.id not in question.criteria
+
+
+@pytest.mark.asyncio
+async def test_action_goals_skip_evidence_and_trace(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("confront",))
+    baselines = LoggingBaselines()
+    maker = goal_maker(town_of(AGNES, HOB), baselines=baselines)
+    maker.draw("p-1", set(), 1)
+    await maker.prepare()
+    dealt = await maker.hand("p-1", set(), 1)
+    assert baselines.loaded == [] and maker.overhear.generated_ids() == set() and dealt[0].kind == "action"

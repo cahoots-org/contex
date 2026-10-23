@@ -176,7 +176,7 @@ async def test_ask_resolves_the_name_and_prints_problems_but_not_a_refusal(monke
 @pytest.mark.asyncio
 async def test_swap_runs_the_judge_and_says_its_problem(monkeypatch):
     town, feed, out = village()
-    first, second = Goal("a", "A", "state"), Goal("b", "B", "state")
+    first, second = Goal("a", "A", "action"), Goal("b", "B", "action")
     asked = []
 
     async def swap(player, goal_id):

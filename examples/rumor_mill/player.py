@@ -271,8 +271,8 @@ class Player:
         return None
 
     def _marks_of(self, villager_id: str) -> list[Goal]:
-        """This player's unmet goals about someone that the villager's belief counts toward."""
-        return [g for g in self.goals if g.subject and villager_id in g.audience and g.id not in self.met]
+        """This player's unmet claim goals about someone that the villager's belief counts toward."""
+        return [g for g in self.goals if g.claim_text and g.subject and villager_id in g.audience and g.id not in self.met]
 
     async def _worked_on(self, target: Villager, text: str, goals: list[Goal]) -> None:
         """Raise the mark's suspicion once if the whisper plainly tries to turn them against a goal's subject."""

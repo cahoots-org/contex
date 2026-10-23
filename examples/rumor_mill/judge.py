@@ -7,11 +7,12 @@ from collections import Counter
 
 from typesafe_sdk import Noul
 
+from examples.rumor_mill.actions import CONFRONT, FOUND_GROUP, JOIN_GROUP, LEAVE_TOWN
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goal_maker import GoalMaker
+from examples.rumor_mill.goal_maker import GoalMaker, names
 from examples.rumor_mill.goals import (
     Goal, Trophy, audience_of, claim, goal_counts, needed, trophy_line, void_reason,
 )
@@ -80,6 +81,9 @@ class Judge:
         self._dealing: dict[str, asyncio.Task] = {}
         # The ids of players waiting on a swapped-in goal.
         self._swapping: set[str] = set()
+        # By action goal id, how many times its action has happened with its owner behind it.
+        self._acted: dict[str, int] = {}
+        self._preparing: set[asyncio.Task] = set()
 
     async def _believes(
         self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],
@@ -156,8 +160,35 @@ class Judge:
             and self.engine.suspicion.score(vid, goal.owner) >= self.config.warn_threshold
         )
 
+    def record_action(
+        self, actor: str, action: str, target: str | None, player: str | None, creed: str | None = None,
+    ) -> None:
+        """Count a villager's action toward each matching unmet action goal of the player whose rumor is behind it."""
+        holder = next((p for p in self._players or () if p.id == player), None)
+        if holder is None:
+            return
+        for goal in holder.goals:
+            if goal.kind == "action" and goal.id not in holder.met and self._matches(goal, actor, action, target, creed):
+                self._acted[goal.id] = self._acted.get(goal.id, 0) + 1
+
+    def _matches(self, goal: Goal, actor: str, action: str, target: str | None, creed: str | None) -> bool:
+        """Whether the action is the goal's, by the villagers and group it names."""
+        if goal.action == "exodus":
+            return action == LEAVE_TOWN
+        if goal.action != action:
+            return False
+        if action == CONFRONT:
+            return actor == goal.actor and target == goal.subject
+        if action == LEAVE_TOWN:
+            return actor == goal.subject
+        if action == FOUND_GROUP:
+            return bool(creed) and goal.subject in self.town and names(self.town.get(goal.subject), creed)
+        return action == JOIN_GROUP and actor == goal.actor and target == goal.target
+
     async def check(self, goal: Goal) -> float:
-        """Progress toward the goal, from 0 to 1."""
+        """Progress toward the goal, from 0 to 1; an action goal's is what has been recorded of it."""
+        if goal.kind == "action":
+            return min(1.0, self._acted.get(goal.id, 0) / goal.count)
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         roots: dict[str, str | None] = {}
         doubters: dict[str, Match | None] = {}
@@ -187,8 +218,14 @@ class Judge:
         return {c.lower() for g in (*others, *extra, self.world) if (c := claim(g))}
 
     def deal(self, player: Player) -> None:
-        """Give the player a hand drawn at once, with no claim another player or the world goal holds."""
+        """Give the player a hand drawn at once, with no claim another player or the world goal holds.
+
+        Its evidence is published in the background.
+        """
         self._hand_to(player, self.maker.draw(player.id, self._taken(player)))
+        task = asyncio.create_task(self.maker.prepare())
+        self._preparing.add(task)
+        task.add_done_callback(self._preparing.discard)
 
     async def redeal(self, player: Player) -> None:
         """Give the player a new hand filled for them by Jev.
@@ -248,7 +285,7 @@ class Judge:
         """Swap each of the player's unmet goals that can no longer be met for a new one, and tell the player."""
         for i, old in enumerate(player.goals):
             reason = void_reason(old, self.town)
-            if reason is None or old.id in player.met:
+            if reason is None or old.id in player.met or self._acted.get(old.id, 0) >= old.count:
                 continue
             subjects = {g.subject for g in player.goals if g is not old and g.subject}
             found = self.maker.draw(player.id, self._taken(player, *player.goals), 1, subjects)
@@ -382,7 +419,7 @@ class Judge:
     def _forget(self, in_play: list[Goal], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
         ids = {g.id for g in in_play}
-        for known in (self.progress, self.counts, self.roots, self.doubt, holds):
+        for known in (self.progress, self.counts, self.roots, self.doubt, self._acted, holds):
             for gid in known.keys() - ids:
                 del known[gid]
         questions = {g.believer_question for g in in_play}

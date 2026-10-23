@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from examples.rumor_mill import goal_maker as goal_maker_mod
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
@@ -331,15 +332,17 @@ async def test_a_belief_goal_counts_against_the_village_before_its_first_check()
     assert judge.counts_of(BELIEF) == (1, 2)
 
 
-def test_a_deal_sends_counts_for_its_belief_goals_only():
+@pytest.mark.asyncio
+async def test_a_deal_sends_counts_for_its_belief_goals_only():
     judge, _, _, feed, _ = make(n=4)
     p = SimpleNamespace(id=PID, goals=[], met=set())
     judge.deal(p)
     assert len(p.goals) == 3
-    assert feed.deal_counts == {g.id: (0, needed(g, len(g.audience) or 4)) for g in p.goals}
+    assert feed.deal_counts == {g.id: (0, needed(g, len(g.audience) or 4)) for g in p.goals if g.kind == "belief"}
 
 
-def test_an_empty_town_sends_no_counts_rather_than_none_of_none():
+@pytest.mark.asyncio
+async def test_an_empty_town_sends_no_counts_rather_than_none_of_none():
     judge, _, _, feed, _ = make(n=0)
     assert judge.counts_of(BELIEF) is None
     judge.deal(SimpleNamespace(id=PID, goals=[], met=set()))
@@ -423,7 +426,8 @@ def test_the_next_world_goal_is_a_claim_no_player_holds():
     assert nxt.claim_text == claims[2] and nxt.id.startswith("world-") and nxt.id != "world-0"
 
 
-def test_deal_leaves_out_the_claims_in_play():
+@pytest.mark.asyncio
+async def test_deal_leaves_out_the_claims_in_play():
     judge, *_ = make()
     judge.world = world_goal(Goal("w", "w", "belief", ("the well is cursed",), claim_text="the well is cursed"))
     judge.maker.pool = Pool((Entry("waters down the ale", 2),), (Entry("the well is cursed", 2), Entry("a dragon", 2)))
@@ -988,7 +992,7 @@ async def test_swap_draws_any_template():
 
 @pytest.mark.asyncio
 async def test_swap_with_nothing_left_to_draw_keeps_the_goal():
-    judge, _, _, feed, _ = make(n=1)
+    judge, _, _, feed, _ = make(n=0)
     judge.maker.pool = Pool((), ())
     old = generated("gen-old", "personal")
     mine = holder(PID, old)
@@ -1059,3 +1063,112 @@ async def test_a_swap_in_flight_keeps_its_new_evidence_from_the_sweep():
     judge._swapping.add(PID)
     judge._forget([BELIEF], {})
     assert dropped == []
+
+
+def action_goal(action, actor=None, subject=None, target=None, count=1):
+    return Goal(
+        f"a-{action}", "act", "action", hold_checks=1, audience=(actor,) if actor else (), subject=subject,
+        owner=PID, action=action, actor=actor, target=target, count=count,
+    )
+
+
+def acting(*goals, n=4):
+    judge, contex, _, feed, town = make(n=n)
+    mine = holder(PID, *goals)
+    judge._players = players(mine)
+    return judge, contex, feed, town, mine
+
+
+@pytest.mark.asyncio
+async def test_confront_met_when_actor_confronts_subject_from_player_rumor():
+    goal = action_goal("confront", "v0", "v1", "v1")
+    judge, contex, feed, _, mine = acting(goal)
+    judge.record_action("v2", "confront", "v1", PID)
+    judge.record_action("v0", "confront", "v3", PID)
+    judge.record_action("v0", "confront", "v1", "p-other")
+    assert await judge.check(goal) == 0.0
+    judge.record_action("v0", "confront", "v1", PID)
+    assert await judge.check(goal) == 1.0 and contex.thresholds == []
+    await run_until(judge, players(mine), lambda: feed.met)
+    assert feed.met[0] == (goal.id, PID)
+
+
+@pytest.mark.asyncio
+async def test_unattributed_action_meets_nothing():
+    goal = action_goal("leave_town", subject="v1", target="v1")
+    judge, *_ = acting(goal)
+    judge.record_action("v1", "leave_town", None, None)
+    assert await judge.check(goal) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_drive_out_met_not_voided_when_subject_leaves():
+    goal = action_goal("leave_town", subject="v1", target="v1")
+    judge, _, feed, town, mine = acting(goal, QUIET)
+    feed.voids = []
+    feed.on_goal_void = lambda old, new, reason, player, counts=None: feed.voids.append(old.id)
+    town.remove("v1")
+    judge.record_action("v1", "leave_town", None, PID)
+    await run_until(judge, players(mine), lambda: feed.met)
+    assert feed.met[0] == (goal.id, PID) and feed.voids == []
+
+
+@pytest.mark.asyncio
+async def test_found_group_met_when_creed_names_subject():
+    judge, _, _, town, _ = acting()
+    town.add(Villager("v9", "Hob Miller", "miller", "gruff", "", [], {}))
+    goal = action_goal("found_group", subject="v9", target="v9")
+    judge._players = players(holder(PID, goal))
+    judge.record_action("v0", "found_group", "g-1", PID, creed="The Hobson family must answer")
+    assert await judge.check(goal) == 0.0
+    judge.record_action("v0", "found_group", "g-2", PID, creed="Hob has cheated us all")
+    assert await judge.check(goal) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_join_group_met():
+    judge, _, _, town, _ = acting()
+    group = town.found_group("v1", "The Watch", "keep watch")
+    town.join("v2", group.id)
+    goal = action_goal("join_group", "v0", target=group.id)
+    judge._players = players(holder(PID, goal))
+    assert void_reason(goal, town) is None
+    judge.record_action("v0", "join_group", "g-other", PID)
+    assert await judge.check(goal) == 0.0
+    judge.record_action("v0", "join_group", group.id, PID)
+    assert await judge.check(goal) == 1.0
+    town.leave("v1", group.id)
+    town.leave("v2", group.id)
+    assert void_reason(action_goal("join_group", "v3", target=group.id), town) == "That group has broken up"
+    town.remove("v3")
+    assert void_reason(action_goal("join_group", "v3", target=group.id), town) == "Vi Name3 has left town"
+
+
+@pytest.mark.asyncio
+async def test_exodus_counts_to_n():
+    goal = action_goal("exodus", count=2)
+    judge, *_ = acting(goal)
+    judge.record_action("v1", "leave_town", None, PID)
+    assert await judge.check(goal) == 0.5
+    judge.record_action("v2", "leave_town", None, PID)
+    judge.record_action("v3", "leave_town", None, PID)
+    assert await judge.check(goal) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_action_goals_skip_trace():
+    goal = action_goal("confront", "v0", "v1", "v1")
+    judge, contex, *_ = acting(goal)
+    judge.engine = SimpleNamespace(traced=lambda *a: pytest.fail("traced"))
+    judge.lineage = Lineage()
+    await judge.check(goal)
+    assert contex.thresholds == []
+
+
+@pytest.mark.asyncio
+async def test_deal_publishes_the_first_hand_promptly(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("village",))
+    judge, *_ = make()
+    p = holder(PID)
+    judge.deal(p)
+    await wait_for(lambda: judge.maker.overhear.generated_ids() == {g.id for g in p.goals})

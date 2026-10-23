@@ -14,7 +14,7 @@ from examples.rumor_mill.decide import MAX_OPTIONS
 from examples.rumor_mill.game import PHASES
 from examples.rumor_mill.goals import BANDS, MIN_CIRCLE, Goal, world_goal
 from examples.rumor_mill.lineage import Ids
-from examples.rumor_mill.models import Villager
+from examples.rumor_mill.models import Group, Villager
 from examples.rumor_mill.pool import Entry, Pool
 from examples.rumor_mill.routine import ROUTINE_PLACES
 from examples.rumor_mill.town import START_PLACE, Town
@@ -23,7 +23,13 @@ from examples.rumor_mill.usage import charging
 log = logging.getLogger(__name__)
 
 HAND = 3
-TEMPLATES = ("personal", "circle", "village")
+CLAIM_TEMPLATES = ("personal", "circle", "village")
+ACTION_TEMPLATES = ("confront", "leave_town", "found_group", "join_group", "exodus")
+TEMPLATES = CLAIM_TEMPLATES + ACTION_TEMPLATES
+EXODUS_SIZES = (2, 3)
+LONG_SHOT_ACTIONS = ("leave_town", "exodus")
+# Action templates filled by a subject alone.
+SUBJECT_ONLY = ("leave_town", "found_group")
 # How much likelier a villager named in another's grudge, or holding a rival tie, is to be a goal's subject.
 GRUDGE_WEIGHT = 3
 REGULAR_PLACES = tuple(p for p in ROUTINE_PLACES if p != START_PLACE)
@@ -35,13 +41,15 @@ ACCUSATION_INSTRUCTIONS = (
 )
 MARK_INSTRUCTIONS = "Which villager has the most reason to believe this rumor of the subject?"
 CIRCLE_INSTRUCTIONS = "Which circle of villagers would care most about this rumor of the subject?"
+CONFRONT_INSTRUCTIONS = "Which villager would most plausibly confront the subject?"
+JOIN_INSTRUCTIONS = "Which villager would most plausibly join this group?"
 
 
 def _first(villager: Villager) -> str:
     return villager.name.split()[0]
 
 
-def _names(villager: Villager, text: str) -> bool:
+def names(villager: Villager, text: str) -> bool:
     """Whether text names the villager by first name, as a whole word."""
     return re.search(rf"\b{re.escape(_first(villager))}\b", text, re.IGNORECASE) is not None
 
@@ -65,14 +73,19 @@ class Audience:
 
 @dataclass(frozen=True)
 class Slot:
-    """One goal's template and the options for its blanks, with the ones picked."""
+    """One goal's template and the options for its blanks, with the ones picked.
+
+    For an action template the audiences are the candidate actors.
+    """
 
     kind: str
-    entries: tuple[Entry, ...]
-    entry: Entry
+    entries: tuple[Entry, ...] = ()
+    entry: Entry | None = None
     subject: Villager | None = None
     audiences: tuple[Audience, ...] = ()
     audience: Audience | None = None
+    group: Group | None = None
+    count: int = 1
 
 
 class GoalMaker:
@@ -125,7 +138,7 @@ class GoalMaker:
 
     async def _ready(self, goals: list[Goal]) -> None:
         try:
-            await self.baselines.load([g.claim_text for g in goals], persist=False)
+            await self.baselines.load([g.claim_text for g in goals if g.claim_text], persist=False)
             await self.overhear.publish(goals)
         except Exception:
             log.warning("readying goals failed; retrying on the next check", exc_info=True)
@@ -141,7 +154,8 @@ class GoalMaker:
                 break
             slot = self.rng.choice(fillable)
             slots.append(slot)
-            taken.add(self._claim(slot).lower())
+            if slot.entry:
+                taken.add(self._claim(slot).lower())
             if slot.subject:
                 subjects.add(slot.subject.id)
         return slots
@@ -152,27 +166,54 @@ class GoalMaker:
             claims = tuple(e for e in self.pool.claims if e.text.lower() not in taken)
             return Slot(kind, claims, self.rng.choice(claims)) if claims else None
         villagers = self.town.villagers
+        if kind == "exodus":
+            n = self.rng.choice(EXODUS_SIZES)
+            return Slot(kind, count=n) if len(villagers) >= n else None
+        if kind == "join_group":
+            return self._join(villagers)
         circles = self._circles() if kind == "circle" else []
         candidates = []
         for v in villagers:
             if v.id in subjects:
                 continue
-            entries = tuple(e for e in self.pool.accusations if f"{self._call(v)} {e.text}".lower() not in taken)
-            audiences = self._marks(v) if kind == "personal" else self._without(v, circles)
-            if entries and audiences:
+            entries: tuple[Entry, ...] = ()
+            audiences: tuple[Audience, ...] = ()
+            if kind in CLAIM_TEMPLATES:
+                entries = tuple(e for e in self.pool.accusations if f"{self._call(v)} {e.text}".lower() not in taken)
+                audiences = self._marks(v) if kind == "personal" else self._without(v, circles)
+                if not entries:
+                    continue
+            elif kind == "confront":
+                audiences = self._marks(v)
+            if audiences or kind in SUBJECT_ONLY:
                 candidates.append((v, entries, audiences))
         if not candidates:
             return None
         targets = self._targets(villagers)
         weights = [GRUDGE_WEIGHT if v.id in targets else 1 for v, _, _ in candidates]
         v, entries, audiences = self.rng.choices(candidates, weights=weights)[0]
-        return Slot(kind, entries, self.rng.choice(entries), v, audiences, self.rng.choice(audiences))
+        entry = self.rng.choice(entries) if entries else None
+        return Slot(kind, entries, entry, v, audiences, self.rng.choice(audiences) if audiences else None)
+
+    def _join(self, villagers: list[Villager]) -> Slot | None:
+        """A join slot: a group of two or more in town, with those outside it as candidate actors."""
+        options = []
+        for g in self.town.groups:
+            outside = tuple(
+                Audience(v.id, self._call(v), (v.id,), self._sketch(v)) for v in villagers if v.id not in g.members
+            )
+            if len(g.members) >= 2 and outside:
+                options.append((g, outside))
+        if not options:
+            return None
+        group, outside = self.rng.choice(options)
+        return Slot("join_group", audiences=outside, audience=self.rng.choice(outside), group=group)
 
     def _targets(self, villagers: list[Villager]) -> set[str]:
         """The villagers named in another's grudge or holding a rival tie."""
         return {
             v.id for v in villagers
-            if "rival" in v.relationships.values() or any(o.id != v.id and _names(v, o.grudge) for o in villagers)
+            if "rival" in v.relationships.values() or any(o.id != v.id and names(v, o.grudge) for o in villagers)
         }
 
     def _marks(self, subject: Villager) -> tuple[Audience, ...]:
@@ -204,11 +245,11 @@ class GoalMaker:
     def _call(self, v: Villager) -> str:
         return _called(v, self.town)
 
-    def _sketch(self, v: Villager, subject: Villager) -> str:
+    def _sketch(self, v: Villager, subject: Villager | None = None) -> str:
         line = f"{v.name}, {v.occupation}, {v.personality}"
         if v.grudge:
             line += f". Grudge: {v.grudge}"
-        if tie := v.relationships.get(subject.id):
+        if subject and (tie := v.relationships.get(subject.id)):
             line += f". The subject's {tie}"
         return line
 
@@ -216,20 +257,28 @@ class GoalMaker:
         return f"{self._call(slot.subject)} {slot.entry.text}" if slot.subject else slot.entry.text
 
     async def _refine(self, slot: Slot) -> Slot:
-        """The slot with Jev's accusation and then its mark or circle; a pick Jev fails keeps the uniform one."""
-        if self.jev is None or slot.subject is None:
+        """The slot with Jev's accusation and then its mark, circle or actor; a pick Jev fails keeps the uniform one."""
+        if self.jev is None or not slot.audiences:
             return slot
+        if slot.group:
+            group = {"name": slot.group.name, "creed": slot.group.creed}
+            return await self._pick(slot, JOIN_INSTRUCTIONS, {"group": group})
         subject = slot.subject
         state = {"subject": {
             "name": subject.name, "occupation": subject.occupation, "personality": subject.personality,
             "grudge": subject.grudge,
-            "held_against_them": [v.grudge for v in self.town.villagers if v.id != subject.id and _names(subject, v.grudge)],
+            "held_against_them": [v.grudge for v in self.town.villagers if v.id != subject.id and names(subject, v.grudge)],
         }}
+        if slot.kind == "confront":
+            return await self._pick(slot, CONFRONT_INSTRUCTIONS, state)
         entries = {str(i): e.text for i, e in enumerate(slot.entries)}
         if (key := await self._choose(ACCUSATION_INSTRUCTIONS, state, entries)) is not None:
             slot = replace(slot, entry=slot.entries[int(key)])
         state["rumor"] = self._claim(slot)
-        instructions = MARK_INSTRUCTIONS if slot.kind == "personal" else CIRCLE_INSTRUCTIONS
+        return await self._pick(slot, MARK_INSTRUCTIONS if slot.kind == "personal" else CIRCLE_INSTRUCTIONS, state)
+
+    async def _pick(self, slot: Slot, instructions: str, state: dict) -> Slot:
+        """The slot with Jev's pick of its audiences."""
         if (key := await self._choose(instructions, state, {a.id: a.about for a in slot.audiences})) is not None:
             slot = replace(slot, audience=next(a for a in slot.audiences if a.id == key))
         return slot
@@ -252,6 +301,8 @@ class GoalMaker:
 
     def _goal(self, slot: Slot, owner: str | None, id: str) -> Goal:
         """The slot's goal, with its bar from its entry's believability band."""
+        if slot.kind in ACTION_TEMPLATES:
+            return self._action_goal(slot, owner, id)
         claim = self._claim(slot)
         fraction, word = BANDS[slot.entry.band]
         goal = Goal(
@@ -266,3 +317,26 @@ class GoalMaker:
         if slot.kind == "personal":
             return replace(goal, text=f"Convince {audience.label} that {claim}")
         return replace(goal, text=f"Get {word.lower()} of {audience.label} to believe {claim}", target_fraction=fraction)
+
+    def _action_goal(self, slot: Slot, owner: str | None, id: str) -> Goal:
+        """The slot's action goal, with its actor as its audience when it names one."""
+        goal = Goal(
+            id=id, text="", kind="action", hold_checks=1, owner=owner, long_shot=slot.kind in LONG_SHOT_ACTIONS,
+            action=slot.kind, count=slot.count,
+        )
+        if slot.audience:
+            actor = slot.audience
+            goal = replace(goal, actor=actor.id, audience=actor.members, audience_label=actor.label)
+        if slot.subject:
+            goal = replace(goal, subject=slot.subject.id, target=slot.subject.id)
+            subject = self._call(slot.subject)
+        if slot.kind == "confront":
+            return replace(goal, text=f"Get {goal.audience_label} to confront {subject}")
+        if slot.kind == "leave_town":
+            return replace(goal, text=f"Drive {subject} out of town")
+        if slot.kind == "found_group":
+            return replace(goal, text=f"Get someone to start a group against {subject}")
+        if slot.kind == "join_group":
+            group = THE.sub("", slot.group.name)
+            return replace(goal, text=f"Get {goal.audience_label} to join the {group}", target=slot.group.id)
+        return replace(goal, text=f"Drive {slot.count} villagers out of town")
