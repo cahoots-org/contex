@@ -76,7 +76,7 @@ class Player:
         self._listen_until: float | None = None
         self._hinted: dict[str, set[int]] = {}
         self._threads: dict[str, dict] = {}
-        # Per villager, a landed whisper in an exchange that they have not acted on yet, and its rumor.
+        # Per villager, the last whisper that landed with them and its rumor; it holds while they have not acted on it.
         self._held: dict[str, tuple[str, str]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
@@ -183,13 +183,14 @@ class Player:
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=self.id)
         thread = self._thread(target.id)
-        hint_need = thread["need"] if thread and (target.id, self.id) not in self.engine.conversations else None
+        hint_need = None
+        if thread and (target.id, self.id) not in self.engine.conversations:
+            hint_need = thread["need"]
+        rumors = self.engine.rumors
         exchange = self._exchange(target.id)
-        rumor = self.engine.rumors.rumor_of(self.id, text, exchange) if self.engine.rumors is not None else exchange
-        utterance = Utterance(
-            uid, NEWCOMER, "A newcomer", self.town.place_of(target.id), text, None, "whispered to you",
-            conversation=rumor,
-        )
+        rumor = rumors.rumor_of(self.id, text, exchange) if rumors is not None else exchange
+        place = self.town.place_of(target.id)
+        utterance = Utterance(uid, NEWCOMER, "A newcomer", place, text, None, "whispered to you", conversation=rumor)
         self.engine.facts.record(utterance)
         published_at = datetime.now(UTC)
         since = (published_at - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
@@ -224,8 +225,7 @@ class Player:
             hit = Match(f"utt:{uid}", utterance.to_data(), familiar[0].similarity, clearance=0.0) if familiar else None
         if hit:
             self._threads.pop(target.id, None)
-            if exchange is not None:
-                self._held[target.id] = (uid, rumor)
+            self._held[target.id] = (uid, rumor or uid)
             if not self.engine.hear_directly(target.id, hit):
                 return None
             until = self.engine.cooldown_ends(target.id)
@@ -315,13 +315,19 @@ class Player:
 
     def _exchange(self, villager_id: str) -> str | None:
         """The rumor of the player's open exchange with the villager: their conversation, a missed whisper's thread, or
-        a landed reply the villager has not acted on yet."""
+        a landed whisper the villager has not acted on yet."""
         if conversation := self.engine.conversations.get((villager_id, self.id)):
             return conversation["id"]
         if thread := self._thread(villager_id):
             return thread["id"]
-        uid, rumor = self._held.get(villager_id, (None, None))
-        return rumor if any(wid == uid for wid, _ in self.feed.listening(villager_id)) else None
+        held = self._held.get(villager_id)
+        if held is None:
+            return None
+        uid, rumor = held
+        for wid, _ in self.feed.listening(villager_id):
+            if wid == uid:
+                return rumor
+        return None
 
     def _thread(self, villager_id: str) -> dict | None:
         """The villager's open thread, dropped once the day has moved on to its next part."""

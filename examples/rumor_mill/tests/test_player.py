@@ -1064,3 +1064,20 @@ async def test_a_reply_while_a_landed_reply_awaits_the_villager_stays_in_the_rum
     await player.whisper_to("v1", "for a fair price")
     assert conversations(player) == [None, "w-1", "w-1"]
     player.close()
+
+
+@pytest.mark.asyncio
+async def test_new_wording_while_the_villager_holds_your_first_whisper_continues_it():
+    player, engine = telling("Marta")
+    player.town.get("v1").needs.append("bread")
+    engine.contex = StubContex({"bread": landing(0.8)})
+    await player.whisper("Marta", "the oven is cold")
+    first = player.game.memory_since()
+    assert statuses(player)[-1]["state"] == "heard"
+    engine.contex = StubContex()
+    await asyncio.sleep(0.01)
+    await player.whisper("Marta", "and the baker is gone")
+    assert conversations(player) == [None, "w-1"]
+    assert card_uids(engine) == ["w-1"] and player.game.memory_since() == first
+    player.close()
+
