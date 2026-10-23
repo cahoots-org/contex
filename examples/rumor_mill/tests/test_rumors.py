@@ -394,3 +394,33 @@ async def test_first_is_true_once_per_card():
     await rumors.add("w-2", "reply", AT, "v1", "Marta", conversation="w-1", player=PID)
     assert rumors.first("w-1", "size:5") and not rumors.first("w-2", "size:5")
     assert rumors.first("w-2", "size:10") and not rumors.first("u-unknown", "size:5")
+
+
+@pytest.mark.asyncio
+async def test_a_reply_to_a_reply_shows_on_the_first_whispers_card():
+    rumors, _ = await make()
+    await rumors.add("w-2", "and the baker too", AT, "v1", "Marta", conversation="w-1", player=PID)
+    await rumors.add("w-3", "the baker most of all", AT, "v1", "Marta", conversation="w-2", player=PID)
+    assert rumors.card("w-3").uid == "w-1"
+    assert [c["uid"] for c in rumors.cards(PID)] == ["w-1"]
+
+
+@pytest.mark.asyncio
+async def test_the_same_wording_belongs_to_the_players_own_rumor():
+    rumors, _ = await make()
+    assert rumors.rumor_of(PID, "  The Miller   waters his flour!! ") == "w-1"
+    assert rumors.rumor_of(PID, "the miller waters his bread") is None
+    assert rumors.rumor_of("p-b", "the miller waters his flour") is None
+    assert rumors.rumor_of(PID, "something else entirely", "w-1") == "w-1"
+
+
+@pytest.mark.asyncio
+async def test_the_same_wording_to_another_villager_joins_the_first_card():
+    rumors, _ = await make()
+    await rumors.add("w-2", "the miller waters his flour", AT, "v2", "Bert", conversation="w-1", player=PID)
+    rumors.record("w-1", hop("u-1"), {"v3": "Cora"}, True)
+    rumors.record("w-2", Utterance("u-2", "v2", "Bert", "mill", "the miller waters his flour", "w-2"), {"v4": "Dot"}, True)
+    card, = rumors.cards(PID)
+    assert card["uid"] == "w-1" and card["heard"] == 4
+    assert {"v1", "v2", "v3", "v4"} == set(card["touched"])
+    assert [h["uid"] for h in rumors.card("w-2").hops] == ["u-1", "u-2"]

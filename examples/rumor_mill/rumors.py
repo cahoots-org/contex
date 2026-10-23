@@ -74,6 +74,11 @@ def _entry(name: str, state: str, **extra) -> dict:
             "depth": 0, **extra}
 
 
+def _wording(text: str) -> str:
+    """Text with case, spacing and trailing punctuation set aside."""
+    return " ".join(text.casefold().split()).rstrip(".!?,;:… ")
+
+
 def _who(names: list[str]) -> str:
     if len(names) == 1:
         return names[0]
@@ -97,14 +102,16 @@ class Rumors:
     ) -> None:
         """Start the whisper's card and its baseline measurement, publish its words, and note the goals they serve.
 
-        A reply in a conversation is shown on the conversation's card instead of its own. Failures are logged.
+        A whisper that belongs to a rumor already told (conversation) is shown on that rumor's card instead of its own.
+        Failures are logged.
         """
+        shown = self.card(conversation) if conversation else None
         card = self._cards[whisper_uid] = Card(
             whisper_uid, text, target_id, target_name, published_at, player, place=place,
         )
-        if conversation in self._cards:
-            card.part_of = conversation
-        card.heard.add(target_id)
+        if shown is not None:
+            card.part_of = shown.uid
+        (shown or card).heard.add(target_id)
         await self._start(card)
         if card.part_of is None and self.overhear is not None:
             card.claims = await self.overhear.claims(text)
@@ -221,6 +228,20 @@ class Rumors:
         mark = {"id": scene.id, "tone": "argument" if scene.heated else "conversation", "place": scene.place}
         for vid in sorted(scene.participants):
             card.frontier.setdefault(vid, _entry(names.get(vid, vid), "heard"))["scene"] = mark
+
+    def rumor_of(self, player: str, text: str, conversation: str | None = None) -> str | None:
+        """The rumor a new whisper belongs to: its conversation's, else the player's own told in the same wording.
+
+        None when it is a new rumor.
+        """
+        if conversation is not None:
+            card = self.card(conversation)
+            return card.uid if card else conversation
+        wording = _wording(text)
+        return next((
+            c.uid for c in self._cards.values()
+            if c.player == player and c.part_of is None and not c.topic_only and _wording(c.text) == wording
+        ), None)
 
     def card(self, uid: str) -> Card | None:
         """The card that shows uid's whisper."""
