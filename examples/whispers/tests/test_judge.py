@@ -74,7 +74,7 @@ class Lines:
         self.doubts: list[tuple[str | None, dict | None]] = []
         self.swaps: list[tuple[str, str, str]] = []
 
-    def on_progress(self, goal, fraction, counts=None, player=None, rumor=None, doubt=None):
+    def on_progress(self, goal, fraction, counts=None, player=None, rumor=None, doubt=None, standing=None):
         self.progress.append((goal.id, fraction, player))
         self.rumors.append((player, rumor))
         self.doubts.append((player, doubt))
@@ -1291,3 +1291,16 @@ async def test_judge_gives_no_taken_word_for_a_rumor_heard_second_hand():
     await judge.check(BELIEF)
     words = sorted(c[0].get("how taken they were with the newcomer's story") or "" for c in jev.calls)
     assert words == ["", "eager"]
+
+
+def test_action_goals_say_where_they_stand_in_words():
+    drive = action_goal("leave_town", subject="v1", target="v1")
+    exodus = action_goal("exodus", count=3)
+    confront = action_goal("confront", "v0", "v1", "v1")
+    judge, *_ = acting(drive, exodus, confront)
+    judge.engine = SimpleNamespace(pressure=SimpleNamespace(words=lambda vid: "shaken"))
+    judge.record_action("v2", "leave_town", None, PID)
+    assert judge.standing(drive) == "Vi is shaken"
+    assert judge.standing(exodus) == "1 of 3 gone"
+    assert judge.standing(confront) == "Not yet"
+    assert judge.standing(Goal("b", "A third believes it", "belief")) is None

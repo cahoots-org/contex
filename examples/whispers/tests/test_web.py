@@ -78,7 +78,7 @@ def game(monkeypatch):
         return player
 
     judge = SimpleNamespace(progress={"cat": 0.42, WORLD.id: 0.1}, counts={"cat": (5, 12)}, world=WORLD, roots={},
-        doubt={},
+        doubt={}, standing=lambda goal: "Not yet" if goal.kind == "action" else None,
     )
     usage = Usage(Config())
     rumors = Rumors(helpers.StubContex(), helpers.StubBaselines(0.5), config)
@@ -108,10 +108,11 @@ def test_state_lists_goals_villagers_and_replay(game):
     game.feed.say("hello")
     state = game.client.get("/api/state").json()
     assert state["goals"] == [{"id": "cat", "text": GOAL.text, "percent": 42, "met": False, "believers": 5, "needed": 12,
-                              "doubt": None, "long_shot": False, "marks": [], "subject": None}]
+                              "doubt": None, "standing": None, "long_shot": False, "marks": [], "subject": None,
+                              "action": False}]
     assert state["world_goal"] == {
         "id": WORLD.id, "text": WORLD.text, "percent": 10, "met": False, "believers": 0, "needed": 2,
-        "doubt": None, "long_shot": False, "marks": [], "subject": None,
+        "doubt": None, "standing": None, "long_shot": False, "marks": [], "subject": None, "action": False,
     }
     assert [v["name"] for v in state["villagers"]] == ["Bert Cole", "Marta Hale"]
     assert state["places"] == list(PLACES) and state["boot"]
@@ -185,7 +186,7 @@ def test_goals_are_cards_and_the_header_has_one_status(game):
 
 def test_progress_with_unchanged_words_adds_no_feed_line(game):
     html = game.client.get("/").text
-    assert "goalProgress(was) === goalProgress(e) ? null : progressed(e)" in html
+    assert "goalProgress(was) === goalProgress(now) ? null : progressed(e)" in html
     assert "goalOf(e)" in html and "needed: null }" not in html
 
 
@@ -200,6 +201,11 @@ def test_doubt_goes_out_only_for_the_players_own_goals_and_the_world_goal(game):
     assert state["goals"][0]["doubt"] == {"count": 3, "saying": "the cat is odd"}
     assert state["world_goal"]["doubt"] == {"count": 1, "saying": "the well is poisoned"}
     assert "SECRET DOG TALK" not in json.dumps(state)
+
+
+def test_page_says_where_an_action_goal_stands_instead_of_a_percent(game):
+    html = game.client.get("/").text
+    assert 'g.standing || "Not yet"' in html and "bar standing" in html
 
 
 def test_page_has_the_walk_listen_and_ask_controls(game):

@@ -25,5 +25,5 @@ def test_trophy_json_carries_long_shot():
 def test_an_action_goals_actor_is_its_mark():
     join = Goal("j", "Get Agnes to join the Watch", "action", audience=("v1",), action="join_group", actor="v1", target="g-1")
     confront = Goal("c", "Get Agnes to confront Hob", "action", audience=("v1",), subject="v2", action="confront", actor="v1")
-    assert goal_targets(join) == {"long_shot": False, "marks": ["v1"], "subject": None}
+    assert goal_targets(join) == {"long_shot": False, "marks": ["v1"], "subject": None, "action": True}
     assert goal_targets(confront)["marks"] == ["v1"] and goal_targets(confront)["subject"] == "v2"

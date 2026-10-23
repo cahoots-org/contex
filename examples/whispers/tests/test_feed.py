@@ -107,8 +107,8 @@ def test_world_goal_events_reach_everyone_and_a_deal_only_its_player():
     ]
     assert feed.recent[2].data["line"] == "The whole village now holds that the cat is a spy."
     assert feed.recent[-1].data["goals"] == [
-        {"id": "a", "text": "A", "believers": 0, "needed": 6, "long_shot": False, "marks": [], "subject": None},
-            {"id": "b", "text": "B", "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None},
+        {"id": "a", "text": "A", "believers": 0, "needed": 6, "long_shot": False, "marks": [], "subject": None, "action": False},
+            {"id": "b", "text": "B", "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None, "action": True},
     ]
     assert (feed.recent[0].data["believers"], feed.recent[0].data["needed"]) == (0, 8)
 
@@ -327,7 +327,7 @@ def test_goal_void_reaches_only_its_player():
     assert (event.kind, event.player) == ("goal_void", PID)
     assert event.line == '"Marta believes it" is off: Marta has left town. New goal: "Half of the village believes it"'
     assert event.data["goal_id"] == "o" and event.data["new"] == {
-        "id": "n", "text": new.text, "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None,
+        "id": "n", "text": new.text, "believers": None, "needed": None, "long_shot": False, "marks": [], "subject": None, "action": False,
     }
 
 
@@ -354,10 +354,18 @@ def test_goal_swapped_reaches_only_its_player_with_the_new_goal():
     assert not feed.sees("p-2", event)
     assert event.data["goal_id"] == "o" and event.data["text"] == event.line
     assert event.data["new"] == {
-        "id": "n", "text": "New", "believers": 0, "needed": 1, "long_shot": True, "marks": ["v1"], "subject": "v2",
+        "id": "n", "text": "New", "believers": 0, "needed": 1, "long_shot": True, "marks": ["v1"], "subject": "v2", "action": False,
     }
 
 
 def test_the_page_swaps_goals_in_place():
     page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
     assert 'case "goal_swapped"' in page and "Swap for a new goal" in page and "/api/goal/swap" in page
+
+
+def test_progress_on_an_action_goal_shows_where_it_stands():
+    feed = Feed(Lineage(), Town(), out=None)
+    goal = Goal("a", "Drive Vi out of town", "action")
+    feed.on_progress(goal, 0.0, None, player="p-1", standing="Vi is shaken")
+    event = feed.recent[-1]
+    assert event.line == 'Goal "Drive Vi out of town": Vi is shaken' and event.data["standing"] == "Vi is shaken"

@@ -357,6 +357,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .doubt { margin: 0; font-size: .75rem; color: var(--muted); }
 .bar { margin-top: auto; display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
 .bar span:first-child { flex: 1; height: 4px; background: var(--rail); border-radius: 3px; overflow: hidden; }
+.bar.standing span:first-child { height: auto; background: none; text-align: right; }
 .bar i { display: block; height: 100%; background: var(--accent); }
 .met .bar { color: var(--accent); font-weight: 700; }
 .heat { margin: 0; font: italic 1rem/1.3 var(--rumor); }
@@ -1415,11 +1416,13 @@ function render(e, fresh) {
       }
       const was = goals.get(e.goal_id);
       // Progress events leave out who the goal is aimed at, which the deal gave.
-      goals.set(e.goal_id, { ...goalOf(e), longShot: was?.longShot ?? false, marks: was?.marks ?? [], subject: was?.subject ?? null });
+      const now = { ...goalOf(e), longShot: was?.longShot ?? false, marks: was?.marks ?? [], subject: was?.subject ?? null,
+        action: was?.action ?? false };
+      goals.set(e.goal_id, now);
       renderGoals();
       if (e.met) return line("loud", null, `Goal met: ${e.text}`);
       // Progress that only brings news of doubt updates the card, not the feed.
-      return was && goalProgress(was) === goalProgress(e) ? null : progressed(e);
+      return was && goalProgress(was) === goalProgress(now) ? null : progressed(e);
     }
     case "world_goal":
       world = goalOf(e);
@@ -1751,11 +1754,13 @@ document.addEventListener("keydown", (ev) => {
   else if (selectedRumor != null) selectRumor(null);
 });
 
-function goalOf({ text, percent = 0, met = false, believers = null, needed = null, doubt = null, long_shot = false, marks = [], subject = null }) {
-  return { text, percent, met, believers, needed, doubt, longShot: long_shot, marks, subject };
+function goalOf({ text, percent = 0, met = false, believers = null, needed = null, doubt = null, long_shot = false, marks = [], subject = null, action = false, standing = null }) {
+  return { text, percent, met, believers, needed, doubt, longShot: long_shot, marks, subject, action, standing };
 }
 
+// An action goal is done or not, so it says where it stands in words instead of a share.
 function goalProgress(g) {
+  if (g.action) return g.standing || "Not yet";
   return g.needed == null ? `${g.percent}%` : `${g.believers} of ${g.needed} believe it`;
 }
 
@@ -1800,10 +1805,12 @@ function goalCard(g, label, swapId = null) {
           title: "Show who this goal needs", dataset: { goal: swapId }, onclick: () => pickGoal(swapId) })
       : el("div", { className: "goal-text", textContent: g.text }),
     doubtLine(g),
-    el("div", { className: "bar" },
-      el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
-        el("i", { style: `width:${g.percent}%` })),
-      el("span", { textContent: shown })),
+    g.action
+      ? el("div", { className: "bar standing" }, el("span", { textContent: shown }))
+      : el("div", { className: "bar" },
+        el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
+          el("i", { style: `width:${g.percent}%` })),
+        el("span", { textContent: shown })),
   ].filter(Boolean);
 }
 

@@ -136,7 +136,8 @@ def goal_json(judge, goal: Goal, met: bool, villagers: int) -> dict:
     """The goal's text, whole percent, believer counts and doubt, as the page shows it."""
     believers, needed = goal_counts(goal, judge.counts, villagers) or (None, None)
     return {"id": goal.id, "text": goal.text, "percent": int(judge.progress.get(goal.id, 0.0) * 100), "met": met,
-            "believers": believers, "needed": needed, "doubt": judge.doubt.get(goal.id), **goal_targets(goal)}
+            "believers": believers, "needed": needed, "doubt": judge.doubt.get(goal.id), "standing": judge.standing(goal),
+            **goal_targets(goal)}
 
 
 def player_for(players: Players, cookie: str | None) -> Player | None:

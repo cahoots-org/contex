@@ -125,4 +125,4 @@ def trophy_line(trophy: Trophy, claim: str | None, unseen: str | None = None) ->
 def goal_targets(goal: Goal) -> dict:
     """What the page needs to mark a goal's targets: its long shot, the villagers it works on or who must act, and the one it is about."""
     marks = list(goal.audience) if goal.subject or goal.actor else []
-    return {"long_shot": goal.long_shot, "marks": marks, "subject": goal.subject}
+    return {"long_shot": goal.long_shot, "marks": marks, "subject": goal.subject, "action": goal.kind == "action"}

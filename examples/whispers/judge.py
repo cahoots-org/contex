@@ -83,6 +83,8 @@ class Judge:
         self._swapping: set[str] = set()
         # By action goal id, how many times its action has happened with its owner behind it.
         self._acted: dict[str, int] = {}
+        # By goal id, where each action goal last stood, so a change in words reaches its holder.
+        self._standing: dict[str, str | None] = {}
         self._preparing: set[asyncio.Task] = set()
 
     async def _believes(
@@ -353,11 +355,15 @@ class Judge:
                 holders = [p for p in judged if p.id not in self._dealing and any(g.id == goal.id for g in p.goals)]
                 doubt = self.doubt.get(goal.id)
                 moved = int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100)
-                if moved or self.doubt.get(goal.id, {}).get("count") != doubted:
+                standing = self.standing(goal)
+                restated = standing != self._standing.get(goal.id)
+                self._standing[goal.id] = standing
+                if moved or restated or self.doubt.get(goal.id, {}).get("count") != doubted:
                     counts = self.counts_of(goal)
                     for p in holders:
                         self.feed.on_progress(
                             goal, progress, counts, player=p.id, rumor=self._moved(goal.id, p.id, before), doubt=doubt,
+                            standing=standing,
                         )
                     if world:
                         self.feed.on_progress(goal, progress, counts, doubt=doubt)
@@ -432,10 +438,20 @@ class Judge:
     def _day(self) -> int:
         return self.game.day if self.game else 0
 
+    def standing(self, goal: Goal) -> str | None:
+        """Where an action goal stands, in words; None for a goal of belief."""
+        if goal.kind != "action":
+            return None
+        if goal.action == "exodus":
+            return f"{self._acted.get(goal.id, 0)} of {goal.count} gone"
+        if goal.action == "leave_town" and self.engine is not None and goal.subject in self.town:
+            return f"{self.town.get(goal.subject).name.split()[0]} is {self.engine.pressure.words(goal.subject)}"
+        return "Not yet"
+
     def _forget(self, in_play: list[Goal], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
         ids = {g.id for g in in_play}
-        for known in (self.progress, self.counts, self.roots, self.doubt, self._acted, holds):
+        for known in (self.progress, self.counts, self.roots, self.doubt, self._acted, self._standing, holds):
             for gid in known.keys() - ids:
                 del known[gid]
         questions = {g.believer_question for g in in_play}
