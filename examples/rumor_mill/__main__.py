@@ -22,6 +22,7 @@ from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
 from examples.rumor_mill import goals
 from examples.rumor_mill.believability import Believability
+from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
@@ -48,7 +49,8 @@ async def play(web: bool) -> None:
     game = Game(config.memory_moves, config.day_seconds)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
-        await goals.rebar_deck(Believability(jev))
+        believability = Believability(jev)
+        await goals.rebar_deck(believability)
         baselines = Baselines(contex, config)
         facts = Facts()
         overhear = Overhear(contex, baselines, config, rng)
@@ -58,9 +60,10 @@ async def play(web: bool) -> None:
             baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,
             routine=routine, facts=facts,
         )
+        maker = GoalMaker(writer, believability, baselines, overhear, town, config, rng, ids)
         judge = Judge(
             contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts,
-            engine=engine,
+            engine=engine, maker=maker,
         )
         players = Players(feed)
         engine.players = players

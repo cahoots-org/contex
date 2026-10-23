@@ -1,5 +1,6 @@
 import asyncio
 import math
+import random
 from types import SimpleNamespace
 
 import pytest
@@ -8,14 +9,16 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy, void_reason
+from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy, void_reason, world_goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.models import Utterance, Villager
+from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.tests.helpers import PID, wait_for
+from examples.rumor_mill.tests.helpers import StubContex as OverhearContex
 from examples.rumor_mill.town import Town
 
 CONFIG = Config(day_seconds=0.01, judge_every_days=1.0)
@@ -729,3 +732,51 @@ async def test_void_goal_replaced_when_mark_leaves():
     assert len(mine.goals) == 3 and mark.id not in [g.id for g in mine.goals]
     assert [g.id for g in other.goals] == [BELIEF.id]
     assert feed.voids == [(mark.id, mine.goals[0].id, "Vi Name0 has left town", PID)]
+
+
+class GatedMaker:
+    def __init__(self, overhear=None):
+        self.ready = asyncio.Event()
+        self.overhear = overhear or SimpleNamespace(drop=lambda ids: None)
+        self.calls = []
+
+    async def hand(self, player_id, taken, deck_skip, never):
+        self.calls.append((player_id, taken, deck_skip, never))
+        await self.ready.wait()
+        return [audience_goal("v0", fraction=0.0, owner=player_id), BELIEF]
+
+
+@pytest.mark.asyncio
+async def test_redeal_runs_in_background_and_keeps_old_hand_until_ready():
+    judge, _, _, feed, _ = make()
+    judge.world = world_goal(Goal("g", "cat", "belief", ("cat spy",), claim_text="The cat is a spy"))
+    judge.maker = GatedMaker()
+    scripted(judge, [1.0] * 100, goal=QUIET)
+    theirs = Goal("theirs", "geese", "belief", ("geese",), claim_text="Hob steals geese", owner="p-b")
+    pa, pb = holder("p-a", QUIET), holder("p-b", theirs)
+    running = asyncio.create_task(judge.run(players(pa, pb, feed=feed)))
+    try:
+        await wait_for(lambda: judge.maker.calls)
+        await asyncio.sleep(CONFIG.day_seconds * 3)
+        assert pa.goals == [QUIET] and pa.met == {"q"} and feed.deals == []
+        assert len(judge.maker.calls) == 1
+        assert judge.maker.calls[0] == ("p-a", {"the cat is a spy", "hob steals geese"}, {"q"}, {"g"})
+        judge.maker.ready.set()
+        await wait_for(lambda: feed.deals)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    assert [g.id for g in pa.goals] == ["t", "g"] and pa.met == set()
+    assert feed.deals == [(["t", "g"], "p-a")]
+
+
+@pytest.mark.asyncio
+async def test_forget_drops_generated_evidence():
+    overhear = Overhear(OverhearContex(), StubBaselines(), CONFIG, random.Random(1))
+    gen = Goal("gen-p-1-goal-1", "they believe", "belief", ("hob steals geese",), owner="p-1")
+    await overhear.publish([gen, BELIEF])
+    judge, _, _, _, _ = make()
+    judge.maker = GatedMaker(overhear)
+    judge.progress = {gen.id: 0.5, BELIEF.id: 0.5}
+    judge._forget({BELIEF.id}, {})
+    assert overhear._evidence == {f"goal:{BELIEF.id}": "cat spy"}

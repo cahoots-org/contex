@@ -13,6 +13,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
+from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.goals import (
     Goal, Trophy, audience_of, claim, deal, goal_counts, needed, trophy_line, void_reason, world_goal,
 )
@@ -54,7 +55,7 @@ class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
         rng: random.Random | None = None, lineage: Lineage | None = None, facts: Facts | None = None,
-        engine=None,
+        engine=None, maker: GoalMaker | None = None,
     ):
         self.contex = contex
         self.jev = jev
@@ -67,6 +68,7 @@ class Judge:
         self.lineage = lineage
         self.facts = facts or Facts()
         self.engine = engine
+        self.maker = maker
         self.progress: dict[str, float] = {}
         self.counts: dict[str, tuple[int, int]] = {}
         # By goal id, each believer's id and the player whisper behind their best-matching memory, if one is.
@@ -79,6 +81,9 @@ class Judge:
         self.whisperers: set[str] = set()
         self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
+        self._players: Players | None = None
+        # By player id, the task writing their next hand.
+        self._dealing: dict[str, asyncio.Task] = {}
 
     async def _believes(
         self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],
@@ -189,8 +194,22 @@ class Judge:
         return {gid.removeprefix("world-") for gid, p in self.progress.items() if p >= 1.0}
 
     def deal(self, player: Player) -> None:
-        """Give the player three new goals, none held now nor the world goal's claim."""
-        player.goals = deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")})
+        """Give the player three new deck goals, none held now nor the world goal's claim."""
+        self._hand_to(player, deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")}))
+
+    async def redeal(self, player: Player) -> None:
+        """Give the player a new hand written for them, or from the deck without a goal maker."""
+        if self.maker is None:
+            self.deal(player)
+            return
+        others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
+        taken = {c.lower() for g in (*others, self.world) if (c := claim(g))}
+        self._hand_to(player, await self.maker.hand(
+            player.id, taken=taken, deck_skip=self.held(), never={self.world.id.removeprefix("world-")},
+        ))
+
+    def _hand_to(self, player: Player, hand: list[Goal]) -> None:
+        player.goals = hand
         player.met = set()
         counts = {g.id: c for g in player.goals if (c := self.counts_of(g)) is not None}
         self.feed.on_deal(player.goals, player=player.id, counts=counts)
@@ -222,6 +241,7 @@ class Judge:
         everyone who whispered while it was in play, and is replaced by a new one.
         """
         holds: dict[str, int] = {}
+        self._players = players
         interval = self.config.judge_every_days * self.config.day_seconds
         while True:
             await asyncio.sleep(interval)
@@ -264,7 +284,7 @@ class Judge:
                         if all(g.id in p.met for g in p.goals):
                             trophy = Trophy("personal", tuple(g.text for g in p.goals), self._day())
                             players.award(p.owner, trophy, trophy_line(trophy, _last_claim(p, goal)))
-                            self.deal(p)
+                            self._start_redeal(p)
                 if world:
                     self.feed.on_met(goal)
                     self._note_whisperers(players)
@@ -276,6 +296,14 @@ class Judge:
                     self.whisperers = set()
                     self.feed.on_world(self.world, self.counts_of(self.world))
             self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
+
+    def _start_redeal(self, player: Player) -> None:
+        """Write the player's next hand in the background, unless it is already being written."""
+        if player.id in self._dealing:
+            return
+        task = asyncio.create_task(self.redeal(player))
+        self._dealing[player.id] = task
+        task.add_done_callback(lambda _: self._dealing.pop(player.id, None))
 
     def _moved(self, goal_id: str, player_id: str, before: dict[str, str | None]) -> str | None:
         """The player's whisper that gained the goal the most believers since before, or None if none gained any."""
@@ -296,9 +324,13 @@ class Judge:
 
     def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
+        gone: set[str] = set()
         for known in (self.progress, self.counts, self.roots, self.doubt, holds):
             for gid in known.keys() - in_play:
+                gone.add(gid)
                 del known[gid]
+        if self.maker is not None:
+            self.maker.overhear.drop([gid for gid in gone if gid.startswith("gen-")])
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
         """Each goal's text and whole percent progress."""
