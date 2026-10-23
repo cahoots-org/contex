@@ -60,8 +60,12 @@ def void_reason(goal: Goal, town: Town) -> str | None:
     if gone:
         name = next((v.name for v in town.departed if v.id == gone[0]), "A villager")
         return f"{name} has left town"
-    if goal.action == "join_group" and not any(g.id == goal.target and g.members for g in town.groups):
-        return "That group has broken up"
+    if goal.action == "join_group":
+        group = next((g for g in town.groups if g.id == goal.target and g.members), None)
+        if group is None:
+            return "That group has broken up"
+        if goal.actor in group.members:
+            return f"{goal.audience_label} has already joined"
     if len(goal.audience) > 1 and len(audience_of(goal, town)) < MIN_CIRCLE:
         return f"too few of {goal.audience_label} are left"
     return None

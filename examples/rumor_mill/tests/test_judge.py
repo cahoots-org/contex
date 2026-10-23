@@ -715,7 +715,7 @@ class GatedMaker:
         self.overhear = overhear or SimpleNamespace(drop=lambda ids: None, generated_ids=set)
         self.calls = []
 
-    async def hand(self, player_id, taken, size=3, subjects=()):
+    async def hand(self, player_id, taken, size=3, subjects=(), held=()):
         self.calls.append((player_id, taken))
         await self.ready.wait()
         return [audience_goal("v0", fraction=0.0, owner=player_id), BELIEF]
@@ -950,7 +950,7 @@ class SwapMaker:
         self.dropped = []
         self.overhear = SimpleNamespace(drop=self.dropped.extend, generated_ids=set)
 
-    async def hand(self, player_id, taken, size=3, subjects=()):
+    async def hand(self, player_id, taken, size=3, subjects=(), held=()):
         self.calls.append({"taken": taken, "size": size, "subjects": subjects})
         if self.gate:
             await self.gate.wait()
@@ -1172,3 +1172,14 @@ async def test_deal_publishes_the_first_hand_promptly(monkeypatch):
     p = holder(PID)
     judge.deal(p)
     await wait_for(lambda: judge.maker.overhear.generated_ids() == {g.id for g in p.goals})
+
+
+def test_a_join_goal_whose_actor_already_joined_is_void():
+    judge, *_, town = make(n=4)
+    group = town.found_group("v1", "The Watch", "keep watch")
+    town.join("v2", group.id)
+    goal = Goal("j", "Get Vi to join the Watch", "action", audience=("v0",), audience_label="Vi Name0",
+                action="join_group", actor="v0", target=group.id)
+    assert void_reason(goal, town) is None
+    town.join("v0", group.id)
+    assert void_reason(goal, town) == "Vi Name0 has already joined"

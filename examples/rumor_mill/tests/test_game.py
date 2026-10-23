@@ -7,7 +7,7 @@ import pytest
 
 from examples.rumor_mill import engine as engine_mod
 from examples.rumor_mill import game as game_mod
-from examples.rumor_mill.actions import CONFRONT, FOUND_GROUP, IGNORE, JOIN_GROUP, LEAVE_TOWN, MOVE
+from examples.rumor_mill.actions import CONFRONT, FOUND_GROUP, IGNORE, LEAVE_TOWN, MOVE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
@@ -687,33 +687,43 @@ async def test_a_failed_denial_is_logged(caplog):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action", [CONFRONT, LEAVE_TOWN, FOUND_GROUP, JOIN_GROUP, IGNORE])
-async def test_engine_reports_actions_to_judge(monkeypatch, action):
+async def test_engine_reports_actions_to_judge():
     engine, _, _, _ = await start("v1", "v2")
     engine.lineage.record("u-0", None, PID)
     reported = []
-    engine.judge = SimpleNamespace(
-        record_action=lambda actor, act, target, player, creed=None: reported.append((actor, act, target, player, creed)),
-    )
-    group = engine.town.found_group("v2", "The Watch", "keep watch")
-    target = {CONFRONT: "v2", JOIN_GROUP: group.id}.get(action)
+    engine.judge = SimpleNamespace(record_action=lambda *a: reported.append(a))
+    rooted, stray = Match("k", {"id": "u-0"}), Match("k2", {"id": "u-9"})
+    engine.acted(Decision(FOUND_GROUP, rooted, None, None), "v1", "g-1", "Hob cheats")
+    engine.acted(Decision(CONFRONT, stray, "v2", None), "v1", "v2")
+    assert reported == [("v1", FOUND_GROUP, "g-1", PID, "Hob cheats"), ("v1", CONFRONT, "v2", None, None)]
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_drive_out_holds_through_a_void_pass_during_the_farewell(monkeypatch):
+    engine, player, _, _ = await start("v1", "v2")
+    engine.lineage.record("u-0", None, PID)
+    engine.writer = Writer(StubClient("Farewell, all."), "haiku-test", Usage(engine.config))
+    judge = Judge(None, None, engine.town, engine.config, engine.feed, Game(), maker=goal_maker(engine.town))
+    engine.judge = judge
+    goal = Goal("d", "Drive V1 out of town", "action", hold_checks=1, subject="v1", owner=PID, action=LEAVE_TOWN,
+                target="v1")
+    player.goals = [goal]
+    judge._players = engine.players
+    delivered = engine.deliver
+
+    async def deliver(utterance, listener_ids, addressed=False):
+        judge._replace_void(player)
+        await delivered(utterance, listener_ids, addressed)
+
+    monkeypatch.setattr(engine, "deliver", deliver)
 
     async def decide(jev, view):
-        return Decision(action, view.new[0], target, None)
-
-    async def act(decision, villager, *, town, **kw):
-        if action == FOUND_GROUP:
-            town.found_group(villager.id, "The Hob Haters", "Hob cheats")
+        return Decision(LEAVE_TOWN, view.new[0], None, None)
 
     monkeypatch.setattr(engine_mod, "decide", decide)
-    monkeypatch.setattr(engine_mod, "act", act)
     await engine.run()
     engine.minds["v1"].queue.put_nowait(None)
-    if action == IGNORE:
-        await asyncio.sleep(0.1)
-        assert reported == []
-    else:
-        await wait_for(lambda: reported)
-        creed = "Hob cheats" if action == FOUND_GROUP else None
-        assert reported == [("v1", action, "g-2" if action == FOUND_GROUP else target, PID, creed)]
+    await wait_for(lambda: "v1" not in engine.town and not engine._turning)
+    assert player.goals == [goal] and await judge.check(goal) == 1.0
     await engine.stop()

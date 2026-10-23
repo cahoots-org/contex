@@ -307,3 +307,33 @@ async def test_action_goals_skip_evidence_and_trace(monkeypatch):
     await maker.prepare()
     dealt = await maker.hand("p-1", set(), 1)
     assert baselines.loaded == [] and maker.overhear.generated_ids() == set() and dealt[0].kind == "action"
+
+
+def test_claims_and_actions_come_up_about_equally():
+    town = town_of(AGNES, HOB, COB, DOT, *FARMERS)
+    maker = goal_maker(town, ALE, TAVERN, rng=random.Random(5))
+    kinds = Counter(maker.draw("p-1", set(), 1)[0].kind for _ in range(2000))
+    assert 0.45 < kinds["action"] / 2000 < 0.55
+
+
+def test_no_action_is_drawn_twice_in_a_hand(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("exodus", "join_group"))
+    town = town_of(AGNES, HOB, COB, DOT)
+    group = town.found_group(HOB.id, "The Plough Guild", "fair prices")
+    town.join(COB.id, group.id)
+    for seed in range(30):
+        maker = goal_maker(town, rng=random.Random(seed))
+        hand = maker.draw("p-1", set())
+        assert sorted(g.action for g in hand) == ["exodus", "join_group"]
+        assert maker.draw("p-1", set(), 1, held=hand) == []
+
+
+def test_exodus_n_is_drawn_only_when_exodus_is_picked(monkeypatch):
+    monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("village", "exodus"))
+    for seed in range(20):
+        rng = random.Random(seed)
+        sizes = []
+        choice = rng.choice
+        monkeypatch.setattr(rng, "choice", lambda seq: sizes.append(set(seq) <= {2, 3}) or choice(seq))
+        (goal,) = goal_maker(town_of(AGNES, HOB), ALE, rng=rng).draw("p-1", set(), 1)
+        assert sizes.count(True) == (goal.action == "exodus")

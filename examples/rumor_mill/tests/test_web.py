@@ -786,7 +786,7 @@ def test_a_phone_gets_three_tabs(game):
     assert '<main id="hear-panel">' in html and 'aria-label="Villagers"' in html and 'aria-label="Your rumors"' in html
 
 
-def test_a_state_goal_shows_a_percent_and_an_unchecked_belief_goal_its_target(game):
+def test_an_action_goal_shows_a_percent_and_an_unchecked_belief_goal_its_target(game):
     dog = Goal("dog", "Half the village believes the dog is a thief", "belief", target_fraction=0.5)
     game.player.goals = [dog, Goal("quiet", "Nobody leaves the village", "action")]
     state = game.client.get("/api/state").json()

@@ -60,6 +60,11 @@ def _called(villager: Villager, town: Town) -> str:
     return villager.name if shared else _first(villager)
 
 
+def _key(slot: "Slot") -> tuple[str, str | None]:
+    """The action a slot's goal would ask for and its target, as held goals give (action, target)."""
+    return slot.kind, slot.group.id if slot.group else slot.subject and slot.subject.id
+
+
 @dataclass(frozen=True)
 class Audience:
     """Who a goal works on: one mark or a circle."""
@@ -104,21 +109,26 @@ class GoalMaker:
         # Goals drawn but not yet given baselines and published.
         self._unready: list[Goal] = []
 
-    def draw(self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = ()) -> list[Goal]:
+    def draw(
+        self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = (),
+        held: Collection[Goal] = (),
+    ) -> list[Goal]:
         """Up to size goals for the player, filled by uniform picks; their evidence goes out on the next prepare."""
-        made = [self._goal(s, player_id, self._id(player_id)) for s in self._slots(taken, size, subjects)]
+        made = [self._goal(s, player_id, self._id(player_id)) for s in self._slots(taken, size, subjects, held)]
         self._unready.extend(made)
         return made
 
     async def hand(
         self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = (),
+        held: Collection[Goal] = (),
     ) -> list[Goal]:
         """Up to size goals for the player, filled by Jev's picks, with their baselines loaded and evidence published.
 
-        taken holds the lowercased claims already in play; subjects the villagers the player's other goals are about.
+        taken holds the lowercased claims already in play; subjects the villagers the player's other goals are about;
+        held the player's other goals, whose actions are not drawn again.
         """
         with charging(player_id):
-            slots = await asyncio.gather(*(self._refine(s) for s in self._slots(taken, size, subjects)))
+            slots = await asyncio.gather(*(self._refine(s) for s in self._slots(taken, size, subjects, held)))
             made = [self._goal(s, player_id, self._id(player_id)) for s in slots]
             await self._ready(made)
         return made
@@ -144,33 +154,46 @@ class GoalMaker:
             log.warning("readying goals failed; retrying on the next check", exc_info=True)
             self._unready.extend(goals)
 
-    def _slots(self, taken: Collection[str], size: int, subjects: Collection[str]) -> list[Slot]:
-        """Size slots, each of a template drawn uniformly from those that can still be filled; fewer if none can."""
+    def _slots(self, taken: Collection[str], size: int, subjects: Collection[str], held: Collection[Goal]) -> list[Slot]:
+        """Size slots, fewer if none can be filled.
+
+        Each template is drawn from those that can still be filled: claims and actions carry half the weight each,
+        shared evenly within each. No action is drawn twice at the same target, and Exodus at most once.
+        """
         taken, subjects = set(taken), set(subjects)
+        used = {(g.action, g.target) for g in held if g.action}
         slots: list[Slot] = []
         for _ in range(size):
-            fillable = [s for kind in TEMPLATES if (s := self._fill(kind, taken, subjects)) is not None]
+            fillable = [
+                s for kind in TEMPLATES
+                if (s := self._fill(kind, taken, subjects, used)) is not None and _key(s) not in used
+            ]
             if not fillable:
                 break
-            slot = self.rng.choice(fillable)
+            claims = sum(s.kind in CLAIM_TEMPLATES for s in fillable)
+            weights = [1 / claims if s.kind in CLAIM_TEMPLATES else 1 / (len(fillable) - claims) for s in fillable]
+            slot = self.rng.choices(fillable, weights=weights)[0]
+            if slot.kind == "exodus":
+                slot = replace(slot, count=self.rng.choice([n for n in EXODUS_SIZES if n <= len(self.town.villagers)]))
             slots.append(slot)
+            if slot.kind in ACTION_TEMPLATES:
+                used.add(_key(slot))
             if slot.entry:
                 taken.add(self._claim(slot).lower())
             if slot.subject:
                 subjects.add(slot.subject.id)
         return slots
 
-    def _fill(self, kind: str, taken: set[str], subjects: set[str]) -> Slot | None:
+    def _fill(self, kind: str, taken: set[str], subjects: set[str], used: set[tuple]) -> Slot | None:
         """A slot of the template filled by uniform picks, or None when it can't be filled."""
         if kind == "village":
             claims = tuple(e for e in self.pool.claims if e.text.lower() not in taken)
             return Slot(kind, claims, self.rng.choice(claims)) if claims else None
         villagers = self.town.villagers
         if kind == "exodus":
-            n = self.rng.choice(EXODUS_SIZES)
-            return Slot(kind, count=n) if len(villagers) >= n else None
+            return Slot(kind) if len(villagers) >= min(EXODUS_SIZES) else None
         if kind == "join_group":
-            return self._join(villagers)
+            return self._join(villagers, used)
         circles = self._circles() if kind == "circle" else []
         candidates = []
         for v in villagers:
@@ -195,14 +218,14 @@ class GoalMaker:
         entry = self.rng.choice(entries) if entries else None
         return Slot(kind, entries, entry, v, audiences, self.rng.choice(audiences) if audiences else None)
 
-    def _join(self, villagers: list[Villager]) -> Slot | None:
-        """A join slot: a group of two or more in town, with those outside it as candidate actors."""
+    def _join(self, villagers: list[Villager], used: set[tuple]) -> Slot | None:
+        """A join slot: a group of two or more in town no goal has yet, with those outside it as candidate actors."""
         options = []
         for g in self.town.groups:
             outside = tuple(
                 Audience(v.id, self._call(v), (v.id,), self._sketch(v)) for v in villagers if v.id not in g.members
             )
-            if len(g.members) >= 2 and outside:
+            if len(g.members) >= 2 and outside and ("join_group", g.id) not in used:
                 options.append((g, outside))
         if not options:
             return None

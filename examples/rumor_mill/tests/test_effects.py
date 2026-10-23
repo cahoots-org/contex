@@ -1,7 +1,7 @@
 import pytest
 
 from examples.rumor_mill.actions import (
-    ANSWER, FOUND_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK, WARN,
+    ANSWER, CONFRONT, FOUND_GROUP, JOIN_GROUP, LEAVE_TOWN, MOVE, PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
@@ -48,6 +48,10 @@ class RecordingHub:
         self.groups = []
         self.suspects = []
         self.replies = []
+        self.acts = []
+
+    def acted(self, decision, vid, target, creed=None):
+        self.acts.append((decision.action, vid, target, creed))
 
     async def reply(self, utterance):
         self.replies.append(utterance)
@@ -343,3 +347,25 @@ async def test_a_retold_warning_stays_about_its_player():
     warning, _ = s.hub.delivered[0]
     await s.act("v2", Decision(RETELL, Match("k", {"id": warning.id, "text": warning.text}), "v3", "faithful"))
     assert s.hub.delivered[1][0].about == "p-a"
+
+
+@pytest.mark.asyncio
+async def test_actions_are_reported_before_their_announcement():
+    s = Setup()
+    seen = []
+    deliver = s.hub.deliver
+
+    async def recording(utterance, listener_ids, addressed=False):
+        seen.append(list(s.hub.acts))
+        await deliver(utterance, listener_ids, addressed)
+
+    s.hub.deliver = recording
+    await s.act("v1", Decision(FOUND_GROUP, None, None, None), inspiration=["a rumor"])
+    await s.act("v2", Decision(JOIN_GROUP, None, "g-1", None))
+    await s.act("v3", Decision(CONFRONT, None, "v2", None))
+    await s.act("v1", Decision(LEAVE_TOWN, None, None, None))
+    assert s.hub.acts == [
+        (FOUND_GROUP, "v1", "g-1", "be kind"), (JOIN_GROUP, "v2", "g-1", None),
+        (CONFRONT, "v3", "v2", None), (LEAVE_TOWN, "v1", None, None),
+    ]
+    assert seen[0] == s.hub.acts[:1] and seen[-1] == s.hub.acts

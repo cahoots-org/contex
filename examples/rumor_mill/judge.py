@@ -264,10 +264,11 @@ class Judge:
         if problem := self._problem_swapping(player, goal_id):
             return problem
         old = next(g for g in player.goals if g.id == goal_id)
-        subjects = {g.subject for g in player.goals if g is not old and g.subject}
+        others = [g for g in player.goals if g is not old]
+        subjects = {g.subject for g in others if g.subject}
         self._swapping.add(player.id)
         try:
-            found = await self.maker.hand(player.id, self._taken(player, *player.goals), 1, subjects)
+            found = await self.maker.hand(player.id, self._taken(player, *player.goals), 1, subjects, others)
         finally:
             self._swapping.discard(player.id)
         if not found:
@@ -287,8 +288,9 @@ class Judge:
             reason = void_reason(old, self.town)
             if reason is None or old.id in player.met or self._acted.get(old.id, 0) >= old.count:
                 continue
-            subjects = {g.subject for g in player.goals if g is not old and g.subject}
-            found = self.maker.draw(player.id, self._taken(player, *player.goals), 1, subjects)
+            others = [g for g in player.goals if g is not old]
+            subjects = {g.subject for g in others if g.subject}
+            found = self.maker.draw(player.id, self._taken(player, *player.goals), 1, subjects, others)
             if not found:
                 continue
             new = found[0]

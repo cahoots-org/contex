@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from contextlib import aclosing, suppress
 from datetime import UTC, datetime, timedelta
 
-from examples.rumor_mill.actions import ANSWER, CONFRONT, FOUND_GROUP, JOIN_GROUP, LEAVE_TOWN, MOVE, WARN
+from examples.rumor_mill.actions import ANSWER, LEAVE_TOWN, MOVE, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -47,8 +47,6 @@ ROUTINE_BATCH = 5
 ROUTINE_SPREAD = 0.5
 # How much of a whisper's suspicion a subject takes on, by hops from the whisper.
 TRACE_SCALE = {1: 1, 2: 0.5, 3: 0.25}
-# The actions an action goal can be met by.
-REPORTED = (CONFRONT, LEAVE_TOWN, FOUND_GROUP, JOIN_GROUP)
 MEETING = "The village meets in the square and runs the newcomer out of town."
 
 
@@ -580,8 +578,6 @@ class Engine:
                         share_chance=self.share_chance(v.id, decision.source) if action == MOVE else 0.0,
                         about=suspect,
                     )
-                if action in REPORTED and self.judge is not None:
-                    self._report_action(v, decision)
                 if action == MOVE:
                     self._chose_move.add(v.id)
                 if scene is not None:
@@ -607,13 +603,10 @@ class Engine:
         player.part(v.id)
         self.suspicion.bump(v.id, player.id, self.config.suspicion_whisper_bump / 2, "stormed off")
 
-    def _report_action(self, v: Villager, decision: Decision) -> None:
-        """Tell the judge of the villager's action and the player behind it; a founding names its group and creed."""
-        target, creed = decision.target, None
-        if decision.action == FOUND_GROUP:
-            founded = [g for g in self.town.groups if g.founder == v.id]
-            target, creed = founded[-1].id, founded[-1].creed
-        self.judge.record_action(v.id, decision.action, target, self._player_behind(decision.source), creed)
+    def acted(self, decision: Decision, vid: str, target: str | None, creed: str | None = None) -> None:
+        """Tell the judge of the villager's action and the player whose rumor is behind it."""
+        if self.judge is not None:
+            self.judge.record_action(vid, decision.action, target, self._player_behind(decision.source), creed)
 
     def _player_behind(self, m: Match | None) -> str | None:
         """The player whose whisper the item's lineage roots in."""
