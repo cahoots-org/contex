@@ -40,6 +40,7 @@ class Rapport:
         self.config = config
         self._rapport: dict[tuple[str, str], float] = {}
         self._interest: dict[tuple[str, str, str], float] = {}
+        self._spoken: set[tuple[str, str, str]] = set()
 
     def rapport(self, vid: str, player: str) -> float:
         """How much the villager likes talking with player."""
@@ -62,10 +63,14 @@ class Rapport:
     def forget(self, vid: str, player: str, rumor: str) -> None:
         """Drop her interest in the rumor, so it starts again from her rapport."""
         self._interest.pop((vid, player, rumor), None)
+        self._spoken.discard((vid, player, rumor))
 
-    def started(self, vid: str, player: str, rumor: str) -> bool:
-        """Whether she has taken any interest in the rumor yet."""
-        return (vid, player, rumor) in self._interest
+    def first_word(self, vid: str, player: str, rumor: str) -> bool:
+        """True the first time she speaks to player in the rumor, False after."""
+        if (vid, player, rumor) in self._spoken:
+            return False
+        self._spoken.add((vid, player, rumor))
+        return True
 
     def mood(self, vid: str, player: str, rumor: str, greet: bool = False) -> str:
         """How she feels about the rumor in words; greet adds how she feels about the player, to greet them by."""

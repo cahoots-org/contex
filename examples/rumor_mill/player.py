@@ -195,7 +195,6 @@ class Player:
         exchange = self._exchange(target.id)
         rumor = rumors.rumor_of(self.id, text, exchange) if rumors is not None else exchange
         key = rumor or uid
-        first = not self.engine.rapport.started(target.id, self.id, key)
         bar_drop = max(0.0, self.engine.rapport.interest(target.id, self.id, key)) * self.config.near_miss_band
         place = self.town.place_of(target.id)
         utterance = Utterance(uid, NEWCOMER, "A newcomer", place, text, None, "whispered to you", conversation=rumor)
@@ -263,7 +262,8 @@ class Player:
                 return None
             concern = closest[0] if closest else self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
-            mood = self.engine.rapport.mood(target.id, self.id, key, greet=first)
+            greet = self.engine.rapport.first_word(target.id, self.id, key)
+            mood = self.engine.rapport.mood(target.id, self.id, key, greet=greet)
             task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues, mood))
             self._track(task)
         return None
@@ -418,6 +418,7 @@ class Player:
         if exchange is None:
             return False
         rumors = self.engine.rumors
+        # With an exchange given, rumor_of resolves it to its card and never reads the text.
         rumor = rumors.rumor_of(self.id, "", exchange) if rumors is not None else exchange
         return self.engine.rapport.interest(villager_id, self.id, rumor) <= self.config.interest_annoyed
 

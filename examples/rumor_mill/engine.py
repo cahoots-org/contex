@@ -618,7 +618,8 @@ class Engine:
         if player is None:
             return ""
         fact = self.facts.get(uid)
-        return self.rapport.mood(vid, player, (fact and fact.conversation) or uid)
+        rumor = fact.conversation if fact and fact.conversation else uid
+        return self.rapport.mood(vid, player, rumor, greet=self.rapport.first_word(vid, player, rumor))
 
     def _player_behind(self, m: Match | None) -> str | None:
         """The player whose whisper the item's lineage roots in."""

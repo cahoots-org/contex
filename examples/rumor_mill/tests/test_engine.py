@@ -2077,11 +2077,15 @@ async def test_an_off_topic_line_is_no_moment(turns):
 @pytest.mark.asyncio
 async def test_an_answer_carries_how_taken_the_villager_is_with_the_rumor(talks):
     engine, minds, feed = await setup("v1")
-    minds["v1"].results = [[]]
-    talks.plan = [ANSWER]
-    engine.lineage.record("w-1", None, player=PID)
+    minds["v1"].results = [[], []]
+    talks.plan = [ANSWER, ANSWER]
+    engine.rapport.sour("v1", PID, 0.5)
     engine.rapport.move("v1", PID, "w-1", 0.6)
     whisper(engine, "v1", "w-1")
     await wait_for(lambda: statuses(feed))
+    reply_whisper(engine, "v1", "w-2", "w-1")
+    await wait_for(lambda: len(talks.moods) == 2)
     await engine.stop()
-    assert talks.moods == ["eager to hear more"]
+    first, second = talks.moods
+    assert first.startswith("eager to hear more") and "fond of the newcomer" in first and "Greet the newcomer" in first
+    assert second == "eager to hear more"

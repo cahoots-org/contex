@@ -46,3 +46,11 @@ def test_interest_and_rapport_words_bands():
 def test_mood_words_have_no_digits():
     xs = [i / 20 for i in range(-20, 21)]
     assert not any(c.isdigit() for x in xs for c in interest_words(x) + rapport_words(x))
+
+
+def test_first_word_is_true_once_per_rumor_until_forgotten():
+    r = Rapport(Config())
+    assert r.first_word("v1", "p-1", "w-1") and not r.first_word("v1", "p-1", "w-1")
+    assert r.first_word("v1", "p-1", "w-2")
+    r.forget("v1", "p-1", "w-1")
+    assert r.first_word("v1", "p-1", "w-1")
