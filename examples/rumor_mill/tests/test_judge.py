@@ -1,5 +1,6 @@
 import asyncio
 import random
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -1183,3 +1184,68 @@ def test_a_join_goal_whose_actor_already_joined_is_void():
     assert void_reason(goal, town) is None
     town.join("v0", group.id)
     assert void_reason(goal, town) == "Vi Name0 has already joined"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seed", range(300))
+async def test_a_swap_never_hands_back_the_same_goal(seed):
+    judge, *_ = make(n=4)
+    judge.maker.rng = random.Random(seed)
+    old = judge.maker.draw(PID, set(), 1)[0]
+    mine = holder(PID, old)
+    judge._players = players(mine)
+    assert await judge.swap(mine, old.id) is None
+    assert mine.goals[0].text != old.text
+
+
+class ReplyMaker(SwapMaker):
+    """Answers a swap with nothing while the old goal is held, then with the same text and another."""
+
+    def __init__(self, same, other):
+        super().__init__()
+        self.same, self.other = same, other
+
+    async def hand(self, player_id, taken, size=3, subjects=(), held=()):
+        self.calls.append({"size": size, "subjects": subjects, "held": list(held)})
+        return [] if any(g.id == self.same.id for g in held) else [self.same, self.other][:size]
+
+
+@pytest.mark.asyncio
+async def test_a_swap_excludes_the_old_goal_then_falls_back_to_any_different_text():
+    judge, *_ = make()
+    old = action_goal("exodus", count=2)
+    other = replace(action_goal("confront", "v0", "v1", "v1"), text="confront")
+    judge.maker = ReplyMaker(old, other)
+    mine = holder(PID, old)
+    judge._players = players(mine)
+    assert await judge.swap(mine, old.id) is None
+    assert mine.goals == [other]
+    first, second = judge.maker.calls
+    assert first["held"] == [old] and second["held"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_swap_of_an_action_already_done_is_refused():
+    goal = action_goal("confront", "v0", "v1", "v1")
+    judge, *_, mine = acting(goal)
+    judge.record_action("v0", "confront", "v1", PID)
+    assert await judge.swap(mine, goal.id) == "That goal is already met."
+    assert mine.goals == [goal]
+
+
+@pytest.mark.asyncio
+async def test_no_one_never_knew_after_a_drive_out_goal():
+    judge, feed, pa = clean_win_judge({})
+    pa.goals[0] = replace(pa.goals[0], action="leave_town", kind="belief")
+    judge.engine.suspicion.score = lambda *a: pytest.fail("scored")
+    assert judge._unseen(pa) is None
+
+
+@pytest.mark.asyncio
+async def test_a_group_founded_by_the_subject_does_not_meet_a_goal_against_them():
+    judge, _, _, town, _ = acting()
+    town.add(Villager("v9", "Hob Miller", "miller", "gruff", "", [], {}))
+    goal = action_goal("found_group", subject="v9", target="v9")
+    judge._players = players(holder(PID, goal))
+    judge.record_action("v9", "found_group", "g-1", PID, creed="Hob has cheated us all")
+    assert await judge.check(goal) == 0.0

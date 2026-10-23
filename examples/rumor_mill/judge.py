@@ -182,7 +182,7 @@ class Judge:
         if action == LEAVE_TOWN:
             return actor == goal.subject
         if action == FOUND_GROUP:
-            return bool(creed) and goal.subject in self.town and names(self.town.get(goal.subject), creed)
+            return bool(creed) and actor != goal.subject and goal.subject in self.town and names(self.town.get(goal.subject), creed)
         return action == JOIN_GROUP and actor == goal.actor and target == goal.target
 
     async def check(self, goal: Goal) -> float:
@@ -255,7 +255,7 @@ class Judge:
             return "Already finding you a new goal."
         if goal is None:
             return "That isn't one of your goals."
-        if goal.id in player.met:
+        if goal.id in player.met or (goal.kind == "action" and self._acted.get(goal.id, 0) >= goal.count):
             return "That goal is already met."
         return None
 
@@ -266,9 +266,14 @@ class Judge:
         old = next(g for g in player.goals if g.id == goal_id)
         others = [g for g in player.goals if g is not old]
         subjects = {g.subject for g in others if g.subject}
+        taken = self._taken(player, *player.goals)
         self._swapping.add(player.id)
         try:
-            found = await self.maker.hand(player.id, self._taken(player, *player.goals), 1, subjects, others)
+            found = await self.maker.hand(player.id, taken, 1, subjects | ({old.subject} if old.subject else set()), [*others, old])
+            if not found:
+                spare = await self.maker.hand(player.id, taken, 2, subjects, others)
+                found = [g for g in spare if g.text != old.text][:1]
+                self.maker.overhear.drop([g.id for g in spare if g not in found])
         finally:
             self._swapping.discard(player.id)
         if not found:
@@ -381,7 +386,7 @@ class Judge:
         if self.engine is None:
             return None
         for g in player.goals:
-            if g.subject and self.engine.suspicion.score(g.subject, player.id) < self.config.warn_threshold:
+            if g.subject and g.action != LEAVE_TOWN and self.engine.suspicion.score(g.subject, player.id) < self.config.warn_threshold:
                 return self.town.name_of(g.subject)
         return None
 
