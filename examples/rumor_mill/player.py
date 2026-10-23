@@ -17,7 +17,7 @@ from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.overhear import audible
 from examples.rumor_mill.models import Utterance, Villager
-from examples.rumor_mill.town import NEWCOMER, PLACES, START_PLACE, Town
+from examples.rumor_mill.town import NEWCOMER, PLACES, START_PLACE, Town, neighbours
 from examples.rumor_mill.usage import charging
 
 log = logging.getLogger(__name__)
@@ -348,7 +348,7 @@ class Player:
             try:
                 if line := await self.writer.answer(
                     villager, topic, [f"{u.speaker_name} at the {u.place}: {u.text}" for u in heard],
-                    self._neighbours(villager, topic),
+                    neighbours(self.town, villager, topic),
                 ):
                     return line
             except Exception:
@@ -356,17 +356,6 @@ class Player:
         if heard:
             return f"{villager.name} heard {heard[0].speaker_name} talking about it at the {heard[0].place}."
         return f"{villager.name} hasn't heard anything about that."
-
-    def _neighbours(self, villager: Villager, topic: str) -> list[str]:
-        """Who the topic names among the villager's neighbours, by trade and how the villager knows them."""
-        named = []
-        for v, gone in [*((v, False) for v in self.town.villagers), *((v, True) for v in self.town.departed)]:
-            if v.id == villager.id or not re.search(rf"\b{re.escape(v.name.split()[0])}\b", topic, re.IGNORECASE):
-                continue
-            tie = villager.relationships.get(v.id)
-            named.append(f"{v.name}, the {v.occupation}" + (f" (your {tie})" if tie else "")
-                         + (", who has left the village" if gone else ""))
-        return named
 
     def _now(self) -> tuple[int, str] | None:
         return (self.game.day, self.game.phase) if self.game is not None else None

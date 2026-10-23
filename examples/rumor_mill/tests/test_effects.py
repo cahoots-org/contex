@@ -32,7 +32,7 @@ class StubWriter:
         self.warn_calls.append((villager.id, target.id))
         return "Mind the newcomer."
 
-    async def reply(self, villager, newcomer_line, said, heard=()):
+    async def reply(self, villager, newcomer_line, said, heard=(), known=()):
         self.reply_calls.append((villager.id, newcomer_line, said, heard))
         return "Aye, I heard that too."
 

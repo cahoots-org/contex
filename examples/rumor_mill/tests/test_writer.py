@@ -236,3 +236,13 @@ async def test_writer_goal_pool_parses_and_tolerates_junk():
     call = client.messages.calls[0]
     prompt = call["system"] + call["messages"][0]["content"]
     assert "baker" in prompt and "sharp-tongued" in prompt and "owes me flour" in prompt
+
+
+@pytest.mark.asyncio
+async def test_reply_is_told_who_the_neighbours_in_the_line_are():
+    client = StubClient("Everard? That sour tanner.")
+    writer = Writer(client, "haiku-test")
+    await writer.reply(villager(), "Everard Coke stole the bells", [], [], ["Everard Coke, the tanner"])
+    call = client.messages.calls[0]
+    assert "Neighbours you know: Everard Coke, the tanner" in call["messages"][0]["content"]
+    assert "You know everyone in the village" in call["system"]

@@ -187,13 +187,16 @@ class Writer:
         user = f"You are talking to {target.name}, a {target.occupation}."
         return first_line(await self.complete(system, user, max_tokens=WARN_MAX_TOKENS))
 
-    async def reply(self, villager: Villager, newcomer_line: str, said: list[str], heard: Sequence[str] = ()) -> str:
-        """The villager answering what the newcomer just said to them, in one line."""
+    async def reply(
+        self, villager: Villager, newcomer_line: str, said: list[str], heard: Sequence[str] = (), known: Sequence[str] = (),
+    ) -> str:
+        """The villager answering what the newcomer just said to them, in one line; known as for answer."""
         system = (
             f"You are {villager.name}, a {villager.occupation} in a small village. "
             f"Your personality: {villager.personality}. "
             + _grudge(villager)
-            + "The newcomer in town just said something to you that you care about. Answer them "
+            + "You know everyone in the village by name and trade. "
+            "The newcomer in town just said something to you that you care about. Answer them "
             "in one short sentence, under 30 words, in your own voice, responding to what they said. "
             "Never mention suspicion. "
             "No stage directions, no quotation marks, no preamble."
@@ -204,6 +207,8 @@ class Writer:
         if heard:
             system += " If you already heard about this, say so and what you heard, in your own words."
             lines.append("What you heard earlier: " + " / ".join(heard))
+        if known:
+            lines.append("Neighbours you know: " + "; ".join(known))
         return first_line(await self.complete(system, "\n".join(lines), max_tokens=SAY_MAX_TOKENS))
 
     async def answer(self, villager: Villager, topic: str, heard: Sequence[str], known: Sequence[str] = ()) -> str:

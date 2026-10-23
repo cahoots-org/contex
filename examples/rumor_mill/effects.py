@@ -14,7 +14,7 @@ from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.models import Group, Utterance, Villager
-from examples.rumor_mill.town import Town
+from examples.rumor_mill.town import Town, neighbours
 from examples.rumor_mill.writer import Writer
 
 log = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ async def act(
             except Exception:
                 log.exception("suspicion bump for %s failed", decision.target)
     elif action == ANSWER:
-        text = await writer.reply(villager, source_text, list(said), list(heard))
+        text = await writer.reply(villager, source_text, list(said), list(heard), neighbours(town, villager, source_text or ""))
         uid = ids.next("u")
         lineage.record(uid, source_id)
         utterance = Utterance(uid, vid, villager.name, place, text, source_id, "answered", audience=ONE, action=action)

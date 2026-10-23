@@ -1,5 +1,7 @@
 """Town state: villagers, their places, and groups."""
 
+import re
+
 from examples.rumor_mill.models import Group, Villager
 
 PLACES = ("square", "tavern", "market", "well", "mill", "chapel", "gate")
@@ -94,3 +96,15 @@ class Town:
             if vid not in g.members
             and any(self._places.get(m) == place for m in g.members)
         ]
+
+
+def neighbours(town: Town, villager: Villager, text: str) -> list[str]:
+    """Who the text names among the villager's neighbours, by trade and how the villager knows them."""
+    named = []
+    for v, gone in [*((v, False) for v in town.villagers), *((v, True) for v in town.departed)]:
+        if v.id == villager.id or not re.search(rf"\b{re.escape(v.name.split()[0])}\b", text, re.IGNORECASE):
+            continue
+        tie = villager.relationships.get(v.id)
+        named.append(f"{v.name}, the {v.occupation}" + (f" (your {tie})" if tie else "")
+                     + (", who has left the village" if gone else ""))
+    return named
