@@ -1,6 +1,9 @@
 import random
 
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, WORLD_FRACTION, deal, world_goal
+import pytest
+
+from examples.rumor_mill import goals
+from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, WORLD_FRACTION, Goal, claim, deal, rebar, world_goal
 
 
 def test_deck_is_well_formed():
@@ -35,3 +38,42 @@ def test_deal_skips_held_claims():
 def test_deal_ignores_the_skip_list_when_it_leaves_too_few():
     hand = deal(random.Random(1), skip={g.id for g in DECK[2:]})
     assert len({g.id for g in hand}) == 3
+
+
+def test_rebar_sets_fraction_text_and_long_shot():
+    g = next(g for g in DECK if g.id == "moon-omen")
+    low = rebar(g, 0)
+    assert low.target_fraction == 1 / 5 and low.long_shot
+    assert low.text == "A fifth of the village believes the moon is an omen of disaster"
+    high = rebar(g, 3)
+    assert high.target_fraction == 1 / 2 and not high.long_shot and high.text.startswith("Half of the village believes")
+
+
+def test_rebar_leaves_creed_and_state_goals():
+    for g in DECK:
+        if g.creed_question or g.kind == "state":
+            assert rebar(g, 0) == g
+
+
+def test_claim_prefers_claim_text():
+    assert claim(Goal("x", "Convince Agnes that Hob steals geese", "belief", claim_text="Hob steals geese")) == "Hob steals geese"
+
+
+def test_deck_claim_text_matches_parsed_claim():
+    for g in DECK:
+        if g.kind == "belief" and g.creed_question is None:
+            assert g.claim_text and g.claim_text in g.text
+
+
+@pytest.mark.asyncio
+async def test_rebar_deck_rewrites_deck_and_world_candidates(monkeypatch):
+    class Low:
+        async def band(self, claim):
+            return 0
+
+    monkeypatch.setattr(goals, "DECK", goals.DECK)
+    monkeypatch.setattr(goals, "WORLD_CANDIDATES", goals.WORLD_CANDIDATES)
+    await goals.rebar_deck(Low())
+    village = [g for g in goals.DECK if g.kind == "belief" and g.creed_question is None]
+    assert village and all(g.long_shot for g in village)
+    assert all(g.long_shot for g in goals.WORLD_CANDIDATES)

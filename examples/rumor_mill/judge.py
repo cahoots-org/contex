@@ -8,12 +8,13 @@ from collections import Counter
 
 from typesafe_sdk import Noul
 
+from examples.rumor_mill import goals
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import (
-    WORLD_CANDIDATES, Goal, Trophy, claim, deal, goal_counts, needed, trophy_line, world_goal,
+    Goal, Trophy, claim, deal, goal_counts, needed, trophy_line, world_goal,
 )
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -185,8 +186,8 @@ class Judge:
 
     def _next_world(self) -> Goal:
         held = self.held()
-        fresh = [g for g in WORLD_CANDIDATES if g.id not in held]
-        return world_goal(self.rng.choice(fresh or WORLD_CANDIDATES))
+        fresh = [g for g in goals.WORLD_CANDIDATES if g.id not in held]
+        return world_goal(self.rng.choice(fresh or goals.WORLD_CANDIDATES))
 
     async def run(self, players: Players) -> None:
         """Check each goal in play once an interval, telling its holders, until cancelled.

@@ -20,7 +20,8 @@ from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
-from examples.rumor_mill.goals import DECK
+from examples.rumor_mill import goals
+from examples.rumor_mill.believability import Believability
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
@@ -47,6 +48,7 @@ async def play(web: bool) -> None:
     game = Game(config.memory_moves, config.day_seconds)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
+        await goals.rebar_deck(Believability(jev))
         baselines = Baselines(contex, config)
         facts = Facts()
         judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts)
@@ -80,8 +82,8 @@ async def play(web: bool) -> None:
         judging = None
         try:
             await baselines.load([need for v in villagers for need in v.needs])
-            await baselines.load([g.evidence[0] for g in DECK if g.evidence])
-            await overhear.publish(list(DECK))
+            await baselines.load([g.evidence[0] for g in goals.DECK if g.evidence])
+            await overhear.publish(list(goals.DECK))
             judging = asyncio.create_task(judge.run(players))
             await routine.load(villagers)
             await asyncio.gather(*(

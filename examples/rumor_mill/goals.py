@@ -21,10 +21,19 @@ class Goal:
     min_group_members: int = 0
     state_check: Callable[[Town], float] | None = None
     hold_checks: int = 3
+    # The villager ids that count, or the whole village when empty.
+    audience: tuple[str, ...] = ()
+    audience_label: str = ""
+    # The villager the claim is about.
+    subject: str | None = None
+    # The player a generated goal belongs to.
+    owner: str | None = None
+    claim_text: str = ""
+    long_shot: bool = False
 
 
 def _belief(id: str, text: str, evidence: str, question: str, target: float) -> Goal:
-    return Goal(id, text, "belief", (evidence,), question, target)
+    return Goal(id, text, "belief", (evidence,), question, target, claim_text=text.partition(" believes ")[2])
 
 
 def _families_leave(n: int) -> Goal:
@@ -114,8 +123,30 @@ def goal_counts(goal: Goal, known: dict[str, tuple[int, int]], villagers: int) -
 
 def claim(goal: Goal) -> str | None:
     """What a belief goal's village believes, or None for any other goal."""
+    if goal.claim_text:
+        return goal.claim_text
     _, sep, rest = goal.text.partition(" believes ")
     return rest if goal.kind == "belief" and sep else None
+
+
+BANDS: tuple[tuple[float, str], ...] = ((1 / 5, "A fifth"), (1 / 4, "A quarter"), (1 / 3, "A third"), (1 / 2, "Half"))
+
+
+def rebar(goal: Goal, band: int) -> Goal:
+    """A village-wide belief goal with its bar set by the believability band, 0 being a long shot."""
+    if goal.kind != "belief" or goal.creed_question or goal.audience:
+        return goal
+    fraction, word = BANDS[band]
+    return replace(
+        goal, target_fraction=fraction, text=f"{word} of the village believes {claim(goal)}", long_shot=band == 0,
+    )
+
+
+async def rebar_deck(believability) -> None:
+    """Set each village-wide belief goal's bar in DECK and WORLD_CANDIDATES from how believable its claim is."""
+    global DECK, WORLD_CANDIDATES
+    DECK = tuple([rebar(g, await believability.band(claim(g))) if claim(g) else g for g in DECK])
+    WORLD_CANDIDATES = tuple(g for g in DECK if g.kind == "belief" and g.creed_question is None)
 
 
 def world_goal(goal: Goal) -> Goal:
