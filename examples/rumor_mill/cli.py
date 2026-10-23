@@ -13,7 +13,7 @@ from examples.rumor_mill.town import Town
 
 HELP = (
     "Whisper by typing a name, a colon, and the rumor, e.g. Marta: the miller waters his flour\n"
-    "Other commands: go <place>, listen, ask <name>: <topic>, villagers, inspect <name>, goals, trophies, usage, help, quit"
+    "Other commands: go <place>, listen, ask <name>: <topic>, villagers, inspect <name>, goals, swap N, trophies, usage, help, quit"
 )
 
 
@@ -33,6 +33,8 @@ def parse_command(line: str) -> Command:
     line = line.strip()
     if line in ("listen", "villagers", "goals", "trophies", "usage", "help", "quit"):
         return Command(line)
+    if line.startswith("swap ") and line[5:].strip().isdigit():
+        return Command("swap", text=line[5:].strip())
     if line.startswith("inspect ") and line[8:].strip():
         return Command("inspect", line[8:].strip())
     if line.startswith("go ") and line[3:].strip():
@@ -121,14 +123,20 @@ async def repl(
                 feed.say(out)
         elif cmd.kind == "goals":
             progress = judge.progress if judge else {}
-            for goal in player.goals:
-                feed.say(f"{goal.text}: {int(progress.get(goal.id, 0.0) * 100)}%")
+            for n, goal in enumerate(player.goals, 1):
+                feed.say(f"{n}. {goal.text}: {int(progress.get(goal.id, 0.0) * 100)}%")
             if not player.goals:
                 feed.say("No goals yet.")
             if judge:
                 feed.say(f"World goal: {judge.world.text}: {int(progress.get(judge.world.id, 0.0) * 100)}%")
             if suspicion:
                 feed.say(HEAT_LINES[suspicion.label(player.id)])
+        elif cmd.kind == "swap" and judge:
+            n = int(cmd.text)
+            if not 1 <= n <= len(player.goals):
+                feed.say(f"Pick a goal from 1 to {len(player.goals)}.")
+            elif problem := await judge.swap(player, player.goals[n - 1].id):
+                feed.say(problem)
         elif cmd.kind == "trophies":
             case = players.cases.get(player.owner, []) if players else []
             for t in case:

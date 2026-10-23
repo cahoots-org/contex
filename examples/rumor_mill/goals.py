@@ -209,6 +209,13 @@ def trophy_line(trophy: Trophy, claim: str | None, unseen: str | None = None) ->
     return f"{line} And {unseen} never knew." if unseen else line
 
 
+def kind_of(goal: Goal) -> str | None:
+    """"personal" or "circle" for a generated goal about a villager, None for a deck goal."""
+    if not goal.subject:
+        return None
+    return "personal" if len(goal.audience) == 1 else "circle"
+
+
 def goal_targets(goal: Goal) -> dict:
     """What the page needs to mark a goal's targets: its long shot, the villagers it works on and the one it is about."""
     return {"long_shot": goal.long_shot, "marks": list(goal.audience) if goal.subject else [], "subject": goal.subject}

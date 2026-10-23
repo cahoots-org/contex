@@ -5,7 +5,7 @@ import pytest
 
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.goal_maker import GoalMaker
-from examples.rumor_mill.goals import BANDS
+from examples.rumor_mill.goals import BANDS, Goal, kind_of
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.overhear import Overhear
@@ -193,3 +193,25 @@ async def test_a_mark_sharing_a_first_name_is_called_by_full_name():
     dealt = await hand(maker)
     assert dealt[0].text == "Convince Agnes Thatch that Hob is stealing Agnes's geese"
     assert dealt[0].audience_label == "Agnes Thatch"
+
+
+@pytest.mark.asyncio
+async def test_hand_of_one_circle_goal_makes_no_personal_goal():
+    maker, _, overhear, _ = make()
+    dealt = await maker.hand("p-1", taken=set(), deck_skip=set(), never=set(), kinds=("circle",), size=1)
+    assert len(dealt) == 1 and dealt[0].audience_label == "the farmers" and len(dealt[0].audience) == 3
+    assert overhear.generated_ids() == {dealt[0].id}
+
+
+@pytest.mark.asyncio
+async def test_a_one_goal_hand_falls_back_to_one_deck_goal():
+    maker, _, _, _ = make(raws=())
+    dealt = await maker.hand("p-1", taken=set(), deck_skip=set(), never=set(), kinds=("personal",), size=1)
+    assert len(dealt) == 1 and dealt[0].owner is None
+
+
+def test_kind_of_names_generated_goals():
+    assert kind_of(Goal("a", "a", "belief", audience=("v1",), subject="v2")) == "personal"
+    assert kind_of(Goal("a", "a", "belief", audience=("v1", "v2", "v3"), subject="v4")) == "circle"
+    assert kind_of(Goal("a", "a", "belief")) is None
+    assert kind_of(Goal("a", "a", "state")) is None

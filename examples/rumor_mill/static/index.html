@@ -338,7 +338,15 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: .4rem .6rem;
 }
 .goal-card:empty { display: none; }
-.goal-label { font-size: .75rem; color: var(--muted); }
+.goal-label { display: flex; align-items: center; font-size: .75rem; color: var(--muted); }
+.swap {
+  margin-left: auto; padding: 0 .35rem; border: 0; border-radius: 4px; background: none; color: var(--muted);
+  font: inherit; line-height: 1.4; cursor: pointer; opacity: 0;
+}
+.goal-card:hover .swap:not(:disabled), .swap:focus-visible { opacity: 1; }
+.swap:hover:not(:disabled) { color: var(--ink); background: var(--rail); }
+.swap:disabled { cursor: default; opacity: .25; }
+@media (hover: none) { .swap { opacity: .6; } .swap:disabled { opacity: .25; } }
 .goal-text, .doubt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .goal-text { font-size: .85rem; }
 .doubt { margin: 0; font-size: .75rem; color: var(--muted); }
@@ -640,6 +648,7 @@ const feed = $("feed");
 const spoken = new Map();
 const goals = new Map();
 let world = null;
+const swapping = new Set();
 let trophies = [];
 const MAX_ITEMS = 1000;
 // Above this share of new words, mark what survived instead of what changed.
@@ -1351,6 +1360,7 @@ function render(e, fresh) {
       return line("speech", null, e.line ? `${e.name} storms off: “${e.line}”` : `${e.name} storms off.`);
     case "denied":
       return line("speech", null, e.line ? `${e.name}: “${e.line}”` : `${e.name} denies it.`);
+    case "goal_swapped":
     case "goal_void": {
       const kept = [...goals].map(([id, g]) => (id === e.goal_id ? [e.new.id, goalOf(e.new)] : [id, g]));
       goals.clear();
@@ -1731,11 +1741,28 @@ function doubtLine(g) {
   return el("p", { className: "doubt", textContent: `${who} believe it — they're saying: “${clip(d.saying, 80)}”` });
 }
 
-// A goal card's label, claim, doubt, and bar with progress words at its foot.
-function goalCard(g, label) {
+function swapButton(id) {
+  const button = el("button", {
+    type: "button", className: "swap", textContent: "↻", ariaLabel: "Swap for a new goal",
+    title: "Swap for a new goal", disabled: swapping.has(id) || over,
+  });
+  button.addEventListener("click", async () => {
+    swapping.add(id);
+    renderGoals();
+    const { ok, error } = await post("/api/goal/swap", { goal_id: id });
+    swapping.delete(id);
+    if (!ok) setStatus(error, true);
+    renderGoals();
+  });
+  return button;
+}
+
+// A goal card's label, claim, doubt, and bar with progress words at its foot; a swap button when given the goal's id.
+function goalCard(g, label, swapId = null) {
   const shown = g.met ? "Met" : goalProgress(g);
   return [
-    el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null),
+    el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null,
+      swapId && !g.met ? swapButton(swapId) : null),
     el("div", { className: "goal-text", textContent: g.text, title: g.text }),
     doubtLine(g),
     el("div", { className: "bar" },
@@ -1748,7 +1775,7 @@ function goalCard(g, label) {
 function renderGoals() {
   const all = [...goals.values()];
   $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
-  $("goals").replaceChildren(...all.map((g) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalCard(g, "Your goal"))));
+  $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalCard(g, "Your goal", id))));
   for (const uid of rumorRows.keys()) setRow(uid);
   refreshVillagers();
 }

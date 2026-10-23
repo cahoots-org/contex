@@ -32,6 +32,9 @@ def test_parse_command_forms():
     assert parse_command("usage") == Command("usage")
     assert parse_command("trophies") == Command("trophies")
     assert parse_command("quit") == Command("quit")
+    assert parse_command("swap 2") == Command("swap", text="2")
+    assert parse_command("swap") == Command("unknown")
+    assert parse_command("swap two") == Command("unknown")
     assert parse_command("  quit  ") == Command("quit")
     assert parse_command("dance") == Command("unknown")
     assert parse_command("") == Command("unknown")
@@ -92,7 +95,7 @@ async def test_goals_prints_the_players_goals_the_world_goal_and_the_heat_label(
     judge = SimpleNamespace(progress={"g": 0.4, "world-w": 0.1}, world=world)
     await cli.repl(SimpleNamespace(id=PID, goals=[goal]), town, feed, judge, suspicion=suspicion)
     assert out[-3:] == [
-        "cat is a spy: 40%", "World goal: Two thirds of the village believes the well is cursed: 10%",
+        "1. cat is a spy: 40%", "World goal: Two thirds of the village believes the well is cursed: 10%",
         "The village is hunting for you.",
     ]
 
@@ -168,3 +171,22 @@ async def test_ask_resolves_the_name_and_prints_problems_but_not_a_refusal(monke
     assert asked == [("v1", "the mill"), ("v1", "rude")]
     assert out[1:] == ["No one in town is called Zed.", "Marta is at the tavern. Walk there to ask them."]
     assert "ask <name>: <topic>" in cli.HELP
+
+
+@pytest.mark.asyncio
+async def test_swap_runs_the_judge_and_says_its_problem(monkeypatch):
+    town, feed, out = village()
+    first, second = Goal("a", "A", "state"), Goal("b", "B", "state")
+    asked = []
+
+    async def swap(player, goal_id):
+        asked.append(goal_id)
+        return "That goal is already met."
+
+    judge = SimpleNamespace(progress={}, world=first, swap=swap)
+    player = SimpleNamespace(id=PID, goals=[first, second])
+    monkeypatch.setattr(cli, "_readline", scripted(["swap 2\n", "swap 3\n", ""]))
+    await cli.repl(player, town, feed, judge)
+    assert asked == ["b"]
+    assert out[-2:] == ["That goal is already met.", "Pick a goal from 1 to 2."]
+    assert "swap N" in cli.HELP

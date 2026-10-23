@@ -838,3 +838,30 @@ def test_page_renders_badges_and_long_shot(game):
     for needle in ("your mark", "the one it's about", "Long shot", "long_shot", "goal_void", '"denied"', "was?.marks"):
         assert needle in html
     assert "innerHTML" not in html
+
+
+def test_swap_a_goal(game):
+    asked = []
+
+    async def swap(player, goal_id):
+        asked.append((player.id, goal_id))
+
+    game.judge.swap = swap
+    response = game.client.post("/api/goal/swap", json={"goal_id": "cat"})
+    assert (response.status_code, response.json(), asked) == (200, {"ok": True}, [(game.player.id, "cat")])
+
+
+def test_a_swap_problem_is_a_409_with_the_sentence(game):
+    async def swap(player, goal_id):
+        return "That goal is already met."
+
+    game.judge.swap = swap
+    response = game.client.post("/api/goal/swap", json={"goal_id": "cat"})
+    assert (response.status_code, response.json()) == (409, {"error": "That goal is already met."})
+
+
+def test_a_bad_swap_payload_is_a_400_and_a_stranger_a_401(game):
+    assert game.client.post("/api/goal/swap", json={"goal_id": 3}).status_code == 400
+    assert game.client.post("/api/goal/swap", content=b"nope").status_code == 400
+    game.client.cookies.clear()
+    assert game.client.post("/api/goal/swap", json={"goal_id": "cat"}).status_code == 401

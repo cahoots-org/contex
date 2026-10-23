@@ -35,6 +35,7 @@ VILLAGER_POLL_SECONDS = 1.0
 USAGE_POLL_SECONDS = 3.0
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
 BAD_WALK = 'Send JSON like {"place": "tavern"}.'
+BAD_SWAP = 'Send JSON like {"goal_id": "g1"}.'
 BAD_ASK = 'Send JSON like {"villager_id": "v1", "topic": "the mill"}.'
 COOKIE = "rumor_mill_player"
 COOKIE_SECONDS = 365 * 24 * 3600
@@ -312,6 +313,20 @@ def create_app(
             return _error(400, BAD_WHISPER)
         if problem := await (player.whisper_to(vid, text) if vid else player.whisper(name, text)):
             return _error(409 if isinstance(problem, Refusal) else 400, problem)
+        return {"ok": True}
+
+    @app.post("/api/goal/swap")
+    async def swap_goal(request: Request):
+        if (player := player_for(players, request.cookies.get(COOKIE))) is None:
+            return _error(401, RELOAD)
+        payload = await _payload(request, BAD_SWAP, "That request is too long.")
+        if isinstance(payload, JSONResponse):
+            return payload
+        goal_id = payload.get("goal_id")
+        if not isinstance(goal_id, str):
+            return _error(400, BAD_SWAP)
+        if problem := await judge.swap(player, goal_id):
+            return _error(409, problem)
         return {"ok": True}
 
     @app.post("/api/walk")

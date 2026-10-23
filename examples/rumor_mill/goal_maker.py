@@ -96,13 +96,16 @@ class GoalMaker:
         self.rng = rng
         self.ids = ids
 
-    async def hand(self, player_id: str, taken: set[str], deck_skip: set[str], never: set[str]) -> list[Goal]:
-        """The player's personal and circle goals, then deck goals to make three; all deck goals if Haiku fails."""
+    async def hand(
+        self, player_id: str, taken: set[str], deck_skip: set[str], never: set[str],
+        kinds: tuple[str, ...] = ("personal", "circle"), size: int = HAND,
+    ) -> list[Goal]:
+        """The player's goals of the given kinds, then deck goals to make size; all deck goals if Haiku fails."""
         made: list[Goal] = []
         with charging(player_id):
             try:
                 made = await asyncio.wait_for(
-                    self._write(player_id, taken), self.config.goal_writer_timeout_seconds,
+                    self._write(player_id, taken, kinds), self.config.goal_writer_timeout_seconds,
                 )
                 await self.baselines.load([g.claim_text for g in made], persist=False)
                 await self.overhear.publish(made)
@@ -110,13 +113,13 @@ class GoalMaker:
                 log.warning("writing goals for %s failed", player_id, exc_info=True)
                 self.overhear.drop([g.id for g in made])
                 made = []
-        return made + deal(self.rng, HAND - len(made), skip=deck_skip, never=never)
+        return made + deal(self.rng, size - len(made), skip=deck_skip, never=never)
 
-    async def _write(self, player_id: str, taken: set[str]) -> list[Goal]:
-        """The first valid personal and circle goals Haiku writes for the player, banded by believability."""
+    async def _write(self, player_id: str, taken: set[str], kinds: tuple[str, ...]) -> list[Goal]:
+        """The first valid goal of each kind Haiku writes for the player, banded by believability."""
         raws = await self.writer.goals(self._sample(), sorted(taken))
         made: list[Goal] = []
-        for kind in ("personal", "circle"):
+        for kind in kinds:
             for raw in (r for r in raws if r.get("kind") == kind):
                 goal = _validate(raw, self.town, taken | {g.claim_text for g in made})
                 if goal is not None:

@@ -15,7 +15,7 @@ from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.goals import (
-    Goal, Trophy, audience_of, claim, deal, goal_counts, needed, trophy_line, void_reason, world_goal,
+    Goal, Trophy, audience_of, claim, deal, goal_counts, kind_of, needed, trophy_line, void_reason, world_goal,
 )
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -84,6 +84,8 @@ class Judge:
         self._players: Players | None = None
         # By player id, the task writing their next hand.
         self._dealing: dict[str, asyncio.Task] = {}
+        # The ids of players waiting on a swapped-in goal.
+        self._swapping: set[str] = set()
 
     async def _believes(
         self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],
@@ -241,6 +243,48 @@ class Judge:
         counts = {g.id: c for g in player.goals if (c := self.counts_of(g)) is not None}
         self.feed.on_deal(player.goals, player=player.id, counts=counts)
 
+    def _problem_swapping(self, player: Player, goal_id: str) -> str | None:
+        """Why the player cannot swap the goal now, or None if they can."""
+        goal = next((g for g in player.goals if g.id == goal_id), None)
+        if player.over():
+            return "The game is over."
+        if player.id in self._dealing:
+            return "Your next goals are on their way."
+        if player.id in self._swapping:
+            return "Already finding you a new goal."
+        if goal is None:
+            return "That isn't one of your goals."
+        if goal.id in player.met:
+            return "That goal is already met."
+        return None
+
+    async def swap(self, player: Player, goal_id: str) -> str | None:
+        """Swap the player's unmet goal for a new one of the same kind; returns why it could not be, if it couldn't."""
+        if problem := self._problem_swapping(player, goal_id):
+            return problem
+        old = next(g for g in player.goals if g.id == goal_id)
+        never = {self.world.id.removeprefix("world-")}
+        skip = self.held() | {g.id for g in player.goals}
+        self._swapping.add(player.id)
+        try:
+            if self.maker is None or (kind := kind_of(old)) is None:
+                new = deal(self.rng, 1, skip=skip, never=never)[0]
+            else:
+                others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
+                taken = {c.lower() for g in (*others, *player.goals, self.world) if (c := claim(g))}
+                new = (await self.maker.hand(player.id, taken, skip, never, kinds=(kind,), size=1))[0]
+        finally:
+            self._swapping.discard(player.id)
+        if player.over() or old not in player.goals or old.id in player.met:
+            if new.owner:
+                self.maker.overhear.drop([new.id])
+            return "That goal changed. Try again."
+        if self.maker is not None and old.owner:
+            self.maker.overhear.drop([old.id])
+        player.goals[player.goals.index(old)] = new
+        self.feed.on_goal_swapped(old, new, player=player.id, counts=self.counts_of(new))
+        return None
+
     def _replace_void(self, player: Player) -> None:
         """Swap each of the player's unmet goals that can no longer be met for a deck goal, and tell the player."""
         for i, old in enumerate(player.goals):
@@ -381,7 +425,7 @@ class Judge:
         questions = {g.believer_question for g in in_play}
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[0] in questions}
         # A hand being written has published evidence for goals not yet in play.
-        if self.maker is not None and not self._dealing:
+        if self.maker is not None and not self._dealing and not self._swapping:
             self.maker.overhear.drop(self.maker.overhear.generated_ids() - ids)
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:

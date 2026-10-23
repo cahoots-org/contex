@@ -69,6 +69,7 @@ class Lines:
         self.trophies: list[tuple[Trophy, str, str]] = []
         self.rumors: list[tuple[str | None, str | None]] = []
         self.doubts: list[tuple[str | None, dict | None]] = []
+        self.swaps: list[tuple[str, str, str]] = []
 
     def on_progress(self, goal, fraction, counts=None, player=None, rumor=None, doubt=None):
         self.progress.append((goal.id, fraction, player))
@@ -81,6 +82,9 @@ class Lines:
     def on_deal(self, goals, player, counts=None):
         self.deals.append(([g.id for g in goals], player))
         self.deal_counts = counts
+
+    def on_goal_swapped(self, old, new, player, counts=None):
+        self.swaps.append((old.id, new.id, player))
 
     def on_world(self, goal, counts=None):
         self.worlds.append(goal.id)
@@ -954,3 +958,141 @@ async def test_a_subject_who_suspected_the_player_is_not_credited_and_a_long_sho
     await run_until(judge, players(pa, feed=feed), lambda: feed.trophies)
     assert "never knew" not in feed.trophies[0][1]
     assert feed.trophies[0][0].long_shot is True
+
+
+def generated(gid, kind, claim_text="the baker waters the ale"):
+    audience = ("v0",) if kind == "personal" else ("v0", "v1", "v2")
+    return Goal(
+        gid, f"{kind} goal", "belief", (claim_text,), "Does it believe?", 0.5, audience=audience, subject="v3",
+        owner=PID, claim_text=claim_text,
+    )
+
+
+class SwapMaker:
+    def __init__(self, new=None):
+        self.new = new
+        self.gate = None
+        self.calls = []
+        self.dropped = []
+        self.overhear = SimpleNamespace(drop=self.dropped.extend, generated_ids=set)
+
+    async def hand(self, player_id, taken, deck_skip, never, kinds=("personal", "circle"), size=3):
+        self.calls.append({"taken": taken, "deck_skip": deck_skip, "never": never, "kinds": kinds, "size": size})
+        if self.gate:
+            await self.gate.wait()
+        return [self.new]
+
+
+@pytest.mark.asyncio
+async def test_swap_replaces_the_goal_in_place_with_the_same_kind():
+    judge, _, _, feed, _ = make()
+    old, new = generated("gen-old", "personal"), generated("gen-new", "personal", "the baker sells stale bread")
+    circle = generated("gen-circle", "circle", "The Mill Is Cursed")
+    judge.maker = SwapMaker(new)
+    mine = holder(PID, BELIEF, old, circle)
+    other = holder("p-2", generated("gen-theirs", "personal", "Geese Go Missing"))
+    judge._players = players(mine, other)
+    assert await judge.swap(mine, old.id) is None
+    assert [g.id for g in mine.goals] == [BELIEF.id, "gen-new", "gen-circle"]
+    assert feed.swaps == [("gen-old", "gen-new", PID)]
+    assert judge.maker.dropped == ["gen-old"]
+    (call,) = judge.maker.calls
+    assert (call["kinds"], call["size"]) == (("personal",), 1)
+    assert {"the mill is cursed", "geese go missing", judge.world.claim_text.lower()} <= call["taken"]
+    assert {"gen-old", "gen-circle", BELIEF.id} <= call["deck_skip"]
+
+
+@pytest.mark.asyncio
+async def test_a_circle_goal_is_swapped_as_circle_kind():
+    judge, _, _, _, _ = make()
+    old = generated("gen-old", "circle")
+    judge.maker = SwapMaker(generated("gen-new", "circle", "the baker waters the beer"))
+    mine = holder(PID, old)
+    await judge.swap(mine, old.id)
+    assert judge.maker.calls[0]["kinds"] == ("circle",)
+
+
+@pytest.mark.asyncio
+async def test_a_deck_goal_swaps_for_a_distinct_deck_goal_without_the_maker():
+    judge, _, _, feed, _ = make()
+    judge.maker = SwapMaker()
+    mine = holder(PID, BELIEF, QUIET)
+    assert await judge.swap(mine, QUIET.id) is None
+    new = mine.goals[1]
+    assert new.id not in (QUIET.id, BELIEF.id) and mine.goals[0] is BELIEF
+    assert judge.maker.calls == [] and judge.maker.dropped == []
+    assert feed.swaps == [(QUIET.id, new.id, PID)]
+
+
+@pytest.mark.asyncio
+async def test_swap_without_a_maker_deals_from_the_deck():
+    judge, _, _, _, _ = make()
+    old = generated("gen-old", "personal")
+    mine = holder(PID, old)
+    assert await judge.swap(mine, old.id) is None
+    assert mine.goals[0].id != "gen-old"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup, problem", [
+    (lambda j, p: setattr(p, "over", lambda: True), "The game is over."),
+    (lambda j, p: j._dealing.update({PID: object()}), "Your next goals are on their way."),
+    (lambda j, p: j._swapping.add(PID), "Already finding you a new goal."),
+    (lambda j, p: None, "That isn't one of your goals."),
+    (lambda j, p: p.met.add("q"), "That goal is already met."),
+])
+async def test_swap_problems(setup, problem):
+    judge, _, _, feed, _ = make()
+    judge.maker = SwapMaker()
+    mine = holder(PID, BELIEF, QUIET)
+    setup(judge, mine)
+    asked = "nope" if problem == "That isn't one of your goals." else QUIET.id
+    assert await judge.swap(mine, asked) == problem
+    assert mine.goals == [BELIEF, QUIET] and feed.swaps == [] and judge.maker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_the_world_goal_cannot_be_swapped():
+    judge, _, _, _, _ = make()
+    mine = holder(PID, BELIEF)
+    assert await judge.swap(mine, judge.world.id) == "That isn't one of your goals."
+
+
+@pytest.mark.asyncio
+async def test_a_second_swap_while_one_is_in_flight_is_refused():
+    judge, _, _, feed, _ = make()
+    old = generated("gen-old", "personal")
+    judge.maker = SwapMaker(generated("gen-new", "personal", "the baker sells stale bread"))
+    judge.maker.gate = asyncio.Event()
+    mine = holder(PID, old, BELIEF)
+    first = asyncio.create_task(judge.swap(mine, old.id))
+    await wait_for(lambda: judge.maker.calls)
+    assert await judge.swap(mine, BELIEF.id) == "Already finding you a new goal."
+    judge.maker.gate.set()
+    assert await first is None
+
+
+@pytest.mark.asyncio
+async def test_a_goal_that_left_the_hand_while_swapping_drops_the_new_one():
+    judge, _, _, feed, _ = make()
+    old, new = generated("gen-old", "personal"), generated("gen-new", "personal", "the baker sells stale bread")
+    judge.maker = SwapMaker(new)
+    judge.maker.gate = asyncio.Event()
+    mine = holder(PID, old, BELIEF)
+    running = asyncio.create_task(judge.swap(mine, old.id))
+    await wait_for(lambda: judge.maker.calls)
+    mine.goals[0] = QUIET
+    judge.maker.gate.set()
+    assert await running == "That goal changed. Try again."
+    assert mine.goals == [QUIET, BELIEF]
+    assert judge.maker.dropped == ["gen-new"] and feed.swaps == []
+
+
+@pytest.mark.asyncio
+async def test_a_swap_in_flight_keeps_its_new_evidence_from_the_sweep():
+    judge, _, _, _, _ = make()
+    dropped = []
+    judge.maker = SimpleNamespace(overhear=SimpleNamespace(drop=dropped.extend, generated_ids=lambda: {"gen-new"}))
+    judge._swapping.add(PID)
+    judge._forget([BELIEF], {})
+    assert dropped == []

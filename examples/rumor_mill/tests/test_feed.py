@@ -342,3 +342,22 @@ def test_deal_and_void_carry_each_goals_targets():
     assert feed.recent[-1].data["text"] == feed.recent[-1].line
     new = feed.recent[-1].data["new"]
     assert (new["believers"], new["needed"], new["marks"], new["subject"], new["long_shot"]) == (1, 3, ["v1", "v2"], "v2", True)
+
+
+def test_goal_swapped_reaches_only_its_player_with_the_new_goal():
+    feed, lines = make()
+    old = Goal("o", "Old", "belief")
+    new = Goal("n", "New", "belief", audience=("v1",), subject="v2", long_shot=True)
+    feed.on_goal_swapped(old, new, player=PID, counts=(0, 1))
+    event = feed.recent[-1]
+    assert (event.kind, event.player, event.line) == ("goal_swapped", PID, 'New goal: "New"')
+    assert not feed.sees("p-2", event)
+    assert event.data["goal_id"] == "o"
+    assert event.data["new"] == {
+        "id": "n", "text": "New", "believers": 0, "needed": 1, "long_shot": True, "marks": ["v1"], "subject": "v2",
+    }
+
+
+def test_the_page_swaps_goals_in_place():
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    assert 'case "goal_swapped"' in page and "Swap for a new goal" in page and "/api/goal/swap" in page

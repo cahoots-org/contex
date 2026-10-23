@@ -138,7 +138,8 @@ In the terminal:
 whisper <name>: <text>    the same
 villagers                 everyone in town, with occupation and place
 inspect <name>            personality, any grudge, and relationships
-goals                     your goals and how close each one is
+goals                     your goals, numbered, and how close each one is
+swap <n>                  swap unmet goal n for a new one of its kind
 usage                     tokens used so far and their estimated cost
 help                      these commands
 quit
