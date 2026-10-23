@@ -83,3 +83,4 @@ dmypy.json
 rumor_mill_seed.json
 rumor_mill_seed.json.baselines.json
 rumor_mill_seed.json.places.json
+rumor_mill_seed.json.goals.json

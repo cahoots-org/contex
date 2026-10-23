@@ -27,6 +27,7 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
+from examples.rumor_mill.pool import load_pool
 from examples.rumor_mill.players import LOCAL_OWNER, Players, new_player_id
 from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.routine import Routine
@@ -51,6 +52,7 @@ async def play(web: bool) -> None:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         believability = Believability(jev)
         await goals.rebar_deck(believability)
+        pool = await load_pool(config.seed_path + ".goals.json", writer, believability, villagers)  # noqa: F841
         baselines = Baselines(contex, config)
         facts = Facts()
         overhear = Overhear(contex, baselines, config, rng)

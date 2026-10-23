@@ -232,3 +232,15 @@ async def test_deny_is_one_flat_line_naming_no_newcomer():
     assert all(s in prompt for s in ("Ada", "baker", "sharp-tongued", "Ada steals geese", "deny"))
     assert "newcomer" in call["system"] and "Never name" in call["system"]
     assert call["max_tokens"] == 80
+
+
+@pytest.mark.asyncio
+async def test_writer_goal_pool_parses_and_tolerates_junk():
+    client = StubClient('```json\n{"accusations": ["waters the ale"], "claims": ["the well is cursed"]}\n```', "Sorry, no.")
+    writer = Writer(client, "haiku-test")
+
+    assert await writer.goal_pool([villager()]) == {"accusations": ["waters the ale"], "claims": ["the well is cursed"]}
+    assert await writer.goal_pool([villager()]) == {}
+    call = client.messages.calls[0]
+    prompt = call["system"] + call["messages"][0]["content"]
+    assert "baker" in prompt and "sharp-tongued" in prompt and "owes me flour" in prompt
