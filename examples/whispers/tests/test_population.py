@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 import json
 import logging
 import random
@@ -44,6 +45,8 @@ class StubEngine:
         self.routine = None
         self.players = Players(None)
         self.players.add(stub_player())
+        self.feed = SimpleNamespace(arrivals=[], on_arrival=lambda vid, name, occupation: self.feed.arrivals.append(
+            (vid, name, occupation)))
 
     async def add_villager(self, v, place):
         if self.routine:
@@ -137,6 +140,7 @@ async def test_arrival_line_reaches_the_square(newcomers):
     assert utt.text == "N1, a cobbler, has arrived at the gate."
     assert listeners == ["v2"]
     assert engine.lineage.root(utt.id) == utt.id
+    assert engine.feed.arrivals == [(utt.text and engine.added[0][0], "N1", "cobbler")]
     await stop(task)
 
 

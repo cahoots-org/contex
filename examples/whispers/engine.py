@@ -624,13 +624,16 @@ class Engine:
         if suspect:
             self.suspicion.bump(v.id, player.id, self.config.suspicion_whisper_bump / 2, "stormed off")
 
-    def acted(self, decision: Decision, vid: str, target: str | None, creed: str | None = None) -> None:
+    def acted(
+        self, decision: Decision, vid: str, target: str | None, creed: str | None = None, farewell: str | None = None,
+    ) -> None:
         """Tell the judge of the villager's action and the player behind it: for leaving town, the one who pressed
         them most, else the one behind the line that broke them; otherwise the one whose rumor it is."""
         player = self._player_behind(decision.source)
         if decision.action == LEAVE_TOWN:
             player = self.pressure.culprit(vid) or player
             log.info("%s left town, credited to %s", vid, player)
+            self.feed.on_departure(vid, self.town.name_of(vid) or vid, farewell)
         if self.judge is not None:
             self.judge.record_action(vid, decision.action, target, player, creed)
 

@@ -223,6 +223,16 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
+    def on_departure(self, villager_id: str, name: str, farewell: str | None) -> None:
+        """A villager left town for good, told to everyone, with their farewell if any."""
+        text = f'{name} has left town for good: "{farewell}"' if farewell else f"{name} has left town for good."
+        self.emit("departure", text, villager_id=villager_id, name=name, farewell=farewell, text=text)
+
+    def on_arrival(self, villager_id: str, name: str, occupation: str) -> None:
+        """A newcomer arrived at the gate, told to everyone."""
+        text = f"{name}, a {occupation}, has arrived at the gate."
+        self.emit("arrival", text, villager_id=villager_id, name=name, text=text)
+
     def on_storm_off(
         self, villager_id: str, name: str, line: str | None = None, *, player: str, verb: str = "storms off",
     ) -> None:

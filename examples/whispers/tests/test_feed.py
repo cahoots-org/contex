@@ -369,3 +369,16 @@ def test_progress_on_an_action_goal_shows_where_it_stands():
     feed.on_progress(goal, 0.0, None, player="p-1", standing="Vi is shaken")
     event = feed.recent[-1]
     assert event.line == 'Goal "Drive Vi out of town": Vi is shaken' and event.data["standing"] == "Vi is shaken"
+
+
+def test_departures_and_arrivals_are_told_to_everyone():
+    feed = Feed(Lineage(), Town(), out=None)
+    feed.on_departure("v1", "Jocelin Pennyfeather", "I will not stay where I am slandered.")
+    feed.on_departure("v2", "Odo Fennelwhite", None)
+    feed.on_arrival("v9", "Hawise Marlowe", "tanner")
+    left, gone, came = list(feed.recent)[-3:]
+    assert (left.kind, left.player) == ("departure", None)
+    assert left.line == 'Jocelin Pennyfeather has left town for good: "I will not stay where I am slandered."'
+    assert gone.line == "Odo Fennelwhite has left town for good."
+    assert (came.kind, came.player, came.line) == ("arrival", None, "Hawise Marlowe, a tanner, has arrived at the gate.")
+    assert (left.data["text"], came.data["text"]) == (left.line, came.line)

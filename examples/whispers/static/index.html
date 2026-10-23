@@ -1383,6 +1383,10 @@ function render(e, fresh) {
       learn(e);
       dockEnd(e.villager_id);
       return line("loud", null, e.line ? `${e.name} turns away from you: “${e.line}”` : `${e.name} turns away from you.`);
+    case "departure":
+      return line("loud", null, e.text);
+    case "arrival":
+      return line("quiet", null, e.text);
     case "stormed_off":
       dockEnd(e.villager_id);
       return line("speech", null, e.line ? `${e.name} ${e.verb}: “${e.line}”` : `${e.name} ${e.verb}.`);

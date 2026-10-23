@@ -208,6 +208,11 @@ def test_page_says_where_an_action_goal_stands_instead_of_a_percent(game):
     assert 'g.standing || "Not yet"' in html and "bar standing" in html
 
 
+def test_page_shows_departures_and_arrivals(game):
+    html = game.client.get("/").text
+    assert 'case "departure"' in html and 'case "arrival"' in html
+
+
 def test_page_has_the_walk_listen_and_ask_controls(game):
     html = game.client.get("/").text
     for needle in ("Walk here", "Listen here", "/api/walk", "/api/listen", "/api/ask", 'case "listen"', 'case "asked"'):

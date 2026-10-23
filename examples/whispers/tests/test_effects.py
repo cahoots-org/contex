@@ -52,8 +52,9 @@ class RecordingHub:
         self.replies = []
         self.acts = []
 
-    def acted(self, decision, vid, target, creed=None):
+    def acted(self, decision, vid, target, creed=None, farewell=None):
         self.acts.append((decision.action, vid, target, creed))
+        self.farewell = farewell
 
     async def reply(self, utterance):
         self.replies.append(utterance)
@@ -169,6 +170,7 @@ async def test_leave_town_removes_villager_and_announces_in_square():
     assert listeners == ["v2"]
     assert "leaving town" in utt.text and "words" in utt.text
     assert s.writer.say_calls == [(LEAVE_TOWN, None, "the square")]
+    assert s.hub.farewell and s.hub.farewell in utt.text
 
 
 @pytest.mark.asyncio

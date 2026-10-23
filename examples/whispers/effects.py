@@ -35,7 +35,9 @@ class Hub(Protocol):
 
     async def reply(self, utterance: Utterance) -> None: ...
 
-    def acted(self, decision: Decision, vid: str, target: str | None, creed: str | None = None) -> None: ...
+    def acted(
+        self, decision: Decision, vid: str, target: str | None, creed: str | None = None, farewell: str | None = None,
+    ) -> None: ...
 
 
 async def act(
@@ -154,6 +156,6 @@ async def act(
     elif action == LEAVE_TOWN:
         farewell = await writer.say(villager, decision, source_text, "the square")
         town.remove(vid)
-        hub.acted(decision, vid, None)
+        hub.acted(decision, vid, None, farewell=farewell)
         listeners = [v.id for v in town.present("square")]
         await say(f"{villager.name} is leaving town for good: {farewell}", listeners, ROOM, "announced")

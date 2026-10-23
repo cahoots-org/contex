@@ -48,6 +48,7 @@ class Replenisher:
         if self.engine.routine:
             await self.engine.routine.add(newcomer)
         await self.engine.add_villager(newcomer, GATE)
+        self.engine.feed.on_arrival(newcomer.id, newcomer.name, newcomer.occupation)
         utt = Utterance(
             self.engine.ids.next("u"), "town", CRIER, GATE,
             f"{newcomer.name}, a {newcomer.occupation}, has arrived at the gate.", None, "announced",
