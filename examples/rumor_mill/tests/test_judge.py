@@ -780,3 +780,60 @@ async def test_forget_drops_generated_evidence():
     judge.progress = {gen.id: 0.5, BELIEF.id: 0.5}
     judge._forget({BELIEF.id}, {})
     assert overhear._evidence == {f"goal:{BELIEF.id}": "cat spy"}
+
+
+async def pending_redeal(judge, pa, feed, town=None):
+    """Run the judge until pa's finished hand is waiting on a gated maker; returns the running task."""
+    judge.world = QUIET
+    judge.maker = GatedMaker()
+
+    async def check(g):
+        return 1.0 if g.id != QUIET.id else 0.0
+
+    judge.check = check
+    running = asyncio.create_task(judge.run(players(pa, feed=feed)))
+    await wait_for(lambda: judge.maker.calls)
+    return running
+
+
+@pytest.mark.asyncio
+async def test_no_void_line_for_a_won_hand_while_its_redeal_is_pending():
+    judge, _, _, feed, town = make()
+    feed.voids = []
+    feed.on_goal_void = lambda old, new, reason, player: feed.voids.append(old.id)
+    mark = audience_goal("v0", fraction=0.0, owner="p-a")
+    pa = holder("p-a", mark)
+    running = await pending_redeal(judge, pa, feed)
+    try:
+        town.remove("v0")
+        await asyncio.sleep(CONFIG.day_seconds * 5)
+        assert feed.voids == [] and pa.goals == [mark]
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_no_second_trophy_while_a_redeal_is_pending():
+    judge, _, _, feed, _ = make()
+    pa = holder("p-a", BELIEF)
+    running = await pending_redeal(judge, pa, feed)
+    try:
+        pa.goals = [Goal("swapped", "swapped", "belief", ("x",), "?", 0.5, hold_checks=1)]
+        await asyncio.sleep(CONFIG.day_seconds * 5)
+        assert len(feed.trophies) == 1 and "swapped" not in pa.met
+        assert [g for g, _ in feed.met] == ["g"]
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_a_hand_written_after_the_game_ended_is_dropped():
+    judge, _, _, feed, _ = make()
+    dropped = []
+    judge.maker = GatedMaker(SimpleNamespace(drop=dropped.extend))
+    judge.maker.ready.set()
+    pa = holder("p-a", BELIEF, over=True)
+    await judge.redeal(pa)
+    assert pa.goals == [BELIEF] and feed.deals == [] and dropped == ["t"]

@@ -166,3 +166,23 @@ async def test_sample_prefers_villagers_with_grudges_or_ties():
     sample, taken = maker.writer.samples[0]
     assert {v.id for v in sample} == {AGNES.id, HOB.id}
     assert taken == ["the well is cursed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [
+    dict(PERSONAL, claim="Hobbes is stealing Agnes's geese"),
+    dict(PERSONAL, text="Convince Agnesia that Hob is stealing her geese"),
+    dict(PERSONAL, text="Convince Agnes that Hob is stealing her geese" + " truly" * 40),
+    dict(PERSONAL, claim="Hob is stealing Agnes's geese" + " truly" * 40),
+])
+async def test_personal_goal_needs_whole_names_and_short_fields(bad):
+    maker, _, _, _ = make(raws=(bad, CIRCLE))
+    dealt = await hand(maker)
+    assert [g.owner for g in dealt] == ["p-1", None, None] and dealt[0].audience_label == "the farmers"
+
+
+@pytest.mark.asyncio
+async def test_circle_label_over_the_cap_is_rejected():
+    maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, label="the farmers" + " x" * 100)))
+    dealt = await hand(maker)
+    assert [g.owner for g in dealt] == ["p-1", None, None]

@@ -198,15 +198,22 @@ class Judge:
         self._hand_to(player, deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")}))
 
     async def redeal(self, player: Player) -> None:
-        """Give the player a new hand written for them, or from the deck without a goal maker."""
+        """Give the player a new hand written for them, or from the deck without a goal maker.
+
+        A hand that lands after the player's game ended is dropped, with its generated evidence.
+        """
         if self.maker is None:
             self.deal(player)
             return
         others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
         taken = {c.lower() for g in (*others, self.world) if (c := claim(g))}
-        self._hand_to(player, await self.maker.hand(
+        hand = await self.maker.hand(
             player.id, taken=taken, deck_skip=self.held(), never={self.world.id.removeprefix("world-")},
-        ))
+        )
+        if player.over():
+            self.maker.overhear.drop([g.id for g in hand if g.owner])
+            return
+        self._hand_to(player, hand)
 
     def _hand_to(self, player: Player, hand: list[Goal]) -> None:
         player.goals = hand
@@ -249,9 +256,11 @@ class Judge:
                 continue
             self._note_whisperers(players)
             playing = [p for p in players if not p.over()]
-            for p in playing:
+            # A player whose next hand is being written has won this one, so it is no longer judged.
+            judged = [p for p in playing if p.id not in self._dealing]
+            for p in judged:
                 self._replace_void(p)
-            in_play = {g.id: g for p in playing for g in p.goals}
+            in_play = {g.id: g for p in judged for g in p.goals}
             in_play[self.world.id] = self.world
             for goal in in_play.values():
                 before = dict(self.roots.get(goal.id, {}))
@@ -262,7 +271,7 @@ class Judge:
                     log.exception("checking %s failed", goal.id)
                     continue
                 world = goal.id == self.world.id
-                holders = [p for p in playing if any(g.id == goal.id for g in p.goals)]
+                holders = [p for p in judged if p.id not in self._dealing and any(g.id == goal.id for g in p.goals)]
                 doubt = self.doubt.get(goal.id)
                 moved = int(progress * 100) != int(self.progress.get(goal.id, 0.0) * 100)
                 if moved or self.doubt.get(goal.id, {}).get("count") != doubted:
