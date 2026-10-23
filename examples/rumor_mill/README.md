@@ -62,12 +62,14 @@ To play in a browser instead, add `--web` and open the address it prints,
 python -m examples.rumor_mill --web
 ```
 
-The first run asks Haiku for the village in batches of 10 and writes it to
-`rumor_mill_seed.json`; later runs reuse that file. Most villagers are
-good-natured; about one in five is sour and holds a grudge, and those are the
-village's skeptics, quick to doubt or mock a rumor. Delete the file to get a new
-village; if its size differs from `RUMOR_MILL_POPULATION` the game exits and
-says so. Each run starts with empty minds unless you set `RUMOR_MILL_SESSION`.
+Each run asks Haiku for a new village in batches of 10, every villager with a
+first name of their own, and saves it as `rumor_mill_worlds/<session>.json`;
+the game prints the path. Set `RUMOR_MILL_SEED_PATH` to that file to play the
+same village again (the model can't reproduce a village from a seed, so the
+file is the record). Most villagers are good-natured; about one in five is sour
+and holds a grudge, and those are the village's skeptics, quick to doubt or mock
+a rumor. If a saved village's size differs from `RUMOR_MILL_POPULATION` the game
+exits and says so. Each run starts with empty minds unless you set `RUMOR_MILL_SESSION`.
 
 On the machine this was tuned on, a 100-villager game took 5.5 seconds to
 start from the seed file, and the game process used 125 MB of memory and
@@ -90,12 +92,12 @@ whisper, one query per need and no model call, which is how the feed can say
 at once whether it landed. A whisper that lands joins the villager's next turn
 even if the push is slow.
 
-The first run computes the baselines and writes them next to the seed, in
-`rumor_mill_seed.json.baselines.json`; for 400 needs that took 5.4 seconds on
+The first run computes the baselines and writes them to
+`rumor_mill_baselines.json`, shared by every village; for 400 needs that took 5.4 seconds on
 the machine this was tuned on. Later runs read the file. Baselines are kept by
 need text and by the exact payload the calibration sentences were published
 in, and are recomputed when either changes. They depend on Contex's embedding
-model, so delete the `.baselines.json` file next to the seed after changing it.
+model, so delete `rumor_mill_baselines.json` after changing it.
 
 Contex embeds every field of what is published, including the data key, so
 the game publishes only an utterance's id and its sentence. The key alone
@@ -174,7 +176,7 @@ hand mixes the kinds at random:
   you.
 
 The accusations and claims come from a pool Haiku writes once per village and
-saves beside the seed as `{seed}.goals.json`. Belief goals are checked once a
+saves beside the village file as `<village>.goals.json`. Belief goals are checked once a
 game day and are met after they hold at 100% for three checks in a row. An
 action goal is met the moment its action happens, if what moved the villager
 traces back to one of your whispers.
@@ -296,8 +298,7 @@ change, and the providers' bills are the real numbers.
 
 Where the tokens go:
 
-- Setup: Haiku writes the village once per seed file, the goal pool once
-  beside it, and each newcomer who arrives after someone leaves.
+- Setup: Haiku writes each new village, the goal pool once beside it, and each newcomer who arrives after someone leaves.
 - Each hand after the first, and each swap: two Jev requests per belief goal
   about a villager, one for the accusation and one for who it works on, and
   one per action goal that names who must act.
@@ -336,7 +337,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
 | `RUMOR_MILL_MATCH_MARGIN` | `0.015` | how far above a need's score against ordinary village talk a whisper must score to match that need |
 | `RUMOR_MILL_TOP_K` | `5` | memories kept per need |
-| `RUMOR_MILL_CALIBRATION_PATH` | seed path plus `.baselines.json` | where need baselines are cached |
+| `RUMOR_MILL_CALIBRATION_PATH` | `rumor_mill_baselines.json` | where need baselines are cached |
 | `RUMOR_MILL_ON_TOPIC_MARGIN` | `0.035` | how far above a whisper's score against ordinary village talk a retelling must score to stay on its rumor card |
 | `RUMOR_MILL_FATIGUE_PER_HOP` | `0.003` | extra clearance over a need's threshold each retelling hop needs before it wakes a listener |
 | `RUMOR_MILL_OVERHEARD_MARGIN` | `0.01` | extra clearance a line said to the room needs over one told to the listener |
@@ -352,7 +353,7 @@ Every field of `Config` can be set with an environment variable.
 | `RUMOR_MILL_TURN_CONCURRENCY` | `20` | villager turns in flight |
 | `RUMOR_MILL_RENEW_SECONDS` | `1200` | read quiet villagers' subscriptions this often so they don't expire |
 | `RUMOR_MILL_HAIKU_MODEL` | `claude-haiku-4-5-20251001` | model for speech and village generation |
-| `RUMOR_MILL_SEED_PATH` | `rumor_mill_seed.json` | where the village is cached |
+| `RUMOR_MILL_SEED_PATH` | empty: a new village | a saved village to play again |
 | `RUMOR_MILL_WEB_PORT` | `8765` | port for `--web` |
 | `RUMOR_MILL_SUSPICION_WHISPER_BUMP` | `0.12` | suspicion a whisper adds to the villager you whisper to |
 | `RUMOR_MILL_SUSPICION_HEAR_MAX` | `0.25` | most suspicion one rumor about the newcomer can add |

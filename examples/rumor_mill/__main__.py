@@ -32,7 +32,7 @@ from examples.rumor_mill.population import Replenisher
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.town import GATE, PLACES, Town
-from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate
+from examples.rumor_mill.town_gen import SeedMismatch, load_or_generate, world_path
 from examples.rumor_mill.usage import CountingJev, Usage
 from examples.rumor_mill.web import create_app
 from examples.rumor_mill.writer import Writer
@@ -43,18 +43,21 @@ async def play(web: bool) -> None:
     rng = random.Random()
     usage = Usage(config)
     writer = Writer(anthropic.AsyncAnthropic(), config.haiku_model, usage)
-    villagers = await load_or_generate(config.seed_path, writer, config.population, rng)
+    seed = config.seed_path or world_path(config.session)
+    villagers = await load_or_generate(seed, writer, config.population, rng)
+    if not config.seed_path:
+        print(f"A new village, saved as {seed}. Set RUMOR_MILL_SEED_PATH={seed} to play it again.")
     town, lineage, ids = Town(), Lineage(), Ids()
     feed = Feed(lineage, town, out=None)
     game = Game(config.memory_moves, config.day_seconds)
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         believability = Believability(jev)
-        pool = await load_pool(config.seed_path + ".goals.json", writer, believability, villagers)
+        pool = await load_pool(seed + ".goals.json", writer, believability, villagers)
         baselines = Baselines(contex, config)
         facts = Facts()
         overhear = Overhear(contex, baselines, config, rng)
-        routine = Routine(jev, config.seed_path + ".places.json", config)
+        routine = Routine(jev, seed + ".places.json", config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(p.goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,

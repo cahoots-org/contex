@@ -84,3 +84,5 @@ rumor_mill_seed.json
 rumor_mill_seed.json.baselines.json
 rumor_mill_seed.json.places.json
 rumor_mill_seed.json.goals.json
+rumor_mill_worlds/
+rumor_mill_baselines.json

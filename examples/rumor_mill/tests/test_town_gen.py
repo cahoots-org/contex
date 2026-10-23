@@ -5,7 +5,7 @@ import pytest
 
 from examples.rumor_mill.town_gen import (
     MAX_FAILED_BATCHES, SeedMismatch, generate_newcomer, generate_villagers, load_or_generate,
-    wire_relationships,
+    wire_relationships, world_path,
 )
 from examples.rumor_mill.models import Villager
 
@@ -286,3 +286,11 @@ async def test_generation_asks_for_mostly_kindly_villagers_and_a_few_sour_ones()
     sour = [p for p in newcomers if "Make this villager sour" in p]
     assert sour and len(sour) < len(newcomers) / 2
     assert all("Make this villager good-natured" in p for p in newcomers if p not in sour)
+
+
+@pytest.mark.asyncio
+async def test_a_new_world_is_saved_in_a_folder_of_its_own(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = world_path("abc123")
+    await load_or_generate(path, FreshBatches(10), 10, random.Random(1))
+    assert (tmp_path / "rumor_mill_worlds" / "abc123.json").exists()

@@ -50,13 +50,17 @@ FINGERPRINT = hashlib.sha256(
 ).hexdigest()[:16]
 
 
+# Baselines depend only on a need's words, so every village shares one cache.
+BASELINES_PATH = "rumor_mill_baselines.json"
+
+
 class Baselines:
     """Mean similarity of each need text to CALIBRATION, cached on disk by exact text and calibration payload."""
 
     def __init__(self, contex: ContexClient, config: Config):
         self.contex = contex
         self.config = config
-        self.path = config.calibration_path or config.seed_path + ".baselines.json"
+        self.path = config.calibration_path or BASELINES_PATH
         self.values: dict[str, float] = {}
         self._lock = asyncio.Lock()
         self._published = False

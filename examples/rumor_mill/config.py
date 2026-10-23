@@ -51,10 +51,11 @@ class Config:
     talk_turns: int = 3
     # How long a villager stays put for a player at their place who has an open exchange with them and stopped talking and typing.
     talk_hold_seconds: float = 60.0
-    # Where need baselines are cached; empty means the seed path plus .baselines.json.
+    # Where need baselines are cached; empty means rumor_mill_baselines.json, shared by every village.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"
-    seed_path: str = "rumor_mill_seed.json"
+    # A saved village to play again; empty means a new village, saved under rumor_mill_worlds/.
+    seed_path: str = ""
     web_port: int = 8765
     # Estimated list prices in dollars per million tokens.
     haiku_input_per_mtok: float = 1.0

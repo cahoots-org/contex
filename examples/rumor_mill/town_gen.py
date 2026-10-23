@@ -1,6 +1,7 @@
 """Generate the village: Haiku writes the people, code wires who knows whom."""
 
 import json
+import os
 import random
 import re
 from dataclasses import asdict
@@ -102,6 +103,15 @@ def _villager(vid: str, raw: dict) -> Villager:
 
 # How many times to ask for a newcomer whose first name is already taken.
 NEWCOMER_TRIES = 3
+
+
+# Where new villages are saved, one file per world.
+WORLDS_DIR = "rumor_mill_worlds"
+
+
+def world_path(session: str) -> str:
+    """Where a new village for this session is saved."""
+    return os.path.join(WORLDS_DIR, f"{session}.json")
 
 
 def _first(name: str) -> str:
@@ -217,6 +227,7 @@ async def load_or_generate(
         return villagers
     villagers = await generate_villagers(writer, count, rng)
     wire_relationships(villagers, rng)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:
         json.dump([asdict(v) for v in villagers], f, indent=2)
     return villagers
