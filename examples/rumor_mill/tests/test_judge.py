@@ -1187,15 +1187,15 @@ def test_a_join_goal_whose_actor_already_joined_is_void():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seed", range(300))
-async def test_a_swap_never_hands_back_the_same_goal(seed):
-    judge, *_ = make(n=4)
-    judge.maker.rng = random.Random(seed)
-    old = judge.maker.draw(PID, set(), 1)[0]
-    mine = holder(PID, old)
-    judge._players = players(mine)
-    assert await judge.swap(mine, old.id) is None
-    assert mine.goals[0].text != old.text
+async def test_a_swap_never_hands_back_the_same_goal():
+    for seed in range(300):
+        judge, *_ = make(n=4)
+        judge.maker.rng = random.Random(seed)
+        old = judge.maker.draw(PID, set(), 1)[0]
+        mine = holder(PID, old)
+        judge._players = players(mine)
+        assert await judge.swap(mine, old.id) is None, seed
+        assert mine.goals[0].text != old.text, seed
 
 
 class ReplyMaker(SwapMaker):
