@@ -203,6 +203,15 @@ async def test_answer_names_the_topic_and_what_was_heard_in_one_line():
     assert "Ada" in call["system"] and "Never mention suspicion" in call["system"]
     await writer.answer(villager(), "the well", [])
     assert "nothing about it" in client.messages.calls[1]["messages"][0]["content"]
+    assert "You know everyone in the village" in call["system"]
+
+
+@pytest.mark.asyncio
+async def test_answer_is_told_who_the_neighbours_in_the_question_are():
+    client = StubClient("The tanner? Keeps to himself.")
+    writer = Writer(client, "haiku-test")
+    await writer.answer(villager(), "Everard Coke", [], ["Everard Coke, the tanner"])
+    assert "Neighbours you know: Everard Coke, the tanner" in client.messages.calls[0]["messages"][0]["content"]
 
 
 @pytest.mark.asyncio

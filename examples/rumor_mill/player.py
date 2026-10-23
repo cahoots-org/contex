@@ -348,6 +348,7 @@ class Player:
             try:
                 if line := await self.writer.answer(
                     villager, topic, [f"{u.speaker_name} at the {u.place}: {u.text}" for u in heard],
+                    self._neighbours(villager, topic),
                 ):
                     return line
             except Exception:
@@ -355,6 +356,17 @@ class Player:
         if heard:
             return f"{villager.name} heard {heard[0].speaker_name} talking about it at the {heard[0].place}."
         return f"{villager.name} hasn't heard anything about that."
+
+    def _neighbours(self, villager: Villager, topic: str) -> list[str]:
+        """Who the topic names among the villager's neighbours, by trade and how the villager knows them."""
+        named = []
+        for v, gone in [*((v, False) for v in self.town.villagers), *((v, True) for v in self.town.departed)]:
+            if v.id == villager.id or not re.search(rf"\b{re.escape(v.name.split()[0])}\b", topic, re.IGNORECASE):
+                continue
+            tie = villager.relationships.get(v.id)
+            named.append(f"{v.name}, the {v.occupation}" + (f" (your {tie})" if tie else "")
+                         + (", who has left the village" if gone else ""))
+        return named
 
     def _now(self) -> tuple[int, str] | None:
         return (self.game.day, self.game.phase) if self.game is not None else None

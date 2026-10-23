@@ -887,6 +887,22 @@ async def test_ask_answers_from_what_the_villager_heard():
 
 
 @pytest.mark.asyncio
+async def test_ask_about_a_neighbour_tells_the_writer_who_they_are():
+    player, _, _, engine, _ = asking("Marta")
+    engine.heard = []
+    player.town.add(Villager("v9", "Everard Coke", "tanner", "dour", "", [], {}), "mill")
+    player.town.add(Villager("v8", "Ida Coke", "baker", "warm", "", [], {}), "mill")
+    player.town.remove("v8")
+    player.town.get("v1").relationships["v9"] = "rival"
+    client = StubClient("Everard? The tanner. Nothing new of him.")
+    player.writer = Writer(client, "haiku-test")
+    assert await player.ask("v1", "what of Everard Coke and Ida?") is None
+    user = asked_user_text(client)
+    assert "Everard Coke, the tanner (your rival)" in user
+    assert "Ida Coke, the baker, who has left the village" in user
+
+
+@pytest.mark.asyncio
 async def test_ask_falls_back_to_a_plain_line_when_the_writer_says_nothing():
     player, _, _, engine, _ = asking("Marta")
     engine.heard = []
