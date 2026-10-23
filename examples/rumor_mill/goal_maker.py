@@ -100,7 +100,7 @@ class GoalMaker:
                 made = await asyncio.wait_for(
                     self._write(player_id, taken), self.config.goal_writer_timeout_seconds,
                 )
-                await self.baselines.load([g.claim_text for g in made])
+                await self.baselines.load([g.claim_text for g in made], persist=False)
                 await self.overhear.publish(made)
             except Exception:
                 log.warning("writing goals for %s failed", player_id, exc_info=True)

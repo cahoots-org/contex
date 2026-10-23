@@ -51,9 +51,11 @@ class LoggingBaselines(StubBaselines):
     def __init__(self):
         super().__init__(0.6)
         self.loaded = []
+        self.persisted = []
 
-    async def load(self, texts):
+    async def load(self, texts, persist=True):
         self.loaded.extend(texts)
+        self.persisted.append(persist)
 
 
 def make(raws=(PERSONAL, CIRCLE), delay=0.0, band=2, config=None, ids=None):
@@ -138,7 +140,7 @@ async def test_writer_timeout_gives_deck_hand():
 async def test_hand_loads_baselines_before_dealing():
     maker, baselines, overhear, _ = make()
     dealt = await hand(maker)
-    assert baselines.loaded == [PERSONAL["claim"], CIRCLE["claim"]]
+    assert baselines.loaded == [PERSONAL["claim"], CIRCLE["claim"]] and baselines.persisted == [False]
     assert {f"goal:{g.id}" for g in dealt[:2]} <= overhear._evidence.keys()
 
 

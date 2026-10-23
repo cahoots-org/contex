@@ -120,6 +120,7 @@ class Engine:
         # Care checks on the listeners of one-to-one rumor hops.
         self._following: set[asyncio.Task] = set()
         # The share of a whisper's suspicion each (subject, player, rumor root) has taken on, the goals whose subject has denied, and the denials running.
+        # ponytail: _traced and _denied grow per rumor root and goal for the life of the server; prune with the judge's _forget.
         self._traced: dict[tuple[str, str, str], float] = {}
         self._denied: set[str] = set()
         self._denials: set[asyncio.Task] = set()

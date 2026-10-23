@@ -62,6 +62,7 @@ class Baselines:
         self._published = False
         self._cache_loaded = False
         self._fallback: set[str] = set()
+        self._unsaved: set[str] = set()
 
     def set(self, text: str, baseline: float) -> None:
         self.values[text] = baseline
@@ -75,8 +76,8 @@ class Baselines:
     def matches(self, text: str, similarity: float) -> bool:
         return similarity >= self.threshold(text)
 
-    async def load(self, texts: list[str]) -> None:
-        """Read the cache, then compute and store the baseline of every text it lacks."""
+    async def load(self, texts: list[str], persist: bool = True) -> None:
+        """Read the cache, then compute the baseline of every text it lacks and, unless persist is off, store it."""
         async with self._lock:
             unique = list(dict.fromkeys(texts))
             if not self._cache_loaded:
@@ -103,11 +104,14 @@ class Baselines:
             fallback = sum(known) / len(known) if known else FALLBACK_BASELINE
             self.values.update(fresh)
             self._fallback -= fresh.keys()
+            if not persist:
+                self._unsaved |= fresh.keys()
             for text in missing:
                 if text not in fresh:
                     self.values[text] = fallback
                     self._fallback.add(text)
-            self._write({t: v for t, v in self.values.items() if t not in self._fallback})
+            if persist:
+                self._write({t: v for t, v in self.values.items() if t not in self._fallback | self._unsaved})
 
     async def measure(self, text: str) -> float:
         """The text's baseline, computed fresh and kept neither in values nor on disk."""

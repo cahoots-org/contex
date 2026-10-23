@@ -115,6 +115,17 @@ async def test_fallback_is_never_cached_and_is_recomputed_later(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_unpersisted_load_is_measured_and_held_but_never_written(tmp_path):
+    baselines = Baselines(FakeContex([0.5]), config(tmp_path))
+    path = tmp_path / "seed.json.baselines.json"
+    await baselines.load(["kept"])
+    await baselines.load(["generated"], persist=False)
+    assert baselines.get("generated") == 0.5
+    await baselines.load(["later"])
+    assert cached(path) == {"kept": 0.5, "later": 0.5}
+
+
+@pytest.mark.asyncio
 async def test_set_is_published_once_per_instance(tmp_path):
     contex = FakeContex()
     baselines = Baselines(contex, config(tmp_path))

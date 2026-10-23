@@ -16,6 +16,7 @@ class Believability:
 
     def __init__(self, jev):
         self.jev = jev
+        # ponytail: grows per claim for the life of the server; prune with the judge's _forget.
         self.bands: dict[str, int] = {}
 
     async def band(self, claim: str) -> int:
