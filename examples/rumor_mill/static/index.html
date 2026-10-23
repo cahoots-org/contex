@@ -274,11 +274,11 @@ mark.kept {
 .dock-badge[data-s="near_miss"] { background: var(--dock-lean); }
 .dock-badge[data-s="answered"] { background: var(--dock-said); color: var(--on-dock-said); }
 .dock-face small { font-size: .75rem; color: var(--muted); }
-.chat { max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
+.chat { max-width: 42rem; max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
 .chat[hidden] { display: none; }
 .chat-about { margin: 0 0 .3rem; font-size: .8rem; color: var(--muted); }
 .chat-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
-.msg { max-width: min(36rem, 85%); padding: .3rem .7rem; border-radius: 10px; overflow-wrap: anywhere; }
+.msg { max-width: 85%; padding: .3rem .7rem; border-radius: 10px; overflow-wrap: anywhere; }
 .msg.you { align-self: flex-end; background: var(--panel); }
 .msg.them { align-self: flex-start; border: 1px solid var(--rail); font: italic 1.05rem/1.4 var(--rumor); }
 .composer form { position: relative; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
@@ -689,6 +689,8 @@ const rumorRows = new Map();
 const DOCK = { near_miss: ["…", "leaning in"], answered: ["↩", "answered"], brushed_off: ["–", "brushed you off"], busy: ["◷", "busy"] };
 const DOCK_ENDS = new Set(["kept", "took_the_bait", "warned", "moved_on", "not_carried"]);
 const dock = new Map();
+// The player's newest whisper to each villager, by villager id.
+const saidTo = new Map();
 let chatWith = null;
 const DRIFT = "The story turned to other things after this.";
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
@@ -709,7 +711,7 @@ const FRONTIER = {
 };
 const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)");
 // What the feed's arrow keys move between; the feed itself is one tab stop.
-const ROVE = ".fold-more, .fold-talk, .trophy-open";
+const ROVE = ".fold-more, .fold-talk, .trophy-open, .chat-open";
 let talkLines = 0;
 const OPEN_KEY = "rumor-mill-open-place";
 const SORT_KEY = "rumor-mill-sort";
@@ -1199,7 +1201,11 @@ function dockStatus(e, fresh) {
   const entry = dock.get(e.villager_id);
   if (e.state === "near_miss" || e.state === "brushed_off") {
     if (e.continues === false) return dockEnd(e.villager_id);
-    if (e.continues === true) Object.assign(dockEntry(e), { state: e.state, thread: true, whispers: new Set([e.whisper_id]) });
+    if (e.continues === true) {
+      const thread = dockEntry(e);
+      if (!thread.thread) thread.at = fresh ? Date.now() : e.at * 1000;
+      Object.assign(thread, { state: e.state, thread: true, whispers: new Set([e.whisper_id]) });
+    }
     if (e.hint) dock.get(e.villager_id)?.lines.push({ you: false, text: e.hint });
   } else if (e.state === "answered") {
     Object.assign(dockEntry(e), { state: "answered", thread: false }).whispers.add(e.whisper_id);
@@ -1234,13 +1240,21 @@ function joinConversation(e) {
   renderDock();
 }
 
+// A reply joins its villager's lines in the dock, opening the conversation there when it comes before the answered
+// status. The feed gets a note that opens the conversation, or shows the words once it has ended.
 function dockReply(e) {
-  const entry = dock.get(e.villager_id);
-  if (entry) {
-    entry.lines.push({ you: false, text: e.text });
+  if (!over) {
+    dockEntry({ ...e, state: "answered", whisper_id: saidTo.get(e.villager_id) ?? e.conversation }).lines.push({ you: false, text: e.text });
     renderDock();
+    setComposer();
   }
-  return line("speech", cardOf.get(e.conversation), `${e.name}: “${e.text}”`);
+  const open = el("button", { type: "button", className: "linkish chat-open", tabIndex: -1, textContent: `${e.name} answered you`,
+    onclick: () => {
+      if (dock.has(e.villager_id)) openChat(e.villager_id);
+      else if (!open.nextSibling) open.after(`: “${e.text}”`);
+    } });
+  open.setAttribute("aria-controls", "chat");
+  return line("quiet", cardOf.get(e.conversation), el("span", { ariaHidden: "true", textContent: "↩ " }), open);
 }
 
 function dockEnd(villagerId) {
@@ -1252,10 +1266,12 @@ function dockEnd(villagerId) {
   if (focused) $("text").focus();
 }
 
-// A missed whisper's exchange lasts until the next part of the day.
-function closeThreads() {
-  for (const [id, entry] of dock) if (entry.thread) dockEnd(id);
-}
+// A missed whisper's exchange lasts until the player goes talk_hold_seconds without whispering to that villager or
+// typing, as on the server.
+let talkHold = Infinity;
+setInterval(() => {
+  for (const [id, t] of dock) if (t.thread && Date.now() - Math.max(t.at, typedAt) >= talkHold * 1000) dockEnd(id);
+}, 1000);
 
 function renderDock() {
   const focused = document.activeElement?.closest?.(".dock-face")?.dataset.id;
@@ -1331,12 +1347,16 @@ function progressed(e) {
 
 function render(e, fresh) {
   switch (e.kind) {
-    case "whisper":
+    case "whisper": {
       lastTarget = e.target_id;
+      saidTo.set(e.target_id, e.uid);
+      const talking = dock.get(e.target_id);
+      if (talking) talking.at = fresh ? Date.now() : e.at * 1000;
       if (cardOf.has(e.uid)) return null;
       if (e.conversation) joinConversation(e);
       else newCard(e.uid, e.target, e.place, e.text);
       return null;
+    }
     case "hop":
       learn(e);
       return retold(e, fresh);
@@ -1355,7 +1375,6 @@ function render(e, fresh) {
       return listened(e, fresh);
     case "time":
       setClock(e);
-      closeThreads();
       return null;
     case "warning":
       return line("loud", null, `${e.speaker} warned ${e.target} about you.`);
@@ -2471,6 +2490,7 @@ function reset() {
   $("rumor-list").replaceChildren();
   selectRumor(null);
   dock.clear();
+  saidTo.clear();
   openChat(null);
   setComposer();
   $("where").textContent = "";
@@ -2497,6 +2517,7 @@ async function loadState() {
   const state = await res.json();
   if (boot !== null && state.boot !== boot) reset();
   boot = state.boot;
+  talkHold = state.talk_hold_seconds;
   places = state.places;
   notes = state.notes;
   beliefs = state.beliefs;

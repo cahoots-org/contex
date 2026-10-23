@@ -253,6 +253,7 @@ def create_app(
             "places": list(PLACES),
             "place": player.place,
             "time": game.clock(),
+            "talk_hold_seconds": player.config.talk_hold_seconds,
             "goals": [goal_json(judge, g, g.id in player.met, len(town.villagers)) for g in player.goals],
             "world_goal": goal_json(judge, judge.world, False, len(town.villagers)),
             "villagers": villagers(town),

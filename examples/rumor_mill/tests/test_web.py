@@ -120,6 +120,7 @@ def test_state_lists_goals_villagers_and_replay(game):
     assert (state["time"]["day"], state["time"]["phase"]) == (1, "morning")
     assert 0 <= state["time"]["fraction"] < 0.25 and state["time"]["day_seconds"] > 0
     assert state["trophies"] == []
+    assert state["talk_hold_seconds"] == game.player.config.talk_hold_seconds
     assert "NEED" not in game.client.get("/api/state").text
 
 
@@ -700,7 +701,7 @@ def test_the_page_renders_moments_and_goal_links(game):
 def test_the_feed_has_three_kinds_of_line(game):
     html = game.client.get("/").text
     rove = re.search(r"const ROVE = \"(.*)\";", html).group(1)
-    assert set(rove.split(", ")) == {".fold-more", ".fold-talk", ".trophy-open"}
+    assert set(rove.split(", ")) == {".fold-more", ".fold-talk", ".trophy-open", ".chat-open"}
     for needle in ('"loud"', '"speech"', '"quiet"', "retold("):
         assert needle in html
     for gone in ("moved by", "rails", "toggleThread", "cardScene", "innerHTML"):
@@ -776,6 +777,23 @@ def test_the_page_has_the_conversation_dock(game):
     for gone in ("const talks", "startTalk", "innerHTML"):
         assert gone not in html
     assert ".reply" not in re.search(r"const ROVE = (.*);", html).group(1)
+
+
+def test_a_reply_lives_in_the_dock_and_the_feed_gets_a_note(game):
+    html = game.client.get("/").text
+    reply = re.search(r"function dockReply\(e\) \{(.*?)\n\}", html, re.S).group(1)
+    # A reply that comes before its answered status opens the conversation rather than being lost.
+    assert 'dockEntry({ ...e, state: "answered", whisper_id: saidTo.get(e.villager_id) ?? e.conversation }).lines.push(' in reply
+    assert "`${e.name} answered you`" in reply and "openChat(e.villager_id)" in reply and 'line("quiet"' in reply
+    assert 'line("speech"' not in reply
+    assert re.search(r"\.chat \{ max-width: 4[0-4]rem;", html)
+
+
+def test_a_lean_in_lasts_the_talk_hold_not_the_part_of_day(game):
+    html = game.client.get("/").text
+    assert "closeThreads" not in html
+    assert "talkHold = state.talk_hold_seconds;" in html
+    assert "Date.now() - Math.max(t.at, typedAt) >= talkHold * 1000" in html
 
 
 def test_a_whisper_the_server_puts_in_a_rumor_never_gets_a_row(game):
