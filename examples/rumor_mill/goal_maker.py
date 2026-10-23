@@ -54,12 +54,6 @@ def names(villager: Villager, text: str) -> bool:
     return re.search(rf"\b{re.escape(_first(villager))}\b", text, re.IGNORECASE) is not None
 
 
-def _called(villager: Villager, town: Town) -> str:
-    """How the player is told of the villager: by first name, or full name when another in town shares it."""
-    shared = sum(_first(v) == _first(villager) for v in town.villagers) > 1
-    return villager.name if shared else _first(villager)
-
-
 def _key(slot: "Slot") -> tuple[str, str | None]:
     """The action a slot's goal would ask for and its target, as held goals give (action, target)."""
     return slot.kind, slot.group.id if slot.group else slot.subject and slot.subject.id
@@ -266,7 +260,8 @@ class GoalMaker:
         return tuple(c for c in out if len(c.members) >= MIN_CIRCLE)
 
     def _call(self, v: Villager) -> str:
-        return _called(v, self.town)
+        """How the player is told of the villager: by full name, so they can find them."""
+        return v.name
 
     def _sketch(self, v: Villager, subject: Villager | None = None) -> str:
         line = f"{v.name}, {v.occupation}, {v.personality}"

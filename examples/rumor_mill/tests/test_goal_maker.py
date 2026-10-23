@@ -67,8 +67,8 @@ class BrokenJev:
 
 
 PATTERNS = (
-    r"Convince \w+ that \w+ waters down the ale",
-    r"Get half of the tavern regulars to believe \w+ waters down the ale",
+    r"Convince \w+ \w+ that \w+ \w+ waters down the ale",
+    r"Get half of the tavern regulars to believe \w+ \w+ waters down the ale",
     r"Half of the village believes the well is cursed",
 )
 
@@ -79,11 +79,11 @@ def test_draw_fills_personal_circle_and_village_templates():
     drawn = [g for seed in range(200) for g in goal_maker(town, ALE, TAVERN, rng=random.Random(seed)).draw("p-1", set(), 1)]
     by_text = {g.text: g for g in drawn}
     assert all(any(re.fullmatch(p, t) for p in PATTERNS) for t in by_text)
-    personal = by_text["Convince Agnes that Hob waters down the ale"]
-    assert personal.audience == (AGNES.id,) and personal.subject == HOB.id and personal.audience_label == "Agnes"
-    assert personal.claim_text == "Hob waters down the ale" and personal.evidence == ("Hob waters down the ale",)
-    assert personal.believer_question == "Does this villager believe Hob waters down the ale?"
-    circle = by_text["Get half of the tavern regulars to believe Hob waters down the ale"]
+    personal = by_text["Convince Agnes Thatch that Hob Miller waters down the ale"]
+    assert personal.audience == (AGNES.id,) and personal.subject == HOB.id and personal.audience_label == "Agnes Thatch"
+    assert personal.claim_text == "Hob Miller waters down the ale" and personal.evidence == ("Hob Miller waters down the ale",)
+    assert personal.believer_question == "Does this villager believe Hob Miller waters down the ale?"
+    circle = by_text["Get half of the tavern regulars to believe Hob Miller waters down the ale"]
     assert set(circle.audience) == {AGNES.id, *(f.id for f in FARMERS)} and circle.target_fraction == BANDS[3][0]
     assert circle.audience_label == "the tavern regulars" and circle.subject == HOB.id
     village = by_text["Half of the village believes the well is cursed"]
@@ -129,11 +129,11 @@ async def test_hand_uses_jev_choices():
     jev = ChoosingJev("cheats at dice", "Cob Smith")
     maker = goal_maker(town_of(AGNES, HOB, COB), NO_CLAIMS, jev=jev)
     (goal,) = await maker.hand("p-1", set(), 1, subjects={AGNES.id, COB.id})
-    assert goal.text == "Convince Cob that Hob cheats at dice" and goal.audience == (COB.id,)
+    assert goal.text == "Convince Cob Smith that Hob Miller cheats at dice" and goal.audience == (COB.id,)
     (accusation_state, _), (mark_state, mark_question) = jev.requests
     assert accusation_state["subject"]["name"] == "Hob Miller"
     assert accusation_state["subject"]["held_against_them"] == [AGNES.grudge]
-    assert mark_state["rumor"] == "Hob cheats at dice" and HOB.id not in mark_question.criteria
+    assert mark_state["rumor"] == "Hob Miller cheats at dice" and HOB.id not in mark_question.criteria
 
 
 def test_subject_weighting_prefers_grudge_targets():
@@ -150,17 +150,17 @@ def test_subject_weighting_prefers_grudge_targets():
 async def test_taken_accusations_not_offered():
     jev = ChoosingJev()
     maker = goal_maker(town_of(AGNES, HOB, COB), NO_CLAIMS, jev=jev)
-    (goal,) = await maker.hand("p-1", {"hob waters down the ale"}, 1, subjects={AGNES.id, COB.id})
+    (goal,) = await maker.hand("p-1", {"hob miller waters down the ale"}, 1, subjects={AGNES.id, COB.id})
     (_, question), _ = jev.requests
     assert list(question.criteria.values()) == ["cheats at dice"]
-    assert goal.claim_text == "Hob cheats at dice"
+    assert goal.claim_text == "Hob Miller cheats at dice"
 
 
 @pytest.mark.usefixtures("claims_only")
 def test_a_subject_with_every_accusation_taken_is_not_drawn():
     maker = goal_maker(town_of(AGNES, HOB), Pool((Entry("waters down the ale", 2),), ()))
     for _ in range(20):
-        (goal,) = maker.draw("p-1", {"hob waters down the ale"}, 1)
+        (goal,) = maker.draw("p-1", {"hob miller waters down the ale"}, 1)
         assert goal.subject == AGNES.id
 
 
@@ -242,19 +242,19 @@ async def test_generated_ids_unique_across_players():
 
 
 @pytest.mark.usefixtures("claims_only")
-def test_a_mark_sharing_a_first_name_is_called_by_full_name():
+def test_goals_name_villagers_in_full():
     town = town_of(AGNES, HOB, Villager("v9", "Agnes Reed", "baker", "kind", "", [], {}))
     drawn = [g for seed in range(50) for g in goal_maker(town, NO_CLAIMS, rng=random.Random(seed)).draw("p-1", set(), 1)]
     labels = {g.audience_label for g in drawn}
-    assert labels <= {"Agnes Thatch", "Agnes Reed", "Hob"} and "Agnes Thatch" in labels
+    assert labels <= {"Agnes Thatch", "Agnes Reed", "Hob Miller"} and "Agnes Thatch" in labels
     assert all("Agnes " in g.claim_text for g in drawn if g.subject in (AGNES.id, "v9"))
 
 
 ACTION_CASES = (
-    ("confront", r"Get Agnes to confront Hob"),
-    ("leave_town", r"Drive Hob out of town"),
-    ("found_group", r"Get someone to start a group against Hob"),
-    ("join_group", r"Get Agnes to join the Plough Guild"),
+    ("confront", r"Get Agnes Thatch to confront Hob Miller"),
+    ("leave_town", r"Drive Hob Miller out of town"),
+    ("found_group", r"Get someone to start a group against Hob Miller"),
+    ("join_group", r"Get Agnes Thatch to join the Plough Guild"),
     ("exodus", r"Drive [23] villagers out of town"),
 )
 
@@ -270,7 +270,7 @@ def test_draw_fills_action_templates(monkeypatch, kind, pattern):
     assert (goal.kind, goal.action, goal.hold_checks, goal.claim_text, goal.evidence) == ("action", kind, 1, "", ())
     assert goal.long_shot == (kind in ("leave_town", "exodus"))
     if kind in ("confront", "join_group"):
-        assert (goal.actor, goal.audience, goal.audience_label) == (AGNES.id, (AGNES.id,), "Agnes")
+        assert (goal.actor, goal.audience, goal.audience_label) == (AGNES.id, (AGNES.id,), "Agnes Thatch")
     else:
         assert goal.actor is None and goal.audience == ()
     if kind == "exodus":
@@ -293,7 +293,7 @@ async def test_jev_picks_the_actor(monkeypatch):
     monkeypatch.setattr(goal_maker_mod, "TEMPLATES", ("confront",))
     jev = ChoosingJev("Cob Smith")
     (goal,) = await goal_maker(town_of(AGNES, HOB, COB), jev=jev).hand("p-1", set(), 1, subjects={AGNES.id, COB.id})
-    assert goal.text == "Get Cob to confront Hob" and goal.actor == COB.id
+    assert goal.text == "Get Cob Smith to confront Hob Miller" and goal.actor == COB.id
     (state, question), = jev.requests
     assert state["subject"]["name"] == "Hob Miller" and HOB.id not in question.criteria
 
