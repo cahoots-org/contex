@@ -180,18 +180,13 @@ class Player:
             return Refusal(f"{target.name} turns away from you.")
         uid = self.ids.next("w")
         self.lineage.record(uid, None, player=self.id)
-        conversation = self.engine.conversations.get((target.id, self.id))
         thread = self._thread(target.id)
-        hint_need = None
-        if conversation:
-            thread_id = conversation["id"]
-        elif thread:
-            thread_id, hint_need = thread["id"], thread["need"]
-        else:
-            thread_id = None
+        hint_need = thread["need"] if thread and (target.id, self.id) not in self.engine.conversations else None
+        exchange = self._exchange(target.id)
+        rumor = self.engine.rumors.rumor_of(self.id, text, exchange) if self.engine.rumors is not None else exchange
         utterance = Utterance(
             uid, NEWCOMER, "A newcomer", self.town.place_of(target.id), text, None, "whispered to you",
-            conversation=thread_id,
+            conversation=rumor,
         )
         self.engine.facts.record(utterance)
         published_at = datetime.now(UTC)
@@ -202,7 +197,7 @@ class Player:
             log.exception("whisper to %s failed", target.id)
             return NOT_CARRIED
         self.whispered_at = time.time()
-        if self.game is not None and thread_id is None:
+        if self.game is not None and rumor is None:
             self.game.moved(self.id)
         if utterance.place != self.place:
             self._move(utterance.place)
@@ -313,6 +308,13 @@ class Player:
 
     def _now(self) -> tuple[int, str] | None:
         return (self.game.day, self.game.phase) if self.game is not None else None
+
+    def _exchange(self, villager_id: str) -> str | None:
+        """The rumor of the player's open exchange with the villager: their conversation or a missed whisper's thread."""
+        if conversation := self.engine.conversations.get((villager_id, self.id)):
+            return conversation["id"]
+        thread = self._thread(villager_id)
+        return thread and thread["id"]
 
     def _thread(self, villager_id: str) -> dict | None:
         """The villager's open thread, dropped once the day has moved on to its next part."""

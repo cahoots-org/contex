@@ -13,6 +13,7 @@ from examples.rumor_mill.player import ALREADY_LISTENING, GAME_OVER, MAX_WHISPER
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.notes import Notes
 from examples.rumor_mill.players import Players
+from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
@@ -992,3 +993,62 @@ async def test_the_answer_joins_notes_and_hints():
     line = "Marta hasn't heard anything about that."
     assert notes.get("v1")["hints"] == [line]
     assert (engine.hints.project(PID), "hint:1", {"id": "v1", "text": line}) in engine.contex.published
+
+
+def telling(*names):
+    """A player whose whispers start rumor cards, in a game that counts moves."""
+    player, town, _, engine, _ = make(*names)
+    engine.rumors = Rumors(StubContex(), StubBaselines(0.5), Config(session="s1"))
+    player.game = Game(memory_moves=1)
+    return player, engine
+
+
+def card_uids(engine):
+    return [c["uid"] for c in engine.rumors.cards(PID)]
+
+
+@pytest.mark.asyncio
+async def test_a_reply_in_a_conversation_adds_no_card():
+    player, engine = telling("Marta")
+    await player.whisper("Marta", "the well tastes odd")
+    engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
+    await player.whisper("Marta", "odd since the frost, too")
+    assert card_uids(engine) == ["w-1"]
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_the_same_wording_to_another_villager_joins_the_first_rumor():
+    player, engine = telling("Marta", "Bert")
+    await player.whisper("Marta", "the well tastes odd")
+    first = player.game.memory_since()
+    await asyncio.sleep(0.01)
+    await player.whisper("Bert", "The well tastes odd.")
+    assert conversations(player) == [None, "w-1"]
+    card, = engine.rumors.cards(PID)
+    assert (card["uid"], card["heard"]) == ("w-1", 2)
+    assert player.game.memory_since() == first
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_new_wording_to_another_villager_is_a_new_rumor():
+    player, engine = telling("Marta", "Bert")
+    await player.whisper("Marta", "the well tastes odd")
+    first = player.game.memory_since()
+    await asyncio.sleep(0.01)
+    await player.whisper("Bert", "the well tastes of iron")
+    assert card_uids(engine) == ["w-1", "w-2"]
+    assert player.game.memory_since() > first
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_another_players_wording_starts_your_own_rumor():
+    player, engine = telling("Marta")
+    await engine.rumors.add("w-9", "the well tastes odd", datetime.now(), "v1", "Marta", player="p-b")
+    await player.whisper("Marta", "the well tastes odd")
+    assert conversations(player) == [None]
+    assert card_uids(engine) == ["w-1"]
+    player.close()
+
