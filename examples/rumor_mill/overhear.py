@@ -43,6 +43,11 @@ class Overhear:
                 self._evidence[key] = goal.evidence[0]
                 await self.contex.publish(self.project, key, {"id": goal.id, "text": goal.evidence[0]})
 
+    def drop(self, goal_ids: Collection[str]) -> None:
+        """Forget the goals' evidence, so overheard lines no longer match them."""
+        for gid in goal_ids:
+            self._evidence.pop(f"goal:{gid}", None)
+
     async def keep(
         self, utterance: Utterance, player_place: str, hop: bool = False, goals: Collection[str] = (),
         listening: bool = False,

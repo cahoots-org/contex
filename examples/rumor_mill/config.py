@@ -82,6 +82,10 @@ class Config:
     hint_margin: float = 0.0
     # How close under a threshold a line must fall to count as a near miss.
     near_miss_band: float = 0.01
+    # How many villagers in town Haiku sees when writing a player's personal and circle goals.
+    goal_sample_size: int = 15
+    # How long a hand waits on Haiku's goals before it comes from the deck.
+    goal_writer_timeout_seconds: float = 10.0
 
     @property
     def memory_seconds(self) -> int:

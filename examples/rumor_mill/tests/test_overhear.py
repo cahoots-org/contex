@@ -161,3 +161,11 @@ async def test_claims_fail_quietly(caplog):
     assert "0.73" not in caplog.text and "the well is cursed" not in caplog.text
     nothing, contex = await make(goals=())
     assert await nothing.claims("the well is cursed") == [] and contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_drop_forgets_only_the_given_goals():
+    overhear, contex = await make(goals=(WELL, GOALS["mayors-cat"]))
+    overhear.drop(["mayors-cat", "unknown"])
+    contex.results = {"the well is cursed": [Match("goal:well-cursed", {}, 0.9), Match("goal:mayors-cat", {}, 0.9)]}
+    assert await overhear.claims("the well is cursed") == ["well-cursed"]
