@@ -8,10 +8,10 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, needed, void_reason, world_goal
+from examples.rumor_mill.goals import Goal, Trophy, needed, void_reason, world_goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Lineage
-from examples.rumor_mill.mind import group_project, mind_project
+from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
@@ -23,7 +23,7 @@ from examples.rumor_mill.town import Town
 
 CONFIG = Config(day_seconds=0.01, judge_every_days=1.0)
 BELIEF = Goal("g", "cat is a spy", "belief", ("cat spy",), "Does it believe?", 0.5, hold_checks=2)
-QUIET = Goal("q", "nobody leaves", "state", state_check=lambda town: 0.0)
+QUIET = Goal("q", "nobody believes the moon is cheese", "belief", ("moon cheese",), "Is the moon cheese?", 0.5)
 
 
 class StubBaselines:
@@ -133,7 +133,19 @@ def make(n=4, believers=0):
         town.add(v)
         if i < believers:
             contex.minds[mind_project(CONFIG.session, v.id)] = [Match("k", {"text": "the cat is a spy"})]
-    return Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), maker=goal_maker(town)), contex, jev, feed, town
+    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), maker=goal_maker(town))
+    hush(judge)
+    return judge, contex, jev, feed, town
+
+
+def hush(judge):
+    """Make judge.check answer QUIET with 0 and check every other goal as before."""
+    checking = judge.check
+
+    async def check(goal):
+        return 0.0 if goal.id == QUIET.id else await checking(goal)
+
+    judge.check = check
 
 
 @pytest.mark.asyncio
@@ -165,28 +177,12 @@ async def test_villager_below_the_margin_costs_no_jev_call():
 async def test_mind_queries_ignore_lines_older_than_the_remembered_moves():
     judge, contex, _, _, _ = make(n=2, believers=2)
     judge.game = Game(memory_moves=2)
-    g = judge.town.found_group("v0", "Order", "worship")
-    judge.town.join("v1", g.id)
-    creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
-    await judge.check(creed)
+    await judge.check(BELIEF)
     assert contex.sinces[mind_project(CONFIG.session, "v0")] is None
     for _ in range(3):
         judge.game.moved(PID)
-    await judge.check(creed)
+    await judge.check(BELIEF)
     assert contex.sinces[mind_project(CONFIG.session, "v0")] == judge.game.memory_since() is not None
-    assert contex.sinces[group_project(CONFIG.session, g.id)] is None
-
-
-@pytest.mark.asyncio
-async def test_group_query_leaves_the_decision_to_the_creed_question():
-    judge, contex, _, _, _ = make(n=2, believers=2)
-    judge.baselines = StubBaselines(baseline=0.6, margin=0.1)
-    g = judge.town.found_group("v0", "Order", "worship")
-    judge.town.join("v1", g.id)
-    creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
-    await judge.check(creed)
-    assert contex.thresholds_by_project[group_project(CONFIG.session, g.id)] == 0
-    assert contex.thresholds_by_project[mind_project(CONFIG.session, "v0")] == 0.7
 
 
 @pytest.mark.asyncio
@@ -331,7 +327,6 @@ async def test_progress_is_believer_fraction_over_target():
 async def test_a_belief_goal_counts_against_the_village_before_its_first_check():
     judge, *_ = make(n=4, believers=1)
     assert judge.counts_of(BELIEF) == (0, 2)
-    assert judge.counts_of(QUIET) is None
     await judge.check(BELIEF)
     assert judge.counts_of(BELIEF) == (1, 2)
 
@@ -368,31 +363,6 @@ async def test_goal_met_only_after_hold_checks_consecutive_checks():
     assert next(values, None) is None
     assert feed.met == [("g", PID)]
     assert p.met == {BELIEF.id}
-
-
-@pytest.mark.asyncio
-async def test_creed_goal_capped_without_qualifying_group():
-    judge, contex, jev, _, town = make(n=4, believers=4)
-    creed = Goal("c", "religion", "belief", ("sim",), "q", 0.25, "creed?", 2)
-    for i in range(4):
-        contex.minds[mind_project(CONFIG.session, f"v{i}")] = [Match("k", {"text": "sim"})]
-    assert await judge.check(creed) < 1.0
-    g = town.found_group("v0", "Order", "worship")
-    town.join("v1", g.id)
-    contex.groups[group_project(CONFIG.session, g.id)] = [Match(f"group:{g.id}", {"name": "Order"})]
-    assert await judge.check(creed) == 1.0
-    jev.answer = 0.1
-    assert await judge.check(creed) < 1.0
-
-
-@pytest.mark.asyncio
-async def test_state_goal_uses_town_departures():
-    judge, _, _, _, town = make(n=4)
-    goal = Goal("f", "3 families leave", "state", state_check=lambda t: min(1.0, len({v.name.split()[-1] for v in t.departed}) / 3))
-    assert await judge.check(goal) == 0.0
-    for vid in ("v0", "v1", "v2"):
-        town.remove(vid)
-    assert await judge.check(goal) == 1.0
 
 
 @pytest.mark.asyncio
@@ -440,12 +410,17 @@ async def test_world_goal_met_draws_a_new_one():
     await run_until(judge, players(holder(PID)), lambda: feed.worlds)
     assert judge.world.id != old.id and feed.worlds == [judge.world.id]
     assert (old.id, None) in feed.met
+    assert f"goal:{old.id}" not in judge.maker.overhear._evidence
 
 
-def test_world_goal_falls_back_when_every_claim_is_held():
+def test_the_next_world_goal_is_a_claim_no_player_holds():
     judge, *_ = make()
-    judge.progress = {g.id: 1.0 for g in WORLD_CANDIDATES}
-    assert judge._next_world().id.startswith("world-")
+    claims = ("the well is cursed", "a dragon lives in the hills", "the mill is haunted")
+    judge.maker.pool = Pool((), tuple(Entry(c, 2) for c in claims))
+    judge.world = world_goal(Goal("world-0", "w", "belief", claim_text=claims[0]))
+    judge._players = players(holder("p-b", Goal("theirs", "t", "belief", claim_text=claims[1])))
+    nxt = judge._next_world()
+    assert nxt.claim_text == claims[2] and nxt.id.startswith("world-") and nxt.id != "world-0"
 
 
 def test_deal_leaves_out_the_claims_in_play():
@@ -748,7 +723,7 @@ class GatedMaker:
 @pytest.mark.asyncio
 async def test_redeal_runs_in_background_and_keeps_old_hand_until_ready():
     judge, _, _, feed, _ = make()
-    judge.world = world_goal(Goal("g", "cat", "belief", ("cat spy",), claim_text="The cat is a spy"))
+    judge.world = world_goal(Goal("world-cat", "cat", "belief", ("cat spy",), claim_text="The cat is a spy"))
     judge.maker = GatedMaker()
     scripted(judge, [1.0] * 100, goal=QUIET)
     theirs = Goal("theirs", "geese", "belief", ("geese",), claim_text="Hob steals geese", owner="p-b")

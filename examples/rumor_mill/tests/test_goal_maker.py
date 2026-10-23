@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from examples.rumor_mill.goals import BANDS
+from examples.rumor_mill.goals import BANDS, WORLD_FRACTION
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.pool import Entry, Pool
@@ -164,6 +164,23 @@ def test_subjects_never_repeat_in_a_hand():
         assert len(hand) == 3 and len(set(subjects)) == 3
 
 
+def test_world_goal_from_pool_not_taken():
+    pool = Pool((), (Entry("the well is cursed", 1), Entry("a dragon lives in the hills", 2)))
+    maker = goal_maker(town_of(AGNES), pool)
+    first = maker.world_goal({"the well is cursed"})
+    assert first.id == "world-1" and first.claim_text == "a dragon lives in the hills"
+    assert first.text == "Two thirds of the village believes a dragon lives in the hills"
+    assert first.target_fraction == WORLD_FRACTION and first.audience == () and first.owner is None
+    assert first.believer_question == "Does this villager believe a dragon lives in the hills?"
+    assert maker.world_goal(set()).id == "world-2"
+
+
+def test_world_goal_falls_back_when_every_claim_is_taken():
+    pool = Pool((), (Entry("the well is cursed", 1),))
+    goal = goal_maker(town_of(AGNES), pool).world_goal({"the well is cursed"})
+    assert goal.claim_text == "the well is cursed"
+
+
 def test_regulars_exclude_square_and_gate_and_subject():
     regulars = (COB, DOT, *FARMERS)
     routine = StubRoutine(work={v.id: "mill" for v in regulars}, leisure={v.id: "gate" for v in regulars})
@@ -195,12 +212,14 @@ async def test_drawn_goals_are_published_when_prepared():
     baselines = LoggingBaselines()
     maker = goal_maker(town_of(AGNES, HOB, *FARMERS), baselines=baselines)
     drawn = maker.draw("p-1", set())
+    world = maker.world_goal(set())
     assert maker.overhear.generated_ids() == set()
     await maker.prepare()
-    assert baselines.loaded == [g.claim_text for g in drawn]
+    assert baselines.loaded == [g.claim_text for g in (*drawn, world)]
     assert maker.overhear.generated_ids() == {g.id for g in drawn}
+    assert f"goal:{world.id}" in maker.overhear._evidence
     await maker.prepare()
-    assert len(baselines.loaded) == 3
+    assert len(baselines.loaded) == 4
 
 
 @pytest.mark.asyncio

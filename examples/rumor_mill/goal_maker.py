@@ -12,7 +12,7 @@ from typesafe_sdk import Choice
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.decide import MAX_OPTIONS
 from examples.rumor_mill.game import PHASES
-from examples.rumor_mill.goals import BANDS, MIN_CIRCLE, Goal
+from examples.rumor_mill.goals import BANDS, MIN_CIRCLE, Goal, world_goal
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.pool import Entry, Pool
@@ -93,7 +93,7 @@ class GoalMaker:
 
     def draw(self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = ()) -> list[Goal]:
         """Up to size goals for the player, filled by uniform picks; their evidence goes out on the next prepare."""
-        made = [self._goal(s, player_id) for s in self._slots(taken, size, subjects)]
+        made = [self._goal(s, player_id, self._id(player_id)) for s in self._slots(taken, size, subjects)]
         self._unready.extend(made)
         return made
 
@@ -106,9 +106,16 @@ class GoalMaker:
         """
         with charging(player_id):
             slots = await asyncio.gather(*(self._refine(s) for s in self._slots(taken, size, subjects)))
-            made = [self._goal(s, player_id) for s in slots]
+            made = [self._goal(s, player_id, self._id(player_id)) for s in slots]
             await self._ready(made)
         return made
+
+    def world_goal(self, taken: set[str]) -> Goal:
+        """A pool claim no one holds in taken, for two thirds of the village; any claim when all are taken."""
+        claims = tuple(e for e in self.pool.claims if e.text.lower() not in taken) or self.pool.claims
+        goal = world_goal(self._goal(Slot("village", claims, self.rng.choice(claims)), None, self.ids.next("world")))
+        self._unready.append(goal)
+        return goal
 
     async def prepare(self) -> None:
         """Load baselines for, and publish, the goals drawn since the last call."""
@@ -240,13 +247,16 @@ class GoalMaker:
             return None
         return choice if choice in criteria else None
 
-    def _goal(self, slot: Slot, player_id: str) -> Goal:
-        """The slot's goal, numbered for the player, with its bar from its entry's believability band."""
+    def _id(self, player_id: str) -> str:
+        return f"gen-{player_id}-{self.ids.next('goal')}"
+
+    def _goal(self, slot: Slot, owner: str | None, id: str) -> Goal:
+        """The slot's goal, with its bar from its entry's believability band."""
         claim = self._claim(slot)
         fraction, word = BANDS[slot.entry.band]
         goal = Goal(
-            id=f"gen-{player_id}-{self.ids.next('goal')}", text="", kind="belief", evidence=(claim,),
-            believer_question=f"Does this villager believe {claim}?", owner=player_id, claim_text=claim,
+            id=id, text="", kind="belief", evidence=(claim,),
+            believer_question=f"Does this villager believe {claim}?", owner=owner, claim_text=claim,
             long_shot=slot.entry.band == 0,
         )
         if slot.subject is None:

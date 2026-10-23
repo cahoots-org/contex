@@ -9,14 +9,25 @@ from examples.rumor_mill.actions import CONFRONT, DENY, RETELL, SPEAK, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
-from examples.rumor_mill.goals import DECK
+from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.models import Utterance
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.tests.helpers import Always, StubBaselines, StubContex
 from examples.rumor_mill.town import NEWCOMER
 
 URL = os.environ.get("RUMOR_MILL_CONTEX_URL")
-GOALS = {g.id: g for g in DECK}
+
+
+def belief(gid, claim):
+    return Goal(gid, f"Half of the village believes {claim}", "belief", (claim,), f"Does this villager believe {claim}?",
+                0.5, claim_text=claim)
+
+
+GOALS = {g.id: g for g in (
+    belief("well-cursed", "the well is cursed"), belief("mayors-cat", "the mayor's cat is a spy"),
+    belief("dragon", "a dragon lives in the hills"), belief("tavern-ghost", "the tavern is haunted by a ghost"),
+    Goal("bare", "A goal with no evidence", "belief"),
+)}
 WELL = GOALS["well-cursed"]
 
 
@@ -32,8 +43,8 @@ async def make(results=None, error=None, rate=0.0, goals=(WELL,), roll=0.99):
 
 
 @pytest.mark.asyncio
-async def test_publishes_belief_goal_evidence_only():
-    _, contex = await make(goals=(WELL, GOALS["leave-8"]))
+async def test_publishes_only_goals_with_evidence():
+    _, contex = await make(goals=(WELL, GOALS["bare"]))
     assert contex.published == [
         ("rumor-mill:s1:goals", "goal:well-cursed", {"id": "well-cursed", "text": "the well is cursed"}),
     ]

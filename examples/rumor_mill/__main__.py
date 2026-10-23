@@ -20,7 +20,6 @@ from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.feed import Feed, terminal
 from examples.rumor_mill.game import Game
-from examples.rumor_mill import goals
 from examples.rumor_mill.believability import Believability
 from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.judge import Judge
@@ -51,7 +50,6 @@ async def play(web: bool) -> None:
     async with ContexClient(config.contex_url) as contex:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         believability = Believability(jev)
-        await goals.rebar_deck(believability)
         pool = await load_pool(config.seed_path + ".goals.json", writer, believability, villagers)
         baselines = Baselines(contex, config)
         facts = Facts()
@@ -64,7 +62,7 @@ async def play(web: bool) -> None:
         )
         maker = GoalMaker(jev, pool, town, routine, overhear, baselines, config, rng, ids)
         judge = Judge(
-            contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts,
+            contex, jev, town, config, feed, game, baselines=baselines, lineage=lineage, facts=facts,
             engine=engine, maker=maker,
         )
         players = Players(feed)
@@ -84,8 +82,7 @@ async def play(web: bool) -> None:
         judging = None
         try:
             await baselines.load([need for v in villagers for need in v.needs])
-            await baselines.load([g.evidence[0] for g in goals.DECK if g.evidence])
-            await overhear.publish(list(goals.DECK))
+            await maker.prepare()
             judging = asyncio.create_task(judge.run(players))
             await routine.load(villagers)
             await asyncio.gather(*(

@@ -78,7 +78,7 @@ class Overhear:
         return None
 
     async def claims(self, text: str) -> list[str]:
-        """The deck goal ids whose published evidence the text matches, best first; [] on failure."""
+        """The goal ids whose published evidence the text matches, best first; [] on failure."""
         if not self._evidence:
             return []
         try:

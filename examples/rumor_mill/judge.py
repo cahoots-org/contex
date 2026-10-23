@@ -2,31 +2,27 @@
 
 import asyncio
 import logging
-import random
 import time
 from collections import Counter
 
 from typesafe_sdk import Noul
 
-from examples.rumor_mill import goals
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.goals import (
-    Goal, Trophy, audience_of, claim, goal_counts, needed, trophy_line, void_reason, world_goal,
+    Goal, Trophy, audience_of, claim, goal_counts, needed, trophy_line, void_reason,
 )
 from examples.rumor_mill.lineage import Lineage
-from examples.rumor_mill.mind import group_project, mind_project
+from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.models import Villager
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
 from examples.rumor_mill.town import Town
 
 log = logging.getLogger(__name__)
-
-NO_QUALIFYING_GROUP_CAP = 0.99
 
 
 def _text(match: Match) -> str:
@@ -54,8 +50,7 @@ def _last_claim(player: Player, last: Goal) -> str | None:
 class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
-        rng: random.Random | None = None, lineage: Lineage | None = None, facts: Facts | None = None,
-        engine=None, *, maker: GoalMaker,
+        lineage: Lineage | None = None, facts: Facts | None = None, engine=None, *, maker: GoalMaker,
     ):
         self.contex = contex
         self.jev = jev
@@ -64,7 +59,6 @@ class Judge:
         self.feed = feed
         self.game = game
         self.baselines = baselines
-        self.rng = rng or random.Random()
         self.lineage = lineage
         self.facts = facts or Facts()
         self.engine = engine
@@ -75,7 +69,7 @@ class Judge:
         self.roots: dict[str, dict[str, str | None]] = {}
         # By goal id, how many heard the claim but don't believe it, and what the closest of them is saying.
         self.doubt: dict[str, dict] = {}
-        self.world = self._next_world()
+        self.world = maker.world_goal(set())
         self.world_since = time.time()
         # The owners who whispered while the world goal was in play.
         self.whisperers: set[str] = set()
@@ -162,25 +156,8 @@ class Judge:
             and self.engine.suspicion.score(vid, goal.owner) >= self.config.warn_threshold
         )
 
-    async def _group_qualifies(self, goal: Goal, gid: str, members: int) -> bool:
-        if members < goal.min_group_members:
-            return False
-        async with self._semaphore:
-            try:
-                matches = await self.contex.query(
-                    group_project(self.config.session, gid), goal.evidence[0], top_k=1,
-                    threshold=0,
-                )
-                record = next((m for m in matches if m.data_key == f"group:{gid}"), None)
-                return record is not None and await _yes(self.jev, {"group": record.data}, goal.creed_question)
-            except Exception:
-                log.exception("judging %s failed for group %s", goal.id, gid)
-                return False
-
     async def check(self, goal: Goal) -> float:
         """Progress toward the goal, from 0 to 1."""
-        if goal.kind == "state":
-            return max(0.0, min(1.0, goal.state_check(self.town)))
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         roots: dict[str, str | None] = {}
         doubters: dict[str, Match | None] = {}
@@ -202,21 +179,10 @@ class Judge:
             return 0.0
         believers, target = sum(counted), needed(goal, len(counted))
         self.counts[goal.id] = (believers, target)
-        progress = min(1.0, believers / target)
-        if goal.creed_question is not None:
-            groups = await asyncio.gather(
-                *(self._group_qualifies(goal, g.id, len(g.members)) for g in self.town.groups)
-            )
-            if not any(groups):
-                progress = min(progress, NO_QUALIFYING_GROUP_CAP)
-        return progress
+        return min(1.0, believers / target)
 
-    def held(self) -> set[str]:
-        """The claims the village holds now, by deck goal id."""
-        return {gid.removeprefix("world-") for gid, p in self.progress.items() if p >= 1.0}
-
-    def _taken(self, player: Player, *extra: Goal) -> set[str]:
-        """The lowercased claims of the other players' goals, the world goal and extra."""
+    def _taken(self, player: Player | None, *extra: Goal) -> set[str]:
+        """The lowercased claims of the goals players other than player hold, the world goal and extra."""
         others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
         return {c.lower() for g in (*others, *extra, self.world) if (c := claim(g))}
 
@@ -293,13 +259,12 @@ class Judge:
             self.feed.on_goal_void(old, new, reason, player=player.id, counts=self.counts_of(new))
 
     def counts_of(self, goal: Goal) -> tuple[int, int] | None:
-        """The goal's believers and how many it needs, or None for a state goal."""
+        """The goal's believers and how many it needs, or None when there is nothing to count."""
         return goal_counts(goal, self.counts, len(self.town.villagers))
 
     def _next_world(self) -> Goal:
-        held = self.held()
-        fresh = [g for g in goals.WORLD_CANDIDATES if g.id not in held]
-        return world_goal(self.rng.choice(fresh or goals.WORLD_CANDIDATES))
+        """A pool claim for the world goal that no player holds now and that isn't the one just met."""
+        return self.maker.world_goal(self._taken(None))
 
     async def run(self, players: Players) -> None:
         """Check each goal in play once an interval, telling its holders, until cancelled.
@@ -365,6 +330,7 @@ class Judge:
                     trophy = Trophy("world", (goal.text,), self._day(), long_shot=goal.long_shot)
                     for owner in sorted(self.whisperers):
                         players.award(owner, trophy, trophy_line(trophy, claim(goal)))
+                    self.maker.overhear.drop([goal.id])
                     self.world = self._next_world()
                     self.world_since = time.time()
                     self.whisperers = set()

@@ -16,7 +16,7 @@ REVERSE = {
     "spouse": "spouse", "rival": "rival", "friend": "friend",
     "debtor": "creditor", "creditor": "debtor",
 }
-# Villagers the goal deck talks about, asked for until the village has them.
+# Villagers the default goal pool talks about, asked for until the village has them.
 ROLES = ("mayor", "miller")
 # Weighted draw, so friends are commoner than spouses.
 KINDS = ["friend", "friend", "rival", "debtor", "creditor", "spouse"]

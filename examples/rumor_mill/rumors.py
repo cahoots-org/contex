@@ -63,7 +63,7 @@ class Card:
     frontier: dict[str, dict] = field(default_factory=dict)
     # Where it was whispered.
     place: str = ""
-    # The deck goal ids its words serve, best first.
+    # The goal ids its words serve, best first.
     claims: list[str] = field(default_factory=list)
     # The moments already shown for it.
     marked: set[str] = field(default_factory=set)
