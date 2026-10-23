@@ -2112,3 +2112,42 @@ async def test_taken_follows_a_retelling_back_to_the_players_rumor(turns):
     assert engine.taken_by("v1", "u-9") == "put off"
     assert engine.taken_by("v1", "u-unrelated") is None
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_villager_who_only_heard_the_rumor_second_hand_has_no_taken_word(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[]]
+    engine.rapport.sour("v1", PID, 0.5)
+    engine.rapport.move("v2", PID, "w-1", 0.6)
+    whisper(engine, "v1", "w-1")
+    await wait_for(lambda: len(turns.views) == 1)
+    await engine.stop()
+    assert turns.views[0].taken is None and engine.taken_by("v1", "w-1") is None
+    assert engine.taken_by("v2", "w-1") == "eager"
+
+
+@pytest.mark.asyncio
+async def test_a_reply_that_fails_keeps_the_greeting_for_the_next(talks, monkeypatch):
+    engine, minds, feed = await setup("v1")
+    minds["v1"].results = [[], [], []]
+    talks.plan = [ANSWER, ANSWER, ANSWER]
+    engine.rapport.sour("v1", PID, 0.5)
+    act = talks.act
+
+    async def failing_once(decision, villager, **kw):
+        await act(decision, villager, **kw)
+        if len(talks.moods) == 1:
+            raise RuntimeError("haiku down")
+
+    monkeypatch.setattr(engine_mod, "act", failing_once)
+    whisper(engine, "v1", "w-1")
+    await wait_for(lambda: len(talks.moods) == 1 and not engine._turning)
+    engine._last_turn.clear()
+    reply_whisper(engine, "v1", "w-2", "w-1")
+    await wait_for(lambda: len(talks.moods) == 2 and not engine._turning)
+    engine._last_turn.clear()
+    reply_whisper(engine, "v1", "w-3", "w-1")
+    await wait_for(lambda: len(talks.moods) == 3)
+    await engine.stop()
+    assert ["Greet the newcomer" in m for m in talks.moods] == [True, True, False]

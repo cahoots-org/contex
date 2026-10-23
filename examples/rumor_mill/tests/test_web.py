@@ -839,7 +839,7 @@ def test_every_goal_card_has_a_label_a_claim_and_a_bar(game):
 def test_a_villager_who_storms_off_leaves_the_dock_with_a_parting_line(game):
     html = game.client.get("/").text
     case = re.search(r'case "stormed_off":(.*?)case ', html, re.S).group(1)
-    assert "dockEnd(e.villager_id);" in case and 'line("speech"' in case and "storms off" in case
+    assert "dockEnd(e.villager_id);" in case and 'line("speech"' in case and "${e.verb}" in case
 
 
 def test_goal_json_carries_marks_subject_long_shot(game):

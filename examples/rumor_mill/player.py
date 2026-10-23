@@ -258,13 +258,14 @@ class Player:
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
                 self.engine.end_conversation(target.id, self.id)
             if not continues:
-                await self._lose_patience(target, key)
+                self._lose_patience(target, key)
                 return None
             concern = closest[0] if closest else self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
-            greet = self.engine.rapport.first_word(target.id, self.id, key)
-            mood = self.engine.rapport.mood(target.id, self.id, key, greet=greet)
-            task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues, mood))
+            mood = self.engine.rapport.mood(target.id, self.id, key, greet=self.engine.rapport.greets(target.id, self.id, key))
+            task = asyncio.create_task(
+                self._hint(target.id, target.name, uid, key, concern, state, text, continues, mood),
+            )
             self._track(task)
         return None
 
@@ -277,22 +278,26 @@ class Player:
         low, high = self.config.interest_near_min, self.config.interest_near_max
         return low + (high - low) * closeness
 
-    async def _lose_patience(self, target: Villager, rumor: str) -> None:
+    def _lose_patience(self, target: Villager, rumor: str) -> None:
         """The villager has had enough of the rumor: she ends the exchange, likes the player less and suspects them a
-        little."""
+        little, then takes their leave in the background."""
         self.part(target.id)
         self.engine.rapport.sour(target.id, self.id, self.config.rapport_lost_patience)
         self.engine.rapport.forget(target.id, self.id, rumor)
         self.engine.suspicion.bump(
             target.id, self.id, self.config.suspicion_whisper_bump / 2, "lost patience with you",
         )
+        self._track(asyncio.create_task(self._take_leave(target)))
+
+    async def _take_leave(self, target: Villager) -> None:
+        """Show the villager taking their leave of the player, with their parting words if any."""
         line = None
         if self.writer is not None:
             try:
                 line = await self.writer.lose_patience(target) or None
             except Exception:
                 log.exception("lose-patience line for %s failed", target.id)
-        self.feed.on_storm_off(target.id, target.name, line, player=self.id)
+        self.feed.on_storm_off(target.id, target.name, line, player=self.id, verb="takes their leave")
 
     def _marks_of(self, villager_id: str) -> list[Goal]:
         """This player's unmet claim goals about someone that the villager's belief counts toward."""
@@ -503,8 +508,8 @@ class Player:
         task.add_done_callback(self._tasks.discard)
 
     async def _hint(
-        self, villager_id: str, name: str, uid: str, concern: str | None, state: str, text: str, continues: bool,
-        mood: str,
+        self, villager_id: str, name: str, uid: str, rumor: str, concern: str | None, state: str, text: str,
+        continues: bool, mood: str,
     ) -> None:
         """Add the brush-off or lean-in line, or nothing, to a missed whisper's status."""
         if self.over():
@@ -517,6 +522,8 @@ class Player:
         except Exception:
             log.exception("%s line for %s failed", state, villager_id)
             line = None
+        if line:
+            self.engine.rapport.greeted(villager_id, self.id, rumor)
         if self.over():
             return
         self.feed.on_whisper_status(uid, villager_id, name, state, hint=line, continues=continues)

@@ -1384,7 +1384,7 @@ function render(e, fresh) {
       return line("loud", null, e.line ? `${e.name} turns away from you: “${e.line}”` : `${e.name} turns away from you.`);
     case "stormed_off":
       dockEnd(e.villager_id);
-      return line("speech", null, e.line ? `${e.name} storms off: “${e.line}”` : `${e.name} storms off.`);
+      return line("speech", null, e.line ? `${e.name} ${e.verb}: “${e.line}”` : `${e.name} ${e.verb}.`);
     case "denied":
       return line("speech", null, e.line ? `${e.name}: “${e.line}”` : `${e.name} denies it.`);
     case "goal_swapped":

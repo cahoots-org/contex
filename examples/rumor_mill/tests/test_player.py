@@ -19,7 +19,7 @@ from examples.rumor_mill.players import Players
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.rapport import interest_words
-from examples.rumor_mill.tests.helpers import PID, StubBaselines, StubClient, StubContex, wait_for
+from examples.rumor_mill.tests.helpers import PID, TIMEOUT, StubBaselines, StubClient, StubContex, wait_for
 from examples.rumor_mill.tests.helpers import make_player as make
 from examples.rumor_mill.town import NEWCOMER
 from examples.rumor_mill.usage import Usage, charged_to
@@ -112,6 +112,7 @@ class StubWriter:
         self.concerns = []
         self.moods = []
         self.gate = gate
+        self.patience_gate = None
 
     async def turn_away(self, villager):
         line = self.lines.pop(0)
@@ -120,6 +121,8 @@ class StubWriter:
         return line
 
     async def lose_patience(self, villager):
+        if self.patience_gate:
+            await self.patience_gate.wait()
         return self.lines.pop(0)
 
     async def go_on(self, villager, newcomer_line, mood=""):
@@ -721,7 +724,8 @@ async def test_running_out_of_patience_ends_the_conversation():
     await miss(player)
     await miss(player)
     (stormed,) = [e for e in player.feed.recent if e.kind == "stormed_off"]
-    assert stormed.data["line"] == "I've no time for this."
+    assert stormed.data["line"] == "I've no time for this." and stormed.data["verb"] == "takes their leave"
+    assert stormed.line == 'Aldwin Miller takes their leave: "I\'ve no time for this."'
     assert [s["state"] for s in statuses(player)][-1] == "brushed_off" and "hint" not in statuses(player)[-1]
     (bump,) = [e for e in player.engine.suspicion._evidence if e.reason == "lost patience with you"]
     assert bump.amount == pytest.approx(config.suspicion_whisper_bump / 2)
@@ -1337,6 +1341,29 @@ async def test_whisper_to_an_action_goals_actor_asks_nothing():
     await player.whisper("Marta", "Hob is a thief, don't trust him")
     await asyncio.sleep(0.05)
     assert jev.states == [] and worked_on(player) == []
+
+
+@pytest.mark.asyncio
+async def test_losing_patience_parts_at_once_and_says_the_parting_line_after():
+    player = hinted_player("Wheel's groaning.", "I've no time for this.")
+    await miss(player)
+    gate = player.writer.patience_gate = asyncio.Event()
+    await asyncio.wait_for(player.whisper_to("v1", "the tide tables were misprinted"), TIMEOUT)
+    assert player._exchange("v1") is None
+    assert [e for e in player.engine.suspicion._evidence if e.reason == "lost patience with you"]
+    assert not [e for e in player.feed.recent if e.kind == "stormed_off"]
+    gate.set()
+    await wait_for(lambda: [e for e in player.feed.recent if e.kind == "stormed_off"])
+
+
+@pytest.mark.asyncio
+async def test_a_lean_in_that_fails_keeps_the_greeting_for_the_next():
+    player = near_missing_player(RuntimeError("haiku down"), "Go on.", "Tell me more.")
+    player.engine.rapport.sour("v1", PID, 0.5)
+    for text in ("the wheel looks tired", "the wheel looks very tired", "the wheel looks worn out"):
+        await player.whisper_to("v1", text)
+        await wait_for(lambda: player._tasks == set())
+    assert ["Greet the newcomer" in m for m in player.writer.moods] == [True, True, False]
 
 
 @pytest.mark.asyncio

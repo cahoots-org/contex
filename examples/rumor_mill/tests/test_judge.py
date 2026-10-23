@@ -12,7 +12,8 @@ from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.goals import Goal, Trophy, needed, void_reason, world_goal
 from examples.rumor_mill.judge import Judge
-from examples.rumor_mill.lineage import Lineage
+from examples.rumor_mill.engine import Engine
+from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.mind import mind_project
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.models import Utterance, Villager
@@ -1271,3 +1272,22 @@ async def test_judge_state_says_how_taken_and_rekeys_cache():
     await judge.check(BELIEF)
     assert len(jev.calls) == 2
     assert jev.calls[1][0]["how taken they were with the newcomer's story"] == "put off"
+
+
+@pytest.mark.asyncio
+async def test_judge_gives_no_taken_word_for_a_rumor_heard_second_hand():
+    _, contex, jev, feed, town = make(n=2)
+    lineage = Lineage()
+    lineage.record("w-1", None, "p-1")
+    engine = Engine(CONFIG, town, contex, None, None, lineage, Ids(), feed)
+    engine.rapport.sour("v0", "p-1", 0.5)
+    engine.rapport.move("v1", "p-1", "w-1", 0.6)
+    judge = Judge(
+        contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage, engine=engine,
+        maker=goal_maker(town),
+    )
+    for vid in ("v0", "v1"):
+        contex.minds[mind_project(CONFIG.session, vid)] = [Match("utt:w-1", {"id": "w-1", "text": "a"}, 0.9)]
+    await judge.check(BELIEF)
+    words = sorted(c[0].get("how taken they were with the newcomer's story") or "" for c in jev.calls)
+    assert words == ["", "eager"]

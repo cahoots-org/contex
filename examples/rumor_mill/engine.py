@@ -601,6 +601,8 @@ class Engine:
                     self._scene_turn(scene, v.id, decision, joined)
                 if action == ANSWER:
                     answered = decision.source.data["id"]
+                    if (player := self._player_behind(decision.source)) is not None:
+                        self.rapport.greeted(v.id, player, self._rumor_of(answered))
         finally:
             self._report(
                 v, [m.data["id"] for m in whispers], action, self._said.pop(v.id, []), answered,
@@ -647,9 +649,13 @@ class Engine:
         return fact.conversation if fact and fact.conversation else whisper
 
     def _interest_in(self, vid: str, uid: str) -> float | None:
-        """Her interest in the player's rumor behind uid, or None when no player's whisper is."""
+        """Her interest in the player's rumor behind uid, or None when no player's whisper is or she only heard it
+        second-hand."""
         player = self.lineage.player_of(uid)
-        return None if player is None else self.rapport.interest(vid, player, self._rumor_of(uid))
+        if player is None:
+            return None
+        rumor = self._rumor_of(uid)
+        return self.rapport.interest(vid, player, rumor) if self.rapport.known(vid, player, rumor) else None
 
     def taken_by(self, vid: str, uid: str) -> str | None:
         """How taken she was with the player's rumor behind uid, in a word, or None."""
@@ -668,7 +674,7 @@ class Engine:
         if player is None:
             return ""
         rumor = self._rumor_of(uid)
-        return self.rapport.mood(vid, player, rumor, greet=self.rapport.first_word(vid, player, rumor))
+        return self.rapport.mood(vid, player, rumor, greet=self.rapport.greets(vid, player, rumor))
 
     def _player_behind(self, m: Match | None) -> str | None:
         """The player whose whisper the item's lineage roots in."""

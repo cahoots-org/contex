@@ -48,12 +48,21 @@ def test_mood_words_have_no_digits():
     assert not any(c.isdigit() for x in xs for c in interest_words(x) + rapport_words(x))
 
 
-def test_first_word_is_true_once_per_rumor_until_forgotten():
+def test_a_greeting_stays_until_spent_and_comes_back_when_forgotten():
     r = Rapport(Config())
-    assert r.first_word("v1", "p-1", "w-1") and not r.first_word("v1", "p-1", "w-1")
-    assert r.first_word("v1", "p-1", "w-2")
+    assert r.greets("v1", "p-1", "w-1") and r.greets("v1", "p-1", "w-1")
+    r.greeted("v1", "p-1", "w-1")
+    assert not r.greets("v1", "p-1", "w-1") and r.greets("v1", "p-1", "w-2")
     r.forget("v1", "p-1", "w-1")
-    assert r.first_word("v1", "p-1", "w-1")
+    assert r.greets("v1", "p-1", "w-1")
+
+
+def test_only_her_own_interest_is_known():
+    r = Rapport(Config())
+    r.sour("v1", "p-1", 0.5)
+    assert not r.known("v1", "p-1", "w-1")
+    r.move("v1", "p-1", "w-1", 0.1)
+    assert r.known("v1", "p-1", "w-1") and not r.known("v2", "p-1", "w-1")
 
 
 def test_taken_words_bands():

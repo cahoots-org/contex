@@ -223,10 +223,12 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
-    def on_storm_off(self, villager_id: str, name: str, line: str | None = None, *, player: str) -> None:
-        """The villager stormed off on the player, with their parting words if any."""
-        text = f'{name} storms off: "{line}"' if line else f"{name} storms off."
-        self.emit("stormed_off", text, player=player, villager_id=villager_id, name=name, line=line)
+    def on_storm_off(
+        self, villager_id: str, name: str, line: str | None = None, *, player: str, verb: str = "storms off",
+    ) -> None:
+        """The villager broke off with the player, as verb says, with their parting words if any."""
+        text = f'{name} {verb}: "{line}"' if line else f"{name} {verb}."
+        self.emit("stormed_off", text, player=player, villager_id=villager_id, name=name, line=line, verb=verb)
 
     def on_denied(self, name: str, line: str | None, player: str) -> None:
         """The rumor's subject denied it aloud, in their own words."""

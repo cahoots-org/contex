@@ -61,6 +61,10 @@ class Rapport:
         """How taken the villager is with player's rumor; half her rapport with them until it has moved."""
         return self._interest.get((vid, player, rumor), 0.5 * self.rapport(vid, player))
 
+    def known(self, vid: str, player: str, rumor: str) -> bool:
+        """Whether the villager's interest in player's rumor has moved, so she heard it from the player herself."""
+        return (vid, player, rumor) in self._interest
+
     def move(self, vid: str, player: str, rumor: str, delta: float) -> float:
         """Move her interest in the rumor by delta, and her rapport by rapport_share of it; returns the new interest."""
         new = self._interest[(vid, player, rumor)] = _clamp(self.interest(vid, player, rumor) + delta)
@@ -76,12 +80,13 @@ class Rapport:
         self._interest.pop((vid, player, rumor), None)
         self._spoken.discard((vid, player, rumor))
 
-    def first_word(self, vid: str, player: str, rumor: str) -> bool:
-        """True the first time she speaks to player in the rumor, False after."""
-        if (vid, player, rumor) in self._spoken:
-            return False
+    def greets(self, vid: str, player: str, rumor: str) -> bool:
+        """Whether her next line to player in the rumor is her first, so she greets them."""
+        return (vid, player, rumor) not in self._spoken
+
+    def greeted(self, vid: str, player: str, rumor: str) -> None:
+        """She has spoken to player in the rumor, so her later lines do not greet them."""
         self._spoken.add((vid, player, rumor))
-        return True
 
     def mood(self, vid: str, player: str, rumor: str, greet: bool = False) -> str:
         """How she feels about the rumor in words; greet adds how she feels about the player, to greet them by."""
