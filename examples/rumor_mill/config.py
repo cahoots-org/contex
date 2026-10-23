@@ -97,6 +97,16 @@ class Config:
     interest_annoyed: float = -0.3
     # How much her rapport drops when she runs out of patience.
     rapport_lost_patience: float = -0.2
+    # How much one hearing at full sting and no fear raises a villager's pressure to leave town.
+    pressure_per_hearing: float = 0.3
+    # How much more a line stings from someone the villager is tied to.
+    pressure_tie_factor: float = 1.5
+    # How much pressure eases at each part of the day.
+    pressure_decay: float = 0.05
+    # Pressure at which a villager is shaken, at the end of their rope, and leaves town.
+    pressure_shaken: float = 0.4
+    pressure_breaking: float = 0.7
+    pressure_leave: float = 1.0
 
     @property
     def memory_seconds(self) -> int:

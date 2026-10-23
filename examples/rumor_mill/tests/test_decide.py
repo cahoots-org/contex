@@ -8,7 +8,9 @@ from examples.rumor_mill.actions import (
     PREACH, RETELL, SPEAK, WARN,
 )
 from examples.rumor_mill.contex_client import Match
-from examples.rumor_mill.decide import GOSSIP_LEVELS, KEEN_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide
+from examples.rumor_mill.decide import (
+    FEAR_LEVELS, GOSSIP_LEVELS, KEEN_LEVELS, STING_LEVELS, SUSPICION_LEVELS, Decision, TurnView, decide,
+)
 from examples.rumor_mill.models import Group, Villager
 from examples.rumor_mill.tests.helpers import StubJev
 
@@ -342,3 +344,29 @@ async def test_decide_state_says_how_taken():
     assert "how taken they were with the newcomer's story" not in jev.state
     await decide(jev, view(taken="eager"))
     assert jev.state["how taken they were with the newcomer's story"] == "eager"
+
+
+@pytest.mark.asyncio
+async def test_decide_returns_sting_and_fear():
+    jev = StubJev({"action": IGNORE}, scores={"sting": 3, "fear": 1})
+    d = await decide(jev, view())
+    assert list(jev.questions["sting"].criteria) == STING_LEVELS
+    assert list(jev.questions["fear"].criteria) == FEAR_LEVELS
+    assert (d.sting, d.fear) == (1.0, pytest.approx(1 / 3))
+
+
+@pytest.mark.asyncio
+async def test_sting_and_fear_asked_only_with_new_lines():
+    jev = StubJev({"action": IGNORE}, scores={"sting": 3, "fear": 3})
+    d = await decide(jev, view(new=[]))
+    assert not {"sting", "fear"} & set(jev.questions)
+    assert (d.sting, d.fear) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_breaking_words_reach_the_state():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view())
+    assert "how close they are to breaking" not in jev.state
+    await decide(jev, view(breaking="shaken"))
+    assert jev.state["how close they are to breaking"] == "shaken"

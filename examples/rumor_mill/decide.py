@@ -42,6 +42,16 @@ SUSPICION_INSTRUCTIONS = (
     "How strongly does what this villager just heard make them suspect the newcomer is "
     "behind the rumors going around, given their personality?"
 )
+STING_LEVELS = ["none", "a little", "a lot", "devastating"]
+STING_INSTRUCTIONS = (
+    "How badly does what this villager just heard damage their own name, trade, family, or standing, "
+    "judged from who they are?"
+)
+FEAR_LEVELS = ["none", "a little", "a lot", "devastating"]
+FEAR_INSTRUCTIONS = (
+    "How much does what this villager just heard frighten them for their safety or their future in this village, "
+    "judged from their name, trade, family, standing, and fears?"
+)
 
 
 @dataclass
@@ -71,6 +81,8 @@ class TurnView:
     held: bool = False
     # How taken the villager was with the newcomer's whisper behind the turn's new items, if any is.
     taken: str | None = None
+    # How close the villager is to breaking under the pressure to leave town, in words.
+    breaking: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +97,9 @@ class Decision:
     gossip: float | None = None
     # How keen the villager is to keep talking, in [0, 1], when it was asked.
     keen: float | None = None
+    # How badly the news damages the villager and how much it frightens them, in [0, 1], when there was news.
+    sting: float | None = None
+    fear: float | None = None
 
 
 def _text(m: Match) -> str:
@@ -123,6 +138,8 @@ def _state(view: TurnView) -> dict:
     }
     if view.taken:
         state["how taken they were with the newcomer's story"] = view.taken
+    if view.breaking:
+        state["how close they are to breaking"] = view.breaking
     if view.said:
         state["things_i_said_recently"] = [_text(m) for m in view.said[:MAX_SAID]]
     if view.heard:
@@ -142,6 +159,9 @@ def _questions(view: TurnView) -> dict[str, Choice | Score]:
     qs = {"action": Choice(instructions=ACTION_INSTRUCTIONS, criteria=_action_criteria(view))}
     if view.names_newcomer:
         qs["suspicion"] = Score(instructions=SUSPICION_INSTRUCTIONS, criteria=SUSPICION_LEVELS)
+    if view.new:
+        qs["sting"] = Score(instructions=STING_INSTRUCTIONS, criteria=STING_LEVELS)
+        qs["fear"] = Score(instructions=FEAR_INSTRUCTIONS, criteria=FEAR_LEVELS)
     if view.ask_gossip:
         qs["gossip"] = Score(instructions=GOSSIP_INSTRUCTIONS, criteria=GOSSIP_LEVELS)
     if view.ask_keen:
@@ -207,10 +227,12 @@ async def decide(jev, view: TurnView) -> Decision:
     strength = _scaled(resp, "suspicion", SUSPICION_LEVELS) if view.names_newcomer else None
     gossip = _scaled(resp, "gossip", GOSSIP_LEVELS) if view.ask_gossip else None
     keen = _scaled(resp, "keen", KEEN_LEVELS) if view.ask_keen else None
+    sting = _scaled(resp, "sting", STING_LEVELS) if view.new else None
+    fear = _scaled(resp, "fear", FEAR_LEVELS) if view.new else None
     if action == IGNORE:
-        return Decision(IGNORE, None, None, None, strength, gossip, keen)
+        return Decision(IGNORE, None, None, None, strength, gossip, keen, sting, fear)
     if action == ANSWER:
-        return Decision(ANSWER, view.answerable[-1], None, None, strength, gossip, keen)
+        return Decision(ANSWER, view.answerable[-1], None, None, strength, gossip, keen, sting, fear)
     if len(view.new) > 1:
         source = next(m for m in view.new if m.data_key == pick["source"])
     else:
@@ -224,4 +246,4 @@ async def decide(jev, view: TurnView) -> Decision:
     target = pick.get(target_key) if target_key else None
     # A move keeps a manner in case the villager shares the news where they arrive.
     style = pick.get("style") if action in STYLED or action == MOVE else None
-    return Decision(action, source, target, style, strength, gossip, keen)
+    return Decision(action, source, target, style, strength, gossip, keen, sting, fear)
