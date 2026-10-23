@@ -25,6 +25,8 @@ ECHO_WORDS = 4
 GAME_OVER = "The game is over."
 NOT_CARRIED = "The whisper didn't carry; try again."
 THREAD_WHISPERS = 2
+# Misses in a row in one exchange that wear a villager's patience.
+ANNOYING_MISSES = 2
 LISTEN_OPENING = 5
 LISTEN_LOOKBACK_DAYS = 1 / 4
 ALREADY_LISTENING = "You're already listening."
@@ -78,6 +80,10 @@ class Player:
         self._threads: dict[str, dict] = {}
         # Per villager, the last whisper that landed with them and its rumor; it holds while they have not acted on it.
         self._held: dict[str, tuple[str, str]] = {}
+        # Per villager, when the player last whispered to them.
+        self._said_at: dict[str, float] = {}
+        # Per villager, the player's misses in a row in their current exchange.
+        self._misses: dict[str, int] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
@@ -188,6 +194,8 @@ class Player:
             hint_need = thread["need"]
         rumors = self.engine.rumors
         exchange = self._exchange(target.id)
+        if exchange is None:
+            self._misses.pop(target.id, None)
         rumor = rumors.rumor_of(self.id, text, exchange) if rumors is not None else exchange
         place = self.town.place_of(target.id)
         utterance = Utterance(uid, NEWCOMER, "A newcomer", place, text, None, "whispered to you", conversation=rumor)
@@ -203,7 +211,7 @@ class Player:
             if rumors is not None:
                 rumors.discard(uid)
             return NOT_CARRIED
-        self.whispered_at = time.time()
+        self.whispered_at = self._said_at[target.id] = time.time()
         if self.game is not None and rumor is None:
             self.game.moved(self.id)
         if utterance.place != self.place:
@@ -228,6 +236,7 @@ class Player:
             familiar = await self.engine.recall_heard(target.id, text, uid)
             hit = Match(f"utt:{uid}", utterance.to_data(), familiar[0].similarity, clearance=0.0) if familiar else None
         if hit:
+            self._misses.pop(target.id, None)
             self._threads.pop(target.id, None)
             self._held[target.id] = (uid, rumor or uid)
             if not self.engine.hear_directly(target.id, hit):
@@ -238,6 +247,7 @@ class Player:
             else:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
+            self._misses[target.id] = self._misses.get(target.id, 0) + 1
             current = self._thread(target.id)
             continues = not (current and current["whispers"] + 1 >= THREAD_WHISPERS)
             leaning = bool(near_misses) and continues
@@ -332,6 +342,30 @@ class Player:
             if wid == uid:
                 return rumor
         return None
+
+    def holds(self, villager_id: str) -> bool:
+        """Whether the villager stays put for this player: they share a place and an open exchange, and the player
+        spoke to them within talk_hold_seconds."""
+        said = self._said_at.get(villager_id)
+        return (
+            not self.over() and said is not None and time.time() - said < self.config.talk_hold_seconds
+            and villager_id in self.town and self.town.place_of(villager_id) == self.place
+            and self._exchange(villager_id) is not None
+        )
+
+    def annoyed(self, villager_id: str) -> bool:
+        """Whether the villager has had enough of this player: wary of them, or missed with ANNOYING_MISSES in a row."""
+        return (
+            self.engine.suspicion.score(villager_id, self.id) >= self.config.warn_threshold
+            or self._misses.get(villager_id, 0) >= ANNOYING_MISSES
+        )
+
+    def part(self, villager_id: str) -> None:
+        """End every exchange this player has open with the villager."""
+        self._threads.pop(villager_id, None)
+        self._held.pop(villager_id, None)
+        self._misses.pop(villager_id, None)
+        self.engine.end_conversation(villager_id, self.id)
 
     def _thread(self, villager_id: str) -> dict | None:
         """The villager's open thread, dropped once the day has moved on to its next part."""

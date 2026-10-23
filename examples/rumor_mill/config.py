@@ -49,6 +49,8 @@ class Config:
     draft_floor: float = 0.82
     # How many times a villager answers the newcomer in one conversation.
     talk_turns: int = 3
+    # How long a villager stays put for a player at their place who has an open exchange with them and stopped talking.
+    talk_hold_seconds: float = 60.0
     # Where need baselines are cached; empty means the seed path plus .baselines.json.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-4-5-20251001"

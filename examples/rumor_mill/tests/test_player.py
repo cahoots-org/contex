@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 import time
+from dataclasses import replace
 from datetime import datetime
 
 from examples.rumor_mill.contex_client import Match
@@ -1112,3 +1113,67 @@ async def test_a_whisper_that_fails_to_go_out_leaves_no_card():
     await player.whisper("Marta", "the well tastes odd")
     assert card_uids(engine) == []
     player.close()
+
+
+async def missed_once():
+    """A player who just missed with v1 at the tavern, so their exchange is open; whispers alone never make v1 wary."""
+    player, *_ = make("Marta")
+    player.config = replace(player.config, warn_threshold=1.0)
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    await wait_for(lambda: player._tasks == set())
+    return player
+
+
+@pytest.mark.asyncio
+async def test_a_villager_you_are_talking_with_is_held_where_you_both_stand():
+    player = await missed_once()
+    assert player.place == "tavern" and player.holds("v1")
+    player.walk("mill")
+    assert not player.holds("v1")
+
+
+@pytest.mark.asyncio
+async def test_a_hold_lapses_once_you_say_nothing_new_for_talk_hold_seconds():
+    player = await missed_once()
+    player.config = replace(player.config, talk_hold_seconds=0.05)
+    assert player.holds("v1")
+    await asyncio.sleep(0.06)
+    assert not player.holds("v1")
+
+
+@pytest.mark.asyncio
+async def test_no_hold_without_an_open_exchange():
+    player = await missed_once()
+    await player.whisper_to("v1", "the tide tables were misprinted again")
+    await wait_for(lambda: player._tasks == set())
+    assert not player.holds("v1")
+
+
+@pytest.mark.asyncio
+async def test_a_villager_is_annoyed_by_suspicion_or_two_misses_running():
+    player = await missed_once()
+    assert not player.annoyed("v1")
+    await player.whisper_to("v1", "the tide tables were misprinted again")
+    assert player.annoyed("v1")
+    fresh = await missed_once()
+    fresh.engine.suspicion.bump("v1", PID, fresh.config.warn_threshold, "whispered to them directly")
+    assert fresh.annoyed("v1")
+
+
+@pytest.mark.asyncio
+async def test_a_landed_whisper_clears_the_misses():
+    player = await missed_once()
+    player.town.get("v1").needs.append("bread")
+    player.engine.contex = StubContex({"bread": landing(0.8, "utt:w-2")})
+    await player.whisper_to("v1", "the oven is cold")
+    player.engine.contex = StubContex()
+    await player.whisper_to("v1", "the tide tables were misprinted")
+    assert not player.annoyed("v1")
+
+
+@pytest.mark.asyncio
+async def test_parting_drops_the_whole_exchange():
+    player = await missed_once()
+    player.engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
+    player.part("v1")
+    assert player._exchange("v1") is None and not player.holds("v1")
