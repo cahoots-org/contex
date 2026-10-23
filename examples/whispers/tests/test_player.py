@@ -615,23 +615,27 @@ async def test_a_thread_outlasts_the_part_of_the_day():
 
 
 @pytest.mark.asyncio
-async def test_a_thread_stays_open_while_you_type():
+async def test_a_thread_stays_open_while_you_type(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
-    player.config = replace(player.config, talk_hold_seconds=0.05)
+    player.config = replace(player.config, talk_hold_seconds=60.0)
     await miss(player)
-    await asyncio.sleep(0.04)
+    now[0] += 50
     player.typing()
-    await asyncio.sleep(0.04)
+    now[0] += 50
     await miss(player)
     assert conversations(player) == [None, "w-1"]
 
 
 @pytest.mark.asyncio
-async def test_a_thread_closes_after_a_quiet_talk_hold():
+async def test_a_thread_closes_after_a_quiet_talk_hold(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
     player = hinted_player("Wheel's groaning.", "Girl wants the city.")
-    player.config = replace(player.config, talk_hold_seconds=0.05)
+    player.config = replace(player.config, talk_hold_seconds=60.0)
     await miss(player)
-    await asyncio.sleep(0.06)
+    now[0] += 61
     await miss(player)
     assert conversations(player) == [None, None]
 
@@ -1218,23 +1222,27 @@ async def test_a_villager_you_are_talking_with_is_held_where_you_both_stand():
 
 
 @pytest.mark.asyncio
-async def test_a_hold_lapses_once_you_say_nothing_new_for_talk_hold_seconds():
+async def test_a_hold_lapses_once_you_say_nothing_new_for_talk_hold_seconds(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
     player = await missed_once()
-    player.config = replace(player.config, talk_hold_seconds=0.05)
+    player.config = replace(player.config, talk_hold_seconds=60.0)
     assert player.holds("v1")
-    await asyncio.sleep(0.06)
+    now[0] += 61
     assert not player.holds("v1")
 
 
 @pytest.mark.asyncio
-async def test_typing_keeps_the_hold_until_you_stop_for_talk_hold_seconds():
+async def test_typing_keeps_the_hold_until_you_stop_for_talk_hold_seconds(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
     player = await missed_once()
-    player.config = replace(player.config, talk_hold_seconds=0.05)
-    await asyncio.sleep(0.04)
+    player.config = replace(player.config, talk_hold_seconds=60.0)
+    now[0] += 50
     player.typing()
-    await asyncio.sleep(0.04)
+    now[0] += 50
     assert player.holds("v1")
-    await asyncio.sleep(0.02)
+    now[0] += 11
     assert not player.holds("v1")
 
 
