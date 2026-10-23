@@ -1052,3 +1052,15 @@ async def test_another_players_wording_starts_your_own_rumor():
     assert card_uids(engine) == ["w-1"]
     player.close()
 
+
+@pytest.mark.asyncio
+async def test_a_reply_while_a_landed_reply_awaits_the_villager_stays_in_the_rumor():
+    player = hinted_player("Wheel's groaning.", "Not now.")
+    await miss(player)
+    player.engine.contex = StubContex({NEEDS[0]: landing(0.8, "utt:w-2")})
+    await player.whisper_to("v1", "I could look at the wheel")
+    assert [s["state"] for s in statuses(player)][-1] == "heard"
+    player.engine.contex = StubContex()
+    await player.whisper_to("v1", "for a fair price")
+    assert conversations(player) == [None, "w-1", "w-1"]
+    player.close()

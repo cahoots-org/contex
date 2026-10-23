@@ -76,6 +76,8 @@ class Player:
         self._listen_until: float | None = None
         self._hinted: dict[str, set[int]] = {}
         self._threads: dict[str, dict] = {}
+        # Per villager, a landed whisper in an exchange that they have not acted on yet, and its rumor.
+        self._held: dict[str, tuple[str, str]] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
@@ -222,6 +224,8 @@ class Player:
             hit = Match(f"utt:{uid}", utterance.to_data(), familiar[0].similarity, clearance=0.0) if familiar else None
         if hit:
             self._threads.pop(target.id, None)
+            if exchange is not None:
+                self._held[target.id] = (uid, rumor)
             if not self.engine.hear_directly(target.id, hit):
                 return None
             until = self.engine.cooldown_ends(target.id)
@@ -310,11 +314,14 @@ class Player:
         return (self.game.day, self.game.phase) if self.game is not None else None
 
     def _exchange(self, villager_id: str) -> str | None:
-        """The rumor of the player's open exchange with the villager: their conversation or a missed whisper's thread."""
+        """The rumor of the player's open exchange with the villager: their conversation, a missed whisper's thread, or
+        a landed reply the villager has not acted on yet."""
         if conversation := self.engine.conversations.get((villager_id, self.id)):
             return conversation["id"]
-        thread = self._thread(villager_id)
-        return thread and thread["id"]
+        if thread := self._thread(villager_id):
+            return thread["id"]
+        uid, rumor = self._held.get(villager_id, (None, None))
+        return rumor if any(wid == uid for wid, _ in self.feed.listening(villager_id)) else None
 
     def _thread(self, villager_id: str) -> dict | None:
         """The villager's open thread, dropped once the day has moved on to its next part."""
