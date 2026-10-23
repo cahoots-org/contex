@@ -626,12 +626,12 @@ class Engine:
 
     def acted(self, decision: Decision, vid: str, target: str | None, creed: str | None = None) -> None:
         """Tell the judge of the villager's action and the player behind it: for leaving town, the one who pressed
-        them most; otherwise the one whose rumor it is."""
+        them most, else the one behind the line that broke them; otherwise the one whose rumor it is."""
+        player = self._player_behind(decision.source)
+        if decision.action == LEAVE_TOWN:
+            player = self.pressure.culprit(vid) or player
+            log.info("%s left town, credited to %s", vid, player)
         if self.judge is not None:
-            if decision.action == LEAVE_TOWN:
-                player = self.pressure.culprit(vid)
-            else:
-                player = self._player_behind(decision.source)
             self.judge.record_action(vid, decision.action, target, player, creed)
 
     def _press(self, v: Villager, m: Match, decision: Decision) -> bool:

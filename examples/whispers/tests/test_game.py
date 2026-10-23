@@ -313,7 +313,7 @@ async def test_the_engine_announces_each_part_of_the_day():
     engine, _, feed, _ = await start("v1", day_seconds=0.04)
     game = engine.game
     await engine.run()
-    await asyncio.sleep(0.05)
+    await wait_for(lambda: len(kinds(feed, "time")) >= 3)
     await engine.stop()
     assert [(e.data["day"], e.data["phase"]) for e in kinds(feed, "time")][:3] == [
         (1, "afternoon"), (1, "evening"), (1, "night"),
@@ -678,9 +678,11 @@ async def test_forced_departure_overrides_a_hold(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
-async def test_departure_with_no_player_pressure_credits_no_one(monkeypatch, caplog):
+async def test_departure_with_no_player_pressure_credits_the_player_behind_the_last_straw(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="examples.whispers.engine")
     engine, _, _, reported, _ = await leaving(monkeypatch, (1.0, None))
-    assert reported == [("v1", LEAVE_TOWN, None, None, None)] and "turn failed" not in caplog.text
+    assert reported == [("v1", LEAVE_TOWN, None, "p-b", None)] and "turn failed" not in caplog.text
+    assert "left town, credited to p-b" in caplog.text
     await engine.stop()
 
 

@@ -127,6 +127,7 @@ def main() -> None:
     args = parser.parse_args()
     load_dotenv()
     logging.basicConfig(level=logging.WARNING)
+    logging.getLogger("examples.whispers.engine").setLevel(logging.INFO)
     sys.stdout.reconfigure(line_buffering=True)
     try:
         asyncio.run(play(args.web))
