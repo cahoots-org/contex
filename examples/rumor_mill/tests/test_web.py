@@ -520,6 +520,19 @@ def test_cards_link_goals_and_count_who_each_convinced(game):
     assert "claims" not in card
 
 
+def test_a_believer_through_a_joined_whisper_counts_on_the_first_card(game):
+    card_with_claims(game, ["cat"])
+    game.client.portal.call(partial(
+        game.rumors.add, "w-2", "the cat spies by the well", datetime.now(UTC), "v2", "Bert Cole", "w-1",
+        player=game.player.id,
+    ))
+    game.judge.roots = {"cat": {"v2": "w-2"}}
+    card, = game.client.get("/api/state").json()["rumors"]
+    assert card["uid"] == "w-1" and card["goals"][0]["convinced"] == 1
+    assert card["touched"] == {"v1": "heard", "v2": "believes"}
+    assert game.rumors.first("w-2", "size:5") and not game.rumors.first("w-1", "size:5")
+
+
 def test_another_players_believers_never_count_on_your_card(game):
     card_with_claims(game, ["cat"])
     game.client.portal.call(partial(
