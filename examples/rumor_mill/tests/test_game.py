@@ -7,9 +7,10 @@ import pytest
 
 from examples.rumor_mill import engine as engine_mod
 from examples.rumor_mill import game as game_mod
-from examples.rumor_mill.actions import MOVE
+from examples.rumor_mill.actions import IGNORE, MOVE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
+from examples.rumor_mill.decide import Decision
 from examples.rumor_mill.engine import Engine
 from examples.rumor_mill.feed import Feed
 from examples.rumor_mill.game import MEMORY_PLAYERS, Game, Summary
@@ -461,3 +462,66 @@ def test_the_clock_says_how_far_through_the_day_it_is(monkeypatch):
     game.tick()
     now[0] += 60
     assert game.clock()["fraction"] == 0.5
+
+
+def talking(engine, player, vid="v1"):
+    """player in an open conversation with vid where they both stand, having just spoken to them."""
+    engine.conversations[(vid, player.id)] = {"id": f"w-{player.id}", "answered": [f"w-{player.id}"]}
+    player._said_at[vid] = time.time()
+
+
+def deciding(monkeypatch, action=IGNORE, target=None):
+    """Make every turn take action (at target) and record each turn's view."""
+    views = []
+
+    async def decide(jev, view):
+        views.append(view)
+        return Decision(action, None, target, None)
+
+    monkeypatch.setattr(engine_mod, "decide", decide)
+    return views
+
+
+@pytest.mark.asyncio
+async def test_the_routine_leaves_a_villager_someone_is_talking_with():
+    engine, player, _, _ = await start("v1", "v2")
+    engine.routine = StubRoutine({"v1": "mill", "v2": "mill"})
+    talking(engine, player)
+    await engine._walk("morning", 0.0)
+    assert (engine.town.place_of("v1"), engine.town.place_of("v2")) == ("square", "mill")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_villager_stays_while_either_of_two_players_holds_them():
+    engine, pa, feed, _ = await start("v1")
+    pb = Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-b")
+    engine.players.add(pb)
+    engine.routine = StubRoutine({"v1": "mill"})
+    talking(engine, pb)
+    await engine._walk("morning", 0.0)
+    assert engine.town.place_of("v1") == "square"
+    pb.walk("well")
+    await engine._walk("morning", 0.0)
+    assert engine.town.place_of("v1") == "mill"
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_held_villagers_turn_cannot_walk_off_unless_every_holder_annoys_them(monkeypatch):
+    views = deciding(monkeypatch)
+    engine, pa, feed, _ = await start("v1")
+    pb = Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-b")
+    engine.players.add(pb)
+    talking(engine, pa)
+    talking(engine, pb)
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold, "whispered to them directly")
+    engine.minds["v1"].queue.put_nowait(None)
+    await wait_for(lambda: len(views) == 1)
+    assert views[0].held
+    pb.walk("well")
+    engine._last_turn.clear()
+    engine.minds["v1"].queue.put_nowait(None)
+    await wait_for(lambda: len(views) == 2)
+    assert not views[1].held
+    await engine.stop()

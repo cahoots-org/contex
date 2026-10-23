@@ -483,6 +483,7 @@ class Engine:
         place = self.town.place_of(v.id)
         front = {self._about(m) for m in new} - {None}
         suspect = self.suspicion.most_suspected(v.id, front)
+        holders = self._holders(v.id)
         view = TurnView(
             villager=v,
             place=place,
@@ -499,6 +500,7 @@ class Engine:
             answerable=answerable,
             ask_gossip=v.id not in self._gossip,
             ask_keen=self.scenes.of(v.id) is not None or any(self._exchange(m, v.id, place) for m in new),
+            held=any(not p.annoyed(v.id) for p in holders),
         )
         action = answered = None
         # The turn answers to the player behind the first of its new items that a player started, if any.
@@ -755,10 +757,15 @@ class Engine:
             log.exception("routine round failed")
 
     def _free_to_walk(self, vid: str) -> bool:
-        """Whether someone is playing and the villager is in town, free of a turn, a scene, or a move of their own."""
+        """Whether someone is playing and the villager is in town, free of a turn, a scene, a move of their own, or a
+        player talking with them."""
         return self.players.any_playing() and vid in self.town and vid not in self._turning and self.scenes.of(vid) is None and (
             vid not in self._chose_move
-        )
+        ) and not self._holders(vid)
+
+    def _holders(self, vid: str) -> list[Player]:
+        """The players talking with the villager who keep them where they are."""
+        return [p for p in self.players if p.holds(vid)]
 
     async def _stroll(self, vid: str, place: str) -> None:
         """Move the villager to place, perhaps sharing their latest news with someone there once, while it is fresh."""

@@ -67,6 +67,8 @@ class TurnView:
     ask_gossip: bool = False
     # Whether to ask how keen the villager is to keep a scene going.
     ask_keen: bool = False
+    # Whether a player talking with the villager keeps them from walking off or leaving town.
+    held: bool = False
 
 
 @dataclass(frozen=True)

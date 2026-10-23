@@ -82,5 +82,7 @@ def available_actions(view) -> list[str]:
             continue
         if a == ANSWER and not view.answerable:
             continue
+        if a in (MOVE, LEAVE_TOWN) and view.held:
+            continue
         out.append(a)
     return out

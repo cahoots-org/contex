@@ -323,3 +323,13 @@ async def test_keen_is_asked_only_when_requested_and_scaled():
     d = await decide(jev, view(ask_keen=True))
     assert list(jev.questions["keen"].criteria) == KEEN_LEVELS
     assert d.keen == pytest.approx(2 / 3)
+
+
+@pytest.mark.asyncio
+async def test_a_held_villager_cannot_walk_off_or_leave_town():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view(held=True))
+    criteria = jev.questions["action"].criteria
+    assert MOVE not in criteria and LEAVE_TOWN not in criteria and IGNORE in criteria
+    await decide(jev, view())
+    assert MOVE in jev.questions["action"].criteria and LEAVE_TOWN in jev.questions["action"].criteria
