@@ -52,7 +52,7 @@ then asks a plain-English question and prints the matches ranked by meaning.
 python examples/query.py
 ```
 
-### [`rumor_mill/`](rumor_mill/README.md)
+### [`whispers/`](whispers/README.md)
 
 A gossip game with 50 villagers, played in the terminal or a browser. Each villager's mind is a project
 with one subscription on their needs, they wake only on push, and they forget
@@ -62,9 +62,9 @@ optional faster reconcile sweep makes quiet minds forget sooner; see its README
 for setup and cost.
 
 ```bash
-pip install -r examples/rumor_mill/requirements.txt
-python -m examples.rumor_mill          # terminal
-python -m examples.rumor_mill --web    # browser, at http://127.0.0.1:8765
+pip install -r examples/whispers/requirements.txt
+python -m examples.whispers          # terminal
+python -m examples.whispers --web    # browser, at http://127.0.0.1:8765
 ```
 
 ## Also here

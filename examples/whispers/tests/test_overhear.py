@@ -1,0 +1,182 @@
+import logging
+import os
+import random
+import uuid
+
+import pytest
+
+from examples.whispers.actions import CONFRONT, DENY, RETELL, SPEAK, WARN
+from examples.whispers.calibration import Baselines
+from examples.whispers.config import Config
+from examples.whispers.contex_client import ContexClient, Match
+from examples.whispers.goals import Goal
+from examples.whispers.models import Utterance
+from examples.whispers.overhear import Overhear
+from examples.whispers.tests.helpers import Always, StubBaselines, StubContex
+from examples.whispers.town import NEWCOMER
+
+URL = os.environ.get("WHISPERS_CONTEX_URL")
+
+
+def belief(gid, claim):
+    return Goal(gid, f"Half of the village believes {claim}", "belief", (claim,), f"Does this villager believe {claim}?",
+                0.5, claim_text=claim)
+
+
+GOALS = {g.id: g for g in (
+    belief("well-cursed", "the well is cursed"), belief("mayors-cat", "the mayor's cat is a spy"),
+    belief("dragon", "a dragon lives in the hills"), belief("tavern-ghost", "the tavern is haunted by a ghost"),
+    Goal("bare", "A goal with no evidence", "belief"),
+)}
+WELL = GOALS["well-cursed"]
+
+
+def line(text="nice weather", place="tavern", action=SPEAK, style="faithful", speaker="v1", verb="said"):
+    return Utterance("u-1", speaker, "Bert", place, text, None, verb, action=action, style=style)
+
+
+async def make(results=None, error=None, rate=0.0, goals=(WELL,), roll=0.99):
+    contex = StubContex(results, error)
+    overhear = Overhear(contex, StubBaselines(0.6), Config(session="s1", overhear_rate=rate), Always(roll))
+    await overhear.publish(list(goals))
+    return overhear, contex
+
+
+@pytest.mark.asyncio
+async def test_publishes_only_goals_with_evidence():
+    _, contex = await make(goals=(WELL, GOALS["bare"]))
+    assert contex.published == [
+        ("whispers:s1:goals", "goal:well-cursed", {"id": "well-cursed", "text": "the well is cursed"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_only_the_players_place():
+    overhear, _ = await make(rate=1.0, roll=0.0)
+    assert await overhear.keep(line(place="tavern"), "tavern") == "random"
+    assert await overhear.keep(line(place="mill"), "tavern") is None
+    assert await overhear.keep(line(speaker=NEWCOMER), "tavern") is None
+    assert await overhear.keep(line(action="join_group", verb="announced"), "tavern") is None
+
+
+@pytest.mark.asyncio
+async def test_card_hops_are_not_overheard():
+    overhear, contex = await make(rate=1.0, roll=0.0)
+    assert await overhear.keep(line(action=CONFRONT), "tavern", hop=True) is None
+    assert contex.queries == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("action", "style"), [
+    (CONFRONT, "faithful"), (DENY, "delighted"), (SPEAK, "mock"), (SPEAK, "shift_blame"),
+])
+async def test_heated_kept(action, style):
+    overhear, contex = await make()
+    assert await overhear.keep(line(action=action, style=style), "tavern") == "heated"
+    assert contex.queries == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("style", ["exaggerated", "delighted", "worried", "conspiratorial", "add_detail"])
+async def test_lively_kept(style):
+    overhear, contex = await make(roll=0.0)
+    assert await overhear.keep(line(action=RETELL, style=style), "tavern") == "lively"
+    assert contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_lively_rate():
+    overhear = Overhear(StubContex(), StubBaselines(0.6), Config(overhear_rate=1.0), random.Random(7))
+    kept = [await overhear.keep(line(style="delighted"), "tavern") for _ in range(4000)]
+    assert set(kept) == {"lively", None}
+    assert 0.37 < kept.count("lively") / len(kept) < 0.43
+
+
+@pytest.mark.asyncio
+async def test_goal_relevant_kept():
+    results = {"the well water tastes of brimstone": [Match("goal:well-cursed", {}, 0.65)],
+               "the well is deep": [Match("goal:well-cursed", {}, 0.55)]}
+    overhear, contex = await make(results)
+    assert await overhear.keep(line("the well water tastes of brimstone"), "tavern", goals=["well-cursed"]) == "goal"
+    assert await overhear.keep(line("the well is deep"), "tavern", goals=["well-cursed"]) is None
+    assert contex.queries[0] == ("whispers:s1:goals", "the well water tastes of brimstone", {"top_k": 1, "threshold": 0})
+
+
+@pytest.mark.asyncio
+async def test_goal_reason_uses_only_the_overhearing_players_goals():
+    results = {"the well is cursed": [Match("goal:well-cursed", {}, 0.65)]}
+    overhear, _ = await make(results, goals=(WELL, GOALS["mayors-cat"]))
+    assert await overhear.keep(line("the well is cursed"), "tavern", goals=["well-cursed"]) == "goal"
+    assert await overhear.keep(line("the well is cursed"), "tavern", goals=["mayors-cat"]) is None
+
+
+@pytest.mark.asyncio
+async def test_goal_check_failure_is_not_goal_relevant(caplog):
+    overhear, _ = await make(error=RuntimeError("down 0.73"))
+    with caplog.at_level(logging.WARNING):
+        assert await overhear.keep(line(), "tavern", goals=["well-cursed"]) is None
+    assert "u-1" in caplog.text and "0.73" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_random_rate():
+    contex = StubContex()
+    overhear = Overhear(contex, StubBaselines(0.6), Config(overhear_rate=0.125), random.Random(7))
+    kept = [await overhear.keep(line(), "tavern") for _ in range(4000)]
+    assert set(kept) == {"random", None}
+    assert 0.1 < kept.count("random") / len(kept) < 0.15
+
+
+@pytest.mark.skipif(not URL, reason="WHISPERS_CONTEX_URL not set")
+@pytest.mark.asyncio
+async def test_live_goal_relevance(tmp_path):
+    cfg = Config(contex_url=URL, session=f"rumor-{uuid.uuid4().hex[:8]}", seed_path=str(tmp_path / "seed.json"),
+                 overhear_rate=0.0)
+    async with ContexClient(URL) as client:
+        baselines = Baselines(client, cfg)
+        goals = [WELL, GOALS["dragon"]]
+        await baselines.load([g.evidence[0] for g in goals])
+        overhear = Overhear(client, baselines, cfg, random.Random(1))
+        await overhear.publish(goals)
+        assert await overhear.keep(line("They say a curse lies on the well and its water is poisoned."), "tavern", goals=["well-cursed"]) == "goal"
+        assert await overhear.keep(line("My back has ached since the frost came."), "tavern") is None
+
+
+@pytest.mark.asyncio
+async def test_listening_hears_every_line_but_not_whispers_hops_or_other_places():
+    overhear, contex = await make(roll=0.99)
+    assert await overhear.keep(line(), "tavern", listening=True) == "listen"
+    assert await overhear.keep(line(speaker=NEWCOMER), "tavern", listening=True) is None
+    assert await overhear.keep(line(), "tavern", hop=True, listening=True) is None
+    assert await overhear.keep(line(action=WARN), "tavern", listening=True) is None
+    assert await overhear.keep(line(place="mill"), "tavern", listening=True) is None
+    assert contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_claims_are_the_goals_whose_evidence_the_words_match_best_first():
+    contex = StubContex({"spooky water": [
+        Match("goal:well-cursed", {}, 0.9), Match("goal:dragon", {}, 0.1), Match("goal:tavern-ghost", {}, 0.95),
+    ]})
+    overhear = Overhear(contex, StubBaselines(0.5), Config(session="s1"), Always(0.99))
+    await overhear.publish([GOALS["tavern-ghost"], WELL, GOALS["dragon"]])
+    assert await overhear.claims("spooky water") == ["tavern-ghost", "well-cursed"]
+    assert contex.queries == [("whispers:s1:goals", "spooky water", {"top_k": 3, "threshold": 0})]
+
+
+@pytest.mark.asyncio
+async def test_claims_fail_quietly(caplog):
+    overhear, _ = await make(error=RuntimeError("down 0.73"))
+    with caplog.at_level(logging.WARNING):
+        assert await overhear.claims("the well is cursed") == []
+    assert "0.73" not in caplog.text and "the well is cursed" not in caplog.text
+    nothing, contex = await make(goals=())
+    assert await nothing.claims("the well is cursed") == [] and contex.queries == []
+
+
+@pytest.mark.asyncio
+async def test_drop_forgets_only_the_given_goals():
+    overhear, contex = await make(goals=(WELL, GOALS["mayors-cat"]))
+    overhear.drop(["mayors-cat", "unknown"])
+    contex.results = {"the well is cursed": [Match("goal:well-cursed", {}, 0.9), Match("goal:mayors-cat", {}, 0.9)]}
+    assert await overhear.claims("the well is cursed") == ["well-cursed"]

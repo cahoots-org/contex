@@ -1,0 +1,125 @@
+"""Whispers settings, overridable through WHISPERS_* environment variables."""
+
+import os
+import uuid
+from dataclasses import dataclass, field, fields
+
+
+@dataclass(frozen=True)
+class Config:
+    contex_url: str = "http://localhost:8001/mcp"
+    # Names this run's Contex projects; a fresh one per run starts every mind empty.
+    session: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
+    day_seconds: float = 180.0
+    # How long a subscription keeps talk for a villager to react to.
+    memory_days: float = 2.0
+    # How many of the newcomer's moves the village remembers a line for when judging belief.
+    memory_moves: int = 20
+    cooldown_seconds: float = 30.0
+    renew_seconds: float = 1200.0
+    population: int = 50
+    arrival_delay_seconds: float = 60.0
+    judge_every_days: float = 1.0
+    judge_concurrency: int = 10
+    turn_concurrency: int = 20
+    top_k: int = 5
+    # How far before a whisper's publish its direct check looks, absorbing clock skew with Contex's database.
+    check_lookback_seconds: float = 5.0
+    # How far above a need's ordinary-talk similarity a whisper must score to match it.
+    match_margin: float = 0.015
+    # How far above a whisper's ordinary-talk similarity a retelling must score to stay on its rumor card.
+    on_topic_margin: float = 0.035
+    # How similar a villager's earlier line must be to what the newcomer says to be remembered.
+    said_floor: float = 0.8
+    # How similar a line the villager heard must be to what the newcomer says to be recalled.
+    heard_floor: float = 0.84
+    # How much more clearance each retelling hop needs before it wakes a listener.
+    fatigue_per_hop: float = 0.0015
+    # How much more clearance overheard room talk needs than a line told to the listener.
+    overheard_margin: float = 0.005
+    # The share of ordinary talk at the player's place that the player overhears.
+    overhear_rate: float = 0.125
+    # The share of lively talk at the player's place that the player overhears.
+    lively_rate: float = 0.4
+    # How far news must clear a need for a villager who walks off to share it wherever their nature lets them.
+    share_clearance: float = 0.02
+    # How long one Listen lasts.
+    listen_seconds: float = 20.0
+    # How similar a draft must be to a hint line for the villager who gave it to be marked.
+    draft_floor: float = 0.82
+    # How many times a villager answers the newcomer in one conversation.
+    talk_turns: int = 3
+    # How long a villager stays put for a player at their place who has an open exchange with them and stopped talking and typing.
+    talk_hold_seconds: float = 60.0
+    # Where need baselines are cached; empty means whispers_baselines.json, shared by every village.
+    calibration_path: str = ""
+    haiku_model: str = "claude-haiku-5-5"
+    # A saved village to play again; empty means a new village, saved under whispers_worlds/.
+    seed_path: str = ""
+    web_port: int = 8765
+    # Estimated list prices in dollars per million tokens.
+    haiku_input_per_mtok: float = 0.1
+    haiku_output_per_mtok: float = 0.5
+    jev_input_per_mtok: float = 0.04
+    jev_output_per_mtok: float = 0.0
+    suspicion_whisper_bump: float = 0.12
+    suspicion_hear_max: float = 0.25
+    suspicion_decay_per_day: float = 0.05
+    warn_threshold: float = 0.3
+    refuse_threshold: float = 0.7
+    # Weighted town suspicion at which villagers start moving to run the newcomer out.
+    run_out_level: float = 0.08
+    run_out_checks: int = 3
+    suspicion_check_days: float = 0.25
+    # How many scenes run at once.
+    max_scenes: int = 3
+    # How long a villager in a scene waits between turns.
+    scene_cooldown_seconds: float = 5.0
+    # The share of a scene's momentum that becomes the chance a bystander is drawn in.
+    join_rate: float = 0.3
+    # How many lines a scene runs before it ends.
+    scene_max_lines: int = 12
+    # How far above a need's ordinary-talk similarity a line must score to count as a hint.
+    hint_margin: float = 0.0
+    # How close under a threshold a line must fall to count as a near miss.
+    near_miss_band: float = 0.01
+    # How a whisper moves a villager's interest in its rumor: a hit, a near miss from the band's bottom to the bar,
+    # and a brush-off.
+    interest_hit: float = 0.4
+    interest_near_min: float = 0.1
+    interest_near_max: float = 0.25
+    interest_brush_off: float = -0.35
+    # The share of each interest change that moves her rapport with the player.
+    rapport_share: float = 0.1
+    # Interest at or below which she ends the conversation.
+    interest_end: float = -0.6
+    # Interest in the open rumor at or below which she has had enough of the player.
+    interest_annoyed: float = -0.3
+    # How much her rapport drops when she runs out of patience.
+    rapport_lost_patience: float = -0.2
+    # How much one hearing at full sting and no fear raises a villager's pressure to leave town.
+    pressure_per_hearing: float = 0.3
+    # How much more a line stings from someone the villager is tied to.
+    pressure_tie_factor: float = 1.5
+    # How much pressure eases at each part of the day.
+    pressure_decay: float = 0.05
+    # Pressure at which a villager is shaken, at the end of their rope, and leaves town.
+    pressure_shaken: float = 0.4
+    pressure_breaking: float = 0.7
+    pressure_leave: float = 1.0
+
+    @property
+    def memory_seconds(self) -> int:
+        return int(self.day_seconds * self.memory_days)
+
+    @classmethod
+    def from_env(cls) -> "Config":
+        values = {}
+        for f in fields(cls):
+            raw = os.environ.get(f"WHISPERS_{f.name.upper()}")
+            if f.name == "contex_url" and raw is None:
+                raw = os.environ.get("CONTEX_MCP_URL")
+            if raw is None:
+                continue
+            values[f.name] = f.type(raw)
+        return cls(**values)
