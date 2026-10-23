@@ -1198,12 +1198,14 @@ function dockStatus(e, fresh) {
 }
 
 // A whisper the server puts in an existing rumor (a reply, or the same words to someone new) maps to that rumor and
-// joins its villager's lines in the dock, if there; it gets no row and no feed line of its own.
+// joins its villager's lines in the dock when that talk is about the same rumor; it gets no row and no feed line of
+// its own. A rumor whose first whisper the page never saw gets its row from this one.
 function joinConversation(e) {
+  if (!cardOf.has(e.conversation)) newCard(e.conversation, e.target, e.place, e.text);
   spoken.set(e.uid, { text: e.text, speaker: "you" });
-  cardOf.set(e.uid, cardOf.get(e.conversation) ?? e.conversation);
+  cardOf.set(e.uid, cardOf.get(e.conversation));
   const entry = dock.get(e.target_id);
-  if (!entry) return;
+  if (entry?.rumor !== cardOf.get(e.uid)) return;
   entry.whispers.add(e.uid);
   entry.lines.push({ you: true, text: e.text });
   renderDock();

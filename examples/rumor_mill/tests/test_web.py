@@ -751,7 +751,8 @@ def test_a_whisper_the_server_puts_in_a_rumor_never_gets_a_row(game):
     whisper = re.search(r'case "whisper":(.*?)case "hop"', html, re.S).group(1)
     assert "if (e.conversation) joinConversation(e);" in whisper
     join = re.search(r"function joinConversation\(e\) \{(.*?)\n\}", html, re.S).group(1)
-    assert join.index("cardOf.set(") < join.index("if (!entry) return;")
+    assert "if (!cardOf.has(e.conversation)) newCard(e.conversation, e.target, e.place, e.text);" in join
+    assert join.index("cardOf.set(") < join.index("if (entry?.rumor !== cardOf.get(e.uid)) return;")
 
 
 def test_a_phone_gets_three_tabs(game):
