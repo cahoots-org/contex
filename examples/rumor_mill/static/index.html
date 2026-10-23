@@ -337,6 +337,10 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   flex: 0 0 19rem; min-width: 0; display: flex; flex-direction: column; gap: .25rem;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: .4rem .6rem;
 }
+.goal-card.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Your goal's text is the button that picks it, so its villagers are marked in the village. */
+button.goal-text { all: unset; cursor: pointer; text-align: left; font-size: .85rem; overflow-wrap: anywhere; }
+button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .goal-card:empty { display: none; }
 .goal-label { display: flex; align-items: center; font-size: .75rem; color: var(--muted); }
 .swap {
@@ -384,15 +388,15 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   outline: 1px solid var(--face-edge); outline-offset: -1px;
 }
 .face.big canvas { width: 32px; height: 32px; border-radius: 6px; }
+/* The picked goal's villagers: a ring outside any rumor outline, solid for who it needs, dashed for who it is about. */
+.face.needed, .face.about, .legend .needed, .legend .about { border-radius: 7px; outline-offset: 3px; }
+.face.needed, .legend .needed { outline: 2px solid var(--accent); }
+.face.about, .legend .about { outline: 2px dashed var(--r3); }
 .badge {
   position: absolute; right: -5px; bottom: -5px; width: 15px; height: 15px; border-radius: 50%;
   display: inline-grid; place-items: center; font: 700 10px/1 var(--ui); color: #fff;
   border: 2px solid var(--bg); box-sizing: content-box;
 }
-.badge.aim { right: -5px; top: -5px; bottom: auto; }
-.badge.aim[data-s="mark"] { background: var(--accent); color: var(--on-accent); }
-.badge.aim[data-s="subject"] { background: var(--r3); }
-.badge.aim[data-s="subject"]:not(:only-of-type) { right: auto; left: -5px; top: auto; bottom: -5px; }
 .tag { margin-left: .4rem; padding: 0 .35rem; border-radius: 3px; background: var(--mark); color: var(--on-mark); font-weight: 700; }
 .glyph { color: var(--mark); font-weight: 700; margin-right: .25rem; }
 .badge[data-s="took_the_bait"] { background: var(--bait); }
@@ -408,7 +412,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   content: ""; position: absolute; left: -4px; top: -4px; width: 7px; height: 7px; border-radius: 50%;
   background: var(--mark); border: 1px solid var(--ink);
 }
-.legend .touched, .legend .might { position: static; display: inline-block; vertical-align: -.1rem; margin-right: .3rem; }
+.legend .touched, .legend .might, .legend .needed, .legend .about { position: static; display: inline-block; vertical-align: -.1rem; margin-right: .5rem; }
+.legend .needed, .legend .about { width: 10px; height: 10px; outline-offset: 1px; }
 .legend .touched { width: 10px; height: 10px; border-radius: 3px; }
 .sort { display: flex; align-items: center; gap: .5rem; margin: .1rem 0 0; font-size: .85rem; color: var(--muted); }
 .sort select { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; padding: .2rem .4rem; }
@@ -618,8 +623,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
       <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
       <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
-      <span><span class="badge aim" data-s="mark" aria-hidden="true">→</span>your goal needs them</span>
-      <span><span class="badge aim" data-s="subject" aria-hidden="true">?</span>your goal is about them</span>
+      <span><span class="needed" aria-hidden="true"></span>the goal you picked needs them</span>
+      <span><span class="about" aria-hidden="true"></span>the goal you picked is about them</span>
       <span><span class="touched" aria-hidden="true"></span><span id="legend-mark"></span>touched by the rumor you opened</span>
       <span><span class="might" aria-hidden="true"></span>this might interest them</span>
     </p>
@@ -1587,23 +1592,28 @@ function faceFor(id, occupation) {
   return canvas;
 }
 
-// The villagers an unmet goal works on, and the ones its claim is about.
-function targets() {
-  const live = [...goals.values()].filter((g) => !g.met);
-  return { marks: new Set(live.flatMap((g) => g.marks)), subjects: new Set(live.map((g) => g.subject).filter(Boolean)) };
+// The goal the player picked, whose villagers are marked; none until they pick one.
+let pickedGoal = null;
+
+function pickGoal(id) {
+  pickedGoal = pickedGoal === id ? null : id;
+  renderGoals();
+  document.querySelector(`button.goal-text[data-goal="${CSS.escape(id)}"]`)?.focus();
 }
 
-function aim(kind, title, glyph) {
-  return el("span", { className: "badge aim", ariaHidden: "true", title, textContent: glyph, dataset: { s: kind } });
+// The villagers the picked goal works on, and the one its claim is about, while it is unmet.
+function targets() {
+  const g = goals.get(pickedGoal);
+  if (!g || g.met) return { marks: new Set(), subjects: new Set() };
+  return { marks: new Set(g.marks), subjects: new Set(g.subject ? [g.subject] : []) };
 }
 
 function faceWith(v, big = false) {
   const status = noteOf(v.id).status;
   const { marks, subjects } = targets();
-  return el("span", { className: big ? "face big" : "face", ariaHidden: "true" }, faceFor(v.id, v.occupation),
-    BADGES[status] && badge(status),
-    marks.has(v.id) ? aim("mark", "your goal needs them", "→") : null,
-    subjects.has(v.id) ? aim("subject", "your goal is about them", "?") : null);
+  const ring = marks.has(v.id) ? "needed" : subjects.has(v.id) ? "about" : null;
+  return el("span", { className: ["face", big && "big", ring].filter(Boolean).join(" "), ariaHidden: "true" },
+    faceFor(v.id, v.occupation), BADGES[status] && badge(status));
 }
 
 // The villager's name and, when the player knows something, the status in words.
@@ -1766,7 +1776,10 @@ function goalCard(g, label, swapId = null) {
   return [
     el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null,
       swapId && !g.met ? swapButton(swapId) : null),
-    el("div", { className: "goal-text", textContent: g.text }),
+    swapId
+      ? el("button", { type: "button", className: "goal-text", textContent: g.text, ariaPressed: String(pickedGoal === swapId),
+          title: "Show who this goal needs", dataset: { goal: swapId }, onclick: () => pickGoal(swapId) })
+      : el("div", { className: "goal-text", textContent: g.text }),
     doubtLine(g),
     el("div", { className: "bar" },
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
@@ -1778,7 +1791,9 @@ function goalCard(g, label, swapId = null) {
 function renderGoals() {
   const all = [...goals.values()];
   $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
-  $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", { className: g.met ? "goal-card met" : "goal-card" }, ...goalCard(g, "Your goal", id))));
+  $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", {
+    className: ["goal-card", g.met && "met", id === pickedGoal && "picked"].filter(Boolean).join(" "),
+  }, ...goalCard(g, "Your goal", id))));
   for (const uid of rumorRows.keys()) setRow(uid);
   refreshVillagers();
 }
