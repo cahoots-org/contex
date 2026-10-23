@@ -412,6 +412,25 @@ async def test_the_same_wording_belongs_to_the_players_own_rumor():
     assert rumors.rumor_of(PID, "the miller waters his bread") is None
     assert rumors.rumor_of("p-b", "the miller waters his flour") is None
     assert rumors.rumor_of(PID, "something else entirely", "w-1") == "w-1"
+    assert rumors.rumor_of(PID, 'the miller waters his flour."') == "w-1"
+    assert rumors.rumor_of(PID, "the miller waters his flour’)") == "w-1"
+
+
+@pytest.mark.asyncio
+async def test_empty_wording_never_matches():
+    rumors, _ = await make()
+    await rumors.add("w-2", "...", AT, "v1", "Marta", player=PID)
+    assert rumors.rumor_of(PID, "!!") is None
+
+
+@pytest.mark.asyncio
+async def test_an_opened_card_is_matched_before_its_words_are_published():
+    rumors, contex = await make()
+    rumors.open("w-2", "the baker skims the till", AT, "v2", "Bert", player=PID)
+    assert rumors.rumor_of(PID, "the baker skims the till") == "w-2"
+    rumors.discard("w-2")
+    assert rumors.rumor_of(PID, "the baker skims the till") is None
+    assert len(contex.published) == 1
 
 
 @pytest.mark.asyncio

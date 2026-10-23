@@ -76,7 +76,7 @@ def _entry(name: str, state: str, **extra) -> dict:
 
 def _wording(text: str) -> str:
     """Text with case, spacing and trailing punctuation set aside."""
-    return " ".join(text.casefold().split()).rstrip(".!?,;:… ")
+    return " ".join(text.casefold().split()).rstrip(".!?,;:…\"'”’)] ")
 
 
 def _who(names: list[str]) -> str:
@@ -100,10 +100,17 @@ class Rumors:
         self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
         conversation: str | None = None, *, player: str, place: str = "",
     ) -> None:
-        """Start the whisper's card and its baseline measurement, publish its words, and note the goals they serve.
+        """Open the whisper's card and publish it."""
+        self.open(whisper_uid, text, published_at, target_id, target_name, conversation, player=player, place=place)
+        await self.publish(whisper_uid)
+
+    def open(
+        self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
+        conversation: str | None = None, *, player: str, place: str = "",
+    ) -> None:
+        """Start the whisper's card and its baseline measurement.
 
         A whisper that belongs to a rumor already told (conversation) is shown on that rumor's card instead of its own.
-        Failures are logged.
         """
         shown = self.card(conversation) if conversation else None
         card = self._cards[whisper_uid] = Card(
@@ -112,17 +119,27 @@ class Rumors:
         if shown is not None:
             card.part_of = shown.uid
         (shown or card).heard.add(target_id)
-        await self._start(card)
+        card.measuring = asyncio.ensure_future(self._measure(card.uid, card.text))
+
+    async def publish(self, whisper_uid: str) -> None:
+        """Publish an opened card's words and note the goals they serve; failures are logged."""
+        card = self._cards[whisper_uid]
+        await self._publish(card)
         if card.part_of is None and self.overhear is not None:
-            card.claims = await self.overhear.claims(text)
+            card.claims = await self.overhear.claims(card.text)
+
+    def discard(self, whisper_uid: str) -> None:
+        """Drop an opened card whose whisper never went out."""
+        card = self._cards.pop(whisper_uid)
+        card.measuring.cancel()
 
     async def add_topic(self, uid: str, text: str, published_at: datetime) -> None:
         """Measure and publish a topic so on_topic can check lines against it; it is never listed in cards."""
         card = self._cards[uid] = Card(uid, text, "", "", published_at, topic_only=True)
-        await self._start(card)
-
-    async def _start(self, card: Card) -> None:
         card.measuring = asyncio.ensure_future(self._measure(card.uid, card.text))
+        await self._publish(card)
+
+    async def _publish(self, card: Card) -> None:
         try:
             await self.contex.publish(self.project, f"rumor:{card.uid}", {"id": card.uid, "text": card.text})
         except Exception:
@@ -238,6 +255,8 @@ class Rumors:
             card = self.card(conversation)
             return card.uid if card else conversation
         wording = _wording(text)
+        if not wording:
+            return None
         return next((
             c.uid for c in self._cards.values()
             if c.player == player and c.part_of is None and not c.topic_only and _wording(c.text) == wording
