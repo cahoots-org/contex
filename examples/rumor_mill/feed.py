@@ -159,7 +159,8 @@ class Feed:
     def on_goal_swapped(self, old: Goal, new: Goal, player: str, counts: tuple[int, int] | None = None) -> None:
         """A goal the player swapped for a new one, told to that player alone."""
         believers, needed = counts or (None, None)
-        self.emit("goal_swapped", f'New goal: "{new.text}"', player=player, goal_id=old.id,
+        text = f'New goal: "{new.text}"'
+        self.emit("goal_swapped", text, player=player, goal_id=old.id, text=text,
                   new={"id": new.id, "text": new.text, "believers": believers, "needed": needed, **goal_targets(new)})
 
     def on_world(self, goal: Goal, counts: tuple[int, int] | None = None) -> None:

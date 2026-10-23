@@ -279,6 +279,8 @@ class Judge:
             if new.owner:
                 self.maker.overhear.drop([new.id])
             return "That goal changed. Try again."
+        if new.owner is None and new.id in {g.id for g in player.goals if g is not old}:
+            new = deal(self.rng, 1, skip=self.held() | {g.id for g in player.goals}, never=never)[0]
         if self.maker is not None and old.owner:
             self.maker.overhear.drop([old.id])
         player.goals[player.goals.index(old)] = new

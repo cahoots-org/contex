@@ -1744,7 +1744,7 @@ function doubtLine(g) {
 function swapButton(id) {
   const button = el("button", {
     type: "button", className: "swap", textContent: "↻", ariaLabel: "Swap for a new goal",
-    title: "Swap for a new goal", disabled: swapping.has(id) || over,
+    title: "Swap for a new goal", disabled: swapping.size > 0 || over,
   });
   button.addEventListener("click", async () => {
     swapping.add(id);

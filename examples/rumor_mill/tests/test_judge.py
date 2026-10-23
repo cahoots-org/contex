@@ -1096,3 +1096,18 @@ async def test_a_swap_in_flight_keeps_its_new_evidence_from_the_sweep():
     judge._swapping.add(PID)
     judge._forget([BELIEF], {})
     assert dropped == []
+
+
+@pytest.mark.asyncio
+async def test_a_deck_goal_that_clashes_with_the_hand_after_the_wait_is_drawn_again():
+    judge, _, _, feed, _ = make()
+    old, clash = generated("gen-old", "personal"), DECK[0]
+    judge.maker = SwapMaker(clash)
+    judge.maker.gate = asyncio.Event()
+    mine = holder(PID, old)
+    running = asyncio.create_task(judge.swap(mine, old.id))
+    await wait_for(lambda: judge.maker.calls)
+    mine.goals.append(clash)
+    judge.maker.gate.set()
+    assert await running is None
+    assert mine.goals[0].id != clash.id and [g.id for g in mine.goals].count(clash.id) == 1

@@ -352,7 +352,7 @@ def test_goal_swapped_reaches_only_its_player_with_the_new_goal():
     event = feed.recent[-1]
     assert (event.kind, event.player, event.line) == ("goal_swapped", PID, 'New goal: "New"')
     assert not feed.sees("p-2", event)
-    assert event.data["goal_id"] == "o"
+    assert event.data["goal_id"] == "o" and event.data["text"] == event.line
     assert event.data["new"] == {
         "id": "n", "text": "New", "believers": 0, "needed": 1, "long_shot": True, "marks": ["v1"], "subject": "v2",
     }
