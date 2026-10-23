@@ -51,13 +51,16 @@ async def play(web: bool) -> None:
         await goals.rebar_deck(Believability(jev))
         baselines = Baselines(contex, config)
         facts = Facts()
-        judge = Judge(contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts)
         overhear = Overhear(contex, baselines, config, rng)
         routine = Routine(jev, config.seed_path + ".places.json", config)
         engine = Engine(
             config, town, contex, jev, writer, lineage, ids, feed, game=game, summary_source=lambda p: judge.percents(p.goals),
             baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,
             routine=routine, facts=facts,
+        )
+        judge = Judge(
+            contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts,
+            engine=engine,
         )
         players = Players(feed)
         engine.players = players

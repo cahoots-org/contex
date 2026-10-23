@@ -314,3 +314,13 @@ def test_a_moment_reaches_only_its_rumors_player():
     assert (event.kind, event.player, event.data["tone"], lines) == ("moment", PID, "good", ["x"])
     feed.on_moment("u-unknown", "x")
     assert len(feed.recent) == 1 and lines == ["x"]
+
+
+def test_goal_void_reaches_only_its_player():
+    feed, lines = make()
+    old, new = Goal("o", "Marta believes it", "belief"), Goal("n", "Half of the village believes it", "belief")
+    feed.on_goal_void(old, new, "Marta has left town", player=PID)
+    event = feed.recent[-1]
+    assert (event.kind, event.player) == ("goal_void", PID)
+    assert event.line == '"Marta believes it" is off: Marta has left town. New goal: "Half of the village believes it"'
+    assert event.data["goal_id"] == "o" and event.data["new"] == {"id": "n", "text": new.text, "believers": None, "needed": None}

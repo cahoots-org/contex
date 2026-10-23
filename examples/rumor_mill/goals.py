@@ -6,6 +6,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from examples.rumor_mill.models import Villager
 from examples.rumor_mill.town import Town
 
 
@@ -100,13 +101,34 @@ DECK: tuple[Goal, ...] = (
 )
 
 
+MIN_CIRCLE = 3
 WORLD_FRACTION = 2 / 3
 WORLD_CANDIDATES: tuple[Goal, ...] = tuple(g for g in DECK if g.kind == "belief" and g.creed_question is None)
 
 
 def needed(goal: Goal, counted: int) -> int:
     """How many of the counted villagers must believe a belief goal's claim to meet it."""
+    if len(goal.audience) == 1:
+        return 1
     return math.ceil(goal.target_fraction * counted)
+
+
+def audience_of(goal: Goal, town: Town) -> list[Villager]:
+    """The villagers in town who count toward the goal: its audience, or the whole village when it has none."""
+    if not goal.audience:
+        return town.villagers
+    return [town.get(vid) for vid in goal.audience if vid in town]
+
+
+def void_reason(goal: Goal, town: Town) -> str | None:
+    """Why the goal can no longer be met, or None if it still can."""
+    gone = [vid for vid in (goal.subject, *(goal.audience if len(goal.audience) == 1 else ())) if vid and vid not in town]
+    if gone:
+        name = next((v.name for v in town.departed if v.id == gone[0]), "A villager")
+        return f"{name} has left town"
+    if len(goal.audience) > 1 and len(audience_of(goal, town)) < MIN_CIRCLE:
+        return f"too few of {goal.audience_label} are left"
+    return None
 
 
 def goal_counts(goal: Goal, known: dict[str, tuple[int, int]], villagers: int) -> tuple[int, int] | None:
@@ -118,7 +140,7 @@ def goal_counts(goal: Goal, known: dict[str, tuple[int, int]], villagers: int) -
         return None
     if goal.id in known or not villagers:
         return known.get(goal.id)
-    return 0, needed(goal, villagers)
+    return 0, needed(goal, len(goal.audience) or villagers)
 
 
 def claim(goal: Goal) -> str | None:

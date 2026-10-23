@@ -147,6 +147,11 @@ class Feed:
             hand.append({"id": g.id, "text": g.text, "believers": believers, "needed": needed})
         self.emit("deal", "\n".join(f"Goal: {g.text}" for g in goals), player=player, goals=hand)
 
+    def on_goal_void(self, old: Goal, new: Goal, reason: str, player: str) -> None:
+        """A goal that can no longer be met, swapped for a new one, told to its player alone."""
+        self.emit("goal_void", f'"{old.text}" is off: {reason}. New goal: "{new.text}"', player=player, goal_id=old.id,
+                  new={"id": new.id, "text": new.text, "believers": None, "needed": None})
+
     def on_world(self, goal: Goal, counts: tuple[int, int] | None = None) -> None:
         """A new world goal, for everyone, with its believers and how many it needs."""
         believers, needed = counts or (None, None)

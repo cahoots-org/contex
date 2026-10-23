@@ -14,7 +14,7 @@ from examples.rumor_mill.contex_client import ContexClient, Match
 from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goals import (
-    Goal, Trophy, claim, deal, goal_counts, needed, trophy_line, world_goal,
+    Goal, Trophy, audience_of, claim, deal, goal_counts, needed, trophy_line, void_reason, world_goal,
 )
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -54,6 +54,7 @@ class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
         rng: random.Random | None = None, lineage: Lineage | None = None, facts: Facts | None = None,
+        engine=None,
     ):
         self.contex = contex
         self.jev = jev
@@ -65,6 +66,7 @@ class Judge:
         self.rng = rng or random.Random()
         self.lineage = lineage
         self.facts = facts or Facts()
+        self.engine = engine
         self.progress: dict[str, float] = {}
         self.counts: dict[str, tuple[int, int]] = {}
         # By goal id, each believer's id and the player whisper behind their best-matching memory, if one is.
@@ -128,6 +130,13 @@ class Judge:
             return None
         return self.lineage.root(uid)
 
+    def _wary(self, vid: str, goal: Goal) -> bool:
+        """Whether the villager suspects the goal's owner too much to be won over for it."""
+        return (
+            goal.owner is not None and self.engine is not None
+            and self.engine.suspicion.score(vid, goal.owner) >= self.config.warn_threshold
+        )
+
     async def _group_qualifies(self, goal: Goal, gid: str, members: int) -> bool:
         if members < goal.min_group_members:
             return False
@@ -150,7 +159,13 @@ class Judge:
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[1] in self.town}
         roots: dict[str, str | None] = {}
         doubters: dict[str, Match | None] = {}
-        results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in self.town.villagers))
+        audience = audience_of(goal, self.town)
+        results = await asyncio.gather(*(self._believes(goal, v, roots, doubters) for v in audience))
+        for i, v in enumerate(audience):
+            if results[i] and self._wary(v.id, goal):
+                del roots[v.id]
+                doubters[v.id] = None
+                results[i] = False
         self.roots[goal.id] = roots
         heard = [m for m in doubters.values() if m is not None]
         saying = self._words(_best(heard)) if heard else None
@@ -180,6 +195,17 @@ class Judge:
         counts = {g.id: c for g in player.goals if (c := self.counts_of(g)) is not None}
         self.feed.on_deal(player.goals, player=player.id, counts=counts)
 
+    def _replace_void(self, player: Player) -> None:
+        """Swap each of the player's goals that can no longer be met for a deck goal, and tell the player."""
+        for i, old in enumerate(player.goals):
+            reason = void_reason(old, self.town)
+            if reason is None:
+                continue
+            skip = self.held() | {g.id for g in player.goals}
+            new = deal(self.rng, 1, skip=skip, never={self.world.id.removeprefix("world-")})[0]
+            player.goals[i] = new
+            self.feed.on_goal_void(old, new, reason, player=player.id)
+
     def counts_of(self, goal: Goal) -> tuple[int, int] | None:
         """The goal's believers and how many it needs, or None for a state goal."""
         return goal_counts(goal, self.counts, len(self.town.villagers))
@@ -203,6 +229,8 @@ class Judge:
                 continue
             self._note_whisperers(players)
             playing = [p for p in players if not p.over()]
+            for p in playing:
+                self._replace_void(p)
             in_play = {g.id: g for p in playing for g in p.goals}
             in_play[self.world.id] = self.world
             for goal in in_play.values():

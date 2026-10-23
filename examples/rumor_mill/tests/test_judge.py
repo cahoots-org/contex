@@ -8,7 +8,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy
+from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy, void_reason
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -663,3 +663,69 @@ async def test_roots_keep_the_last_complete_map_while_a_check_runs():
     contex.release.set()
     await checking
     assert judge.roots[BELIEF.id] == {"v0": "w-1"}
+
+
+def audience_goal(*audience, fraction=0.5, **kw):
+    return Goal("t", "they believe", "belief", ("cat spy",), "Does it believe?", fraction, audience=audience, **kw)
+
+
+@pytest.mark.asyncio
+async def test_audience_goal_counts_only_its_audience():
+    judge, contex, _, _, _ = make(n=4)
+    for vid in ("v0", "v2"):
+        contex.minds[mind_project(CONFIG.session, vid)] = [Match("k", {"text": "the cat is a spy"})]
+    goal = audience_goal("v0", "v1", audience_label="the bakers")
+    assert await judge.check(goal) == 1.0
+    assert judge.counts[goal.id] == (1, 1)
+    assert list(judge.roots[goal.id]) == ["v0"]
+
+
+@pytest.mark.asyncio
+async def test_personal_goal_needs_one():
+    judge, contex, _, _, _ = make(n=4)
+    goal = audience_goal("v0", fraction=0.0)
+    assert await judge.check(goal) == 0.0 and judge.counts[goal.id] == (0, 1)
+    contex.minds[mind_project(CONFIG.session, "v0")] = [Match("k", {"text": "the cat is a spy"})]
+    assert await judge.check(goal) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_wary_mark_not_counted_for_owner():
+    judge, contex, _, _, _ = make(n=2, believers=2)
+    scores = {("v0", "p-1"): CONFIG.warn_threshold}
+    judge.engine = SimpleNamespace(suspicion=SimpleNamespace(score=lambda vid, pid: scores.get((vid, pid), 0.0)))
+    goal = audience_goal("v0", fraction=0.0, owner="p-1")
+    assert await judge.check(goal) == 0.0
+    assert judge.counts[goal.id] == (0, 1)
+    assert judge.doubt[goal.id]["count"] == 1 and judge.roots[goal.id] == {}
+
+
+def test_void_reason_cases():
+    town = Town()
+    for i in range(4):
+        town.add(Villager(f"v{i}", f"Vi Name{i}", "baker", "calm", "none", [], {}))
+    circle = audience_goal("v0", "v1", "v2", audience_label="the bakers")
+    about = audience_goal(subject="v3")
+    assert void_reason(circle, town) is None and void_reason(about, town) is None
+    town.remove("v3")
+    assert void_reason(about, town) == "Vi Name3 has left town"
+    town.remove("v2")
+    assert void_reason(circle, town) == "too few of the bakers are left"
+    town.remove("v0")
+    assert void_reason(audience_goal("v0"), town) == "Vi Name0 has left town"
+
+
+@pytest.mark.asyncio
+async def test_void_goal_replaced_when_mark_leaves():
+    judge, _, _, feed, town = make(n=4)
+    feed.voids = []
+    feed.on_goal_void = lambda old, new, reason, player: feed.voids.append((old.id, new.id, reason, player))
+    mark = audience_goal("v0", fraction=0.0)
+    other = holder("p-2", BELIEF)
+    mine = holder(PID, mark, QUIET, BELIEF)
+    town.remove("v0")
+    scripted(judge, [0.0] * 50)
+    await run_until(judge, players(mine, other), lambda: feed.voids)
+    assert len(mine.goals) == 3 and mark.id not in [g.id for g in mine.goals]
+    assert [g.id for g in other.goals] == [BELIEF.id]
+    assert feed.voids == [(mark.id, mine.goals[0].id, "Vi Name0 has left town", PID)]
