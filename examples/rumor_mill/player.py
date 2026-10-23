@@ -7,6 +7,8 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from typesafe_sdk import Noul
+
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
@@ -224,6 +226,9 @@ class Player:
         if found is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
+        marked = self._marks_of(target.id)
+        if marked:
+            self._track(asyncio.create_task(self._worked_on(target, text, marked)))
         hits = [m for _, m in found if m.clearance >= 0]
         near_misses = [(need, m) for need, m in found if m.clearance < 0]
         if hits:
@@ -264,6 +269,31 @@ class Player:
             task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues))
             self._track(task)
         return None
+
+    def _marks_of(self, villager_id: str) -> list[Goal]:
+        """This player's unmet goals about someone that the villager's belief counts toward."""
+        return [g for g in self.goals if g.subject and villager_id in g.audience and g.id not in self.met]
+
+    async def _worked_on(self, target: Villager, text: str, goals: list[Goal]) -> None:
+        """Raise the mark's suspicion once if the whisper plainly tries to turn them against a goal's subject."""
+        question = "Is the newcomer plainly trying to turn this villager against the person the claim is about?"
+        try:
+            with charging(self.id):
+                for goal in goals:
+                    state = {
+                        "villager": f"{target.name}, {target.occupation}. {target.personality}",
+                        "claim": goal.claim_text,
+                        "about": self.town.name_of(goal.subject) or "",
+                        "newcomer said": text,
+                    }
+                    response = await self.engine.jev.system_one(state=state, questions={"q": Noul(instructions=question)})
+                    if response.nouls["q"].noul > 0.5:
+                        self.engine.suspicion.bump(
+                            target.id, self.id, self.config.suspicion_whisper_bump, "worked on them",
+                        )
+                        return
+        except Exception:
+            log.exception("judging whether %s was worked on failed", target.id)
 
     async def ask(self, villager_id: str, topic: str) -> str | None:
         """Ask the villager what folk have been saying about the topic; returns why it could not be done, if it couldn't.

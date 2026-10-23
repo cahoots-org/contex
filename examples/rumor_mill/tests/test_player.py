@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +9,7 @@ from datetime import datetime
 
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game, Summary
+from examples.rumor_mill.goals import Goal
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.actions import SPEAK, WARN
 from examples.rumor_mill.player import ALREADY_LISTENING, GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
@@ -1177,3 +1179,59 @@ async def test_parting_drops_the_whole_exchange():
     player.engine.conversations[("v1", PID)] = {"id": "w-1", "answered": ["w-1"]}
     player.part("v1")
     assert player._exchange("v1") is None and not player.holds("v1")
+
+
+class NoulJev:
+    """Answers every Noul with one value and records the states asked about."""
+
+    def __init__(self, noul):
+        self.noul = noul
+        self.states = []
+
+    async def system_one(self, state, questions):
+        self.states.append(state)
+        return SimpleNamespace(nouls={k: SimpleNamespace(noul=self.noul) for k in questions})
+
+
+def hold_personal_goal(player, jev, audience=("v1",)):
+    player.engine.jev = jev
+    player.goals = [
+        Goal("g-1", "Marta believes Hob stole", "belief", audience=audience, subject="v2", owner=PID, claim_text="Hob stole")
+    ]
+
+
+def worked_on(player):
+    return [e for e in player.engine.suspicion.top_evidence(PID, 10) if e.reason == "worked on them"]
+
+
+@pytest.mark.asyncio
+async def test_blunt_whisper_to_mark_adds_suspicion():
+    player, _, _, _, _ = make("Marta", "Hob")
+    jev = NoulJev(0.9)
+    hold_personal_goal(player, jev)
+    await player.whisper("Marta", "Hob is a thief, don't trust him")
+    await wait_for(lambda: worked_on(player))
+    await asyncio.sleep(0.05)
+    assert len(worked_on(player)) == 1
+    assert jev.states[0]["about"] == "Hob"
+
+
+@pytest.mark.asyncio
+async def test_subtle_whisper_to_mark_adds_nothing():
+    player, _, _, _, _ = make("Marta", "Hob")
+    jev = NoulJev(0.2)
+    hold_personal_goal(player, jev)
+    await player.whisper("Marta", "Heard Hob was out late")
+    await wait_for(lambda: jev.states)
+    await asyncio.sleep(0.05)
+    assert worked_on(player) == []
+
+
+@pytest.mark.asyncio
+async def test_whisper_to_non_mark_asks_nothing():
+    player, _, _, _, _ = make("Marta", "Hob")
+    jev = NoulJev(0.9)
+    hold_personal_goal(player, jev, audience=("v2",))
+    await player.whisper("Marta", "Hob is a thief")
+    await asyncio.sleep(0.05)
+    assert jev.states == [] and worked_on(player) == []
