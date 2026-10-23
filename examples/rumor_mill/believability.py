@@ -19,8 +19,8 @@ class Believability:
         # ponytail: grows per claim for the life of the server; prune with the judge's _forget.
         self.bands: dict[str, int] = {}
 
-    async def band(self, claim: str) -> int:
-        """The claim's band, 0 to 3, or a middling one if Jev cannot say."""
+    async def band(self, claim: str) -> int | None:
+        """The claim's band, 0 to 3, or None if Jev cannot say."""
         if claim in self.bands:
             return self.bands[claim]
         try:
@@ -30,6 +30,6 @@ class Believability:
             band = min(3, int(response.scores["q"].score * 4))
         except Exception:
             log.warning("could not rate the claim %r", claim, exc_info=True)
-            return MIDDLING
+            return None
         self.bands[claim] = band
         return band

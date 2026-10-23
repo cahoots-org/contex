@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -116,3 +117,38 @@ async def test_load_pool_survives_an_unwritable_path(tmp_path):
     pool = await load_pool(path, FakeWriter({"accusations": ["is late"], "claims": ["the well is cursed"]}), CountingBelief(), villagers())
     assert pool.accusations == (Entry("is late", 1),)
     assert pool.claims == (Entry("the well is cursed", 1),)
+
+
+class DownBelief:
+    async def band(self, text):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_load_pool_saves_nothing_when_a_band_could_not_be_scored(tmp_path):
+    path = tmp_path / "goals.json"
+    writer = FakeWriter({"accusations": ["waters down the ale"], "claims": ["the well is cursed"]})
+
+    pool = await load_pool(str(path), writer, DownBelief(), villagers())
+
+    assert pool.accusations == (Entry("waters down the ale", 2),)
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_load_pool_scores_missing_bands_concurrently(tmp_path):
+    started = 0
+    both = asyncio.Event()
+
+    class Gated:
+        async def band(self, text):
+            nonlocal started
+            started += 1
+            if started == 2:
+                both.set()
+            await asyncio.wait_for(both.wait(), 1)
+            return 1
+
+    writer = FakeWriter({"accusations": ["waters down the ale", "cheats at dice"], "claims": ["the well is cursed"]})
+    pool = await load_pool(str(tmp_path / "goals.json"), writer, Gated(), villagers())
+    assert [e.band for e in pool.accusations] == [1, 1]

@@ -3,6 +3,7 @@ import re
 import threading
 import time
 from datetime import UTC, datetime
+from dataclasses import replace
 from functools import partial
 from types import SimpleNamespace
 
@@ -518,6 +519,14 @@ def test_cards_link_goals_and_count_who_each_convinced(game):
     ]
     assert card["touched"] == {"v1": "believes", "v2": "believes"}
     assert "claims" not in card
+
+
+def test_cards_link_a_generated_world_goal_by_its_full_id(game):
+    game.judge.world = replace(WORLD, id="world-3")
+    card_with_claims(game, ["world-3"])
+    game.judge.roots = {"world-3": {"v2": "w-1"}}
+    card, = game.client.get("/api/state").json()["rumors"]
+    assert [g["world"] for g in card["goals"]] == [True]
 
 
 def test_a_believer_through_a_joined_whisper_counts_on_the_first_card(game):

@@ -30,9 +30,9 @@ async def test_band_maps_score_and_caches():
 
 
 @pytest.mark.asyncio
-async def test_band_failure_is_middling_and_uncached():
+async def test_band_failure_is_none_and_uncached():
     jev = ScoreJev(RuntimeError("down"), 0.3)
     b = Believability(jev)
-    assert await b.band("dragons") == 2
+    assert await b.band("dragons") is None
     assert await b.band("dragons") == 1
     assert jev.calls == 2

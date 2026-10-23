@@ -1,5 +1,6 @@
 """The accusations and claims a village's goals are filled from, written once and kept beside the seed."""
 
+import asyncio
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ import tempfile
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
+from examples.rumor_mill.believability import MIDDLING
 from examples.rumor_mill.models import Villager
 
 log = logging.getLogger(__name__)
@@ -116,20 +118,23 @@ def _parts(item) -> tuple[str, int | None]:
 
 
 async def _entries(items: list, defaults: tuple[str, ...], names: Collection[str], believability, prefix: str):
-    """The cleaned, scored entries, and whether the defaults stood in because none survived."""
+    """The cleaned, scored entries, and whether any is provisional: a default, or a band Jev could not give."""
     bands = dict(_parts(item) for item in items)
     texts = clean(bands, names)
     fell_back = not texts
     if fell_back:
         bands, texts = {}, clean(defaults, names)
-    entries = tuple([Entry(t, bands[t] if bands.get(t) is not None else await believability.band(prefix + t)) for t in texts])
-    return entries, fell_back
+    missing = [t for t in texts if bands.get(t) is None]
+    bands.update(zip(missing, await asyncio.gather(*(believability.band(prefix + t) for t in missing))))
+    entries = tuple(Entry(t, MIDDLING if bands[t] is None else bands[t]) for t in texts)
+    return entries, fell_back or any(bands[t] is None for t in missing)
 
 
 async def load_pool(path: str, writer, believability, villagers: list[Villager]) -> Pool:
     """The village's pool from path or Haiku, with defaults for a list that has nothing usable.
 
-    Only a pool made wholly of real entries is saved, so a fallback is retried on the next launch.
+    Only a pool made wholly of real, scored entries is saved, so a fallback or an unscored band is retried
+    on the next launch.
     """
     raw = _read(path)
     if not raw:

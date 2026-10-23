@@ -82,7 +82,7 @@ def card_view(card: dict, player: Player, judge, rumors: Rumors) -> dict:
     claims = rumors.card(card["uid"]).claims
     hand = {g.id: g for g in player.goals}
     goals = [hand[c] for c in claims if c in hand][:1]
-    if judge.world.id.removeprefix("world-") in claims:
+    if judge.world.id in claims:
         goals.append(judge.world)
     touched = dict(card["touched"])
     links = []
