@@ -7,7 +7,7 @@ import pytest
 
 from examples.rumor_mill import engine as engine_mod
 from examples.rumor_mill import game as game_mod
-from examples.rumor_mill.actions import IGNORE, MOVE
+from examples.rumor_mill.actions import IGNORE, LEAVE_TOWN, MOVE
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.decide import Decision
@@ -19,8 +19,10 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
-from examples.rumor_mill.tests.helpers import PID, FakeMind, make, make_player, wait_for
+from examples.rumor_mill.tests.helpers import PID, FakeMind, StubClient, make, make_player, wait_for
 from examples.rumor_mill.town import PLACES, Town
+from examples.rumor_mill.usage import Usage
+from examples.rumor_mill.writer import Writer
 
 GOALS = [("cat is a spy", 40)]
 MEETING = "The village meets in the square and runs the newcomer out of town."
@@ -524,4 +526,51 @@ async def test_a_held_villagers_turn_cannot_walk_off_unless_every_holder_annoys_
     engine.minds["v1"].queue.put_nowait(None)
     await wait_for(lambda: len(views) == 2)
     assert not views[1].held
+    await engine.stop()
+
+
+async def storming(monkeypatch, action, target=None):
+    """v1, annoyed with PID and held by them, takes action at its next turn while p-b looks on from the well."""
+    views = deciding(monkeypatch, action, target)
+    engine, pa, feed, _ = await start("v1")
+    pb = Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-b")
+    pb.walk("well")
+    engine.players.add(pb)
+    usage = Usage(engine.config)
+    engine.writer = Writer(StubClient("I've heard quite enough from you.", "Farewell, all."), "haiku-test", usage)
+    talking(engine, pa)
+    talking(engine, pb)
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold, "whispered to them directly")
+    engine.minds["v1"].queue.put_nowait(None)
+    await wait_for(lambda: views and not engine._turning)
+    return engine, feed, usage
+
+
+@pytest.mark.asyncio
+async def test_an_annoyed_villager_who_walks_off_storms_off_on_the_player(monkeypatch):
+    engine, feed, usage = await storming(monkeypatch, MOVE, "mill")
+    stormed = kinds(feed, "stormed_off")
+    assert [(e.data["name"], e.data["line"]) for e in stormed] == [("V1", "I've heard quite enough from you.")]
+    assert stormed[0].line == 'V1 storms off: "I\'ve heard quite enough from you."'
+    assert not [e for e in feed.replay("p-b") if e.kind == "stormed_off"]
+    assert ("v1", PID) not in engine.conversations and ("v1", "p-b") in engine.conversations
+    (bump,) = [e for e in engine.suspicion._evidence if e.reason == "stormed off"]
+    assert (bump.player, bump.amount) == (PID, engine.config.suspicion_whisper_bump / 2)
+    assert usage.cost(PID) > 0 and usage.cost("p-b") == 0
+    assert engine.town.place_of("v1") == "mill"
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_annoyed_villager_who_leaves_town_storms_off_first(monkeypatch):
+    engine, feed, _ = await storming(monkeypatch, LEAVE_TOWN)
+    assert [e.data["line"] for e in kinds(feed, "stormed_off")] == ["I've heard quite enough from you."]
+    assert "v1" not in engine.town
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_annoyed_villager_who_stays_does_not_storm_off(monkeypatch):
+    engine, feed, _ = await storming(monkeypatch, IGNORE)
+    assert kinds(feed, "stormed_off") == [] and ("v1", PID) in engine.conversations
     await engine.stop()

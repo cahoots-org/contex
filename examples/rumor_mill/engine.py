@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from contextlib import aclosing, suppress
 from datetime import UTC, datetime, timedelta
 
-from examples.rumor_mill.actions import ANSWER, MOVE, WARN
+from examples.rumor_mill.actions import ANSWER, LEAVE_TOWN, MOVE, WARN
 from examples.rumor_mill.calibration import Baselines
 from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import ContexClient, Match
@@ -515,6 +515,10 @@ class Engine:
                     self._rate(v.id, decision.suspicion_strength, view.names_newcomer)
                 if decision.gossip is not None:
                     self._gossip[v.id] = decision.gossip
+                if action in (MOVE, LEAVE_TOWN):
+                    for p in holders:
+                        if p.annoyed(v.id):
+                            await self._storm_off(v, p)
                 with charging(self._player_behind(decision.source) or payer):
                     scene, joined = await self._enter_scene(v, decision, place)
                     await act(
@@ -539,6 +543,18 @@ class Engine:
                 [m.data["id"] for m in new if self._carried(m.data.get("id"), v.id)],
             )
         return True
+
+    async def _storm_off(self, v: Villager, player: Player) -> None:
+        """The villager breaks off with player: parting words to them alone, their exchange ended, a little suspicion."""
+        with charging(player.id):
+            try:
+                line = await self.writer.storm_off(v) or None
+            except Exception:
+                log.exception("parting line for %s failed", v.id)
+                line = None
+        self.feed.on_storm_off(v.id, v.name, line, player=player.id)
+        player.part(v.id)
+        self.suspicion.bump(v.id, player.id, self.config.suspicion_whisper_bump / 2, "stormed off")
 
     def _player_behind(self, m: Match | None) -> str | None:
         """The player whose whisper the item's lineage roots in."""

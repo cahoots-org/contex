@@ -207,6 +207,11 @@ class Feed:
         text = f'{name} turns away from you: "{line}"' if line else f"{name} turns away from you."
         self.emit("refusal", text, player=player, villager_id=villager_id, name=name, line=line)
 
+    def on_storm_off(self, villager_id: str, name: str, line: str | None = None, *, player: str) -> None:
+        """The villager stormed off on the player, with their parting words if any."""
+        text = f'{name} storms off: "{line}"' if line else f"{name} storms off."
+        self.emit("stormed_off", text, player=player, villager_id=villager_id, name=name, line=line)
+
     def on_answer(self, villager_id: str, name: str, topic: str, line: str, *, player: str) -> None:
         """The villager's answer to the player asking what folk say about the topic."""
         self.emit("asked", f'{name}, asked about {topic}: "{line}"', player=player,

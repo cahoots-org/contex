@@ -132,6 +132,20 @@ class Writer:
             await self.complete(system, "The newcomer is whispering to you again.", max_tokens=TURN_AWAY_MAX_TOKENS)
         )
 
+    async def storm_off(self, villager: Villager) -> str:
+        """The villager breaking off with the newcomer who has tried their patience, in one line."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "The newcomer you were talking with has tried your patience, and you storm off. Say your parting "
+            "words in one short sentence, about 15 words, in your own voice. "
+            "Never mention suspicion. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        return first_line(
+            await self.complete(system, "You walk away from the newcomer.", max_tokens=TURN_AWAY_MAX_TOKENS)
+        )
+
     async def warn(self, villager: Villager, target: Villager) -> str:
         """The villager warning the target that the newcomer is behind the rumors, in one line."""
         system = (

@@ -1340,6 +1340,9 @@ function render(e, fresh) {
       learn(e);
       dockEnd(e.villager_id);
       return line("loud", null, e.line ? `${e.name} turns away from you: “${e.line}”` : `${e.name} turns away from you.`);
+    case "stormed_off":
+      dockEnd(e.villager_id);
+      return line("speech", null, e.line ? `${e.name} storms off: “${e.line}”` : `${e.name} storms off.`);
     case "heat":
       $("heat").textContent = e.text;
       return null;

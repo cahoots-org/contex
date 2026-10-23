@@ -68,6 +68,16 @@ async def test_turn_away_prompts_with_profile_and_returns_one_line():
 
 
 @pytest.mark.asyncio
+async def test_storm_off_prompts_with_profile_and_returns_one_line():
+    client = StubClient('"I have heard quite enough."\nSecond line.')
+    line = await Writer(client, "haiku-test").storm_off(villager())
+    assert line == "I have heard quite enough."
+    call = client.messages.calls[0]
+    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued", "storm off"))
+    assert call["max_tokens"] == 60
+
+
+@pytest.mark.asyncio
 async def test_brush_off_prompts_with_profile_and_concern_and_returns_one_line():
     client = StubClient('"Not now, my oven is cracked."\nAnd another thing.')
     line = await Writer(client, "haiku-test").brush_off(villager(), "my oven needs a new hearthstone")
