@@ -1081,3 +1081,34 @@ async def test_new_wording_while_the_villager_holds_your_first_whisper_continues
     assert card_uids(engine) == ["w-1"] and player.game.memory_since() == first
     player.close()
 
+
+@pytest.mark.asyncio
+async def test_the_same_words_sent_at_once_make_one_rumor():
+    player, engine = telling("Marta", "Bert")
+    gate = asyncio.Event()
+
+    async def slow_deliver(utterance, listener_ids):
+        engine.delivered.append((utterance, listener_ids))
+        await gate.wait()
+
+    engine.deliver = slow_deliver
+    sends = asyncio.gather(player.whisper("Marta", "the well tastes odd"), player.whisper("Bert", "the well tastes odd"))
+    await wait_for(lambda: len(engine.delivered) == 2)
+    gate.set()
+    await sends
+    assert conversations(player) == [None, "w-1"]
+    assert card_uids(engine) == ["w-1"]
+    player.close()
+
+
+@pytest.mark.asyncio
+async def test_a_whisper_that_fails_to_go_out_leaves_no_card():
+    player, engine = telling("Marta")
+
+    async def fail(utterance, listener_ids):
+        raise RuntimeError("down")
+
+    engine.deliver = fail
+    await player.whisper("Marta", "the well tastes odd")
+    assert card_uids(engine) == []
+    player.close()

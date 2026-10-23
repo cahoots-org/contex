@@ -194,10 +194,14 @@ class Player:
         self.engine.facts.record(utterance)
         published_at = datetime.now(UTC)
         since = (published_at - timedelta(seconds=self.config.check_lookback_seconds)).isoformat()
+        if rumors is not None:
+            rumors.open(uid, text, published_at, target.id, target.name, rumor, player=self.id, place=place)
         try:
             await self.engine.deliver(utterance, [target.id])
         except Exception:
             log.exception("whisper to %s failed", target.id)
+            if rumors is not None:
+                rumors.discard(uid)
             return NOT_CARRIED
         self.whispered_at = time.time()
         if self.game is not None and rumor is None:
@@ -208,7 +212,7 @@ class Player:
             target.id, self.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid,
         )
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
-        found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(utterance, target, published_at))
+        found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(uid))
         if found is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
@@ -380,12 +384,9 @@ class Player:
             return threshold
         return threshold - self.config.match_margin + self.config.hint_margin
 
-    async def _card(self, utterance: Utterance, target: Villager, published_at: datetime) -> None:
+    async def _card(self, uid: str) -> None:
         if self.engine.rumors is not None:
-            await self.engine.rumors.add(
-                utterance.id, utterance.text, published_at, target.id, target.name, utterance.conversation,
-                player=self.id, place=utterance.place,
-            )
+            await self.engine.rumors.publish(uid)
 
     def over(self) -> bool:
         """Whether this player's game is over."""
