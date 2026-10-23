@@ -33,6 +33,17 @@ def rapport_words(x: float) -> str:
     return "tired of the newcomer"
 
 
+def taken_words(x: float) -> str:
+    """How taken a villager was with a rumor, in a word, for the judge and the next move."""
+    if x >= 0.5:
+        return "eager"
+    if x >= 0.15:
+        return "interested"
+    if x > -0.3:
+        return "indifferent"
+    return "put off"
+
+
 class Rapport:
     """Each villager's interest in each player's rumors, and her rapport with each player, all in [-1, 1]."""
 

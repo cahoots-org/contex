@@ -1,7 +1,7 @@
 import pytest
 
 from examples.rumor_mill.config import Config
-from examples.rumor_mill.rapport import Rapport, interest_words, rapport_words
+from examples.rumor_mill.rapport import Rapport, interest_words, rapport_words, taken_words
 
 
 def test_interest_is_kept_per_rumor():
@@ -54,3 +54,10 @@ def test_first_word_is_true_once_per_rumor_until_forgotten():
     assert r.first_word("v1", "p-1", "w-2")
     r.forget("v1", "p-1", "w-1")
     assert r.first_word("v1", "p-1", "w-1")
+
+
+def test_taken_words_bands():
+    xs = (1.0, 0.5, 0.49, 0.15, 0.14, 0.0, -0.29, -0.3, -1.0)
+    assert [taken_words(x) for x in xs] == [
+        "eager", "eager", "interested", "interested", "indifferent", "indifferent", "indifferent", "put off", "put off",
+    ]

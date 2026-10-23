@@ -69,6 +69,8 @@ class TurnView:
     ask_keen: bool = False
     # Whether a player talking with the villager keeps them from walking off or leaving town.
     held: bool = False
+    # How taken the villager was with the newcomer's whisper behind the turn's new items, if any is.
+    taken: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,8 @@ def _state(view: TurnView) -> dict:
         "groups": [g.name for g in view.member_groups],
         "suspicion_of_the_newcomer": _suspicion_words(view),
     }
+    if view.taken:
+        state["how taken they were with the newcomer's story"] = view.taken
     if view.said:
         state["things_i_said_recently"] = [_text(m) for m in view.said[:MAX_SAID]]
     if view.heard:

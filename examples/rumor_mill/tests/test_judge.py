@@ -220,7 +220,7 @@ async def test_departed_villagers_are_evicted_from_the_cache():
     await judge.check(BELIEF)
     town.remove("v0")
     await judge.check(BELIEF)
-    assert {vid for _, vid, _ in judge._verdicts} == {"v1"}
+    assert {key[1] for key in judge._verdicts} == {"v1"}
 
 
 @pytest.mark.asyncio
@@ -1249,3 +1249,25 @@ async def test_a_group_founded_by_the_subject_does_not_meet_a_goal_against_them(
     judge._players = players(holder(PID, goal))
     judge.record_action("v9", "found_group", "g-1", PID, creed="Hob has cheated us all")
     assert await judge.check(goal) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_judge_state_says_how_taken_and_rekeys_cache():
+    _, contex, jev, feed, town = make(n=1)
+    lineage = Lineage()
+    lineage.record("w-1", None, "p-1")
+    taken = ["eager"]
+    engine = SimpleNamespace(taken_by=lambda vid, uid: taken[0])
+    judge = Judge(
+        contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage, engine=engine,
+        maker=goal_maker(town),
+    )
+    contex.minds[mind_project(CONFIG.session, "v0")] = [Match("utt:w-1", {"id": "w-1", "text": "a"}, 0.9)]
+    await judge.check(BELIEF)
+    await judge.check(BELIEF)
+    assert len(jev.calls) == 1
+    assert jev.calls[0][0]["how taken they were with the newcomer's story"] == "eager"
+    taken[0] = "put off"
+    await judge.check(BELIEF)
+    assert len(jev.calls) == 2
+    assert jev.calls[1][0]["how taken they were with the newcomer's story"] == "put off"

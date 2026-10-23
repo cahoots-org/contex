@@ -2089,3 +2089,26 @@ async def test_an_answer_carries_how_taken_the_villager_is_with_the_rumor(talks)
     first, second = talks.moods
     assert first.startswith("eager to hear more") and "fond of the newcomer" in first and "Greet the newcomer" in first
     assert second == "eager to hear more"
+
+
+@pytest.mark.asyncio
+async def test_engine_fills_taken_from_interest(turns):
+    engine, minds, _ = await setup("v1")
+    minds["v1"].results = [[]]
+    engine.rapport.move("v1", PID, "w-1", 0.6)
+    whisper(engine, "v1", "w-1")
+    await wait_for(lambda: len(turns.views) == 1)
+    await engine.stop()
+    assert turns.views[0].taken == "eager"
+
+
+@pytest.mark.asyncio
+async def test_taken_follows_a_retelling_back_to_the_players_rumor(turns):
+    engine, _, _ = await setup("v1")
+    engine.facts.record(Utterance("w-2", NEWCOMER, "A newcomer", "square", "psst", None, conversation="w-1"))
+    engine.lineage.record("w-2", None, player=PID)
+    engine.lineage.record("u-9", "w-2")
+    engine.rapport.move("v1", PID, "w-1", -0.5)
+    assert engine.taken_by("v1", "u-9") == "put off"
+    assert engine.taken_by("v1", "u-unrelated") is None
+    await engine.stop()

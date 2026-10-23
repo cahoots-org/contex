@@ -333,3 +333,12 @@ async def test_a_held_villager_cannot_walk_off_or_leave_town():
     assert MOVE not in criteria and LEAVE_TOWN not in criteria and IGNORE in criteria
     await decide(jev, view())
     assert MOVE in jev.questions["action"].criteria and LEAVE_TOWN in jev.questions["action"].criteria
+
+
+@pytest.mark.asyncio
+async def test_decide_state_says_how_taken():
+    jev = StubJev({"action": IGNORE})
+    await decide(jev, view())
+    assert "how taken they were with the newcomer's story" not in jev.state
+    await decide(jev, view(taken="eager"))
+    assert jev.state["how taken they were with the newcomer's story"] == "eager"

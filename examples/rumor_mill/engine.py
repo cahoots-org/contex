@@ -25,7 +25,7 @@ from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
-from examples.rumor_mill.rapport import Rapport
+from examples.rumor_mill.rapport import Rapport, taken_words
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
@@ -550,6 +550,7 @@ class Engine:
             ask_gossip=v.id not in self._gossip,
             ask_keen=self.scenes.of(v.id) is not None or any(self._exchange(m, v.id, place) for m in new),
             held=any(not p.annoyed(v.id) for p in holders),
+            taken=self._taken(v.id, new),
         )
         action = answered = None
         # The turn answers to the player behind the first of its new items that a player started, if any.
@@ -611,14 +612,34 @@ class Engine:
         if self.judge is not None:
             self.judge.record_action(vid, decision.action, target, self._player_behind(decision.source), creed)
 
+    def _rumor_of(self, uid: str) -> str:
+        """The key her interest is kept under for the player's whisper behind uid."""
+        whisper = self.lineage.root(uid)
+        fact = self.facts.get(whisper)
+        return fact.conversation if fact and fact.conversation else whisper
+
+    def _interest_in(self, vid: str, uid: str) -> float | None:
+        """Her interest in the player's rumor behind uid, or None when no player's whisper is."""
+        player = self.lineage.player_of(uid)
+        return None if player is None else self.rapport.interest(vid, player, self._rumor_of(uid))
+
+    def taken_by(self, vid: str, uid: str) -> str | None:
+        """How taken she was with the player's rumor behind uid, in a word, or None."""
+        interest = self._interest_in(vid, uid)
+        return None if interest is None else taken_words(interest)
+
+    def _taken(self, vid: str, new: list[Match]) -> str | None:
+        """How taken she was with the player's rumor behind the new items: the strongest if several."""
+        interests = [i for m in new if (i := self._interest_in(vid, m.data.get("id"))) is not None]
+        return taken_words(max(interests)) if interests else None
+
     def _mood(self, vid: str, decision: Decision) -> str:
         """How the villager feels about the rumor behind the newcomer line she is answering."""
         uid = decision.source.data["id"]
         player = self._player_behind(decision.source)
         if player is None:
             return ""
-        fact = self.facts.get(uid)
-        rumor = fact.conversation if fact and fact.conversation else uid
+        rumor = self._rumor_of(uid)
         return self.rapport.mood(vid, player, rumor, greet=self.rapport.first_word(vid, player, rumor))
 
     def _player_behind(self, m: Match | None) -> str | None:

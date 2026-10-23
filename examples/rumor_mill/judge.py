@@ -74,7 +74,7 @@ class Judge:
         self.world_since = time.time()
         # The owners who whispered while the world goal was in play.
         self.whisperers: set[str] = set()
-        self._verdicts: dict[tuple[str, str, frozenset[str]], bool] = {}
+        self._verdicts: dict[tuple[str, str, frozenset[str], str | None], bool] = {}
         self._semaphore = asyncio.Semaphore(config.judge_concurrency)
         self._players: Players | None = None
         # By player id, the task writing their next hand.
@@ -103,12 +103,15 @@ class Judge:
                 )
                 if not matches:
                     return False
-                key = (goal.believer_question, villager.id, frozenset(m.data_key for m in matches))
+                taken = self._how_taken(villager.id, _best(matches))
+                key = (goal.believer_question, villager.id, frozenset(m.data_key for m in matches), taken)
                 if key not in self._verdicts:
                     state = {
                         "villager": f"{villager.name}, {villager.occupation}. {villager.personality}",
                         "memories": [_text(m) for m in matches],
                     }
+                    if taken:
+                        state["how taken they were with the newcomer's story"] = taken
                     self._verdicts[key] = await _yes(self.jev, state, goal.believer_question)
                 believes = self._verdicts[key]
             except Exception:
@@ -127,6 +130,12 @@ class Judge:
         """What the remembered line says, without who said it while the game still keeps it."""
         fact = self.facts.get(memory.data.get("id"))
         return fact.text if fact else _text(memory)
+
+    def _how_taken(self, vid: str, memory: Match) -> str | None:
+        """How taken the villager was with the player's whisper behind the memory, if one is."""
+        if self.engine is None or self._root(memory) is None:
+            return None
+        return self.engine.taken_by(vid, memory.data_key.removeprefix("utt:"))
 
     def _root(self, memory: Match) -> str | None:
         """The player whisper the memory descends from, or None."""
