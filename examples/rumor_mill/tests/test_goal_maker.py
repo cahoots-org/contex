@@ -1,50 +1,32 @@
-import asyncio
 import random
+import re
+from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 
-from examples.rumor_mill.config import Config
-from examples.rumor_mill.goal_maker import GoalMaker
-from examples.rumor_mill.goals import BANDS, Goal, kind_of
+from examples.rumor_mill.goals import BANDS
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.overhear import Overhear
-from examples.rumor_mill.tests.helpers import Always, StubBaselines, StubContex
+from examples.rumor_mill.pool import Entry, Pool
+from examples.rumor_mill.tests.helpers import StubBaselines, StubRoutine, goal_maker
 from examples.rumor_mill.town import Town
 
-AGNES = Villager("v1", "Agnes Thatch", "weaver", "nosy", "Hob let his pigs into her garden", [], {"v2": "rival"})
-HOB = Villager("v2", "Hob Miller", "miller", "gruff", "", [], {"v1": "rival"})
-FARMERS = [Villager(f"v{i}", f"Farmer{i} Field", "farmer", "calm", "", [], {}) for i in (3, 4, 5)]
-
-PERSONAL = {
-    "kind": "personal", "claim": "Hob is stealing Agnes's geese",
-    "question": "Does this villager believe Hob is stealing Agnes's geese?", "mark": "Agnes Thatch",
-    "subject": "Hob Miller",
-}
-CIRCLE = {
-    "kind": "circle", "claim": "Hob waters his flour", "question": "Does this villager believe Hob waters his flour?",
-    "label": "the farmers", "members": [f.name for f in FARMERS], "subject": "Hob Miller",
-}
+AGNES = Villager("v1", "Agnes Thatch", "weaver", "nosy", "Hob let his pigs into her garden", [], {})
+HOB = Villager("v2", "Hob Miller", "miller", "gruff", "", [], {})
+COB = Villager("v3", "Cob Smith", "smith", "loud", "", [], {})
+DOT = Villager("v4", "Dot Reed", "baker", "kind", "", [], {})
+FARMERS = [Villager(f"v{i}", f"Farmer{i} Field", "farmer", "calm", "", [], {}) for i in (5, 6, 7)]
+ALE = Pool((Entry("waters down the ale", 3),), (Entry("the well is cursed", 3),))
+NO_CLAIMS = Pool((Entry("waters down the ale", 2), Entry("cheats at dice", 2)), ())
+TAVERN = StubRoutine(work={v.id: "tavern" for v in (AGNES, *FARMERS)})
 
 
-class StubWriter:
-    def __init__(self, raws, delay=0.0):
-        self.raws = raws
-        self.delay = delay
-        self.samples = []
-
-    async def goals(self, sample, taken):
-        self.samples.append((sample, taken))
-        await asyncio.sleep(self.delay)
-        return [dict(r) for r in self.raws]
-
-
-class StubBelievability:
-    def __init__(self, band=2):
-        self.value = band
-
-    async def band(self, claim):
-        return self.value
+def town_of(*villagers):
+    town = Town()
+    for v in villagers:
+        town.add(v)
+    return town
 
 
 class LoggingBaselines(StubBaselines):
@@ -58,160 +40,180 @@ class LoggingBaselines(StubBaselines):
         self.persisted.append(persist)
 
 
-def make(raws=(PERSONAL, CIRCLE), delay=0.0, band=2, config=None, ids=None):
-    town = Town()
-    for v in (AGNES, HOB, *FARMERS):
-        town.add(v)
-    config = config or Config(session="s1")
+class ChoosingJev:
+    """Picks the criteria key whose description starts with a wanted text, else the first; records each request."""
+
+    def __init__(self, *wanted):
+        self.wanted = wanted
+        self.requests = []
+
+    async def system_one(self, state, questions):
+        (key, question), = questions.items()
+        self.requests.append((state, question))
+        criteria = question.criteria
+        pick = next((k for k, d in criteria.items() for w in self.wanted if str(d).startswith(w)), next(iter(criteria)))
+        return SimpleNamespace(choices={key: SimpleNamespace(choice=pick)})
+
+
+class BrokenJev:
+    async def system_one(self, state, questions):
+        raise RuntimeError("down")
+
+
+PATTERNS = (
+    r"Convince \w+ that \w+ waters down the ale",
+    r"Get half of the tavern regulars to believe \w+ waters down the ale",
+    r"Half of the village believes the well is cursed",
+)
+
+
+def test_draw_fills_personal_circle_and_village_templates():
+    town = town_of(AGNES, HOB, *FARMERS)
+    drawn = [g for seed in range(200) for g in goal_maker(town, ALE, TAVERN, rng=random.Random(seed)).draw("p-1", set(), 1)]
+    by_text = {g.text: g for g in drawn}
+    assert all(any(re.fullmatch(p, t) for p in PATTERNS) for t in by_text)
+    personal = by_text["Convince Agnes that Hob waters down the ale"]
+    assert personal.audience == (AGNES.id,) and personal.subject == HOB.id and personal.audience_label == "Agnes"
+    assert personal.claim_text == "Hob waters down the ale" and personal.evidence == ("Hob waters down the ale",)
+    assert personal.believer_question == "Does this villager believe Hob waters down the ale?"
+    circle = by_text["Get half of the tavern regulars to believe Hob waters down the ale"]
+    assert set(circle.audience) == {AGNES.id, *(f.id for f in FARMERS)} and circle.target_fraction == BANDS[3][0]
+    assert circle.audience_label == "the tavern regulars" and circle.subject == HOB.id
+    village = by_text["Half of the village believes the well is cursed"]
+    assert village.audience == () and village.subject is None and village.claim_text == "the well is cursed"
+    assert all(g.owner == "p-1" and g.id.startswith("gen-p-1-") and not g.long_shot for g in drawn)
+
+
+def test_a_group_is_a_circle_labelled_by_its_name():
+    town = town_of(AGNES, HOB, *FARMERS)
+    group = town.found_group(FARMERS[0].id, "The Plough Guild", "fair prices")
+    for f in FARMERS[1:] + [AGNES]:
+        town.join(f.id, group.id)
+    drawn = [g for seed in range(100) for g in goal_maker(town, ALE, rng=random.Random(seed)).draw("p-1", set(), 1)]
+    labels = {g.audience_label for g in drawn if len(g.audience) > 1}
+    assert labels == {"the Plough Guild"}
+
+
+def test_a_long_shot_entry_makes_a_long_shot_goal():
+    pool = Pool((Entry("waters down the ale", 0),), ())
+    (goal,) = goal_maker(town_of(AGNES, HOB), pool).draw("p-1", set(), 1)
+    assert goal.long_shot
+
+
+@pytest.mark.asyncio
+async def test_hand_skips_templates_that_cannot_be_filled():
+    for seed in range(20):
+        dealt = await goal_maker(town_of(AGNES, HOB), rng=random.Random(seed)).hand("p-1", set())
+        assert len(dealt) == 3
+        assert all(len(g.audience) <= 1 for g in dealt)
+        assert sum(g.subject is not None for g in dealt) <= 2
+
+
+@pytest.mark.asyncio
+async def test_jev_failure_falls_back_to_uniform_fill():
+    town = town_of(AGNES, HOB, *FARMERS)
+    drawn = goal_maker(town, routine=TAVERN, rng=random.Random(3)).draw("p-1", set())
+    dealt = await goal_maker(town, routine=TAVERN, jev=BrokenJev(), rng=random.Random(3)).hand("p-1", set())
+    assert [g.text for g in dealt] == [g.text for g in drawn] and len(dealt) == 3
+
+
+@pytest.mark.asyncio
+async def test_hand_uses_jev_choices():
+    jev = ChoosingJev("cheats at dice", "Cob Smith")
+    maker = goal_maker(town_of(AGNES, HOB, COB), NO_CLAIMS, jev=jev)
+    (goal,) = await maker.hand("p-1", set(), 1, subjects={AGNES.id, COB.id})
+    assert goal.text == "Convince Cob that Hob cheats at dice" and goal.audience == (COB.id,)
+    (accusation_state, _), (mark_state, mark_question) = jev.requests
+    assert accusation_state["subject"]["name"] == "Hob Miller"
+    assert accusation_state["subject"]["held_against_them"] == [AGNES.grudge]
+    assert mark_state["rumor"] == "Hob cheats at dice" and HOB.id not in mark_question.criteria
+
+
+def test_subject_weighting_prefers_grudge_targets():
+    rival = Villager("v8", "Ned Rook", "carter", "sly", "", [], {"v4": "rival"})
+    dot = Villager("v4", "Dot Reed", "baker", "kind", "", [], {"v8": "rival"})
+    maker = goal_maker(town_of(AGNES, HOB, COB, dot, rival), NO_CLAIMS, rng=random.Random(7))
+    counts = Counter(maker.draw("p-1", set(), 1)[0].subject for _ in range(1000))
+    for target in (HOB.id, dot.id, rival.id):
+        assert counts[target] > 2 * counts[COB.id]
+        assert counts[target] > 2 * counts[AGNES.id]
+
+
+@pytest.mark.asyncio
+async def test_taken_accusations_not_offered():
+    jev = ChoosingJev()
+    maker = goal_maker(town_of(AGNES, HOB, COB), NO_CLAIMS, jev=jev)
+    (goal,) = await maker.hand("p-1", {"hob waters down the ale"}, 1, subjects={AGNES.id, COB.id})
+    (_, question), _ = jev.requests
+    assert list(question.criteria.values()) == ["cheats at dice"]
+    assert goal.claim_text == "Hob cheats at dice"
+
+
+def test_a_subject_with_every_accusation_taken_is_not_drawn():
+    maker = goal_maker(town_of(AGNES, HOB), Pool((Entry("waters down the ale", 2),), ()))
+    for _ in range(20):
+        (goal,) = maker.draw("p-1", {"hob waters down the ale"}, 1)
+        assert goal.subject == AGNES.id
+
+
+def test_subjects_never_repeat_in_a_hand():
+    town = town_of(AGNES, HOB, COB, DOT)
+    for seed in range(30):
+        hand = goal_maker(town, NO_CLAIMS, rng=random.Random(seed)).draw("p-1", set())
+        subjects = [g.subject for g in hand]
+        assert len(hand) == 3 and len(set(subjects)) == 3
+
+
+def test_regulars_exclude_square_and_gate_and_subject():
+    regulars = (COB, DOT, *FARMERS)
+    routine = StubRoutine(work={v.id: "mill" for v in regulars}, leisure={v.id: "gate" for v in regulars})
+    routine.work |= {AGNES.id: "square", HOB.id: "mill"}
+    town = town_of(AGNES, HOB, *regulars)
+    drawn = [g for seed in range(100) for g in goal_maker(town, ALE, routine, rng=random.Random(seed)).draw("p-1", set(), 1)]
+    circles = [g for g in drawn if len(g.audience) > 1]
+    assert circles and {g.audience_label for g in circles} == {"the mill regulars"}
+    assert all(g.subject not in g.audience for g in circles)
+
+
+def test_a_circle_needs_three_besides_the_subject():
+    routine = StubRoutine(work={v.id: "mill" for v in (AGNES, HOB, COB)})
+    drawn = [g for seed in range(50) for g in goal_maker(town_of(AGNES, HOB, COB), ALE, routine, rng=random.Random(seed)).draw("p-1", set(), 1)]
+    assert all(len(g.audience) <= 1 for g in drawn)
+
+
+@pytest.mark.asyncio
+async def test_hand_loads_baselines_and_publishes_evidence():
     baselines = LoggingBaselines()
-    contex = StubContex()
-    overhear = Overhear(contex, baselines, config, Always(0.99))
-    maker = GoalMaker(
-        StubWriter(list(raws), delay), StubBelievability(band), baselines, overhear, town, config, random.Random(1),
-        ids or Ids(),
-    )
-    return maker, baselines, overhear, contex
-
-
-async def hand(maker, pid="p-1", taken=frozenset()):
-    return await maker.hand(pid, taken=set(taken), deck_skip=set(), never=set())
+    maker = goal_maker(town_of(AGNES, HOB, *FARMERS), baselines=baselines)
+    dealt = await maker.hand("p-1", set())
+    assert baselines.loaded == [g.claim_text for g in dealt] and baselines.persisted == [False]
+    assert maker.overhear.generated_ids() == {g.id for g in dealt}
 
 
 @pytest.mark.asyncio
-async def test_hand_has_personal_circle_and_deck_goal():
-    maker, _, _, _ = make()
-    dealt = await hand(maker)
-    assert [g.audience_label != "" for g in dealt[:2]] == [True, True]
-    assert dealt[0].audience == (AGNES.id,) and dealt[0].subject == HOB.id and dealt[0].owner == "p-1"
-    assert dealt[0].text == "Convince Agnes that Hob is stealing Agnes's geese" and dealt[0].audience_label == "Agnes"
-    assert dealt[0].evidence == (PERSONAL["claim"],) and dealt[0].believer_question == PERSONAL["question"]
-    assert set(dealt[1].audience) == {f.id for f in FARMERS} and HOB.id not in dealt[1].audience
-    assert dealt[1].text == "Get a third of the farmers to believe Hob waters his flour"
-    assert dealt[1].target_fraction == BANDS[2][0] and not dealt[1].long_shot
-    assert dealt[2].owner is None
-
-
-@pytest.mark.asyncio
-async def test_far_fetched_generated_goals_are_long_shots():
-    maker, _, _, _ = make(band=0)
-    dealt = await hand(maker)
-    assert dealt[0].long_shot and dealt[1].long_shot
-    assert dealt[1].text.startswith("Get a fifth of the farmers")
-
-
-@pytest.mark.asyncio
-async def test_circle_members_resolve_by_full_name_without_the_subject():
-    names = ["farmer3 field", "Farmer4 Field", "Farmer5 Field", "Farmer5 Field", "Hob Miller"]
-    maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, members=names)))
-    dealt = await hand(maker)
-    assert dealt[1].audience == tuple(f.id for f in FARMERS) and dealt[1].owner == "p-1"
-
-
-@pytest.mark.asyncio
-async def test_invalid_generated_goals_fall_back_to_deck():
-    bad = [
-        dict(PERSONAL, mark="Nobody Atall"),
-        dict(PERSONAL, mark="Hob Miller"),
-        dict(CIRCLE, members=["Farmer3 Field", "Farmer4 Field", "Hob Miller"]),
-        dict(CIRCLE, members=["Farmer3 Field", "Farmer4 Field", "Nobody Atall"]),
-        dict(CIRCLE, members="Farmer3 Field"),
-        dict(CIRCLE, claim="the miller waters his flour"),
-        {"kind": "circle"},
-        {"kind": "personal", "mark": 3},
-    ]
-    maker, _, _, _ = make(raws=bad)
-    dealt = await hand(maker)
-    assert len(dealt) == 3 and len({g.id for g in dealt}) == 3
-    assert all(g.owner is None for g in dealt)
-
-
-@pytest.mark.asyncio
-async def test_writer_timeout_gives_deck_hand():
-    maker, _, _, contex = make(delay=1.0, config=Config(session="s1", goal_writer_timeout_seconds=0.01))
-    dealt = await hand(maker)
-    assert len(dealt) == 3 and all(g.owner is None for g in dealt)
-    assert contex.published == []
-
-
-@pytest.mark.asyncio
-async def test_hand_loads_baselines_before_dealing():
-    maker, baselines, overhear, _ = make()
-    dealt = await hand(maker)
-    assert baselines.loaded == [PERSONAL["claim"], CIRCLE["claim"]] and baselines.persisted == [False]
-    assert {f"goal:{g.id}" for g in dealt[:2]} <= overhear._evidence.keys()
+async def test_drawn_goals_are_published_when_prepared():
+    baselines = LoggingBaselines()
+    maker = goal_maker(town_of(AGNES, HOB, *FARMERS), baselines=baselines)
+    drawn = maker.draw("p-1", set())
+    assert maker.overhear.generated_ids() == set()
+    await maker.prepare()
+    assert baselines.loaded == [g.claim_text for g in drawn]
+    assert maker.overhear.generated_ids() == {g.id for g in drawn}
+    await maker.prepare()
+    assert len(baselines.loaded) == 3
 
 
 @pytest.mark.asyncio
 async def test_generated_ids_unique_across_players():
-    ids = Ids()
-    maker, _, _, _ = make(ids=ids)
-    first, second = await hand(maker, "p-1"), await hand(maker, "p-2")
-    gen = [g.id for g in first[:2] + second[:2]]
-    assert len(set(gen)) == 4 and all(i.startswith("gen-") for i in gen)
+    maker = goal_maker(town_of(AGNES, HOB, *FARMERS), ids=Ids())
+    first, second = await maker.hand("p-1", set()), await maker.hand("p-2", set())
+    ids = [g.id for g in first + second]
+    assert len(set(ids)) == 6 and all(i.startswith(("gen-p-1-", "gen-p-2-")) for i in ids)
 
 
-@pytest.mark.asyncio
-async def test_taken_claim_rejected():
-    maker, _, _, _ = make()
-    dealt = await hand(maker, taken={"hob is stealing agnes's geese"})
-    assert dealt[0].audience_label == "the farmers"
-    assert [g.owner for g in dealt] == ["p-1", None, None]
-
-
-@pytest.mark.asyncio
-async def test_sample_prefers_villagers_with_grudges_or_ties():
-    maker, _, _, _ = make(config=Config(session="s1", goal_sample_size=2))
-    await hand(maker, taken={"the well is cursed"})
-    sample, taken = maker.writer.samples[0]
-    assert {v.id for v in sample} == {AGNES.id, HOB.id}
-    assert taken == ["the well is cursed"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("bad", [
-    dict(PERSONAL, claim="Hobbes is stealing Agnes's geese"),
-    dict(PERSONAL, claim="Hob is stealing your geese"),
-    dict(PERSONAL, claim="Hob is stealing Agnes's geese" + " truly" * 40),
-])
-async def test_personal_goal_needs_whole_names_and_short_fields(bad):
-    maker, _, _, _ = make(raws=(bad, CIRCLE))
-    dealt = await hand(maker)
-    assert [g.owner for g in dealt] == ["p-1", None, None] and dealt[0].audience_label == "the farmers"
-
-
-@pytest.mark.asyncio
-async def test_circle_label_over_the_cap_is_rejected():
-    maker, _, _, _ = make(raws=(PERSONAL, dict(CIRCLE, label="the farmers" + " x" * 100)))
-    dealt = await hand(maker)
-    assert [g.owner for g in dealt] == ["p-1", None, None]
-
-
-@pytest.mark.asyncio
-async def test_a_mark_sharing_a_first_name_is_called_by_full_name():
-    maker, _, _, _ = make()
-    maker.town.add(Villager("v9", "Agnes Reed", "baker", "kind", "", [], {}))
-    dealt = await hand(maker)
-    assert dealt[0].text == "Convince Agnes Thatch that Hob is stealing Agnes's geese"
-    assert dealt[0].audience_label == "Agnes Thatch"
-
-
-@pytest.mark.asyncio
-async def test_hand_of_one_circle_goal_makes_no_personal_goal():
-    maker, _, overhear, _ = make()
-    dealt = await maker.hand("p-1", taken=set(), deck_skip=set(), never=set(), kinds=("circle",), size=1)
-    assert len(dealt) == 1 and dealt[0].audience_label == "the farmers" and len(dealt[0].audience) == 3
-    assert overhear.generated_ids() == {dealt[0].id}
-
-
-@pytest.mark.asyncio
-async def test_a_one_goal_hand_falls_back_to_one_deck_goal():
-    maker, _, _, _ = make(raws=())
-    dealt = await maker.hand("p-1", taken=set(), deck_skip=set(), never=set(), kinds=("personal",), size=1)
-    assert len(dealt) == 1 and dealt[0].owner is None
-
-
-def test_kind_of_names_generated_goals():
-    assert kind_of(Goal("a", "a", "belief", audience=("v1",), subject="v2")) == "personal"
-    assert kind_of(Goal("a", "a", "belief", audience=("v1", "v2", "v3"), subject="v4")) == "circle"
-    assert kind_of(Goal("a", "a", "belief")) is None
-    assert kind_of(Goal("a", "a", "state")) is None
+def test_a_mark_sharing_a_first_name_is_called_by_full_name():
+    town = town_of(AGNES, HOB, Villager("v9", "Agnes Reed", "baker", "kind", "", [], {}))
+    drawn = [g for seed in range(50) for g in goal_maker(town, NO_CLAIMS, rng=random.Random(seed)).draw("p-1", set(), 1)]
+    labels = {g.audience_label for g in drawn}
+    assert labels <= {"Agnes Thatch", "Agnes Reed", "Hob"} and "Agnes Thatch" in labels
+    assert all("Agnes " in g.claim_text for g in drawn if g.subject in (AGNES.id, "v9"))

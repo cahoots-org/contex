@@ -13,7 +13,6 @@ SAY_MAX_TOKENS = 80
 TURN_AWAY_MAX_TOKENS = 60
 WARN_MAX_TOKENS = 60
 GO_ON_MAX_TOKENS = 40
-GOALS_MAX_TOKENS = 600
 POOL_MAX_TOKENS = 2500
 # How a player whisper reads when it reaches a villager.
 WHISPER_FRAMING = re.compile(r"^A newcomer whispered to you: ")
@@ -44,44 +43,6 @@ def extract_json(text: str):
 def _grudge(villager: Villager, aside: str = "") -> str:
     """The villager's grudge for a prompt, then aside, or nothing when they hold none."""
     return f"Your grudge: {villager.grudge}. {aside}" if villager.grudge else ""
-
-
-def _sketch(villager: Villager, names: dict[str, str]) -> str:
-    """One line on the villager for the goal writer: who they are, their grudge, and their ties among names."""
-    line = f"- {villager.name}, {villager.occupation}, {villager.personality}."
-    if villager.grudge:
-        line += f" Grudge: {villager.grudge}."
-    ties = [f"{names[vid]} ({kind})" for vid, kind in villager.relationships.items() if vid in names]
-    if ties:
-        line += f" Ties: {', '.join(ties)}."
-    return line
-
-
-GOALS_SYSTEM = (
-    "You write secret goals for a player in a village gossip game. The player is a newcomer who spreads "
-    "rumors to turn villagers against one another. Write two goals about the villagers listed: petty, "
-    "specific village intrigue that grows out of their grudges and ties, such as \"Convince Agnes that Hob "
-    "is stealing her geese\" or \"Get the farmers to believe the miller waters his flour\".\n"
-    "Reply with only a JSON array of two objects:\n"
-    '[{"kind": "personal", "claim": "...", "question": "...", '
-    '"mark": "<full name>", "subject": "<full name>"}, '
-    '{"kind": "circle", "claim": "...", "question": "...", "label": "...", '
-    '"members": ["<full name>", ...], "subject": "<full name>"}]\n'
-    "Rules:\n"
-    "- The personal goal is to convince one villager, the mark, of a claim about another, the subject. "
-    "The player is told \"Convince <mark's first name> that <claim>\".\n"
-    "- The circle goal is to turn a group of three to five listed villagers against the subject: people "
-    "who share a trade, a family, a haunt or a cause. members are their full names. label is how the group "
-    "reads in a sentence, such as \"the tradesfolk\", \"the chapel faithful\" or \"Agnes's friends\". The "
-    "subject is not one of the group.\n"
-    "- The claim is the rumor as a plain statement that names the subject by first name, such as "
-    "\"Hob is stealing Agnes's geese\".\n"
-    "- The question is a yes or no question asked about one villager, such as \"Does this villager "
-    "believe Hob is stealing Agnes's geese?\"\n"
-    "- Use full names exactly as listed. The mark and the subject are different people.\n"
-    "- Write in the third person. Never use \"you\" or \"your\".\n"
-    "- Never repeat a claim already in play."
-)
 
 
 POOL_SYSTEM = (
@@ -270,18 +231,6 @@ class Writer:
         user = "What inspired you:\n" + "\n".join(f"- {t}" for t in inspiration)
         parsed = extract_json(await self.complete(system, user))
         return parsed["name"], parsed["creed"]
-
-    async def goals(self, sample: list[Villager], taken: list[str]) -> list[dict]:
-        """A personal and a circle goal about the sampled villagers, as Haiku wrote them, or [] if unreadable."""
-        names = {v.id: v.name for v in sample}
-        user = "Villagers:\n" + "\n".join(_sketch(v, names) for v in sample)
-        if taken:
-            user += "\nClaims already in play:\n" + "\n".join(f"- {t}" for t in taken)
-        try:
-            parsed = extract_json(await self.complete(GOALS_SYSTEM, user, max_tokens=GOALS_MAX_TOKENS))
-        except ValueError:
-            return []
-        return [g for g in parsed if isinstance(g, dict)] if isinstance(parsed, list) else []
 
     async def goal_pool(self, villagers: list[Villager]) -> dict:
         """Accusations and village-wide claims fitted to the villagers, as Haiku wrote them, or {} if unreadable."""

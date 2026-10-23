@@ -206,23 +206,6 @@ async def test_answer_names_the_topic_and_what_was_heard_in_one_line():
 
 
 @pytest.mark.asyncio
-async def test_writer_goals_parses_and_tolerates_junk():
-    hob = Villager("v002", "Hob Miller", "miller", "gruff", "", [], {"v001": "rival"})
-    reply = 'Here:\n[{"kind": "personal", "mark": "Ada"}, "stray", {"kind": "circle", "subject": "Hob Miller"}]'
-    client = StubClient(reply, "I can't do that.", '{"kind": "personal"}')
-    writer = Writer(client, "haiku-test")
-
-    raws = await writer.goals([villager(), hob], ["the well is cursed"])
-
-    assert raws == [{"kind": "personal", "mark": "Ada"}, {"kind": "circle", "subject": "Hob Miller"}]
-    prompt = client.messages.calls[0]["system"] + client.messages.calls[0]["messages"][0]["content"]
-    assert "owes me flour" in prompt and "Ada (rival)" in prompt and "the well is cursed" in prompt
-    assert '"members"' in prompt and 'Never use "you"' in prompt
-    assert await writer.goals([villager()], []) == []
-    assert await writer.goals([villager()], []) == []
-
-
-@pytest.mark.asyncio
 async def test_deny_is_one_flat_line_naming_no_newcomer():
     client = StubClient('"That is a lie, plain and simple."\nMore.')
     line = await Writer(client, "haiku-test").deny(villager(), "Ada steals geese")

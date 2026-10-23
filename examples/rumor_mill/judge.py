@@ -15,7 +15,7 @@ from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.goal_maker import GoalMaker
 from examples.rumor_mill.goals import (
-    Goal, Trophy, audience_of, claim, deal, goal_counts, kind_of, needed, trophy_line, void_reason, world_goal,
+    Goal, Trophy, audience_of, claim, goal_counts, needed, trophy_line, void_reason, world_goal,
 )
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -55,7 +55,7 @@ class Judge:
     def __init__(
         self, contex: ContexClient, jev, town: Town, config: Config, feed, game: Game | None = None, baselines=None,
         rng: random.Random | None = None, lineage: Lineage | None = None, facts: Facts | None = None,
-        engine=None, maker: GoalMaker | None = None,
+        engine=None, *, maker: GoalMaker,
     ):
         self.contex = contex
         self.jev = jev
@@ -215,25 +215,23 @@ class Judge:
         """The claims the village holds now, by deck goal id."""
         return {gid.removeprefix("world-") for gid, p in self.progress.items() if p >= 1.0}
 
+    def _taken(self, player: Player, *extra: Goal) -> set[str]:
+        """The lowercased claims of the other players' goals, the world goal and extra."""
+        others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
+        return {c.lower() for g in (*others, *extra, self.world) if (c := claim(g))}
+
     def deal(self, player: Player) -> None:
-        """Give the player three new deck goals, none held now nor the world goal's claim."""
-        self._hand_to(player, deal(self.rng, skip=self.held(), never={self.world.id.removeprefix("world-")}))
+        """Give the player a hand drawn at once, with no claim another player or the world goal holds."""
+        self._hand_to(player, self.maker.draw(player.id, self._taken(player)))
 
     async def redeal(self, player: Player) -> None:
-        """Give the player a new hand written for them, or from the deck without a goal maker.
+        """Give the player a new hand filled for them by Jev.
 
         A hand that lands after the player's game ended is dropped, with its generated evidence.
         """
-        if self.maker is None:
-            self.deal(player)
-            return
-        others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
-        taken = {c.lower() for g in (*others, self.world) if (c := claim(g))}
-        hand = await self.maker.hand(
-            player.id, taken=taken, deck_skip=self.held(), never={self.world.id.removeprefix("world-")},
-        )
+        hand = await self.maker.hand(player.id, self._taken(player))
         if player.over():
-            self.maker.overhear.drop([g.id for g in hand if g.owner])
+            self.maker.overhear.drop([g.id for g in hand])
             return
         self._hand_to(player, hand)
 
@@ -259,42 +257,38 @@ class Judge:
         return None
 
     async def swap(self, player: Player, goal_id: str) -> str | None:
-        """Swap the player's unmet goal for a new one of the same kind; returns why it could not be, if it couldn't."""
+        """Swap the player's unmet goal for a new one of any kind; returns why it could not be, if it couldn't."""
         if problem := self._problem_swapping(player, goal_id):
             return problem
         old = next(g for g in player.goals if g.id == goal_id)
-        never = {self.world.id.removeprefix("world-")}
-        skip = self.held() | {g.id for g in player.goals}
+        subjects = {g.subject for g in player.goals if g is not old and g.subject}
         self._swapping.add(player.id)
         try:
-            if self.maker is None or (kind := kind_of(old)) is None:
-                new = deal(self.rng, 1, skip=skip, never=never)[0]
-            else:
-                others = [g for p in self._players or () if p is not player and not p.over() for g in p.goals]
-                taken = {c.lower() for g in (*others, *player.goals, self.world) if (c := claim(g))}
-                new = (await self.maker.hand(player.id, taken, skip, never, kinds=(kind,), size=1))[0]
+            found = await self.maker.hand(player.id, self._taken(player, *player.goals), 1, subjects)
         finally:
             self._swapping.discard(player.id)
+        if not found:
+            return "No other goal can be found right now."
+        new = found[0]
         if player.over() or old not in player.goals or old.id in player.met:
-            if new.owner:
-                self.maker.overhear.drop([new.id])
+            self.maker.overhear.drop([new.id])
             return "That goal changed. Try again."
-        if new.owner is None and new.id in {g.id for g in player.goals if g is not old}:
-            new = deal(self.rng, 1, skip=self.held() | {g.id for g in player.goals}, never=never)[0]
-        if self.maker is not None and old.owner:
-            self.maker.overhear.drop([old.id])
+        self.maker.overhear.drop([old.id])
         player.goals[player.goals.index(old)] = new
         self.feed.on_goal_swapped(old, new, player=player.id, counts=self.counts_of(new))
         return None
 
     def _replace_void(self, player: Player) -> None:
-        """Swap each of the player's unmet goals that can no longer be met for a deck goal, and tell the player."""
+        """Swap each of the player's unmet goals that can no longer be met for a new one, and tell the player."""
         for i, old in enumerate(player.goals):
             reason = void_reason(old, self.town)
             if reason is None or old.id in player.met:
                 continue
-            skip = self.held() | {g.id for g in player.goals}
-            new = deal(self.rng, 1, skip=skip, never={self.world.id.removeprefix("world-")})[0]
+            subjects = {g.subject for g in player.goals if g is not old and g.subject}
+            found = self.maker.draw(player.id, self._taken(player, *player.goals), 1, subjects)
+            if not found:
+                continue
+            new = found[0]
             player.goals[i] = new
             self.feed.on_goal_void(old, new, reason, player=player.id, counts=self.counts_of(new))
 
@@ -326,6 +320,7 @@ class Judge:
             judged = [p for p in playing if p.id not in self._dealing]
             for p in judged:
                 self._replace_void(p)
+            await self.maker.prepare()
             in_play = {g.id: g for p in judged for g in p.goals}
             in_play[self.world.id] = self.world
             for goal in in_play.values():
@@ -394,7 +389,7 @@ class Judge:
         task.add_done_callback(lambda done: self._redealt(player, done))
 
     def _redealt(self, player: Player, task: asyncio.Task) -> None:
-        """Stop tracking the player's finished redeal; if it failed, deal them a deck hand instead."""
+        """Stop tracking the player's finished redeal; if it failed, deal them a drawn hand instead."""
         self._dealing.pop(player.id, None)
         if task.cancelled() or task.exception() is None or player.over():
             return
@@ -427,7 +422,7 @@ class Judge:
         questions = {g.believer_question for g in in_play}
         self._verdicts = {k: v for k, v in self._verdicts.items() if k[0] in questions}
         # A hand being written has published evidence for goals not yet in play.
-        if self.maker is not None and not self._dealing and not self._swapping:
+        if not self._dealing and not self._swapping:
             self.maker.overhear.drop(self.maker.overhear.generated_ids() - ids)
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:

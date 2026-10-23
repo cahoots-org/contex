@@ -19,7 +19,7 @@ from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Ids, Lineage
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
-from examples.rumor_mill.tests.helpers import PID, FakeMind, StubClient, make, make_player, wait_for
+from examples.rumor_mill.tests.helpers import PID, FakeMind, StubClient, goal_maker, make, make_player, wait_for
 from examples.rumor_mill.town import PLACES, Town
 from examples.rumor_mill.usage import Usage
 from examples.rumor_mill.writer import Writer
@@ -237,7 +237,8 @@ GOAL = Goal("g", "cat is a spy", "belief", ("cat spy",), "Does it believe?", 0.5
 @pytest.mark.asyncio
 async def test_judge_skips_the_goals_of_a_player_whose_game_is_over():
     player, *_ = make_player()
-    judge = Judge(None, None, Town(), Config(day_seconds=0.01), player.feed, Game())
+    town = Town()
+    judge = Judge(None, None, town, Config(day_seconds=0.01), player.feed, Game(), maker=goal_maker(town))
     player.goals = [GOAL]
     player.end(Summary("lost", [], []))
     everyone = Players(player.feed)

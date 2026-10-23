@@ -1,33 +1,40 @@
-"""The goal maker: has Haiku write each hand's personal and circle goals about real villagers."""
+"""The goal maker: fills each goal's template from the village's people, circles and pool, with Jev's picks."""
 
 import asyncio
 import logging
 import random
 import re
 from collections.abc import Collection
-from dataclasses import replace
+from dataclasses import dataclass, replace
+
+from typesafe_sdk import Choice
 
 from examples.rumor_mill.config import Config
-from examples.rumor_mill.goals import BANDS, MIN_CIRCLE, Goal, deal
+from examples.rumor_mill.decide import MAX_OPTIONS
+from examples.rumor_mill.game import PHASES
+from examples.rumor_mill.goals import BANDS, MIN_CIRCLE, Goal
 from examples.rumor_mill.lineage import Ids
 from examples.rumor_mill.models import Villager
-from examples.rumor_mill.town import Town
+from examples.rumor_mill.pool import Entry, Pool
+from examples.rumor_mill.routine import ROUTINE_PLACES
+from examples.rumor_mill.town import START_PLACE, Town
 from examples.rumor_mill.usage import charging
 
 log = logging.getLogger(__name__)
 
 HAND = 3
-# The longest field of a goal Haiku may write.
-MAX_FIELD = 200
+TEMPLATES = ("personal", "circle", "village")
+# How much likelier a villager named in another's grudge, or holding a rival tie, is to be a goal's subject.
+GRUDGE_WEIGHT = 3
+REGULAR_PLACES = tuple(p for p in ROUTINE_PLACES if p != START_PLACE)
+THE = re.compile(r"^the\s+", re.IGNORECASE)
 
-
-def _field(raw: dict, key: str) -> str:
-    """The raw goal's string field, or "" when missing, not a string, or longer than MAX_FIELD."""
-    value = raw.get(key)
-    return value.strip() if isinstance(value, str) and len(value.strip()) <= MAX_FIELD else ""
-
-
-SECOND_PERSON = re.compile(r"\byou(rs?|rself)?\b", re.IGNORECASE)
+ACCUSATION_INSTRUCTIONS = (
+    "A newcomer to a gossiping village means to spread a rumor about this villager. Given their trade, temper "
+    "and the grudges held against them, which accusation would ring truest of them?"
+)
+MARK_INSTRUCTIONS = "Which villager has the most reason to believe this rumor of the subject?"
+CIRCLE_INSTRUCTIONS = "Which circle of villagers would care most about this rumor of the subject?"
 
 
 def _first(villager: Villager) -> str:
@@ -45,101 +52,207 @@ def _called(villager: Villager, town: Town) -> str:
     return villager.name if shared else _first(villager)
 
 
-def _one(town: Town, name: str) -> Villager | None:
-    """The one villager in town with this full name, or None."""
-    found = [v for v in town.villagers if v.name.lower() == name.lower()]
-    return found[0] if len(found) == 1 else None
+@dataclass(frozen=True)
+class Audience:
+    """Who a goal works on: one mark or a circle."""
+
+    id: str
+    label: str
+    members: tuple[str, ...]
+    # How Jev is told of it.
+    about: str
 
 
-def _circle(members, town: Town) -> list[str]:
-    """The ids of the villagers in town named in members by full name, or [] if any is unknown."""
-    if not isinstance(members, list) or not all(isinstance(n, str) for n in members):
-        return []
-    found = [_one(town, n) for n in members]
-    return [] if None in found else list(dict.fromkeys(v.id for v in found))
+@dataclass(frozen=True)
+class Slot:
+    """One goal's template and the options for its blanks, with the ones picked."""
 
-
-def _validate(raw: dict, town: Town, taken: Collection[str]) -> Goal | None:
-    """The raw goal as an unnumbered, unbanded Goal, or None if it names anyone not in town or breaks a rule."""
-    claim, question = _field(raw, "claim"), _field(raw, "question")
-    subject = _one(town, _field(raw, "subject"))
-    if not (claim and question and subject) or not _names(subject, claim) or SECOND_PERSON.search(claim):
-        return None
-    if claim.lower() in {t.lower() for t in taken}:
-        return None
-    base = Goal(
-        id="", text="", kind="belief", evidence=(claim,), believer_question=question, subject=subject.id,
-        claim_text=claim,
-    )
-    if raw.get("kind") == "personal":
-        mark = _one(town, _field(raw, "mark"))
-        if mark is None or mark.id == subject.id:
-            return None
-        called = _called(mark, town)
-        return replace(base, text=f"Convince {called} that {claim}", audience=(mark.id,), audience_label=called)
-    label = _field(raw, "label")
-    members = [vid for vid in _circle(raw.get("members"), town) if vid != subject.id]
-    if not label or len(members) < MIN_CIRCLE:
-        return None
-    return replace(base, audience=tuple(members), audience_label=label)
+    kind: str
+    entries: tuple[Entry, ...]
+    entry: Entry
+    subject: Villager | None = None
+    audiences: tuple[Audience, ...] = ()
+    audience: Audience | None = None
 
 
 class GoalMaker:
-    def __init__(self, writer, believability, baselines, overhear, town: Town, config: Config, rng: random.Random,
-                 ids: Ids):
-        self.writer = writer
-        self.believability = believability
-        self.baselines = baselines
-        self.overhear = overhear
+    def __init__(
+        self, jev, pool: Pool, town: Town, routine, overhear, baselines, config: Config, rng: random.Random, ids: Ids,
+    ):
+        self.jev = jev
+        self.pool = pool
         self.town = town
+        self.routine = routine
+        self.overhear = overhear
+        self.baselines = baselines
         self.config = config
         self.rng = rng
         self.ids = ids
+        # Goals drawn but not yet given baselines and published.
+        self._unready: list[Goal] = []
 
-    async def hand(
-        self, player_id: str, taken: set[str], deck_skip: set[str], never: set[str],
-        kinds: tuple[str, ...] = ("personal", "circle"), size: int = HAND,
-    ) -> list[Goal]:
-        """The player's goals of the given kinds, then deck goals to make size; all deck goals if Haiku fails."""
-        made: list[Goal] = []
-        with charging(player_id):
-            try:
-                made = await asyncio.wait_for(
-                    self._write(player_id, taken, kinds), self.config.goal_writer_timeout_seconds,
-                )
-                await self.baselines.load([g.claim_text for g in made], persist=False)
-                await self.overhear.publish(made)
-            except Exception:
-                log.warning("writing goals for %s failed", player_id, exc_info=True)
-                self.overhear.drop([g.id for g in made])
-                made = []
-        return made + deal(self.rng, size - len(made), skip=deck_skip, never=never)
-
-    async def _write(self, player_id: str, taken: set[str], kinds: tuple[str, ...]) -> list[Goal]:
-        """The first valid goal of each kind Haiku writes for the player, banded by believability."""
-        raws = await self.writer.goals(self._sample(), sorted(taken))
-        made: list[Goal] = []
-        for kind in kinds:
-            for raw in (r for r in raws if r.get("kind") == kind):
-                goal = _validate(raw, self.town, taken | {g.claim_text for g in made})
-                if goal is not None:
-                    made.append(await self._finish(goal, player_id))
-                    break
+    def draw(self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = ()) -> list[Goal]:
+        """Up to size goals for the player, filled by uniform picks; their evidence goes out on the next prepare."""
+        made = [self._goal(s, player_id) for s in self._slots(taken, size, subjects)]
+        self._unready.extend(made)
         return made
 
-    async def _finish(self, goal: Goal, player_id: str) -> Goal:
-        """The goal numbered for the player, with its bar set by how believable its claim is."""
-        band = await self.believability.band(goal.claim_text)
-        goal = replace(goal, id=f"gen-{player_id}-{self.ids.next('goal')}", owner=player_id, long_shot=band == 0)
-        if len(goal.audience) == 1:
-            return goal
-        fraction, word = BANDS[band]
-        return replace(
-            goal, target_fraction=fraction,
-            text=f"Get {word.lower()} of {goal.audience_label} to believe {goal.claim_text}",
+    async def hand(
+        self, player_id: str, taken: set[str], size: int = HAND, subjects: Collection[str] = (),
+    ) -> list[Goal]:
+        """Up to size goals for the player, filled by Jev's picks, with their baselines loaded and evidence published.
+
+        taken holds the lowercased claims already in play; subjects the villagers the player's other goals are about.
+        """
+        with charging(player_id):
+            slots = await asyncio.gather(*(self._refine(s) for s in self._slots(taken, size, subjects)))
+            made = [self._goal(s, player_id) for s in slots]
+            await self._ready(made)
+        return made
+
+    async def prepare(self) -> None:
+        """Load baselines for, and publish, the goals drawn since the last call."""
+        goals, self._unready = self._unready, []
+        if goals:
+            await self._ready(goals)
+
+    async def _ready(self, goals: list[Goal]) -> None:
+        try:
+            await self.baselines.load([g.claim_text for g in goals], persist=False)
+            await self.overhear.publish(goals)
+        except Exception:
+            log.warning("readying goals failed; retrying on the next check", exc_info=True)
+            self._unready.extend(goals)
+
+    def _slots(self, taken: Collection[str], size: int, subjects: Collection[str]) -> list[Slot]:
+        """Size slots, each of a template drawn uniformly from those that can still be filled; fewer if none can."""
+        taken, subjects = set(taken), set(subjects)
+        slots: list[Slot] = []
+        for _ in range(size):
+            fillable = [s for kind in TEMPLATES if (s := self._fill(kind, taken, subjects)) is not None]
+            if not fillable:
+                break
+            slot = self.rng.choice(fillable)
+            slots.append(slot)
+            taken.add(self._claim(slot).lower())
+            if slot.subject:
+                subjects.add(slot.subject.id)
+        return slots
+
+    def _fill(self, kind: str, taken: set[str], subjects: set[str]) -> Slot | None:
+        """A slot of the template filled by uniform picks, or None when it can't be filled."""
+        if kind == "village":
+            claims = tuple(e for e in self.pool.claims if e.text.lower() not in taken)
+            return Slot(kind, claims, self.rng.choice(claims)) if claims else None
+        villagers = self.town.villagers
+        circles = self._circles() if kind == "circle" else []
+        candidates = []
+        for v in villagers:
+            if v.id in subjects:
+                continue
+            entries = tuple(e for e in self.pool.accusations if f"{self._call(v)} {e.text}".lower() not in taken)
+            audiences = self._marks(v) if kind == "personal" else self._without(v, circles)
+            if entries and audiences:
+                candidates.append((v, entries, audiences))
+        if not candidates:
+            return None
+        targets = self._targets(villagers)
+        weights = [GRUDGE_WEIGHT if v.id in targets else 1 for v, _, _ in candidates]
+        v, entries, audiences = self.rng.choices(candidates, weights=weights)[0]
+        return Slot(kind, entries, self.rng.choice(entries), v, audiences, self.rng.choice(audiences))
+
+    def _targets(self, villagers: list[Villager]) -> set[str]:
+        """The villagers named in another's grudge or holding a rival tie."""
+        return {
+            v.id for v in villagers
+            if "rival" in v.relationships.values() or any(o.id != v.id and _names(v, o.grudge) for o in villagers)
+        }
+
+    def _marks(self, subject: Villager) -> tuple[Audience, ...]:
+        """Every other villager in town, as a one-person audience."""
+        return tuple(
+            Audience(v.id, self._call(v), (v.id,), self._sketch(v, subject))
+            for v in self.town.villagers if v.id != subject.id
         )
 
-    def _sample(self) -> list[Villager]:
-        """Up to goal_sample_size villagers in town, those with a grudge or ties first."""
-        shuffled = self.rng.sample(self.town.villagers, len(self.town.villagers))
-        return sorted(shuffled, key=lambda v: not (v.grudge or v.relationships))[:self.config.goal_sample_size]
+    def _circles(self) -> list[Audience]:
+        """The founded groups and each place's regulars, whole."""
+        circles = [
+            Audience(g.id, f"the {THE.sub('', g.name)}", tuple(sorted(g.members)), f"{g.name}, whose creed is: {g.creed}")
+            for g in self.town.groups
+        ]
+        for place in REGULAR_PLACES:
+            members = tuple(
+                v.id for v in self.town.villagers if any(self.routine.place(v.id, ph) == place for ph in PHASES)
+            )
+            circles.append(Audience(f"regulars:{place}", f"the {place} regulars", members,
+                                    f"those who spend their days or evenings at the {place}"))
+        return circles
+
+    def _without(self, subject: Villager, circles: list[Audience]) -> tuple[Audience, ...]:
+        """The circles left with MIN_CIRCLE or more members once the subject is taken out."""
+        out = (replace(c, members=tuple(m for m in c.members if m != subject.id)) for c in circles)
+        return tuple(c for c in out if len(c.members) >= MIN_CIRCLE)
+
+    def _call(self, v: Villager) -> str:
+        return _called(v, self.town)
+
+    def _sketch(self, v: Villager, subject: Villager) -> str:
+        line = f"{v.name}, {v.occupation}, {v.personality}"
+        if v.grudge:
+            line += f". Grudge: {v.grudge}"
+        if tie := v.relationships.get(subject.id):
+            line += f". The subject's {tie}"
+        return line
+
+    def _claim(self, slot: Slot) -> str:
+        return f"{self._call(slot.subject)} {slot.entry.text}" if slot.subject else slot.entry.text
+
+    async def _refine(self, slot: Slot) -> Slot:
+        """The slot with Jev's accusation and then its mark or circle; a pick Jev fails keeps the uniform one."""
+        if self.jev is None or slot.subject is None:
+            return slot
+        subject = slot.subject
+        state = {"subject": {
+            "name": subject.name, "occupation": subject.occupation, "personality": subject.personality,
+            "grudge": subject.grudge,
+            "held_against_them": [v.grudge for v in self.town.villagers if v.id != subject.id and _names(subject, v.grudge)],
+        }}
+        entries = {str(i): e.text for i, e in enumerate(slot.entries)}
+        if (key := await self._choose(ACCUSATION_INSTRUCTIONS, state, entries)) is not None:
+            slot = replace(slot, entry=slot.entries[int(key)])
+        state["rumor"] = self._claim(slot)
+        instructions = MARK_INSTRUCTIONS if slot.kind == "personal" else CIRCLE_INSTRUCTIONS
+        if (key := await self._choose(instructions, state, {a.id: a.about for a in slot.audiences})) is not None:
+            slot = replace(slot, audience=next(a for a in slot.audiences if a.id == key))
+        return slot
+
+    async def _choose(self, instructions: str, state: dict, options: dict[str, str]) -> str | None:
+        """The key of the option Jev picks, or None if the request fails."""
+        criteria = dict(list(options.items())[:MAX_OPTIONS])
+        try:
+            response = await self.jev.system_one(
+                state=state, questions={"pick": Choice(instructions=instructions, criteria=criteria)},
+            )
+            choice = response.choices["pick"].choice
+        except Exception:
+            log.warning("Jev could not fill a goal", exc_info=True)
+            return None
+        return choice if choice in criteria else None
+
+    def _goal(self, slot: Slot, player_id: str) -> Goal:
+        """The slot's goal, numbered for the player, with its bar from its entry's believability band."""
+        claim = self._claim(slot)
+        fraction, word = BANDS[slot.entry.band]
+        goal = Goal(
+            id=f"gen-{player_id}-{self.ids.next('goal')}", text="", kind="belief", evidence=(claim,),
+            believer_question=f"Does this villager believe {claim}?", owner=player_id, claim_text=claim,
+            long_shot=slot.entry.band == 0,
+        )
+        if slot.subject is None:
+            return replace(goal, text=f"{word} of the village believes {claim}", target_fraction=fraction)
+        audience = slot.audience
+        goal = replace(goal, subject=slot.subject.id, audience=audience.members, audience_label=audience.label)
+        if slot.kind == "personal":
+            return replace(goal, text=f"Convince {audience.label} that {claim}")
+        return replace(goal, text=f"Get {word.lower()} of {audience.label} to believe {claim}", target_fraction=fraction)

@@ -52,7 +52,7 @@ async def play(web: bool) -> None:
         jev = CountingJev(typesafe_sdk.AsyncTypeSafeClient(), usage)
         believability = Believability(jev)
         await goals.rebar_deck(believability)
-        pool = await load_pool(config.seed_path + ".goals.json", writer, believability, villagers)  # noqa: F841
+        pool = await load_pool(config.seed_path + ".goals.json", writer, believability, villagers)
         baselines = Baselines(contex, config)
         facts = Facts()
         overhear = Overhear(contex, baselines, config, rng)
@@ -62,7 +62,7 @@ async def play(web: bool) -> None:
             baselines=baselines, rumors=Rumors(contex, baselines, config, overhear), overhear=overhear,
             routine=routine, facts=facts,
         )
-        maker = GoalMaker(writer, believability, baselines, overhear, town, config, rng, ids)
+        maker = GoalMaker(jev, pool, town, routine, overhear, baselines, config, rng, ids)
         judge = Judge(
             contex, jev, town, config, feed, game, baselines=baselines, rng=rng, lineage=lineage, facts=facts,
             engine=engine, maker=maker,
@@ -80,12 +80,6 @@ async def play(web: bool) -> None:
 
         replenisher = asyncio.create_task(Replenisher(engine, town, writer, config, rng).run())
         feed.on_world(judge.world, judge.counts_of(judge.world))
-        if not web:
-            player = join(LOCAL_OWNER)
-            show = terminal(print)
-            for event in feed.replay(player.id):
-                show(event)
-            feed.sinks.append(feed.view(player.id, show))
         places = [p for p in PLACES if p != GATE]
         judging = None
         try:
@@ -109,6 +103,11 @@ async def play(web: bool) -> None:
                 print(f"Rumor Mill is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
                 await server.serve()
             else:
+                player = join(LOCAL_OWNER)
+                show = terminal(print)
+                for event in feed.replay(player.id):
+                    show(event)
+                feed.sinks.append(feed.view(player.id, show))
                 await until_over(repl(player, town, feed, judge, usage, engine.suspicion, players), player)
         finally:
             print(usage.summary())

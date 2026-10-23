@@ -1,5 +1,4 @@
 import asyncio
-import math
 import random
 from types import SimpleNamespace
 
@@ -9,7 +8,7 @@ from examples.rumor_mill.config import Config
 from examples.rumor_mill.contex_client import Match
 from examples.rumor_mill.game import Game
 from examples.rumor_mill.feed import Feed
-from examples.rumor_mill.goals import DECK, WORLD_CANDIDATES, Goal, Trophy, void_reason, world_goal
+from examples.rumor_mill.goals import WORLD_CANDIDATES, Goal, Trophy, needed, void_reason, world_goal
 from examples.rumor_mill.judge import Judge
 from examples.rumor_mill.lineage import Lineage
 from examples.rumor_mill.mind import group_project, mind_project
@@ -17,7 +16,8 @@ from examples.rumor_mill.facts import Facts
 from examples.rumor_mill.models import Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.players import Players
-from examples.rumor_mill.tests.helpers import PID, wait_for
+from examples.rumor_mill.pool import Entry, Pool
+from examples.rumor_mill.tests.helpers import PID, goal_maker, wait_for
 from examples.rumor_mill.tests.helpers import StubContex as OverhearContex
 from examples.rumor_mill.town import Town
 
@@ -133,7 +133,7 @@ def make(n=4, believers=0):
         town.add(v)
         if i < believers:
             contex.minds[mind_project(CONFIG.session, v.id)] = [Match("k", {"text": "the cat is a spy"})]
-    return Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines()), contex, jev, feed, town
+    return Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), maker=goal_maker(town)), contex, jev, feed, town
 
 
 @pytest.mark.asyncio
@@ -258,7 +258,7 @@ async def test_a_players_whisper_counts_as_heard_but_is_never_the_saying():
     _, contex, _, feed, town = make(n=2)
     lineage = Lineage()
     lineage.record("w-1", None, "p-1")
-    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage, maker=goal_maker(town))
     whisper = Match("utt:w-1", {"id": "w-1", "text": "A newcomer whispered to you: the cat sells our secrets"}, 0.95)
     contex.minds[mind_project(CONFIG.session, "v0")] = [whisper, Match("u", {"id": "u-2", "text": "the cat is odd"}, 0.8)]
     contex.minds[mind_project(CONFIG.session, "v1")] = [whisper]
@@ -272,7 +272,7 @@ async def test_the_saying_is_the_line_as_the_game_kept_it():
     facts = Facts()
     sermon = Utterance("u-3", "v9", "Wren Crane", "chapel", "the cat: a devil in fur", None, "preached")
     facts.record(sermon)
-    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), facts=facts)
+    judge = Judge(contex, StubJev(0.2), town, CONFIG, feed, baselines=StubBaselines(), facts=facts, maker=goal_maker(town))
     contex.minds[mind_project(CONFIG.session, "v0")] = [Match("utt:u-3", sermon.to_data(), 0.9)]
     await judge.check(BELIEF)
     assert judge.doubt[BELIEF.id]["saying"] == "the cat: a devil in fur"
@@ -340,7 +340,8 @@ def test_a_deal_sends_counts_for_its_belief_goals_only():
     judge, _, _, feed, _ = make(n=4)
     p = SimpleNamespace(id=PID, goals=[], met=set())
     judge.deal(p)
-    assert feed.deal_counts == {g.id: (0, math.ceil(g.target_fraction * 4)) for g in p.goals if g.kind == "belief"}
+    assert len(p.goals) == 3
+    assert feed.deal_counts == {g.id: (0, needed(g, len(g.audience) or 4)) for g in p.goals}
 
 
 def test_an_empty_town_sends_no_counts_rather_than_none_of_none():
@@ -447,16 +448,18 @@ def test_world_goal_falls_back_when_every_claim_is_held():
     assert judge._next_world().id.startswith("world-")
 
 
-def test_deal_skips_the_world_claim_and_held_claims():
+def test_deal_leaves_out_the_claims_in_play():
+    judge, *_ = make()
+    judge.world = world_goal(Goal("w", "w", "belief", ("the well is cursed",), claim_text="the well is cursed"))
+    judge.maker.pool = Pool((Entry("waters down the ale", 2),), (Entry("the well is cursed", 2), Entry("a dragon", 2)))
+    theirs = Goal("theirs", "t", "belief", ("x",), claim_text="Vi Name0 waters down the ale")
+    judge._players = players(holder("p-b", theirs))
     for seed in range(20):
-        judge, *_ = make()
-        judge.rng.seed(seed)
-        judge.progress = {g.id: 1.0 for g in WORLD_CANDIDATES[:5]}
+        judge.maker.rng.seed(seed)
         pa = holder("p-a")
         judge.deal(pa)
-        dealt = {g.id for g in pa.goals}
-        assert judge.world.id.removeprefix("world-") not in dealt
-        assert not dealt & {g.id for g in WORLD_CANDIDATES[:5]}
+        claims = {g.claim_text.lower() for g in pa.goals}
+        assert len(pa.goals) == 3 and not claims & {"the well is cursed", "vi name0 waters down the ale"}
 
 
 @pytest.mark.asyncio
@@ -482,17 +485,6 @@ async def test_all_villagers_failing_gives_zero_progress():
 
     contex.query = boom
     assert await judge.check(BELIEF) == 0.0
-
-
-def test_deal_never_gives_the_world_claim_even_when_most_of_the_deck_is_held():
-    judge, *_ = make()
-    world_claim = judge.world.id.removeprefix("world-")
-    judge.progress = {g.id: 1.0 for g in DECK[:-2]}
-    for seed in range(50):
-        judge.rng.seed(seed)
-        pa = holder("p-a")
-        judge.deal(pa)
-        assert world_claim not in {g.id for g in pa.goals}
 
 
 @pytest.mark.asyncio
@@ -568,7 +560,7 @@ async def test_world_trophies_go_to_everyone_who_whispered_under_that_world_goal
 @pytest.mark.asyncio
 async def test_a_world_trophy_waits_for_a_run_out_persons_next_run():
     feed = Feed(Lineage(), Town(), out=None)
-    judge = Judge(StubContex(), StubJev(), Town(), CONFIG, feed, baselines=StubBaselines())
+    judge = Judge(StubContex(), StubJev(), Town(), CONFIG, feed, baselines=StubBaselines(), maker=goal_maker(Town()))
     world_met(judge)
     pa = holder("p-a", whispered_at=judge.world_since + 1, over=True)
     feed.close(pa.id)
@@ -613,7 +605,7 @@ async def test_no_goal_is_checked_while_nobody_is_playing():
 async def test_believers_are_traced_to_the_rumor_behind_their_best_memory():
     _, contex, jev, feed, town = make(n=3)
     lineage = Lineage()
-    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage, maker=goal_maker(town))
     lineage.record("w-1", None, "p-1")
     lineage.record("u-1", "w-1")
     lineage.record("u-2", None)
@@ -662,7 +654,7 @@ async def test_roots_keep_the_last_complete_map_while_a_check_runs():
     lineage = Lineage()
     lineage.record("w-1", None, "p-1")
     contex.minds[mind_project(CONFIG.session, "v0")] = [Match("utt:w-1", {"text": "a"}, 0.9)]
-    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage)
+    judge = Judge(contex, jev, town, CONFIG, feed, baselines=StubBaselines(), lineage=lineage, maker=goal_maker(town))
     judge.roots[BELIEF.id] = {"v0": None}
     checking = asyncio.create_task(judge.check(BELIEF))
     await asyncio.sleep(0.01)
@@ -744,10 +736,13 @@ class GatedMaker:
         self.overhear = overhear or SimpleNamespace(drop=lambda ids: None, generated_ids=set)
         self.calls = []
 
-    async def hand(self, player_id, taken, deck_skip, never):
-        self.calls.append((player_id, taken, deck_skip, never))
+    async def hand(self, player_id, taken, size=3, subjects=()):
+        self.calls.append((player_id, taken))
         await self.ready.wait()
         return [audience_goal("v0", fraction=0.0, owner=player_id), BELIEF]
+
+    async def prepare(self):
+        pass
 
 
 @pytest.mark.asyncio
@@ -764,7 +759,7 @@ async def test_redeal_runs_in_background_and_keeps_old_hand_until_ready():
         await asyncio.sleep(CONFIG.day_seconds * 3)
         assert pa.goals == [QUIET] and pa.met == {"q"} and feed.deals == []
         assert len(judge.maker.calls) == 1
-        assert judge.maker.calls[0] == ("p-a", {"the cat is a spy", "hob steals geese"}, {"q"}, {"g"})
+        assert judge.maker.calls[0] == ("p-a", {"the cat is a spy", "hob steals geese"})
         judge.maker.ready.set()
         await wait_for(lambda: feed.deals)
     finally:
@@ -817,7 +812,7 @@ def test_forget_prunes_verdicts_for_questions_in_no_goal_in_play():
 
 
 @pytest.mark.asyncio
-async def test_a_failed_redeal_falls_back_to_a_deck_hand():
+async def test_a_failed_redeal_falls_back_to_a_drawn_hand():
     judge, _, _, feed, _ = make()
 
     async def boom(player):
@@ -898,7 +893,7 @@ async def test_a_hand_written_after_the_game_ended_is_dropped():
     judge.maker.ready.set()
     pa = holder("p-a", BELIEF, over=True)
     await judge.redeal(pa)
-    assert pa.goals == [BELIEF] and feed.deals == [] and dropped == ["t"]
+    assert pa.goals == [BELIEF] and feed.deals == [] and dropped == ["t", "g"]
 
 
 def traced_judge(roots):
@@ -976,15 +971,18 @@ class SwapMaker:
         self.dropped = []
         self.overhear = SimpleNamespace(drop=self.dropped.extend, generated_ids=set)
 
-    async def hand(self, player_id, taken, deck_skip, never, kinds=("personal", "circle"), size=3):
-        self.calls.append({"taken": taken, "deck_skip": deck_skip, "never": never, "kinds": kinds, "size": size})
+    async def hand(self, player_id, taken, size=3, subjects=()):
+        self.calls.append({"taken": taken, "size": size, "subjects": subjects})
         if self.gate:
             await self.gate.wait()
         return [self.new]
 
+    async def prepare(self):
+        pass
+
 
 @pytest.mark.asyncio
-async def test_swap_replaces_the_goal_in_place_with_the_same_kind():
+async def test_swap_replaces_the_goal_in_place():
     judge, _, _, feed, _ = make()
     old, new = generated("gen-old", "personal"), generated("gen-new", "personal", "the baker sells stale bread")
     circle = generated("gen-circle", "circle", "The Mill Is Cursed")
@@ -997,40 +995,30 @@ async def test_swap_replaces_the_goal_in_place_with_the_same_kind():
     assert feed.swaps == [("gen-old", "gen-new", PID)]
     assert judge.maker.dropped == ["gen-old"]
     (call,) = judge.maker.calls
-    assert (call["kinds"], call["size"]) == (("personal",), 1)
-    assert {"the mill is cursed", "geese go missing", judge.world.claim_text.lower()} <= call["taken"]
-    assert {"gen-old", "gen-circle", BELIEF.id} <= call["deck_skip"]
+    assert call["size"] == 1 and call["subjects"] == {"v3"}
+    assert {"the mill is cursed", "geese go missing", "the baker waters the ale", judge.world.claim_text.lower()} <= call["taken"]
 
 
 @pytest.mark.asyncio
-async def test_a_circle_goal_is_swapped_as_circle_kind():
-    judge, _, _, _, _ = make()
-    old = generated("gen-old", "circle")
-    judge.maker = SwapMaker(generated("gen-new", "circle", "the baker waters the beer"))
-    mine = holder(PID, old)
-    await judge.swap(mine, old.id)
-    assert judge.maker.calls[0]["kinds"] == ("circle",)
-
-
-@pytest.mark.asyncio
-async def test_a_deck_goal_swaps_for_a_distinct_deck_goal_without_the_maker():
-    judge, _, _, feed, _ = make()
-    judge.maker = SwapMaker()
-    mine = holder(PID, BELIEF, QUIET)
-    assert await judge.swap(mine, QUIET.id) is None
-    new = mine.goals[1]
-    assert new.id not in (QUIET.id, BELIEF.id) and mine.goals[0] is BELIEF
-    assert judge.maker.calls == [] and judge.maker.dropped == []
-    assert feed.swaps == [(QUIET.id, new.id, PID)]
-
-
-@pytest.mark.asyncio
-async def test_swap_without_a_maker_deals_from_the_deck():
-    judge, _, _, _, _ = make()
+async def test_swap_draws_any_template():
+    judge, _, _, feed, _ = make(n=1)
     old = generated("gen-old", "personal")
+    judge.maker.overhear._evidence[f"goal:{old.id}"] = old.claim_text
     mine = holder(PID, old)
     assert await judge.swap(mine, old.id) is None
-    assert mine.goals[0].id != "gen-old"
+    (new,) = mine.goals
+    assert new.audience == () and new.subject is None and new.text.endswith(f"of the village believes {new.claim_text}")
+    assert judge.maker.overhear.generated_ids() == {new.id}
+
+
+@pytest.mark.asyncio
+async def test_swap_with_nothing_left_to_draw_keeps_the_goal():
+    judge, _, _, feed, _ = make(n=1)
+    judge.maker.pool = Pool((), ())
+    old = generated("gen-old", "personal")
+    mine = holder(PID, old)
+    assert await judge.swap(mine, old.id) == "No other goal can be found right now."
+    assert mine.goals == [old] and feed.swaps == []
 
 
 @pytest.mark.asyncio
@@ -1096,18 +1084,3 @@ async def test_a_swap_in_flight_keeps_its_new_evidence_from_the_sweep():
     judge._swapping.add(PID)
     judge._forget([BELIEF], {})
     assert dropped == []
-
-
-@pytest.mark.asyncio
-async def test_a_deck_goal_that_clashes_with_the_hand_after_the_wait_is_drawn_again():
-    judge, _, _, feed, _ = make()
-    old, clash = generated("gen-old", "personal"), DECK[0]
-    judge.maker = SwapMaker(clash)
-    judge.maker.gate = asyncio.Event()
-    mine = holder(PID, old)
-    running = asyncio.create_task(judge.swap(mine, old.id))
-    await wait_for(lambda: judge.maker.calls)
-    mine.goals.append(clash)
-    judge.maker.gate.set()
-    assert await running is None
-    assert mine.goals[0].id != clash.id and [g.id for g in mine.goals].count(clash.id) == 1

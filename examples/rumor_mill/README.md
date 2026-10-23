@@ -139,7 +139,7 @@ whisper <name>: <text>    the same
 villagers                 everyone in town, with occupation and place
 inspect <name>            personality, any grudge, and relationships
 goals                     your goals, numbered, and how close each one is
-swap <n>                  swap unmet goal n for a new one of its kind
+swap <n>                  swap unmet goal n for a new one
 usage                     tokens used so far and their estimated cost
 help                      these commands
 quit
@@ -277,8 +277,10 @@ change, and the providers' bills are the real numbers.
 
 Where the tokens go:
 
-- Setup: Haiku writes the village once per seed file, and writes each newcomer
-  who arrives after someone leaves.
+- Setup: Haiku writes the village once per seed file, the goal pool once
+  beside it, and each newcomer who arrives after someone leaves.
+- Each hand after the first, and each swap: two Jev requests per goal about a
+  villager, one for the accusation and one for who it works on.
 - Each time a villager wakes: one Jev request to decide what they do, plus a
   short Haiku call (at most 80 tokens out) when they speak, and a slightly
   longer one when they found a group.
