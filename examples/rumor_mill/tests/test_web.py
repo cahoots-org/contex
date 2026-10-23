@@ -746,10 +746,10 @@ def test_the_page_has_the_conversation_dock(game):
     assert ".reply" not in re.search(r"const ROVE = (.*);", html).group(1)
 
 
-def test_a_reply_whose_dock_entry_is_gone_still_joins_its_conversation(game):
+def test_a_whisper_the_server_puts_in_a_rumor_never_gets_a_row(game):
     html = game.client.get("/").text
     whisper = re.search(r'case "whisper":(.*?)case "hop"', html, re.S).group(1)
-    assert "if (e.conversation && cardOf.has(e.conversation)) joinConversation(e);" in whisper
+    assert "if (e.conversation) joinConversation(e);" in whisper
     join = re.search(r"function joinConversation\(e\) \{(.*?)\n\}", html, re.S).group(1)
     assert join.index("cardOf.set(") < join.index("if (!entry) return;")
 
