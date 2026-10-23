@@ -737,7 +737,7 @@ async def test_void_goal_replaced_when_mark_leaves():
 class GatedMaker:
     def __init__(self, overhear=None):
         self.ready = asyncio.Event()
-        self.overhear = overhear or SimpleNamespace(drop=lambda ids: None)
+        self.overhear = overhear or SimpleNamespace(drop=lambda ids: None, generated_ids=set)
         self.calls = []
 
     async def hand(self, player_id, taken, deck_skip, never):
@@ -778,8 +778,66 @@ async def test_forget_drops_generated_evidence():
     judge, _, _, _, _ = make()
     judge.maker = GatedMaker(overhear)
     judge.progress = {gen.id: 0.5, BELIEF.id: 0.5}
-    judge._forget({BELIEF.id}, {})
+    judge._forget([BELIEF], {})
     assert overhear._evidence == {f"goal:{BELIEF.id}": "cat spy"}
+
+
+@pytest.mark.asyncio
+async def test_forget_drops_generated_evidence_that_never_reached_a_check():
+    overhear = Overhear(OverhearContex(), StubBaselines(), CONFIG, random.Random(1))
+    gen = Goal("gen-p-1-goal-1", "they believe", "belief", ("hob steals geese",), owner="p-1")
+    await overhear.publish([gen, BELIEF])
+    judge, _, _, _, _ = make()
+    judge.maker = GatedMaker(overhear)
+    judge._forget([BELIEF], {})
+    assert overhear._evidence == {f"goal:{BELIEF.id}": "cat spy"}
+
+
+@pytest.mark.asyncio
+async def test_forget_keeps_generated_evidence_while_a_hand_is_being_written():
+    overhear = Overhear(OverhearContex(), StubBaselines(), CONFIG, random.Random(1))
+    gen = Goal("gen-p-1-goal-1", "they believe", "belief", ("hob steals geese",), owner="p-1")
+    await overhear.publish([gen])
+    judge, _, _, _, _ = make()
+    judge.maker = GatedMaker(overhear)
+    judge._dealing["p-1"] = asyncio.get_running_loop().create_future()
+    judge._forget([BELIEF], {})
+    assert f"goal:{gen.id}" in overhear._evidence
+
+
+def test_forget_prunes_verdicts_for_questions_in_no_goal_in_play():
+    judge, _, _, _, _ = make()
+    judge._verdicts = {("Does it believe?", "v0", frozenset("k")): True, ("gone?", "v0", frozenset("k")): True}
+    judge._forget([BELIEF], {})
+    assert list(judge._verdicts) == [("Does it believe?", "v0", frozenset("k"))]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_redeal_falls_back_to_a_deck_hand():
+    judge, _, _, feed, _ = make()
+
+    async def boom(player):
+        raise RuntimeError("haiku down")
+
+    judge.redeal = boom
+    pa = holder("p-a", BELIEF)
+    judge._start_redeal(pa)
+    await wait_for(lambda: feed.deals)
+    assert len(pa.goals) == 3
+    assert judge._dealing == {} and pa.met == set()
+
+
+@pytest.mark.asyncio
+async def test_a_met_goal_is_not_voided_when_its_mark_leaves():
+    judge, _, _, feed, town = make(n=4)
+    feed.voids = []
+    feed.on_goal_void = lambda old, new, reason, player, counts=None: feed.voids.append(old.id)
+    mark = audience_goal("v0", fraction=0.0)
+    mine = holder(PID, mark, QUIET)
+    mine.met = {mark.id}
+    town.remove("v0")
+    judge._replace_void(mine)
+    assert feed.voids == [] and mine.goals == [mark, QUIET]
 
 
 async def pending_redeal(judge, pa, feed, town=None):
@@ -832,7 +890,7 @@ async def test_no_second_trophy_while_a_redeal_is_pending():
 async def test_a_hand_written_after_the_game_ended_is_dropped():
     judge, _, _, feed, _ = make()
     dropped = []
-    judge.maker = GatedMaker(SimpleNamespace(drop=dropped.extend))
+    judge.maker = GatedMaker(SimpleNamespace(drop=dropped.extend, generated_ids=set))
     judge.maker.ready.set()
     pa = holder("p-a", BELIEF, over=True)
     await judge.redeal(pa)

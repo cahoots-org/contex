@@ -242,10 +242,10 @@ class Judge:
         self.feed.on_deal(player.goals, player=player.id, counts=counts)
 
     def _replace_void(self, player: Player) -> None:
-        """Swap each of the player's goals that can no longer be met for a deck goal, and tell the player."""
+        """Swap each of the player's unmet goals that can no longer be met for a deck goal, and tell the player."""
         for i, old in enumerate(player.goals):
             reason = void_reason(old, self.town)
-            if reason is None:
+            if reason is None or old.id in player.met:
                 continue
             skip = self.held() | {g.id for g in player.goals}
             new = deal(self.rng, 1, skip=skip, never={self.world.id.removeprefix("world-")})[0]
@@ -328,7 +328,7 @@ class Judge:
                     self.world_since = time.time()
                     self.whisperers = set()
                     self.feed.on_world(self.world, self.counts_of(self.world))
-            self._forget({g.id for p in playing for g in p.goals} | {self.world.id}, holds)
+            self._forget([g for p in playing for g in p.goals] + [self.world], holds)
 
     def _unseen(self, player: Player) -> str | None:
         """The name of the first subject among the player's goals whose suspicion of them stayed below the warn line."""
@@ -345,7 +345,15 @@ class Judge:
             return
         task = asyncio.create_task(self.redeal(player))
         self._dealing[player.id] = task
-        task.add_done_callback(lambda _: self._dealing.pop(player.id, None))
+        task.add_done_callback(lambda done: self._redealt(player, done))
+
+    def _redealt(self, player: Player, task: asyncio.Task) -> None:
+        """Stop tracking the player's finished redeal; if it failed, deal them a deck hand instead."""
+        self._dealing.pop(player.id, None)
+        if task.cancelled() or task.exception() is None or player.over():
+            return
+        log.error("redealing %s failed", player.id, exc_info=task.exception())
+        self.deal(player)
 
     def _moved(self, goal_id: str, player_id: str, before: dict[str, str | None]) -> str | None:
         """The player's whisper that gained the goal the most believers since before, or None if none gained any."""
@@ -364,15 +372,17 @@ class Judge:
     def _day(self) -> int:
         return self.game.day if self.game else 0
 
-    def _forget(self, in_play: set[str], holds: dict[str, int]) -> None:
+    def _forget(self, in_play: list[Goal], holds: dict[str, int]) -> None:
         """Drop what is known of goals no longer in play, so a claim dealt again starts over."""
-        gone: set[str] = set()
+        ids = {g.id for g in in_play}
         for known in (self.progress, self.counts, self.roots, self.doubt, holds):
-            for gid in known.keys() - in_play:
-                gone.add(gid)
+            for gid in known.keys() - ids:
                 del known[gid]
-        if self.maker is not None:
-            self.maker.overhear.drop([gid for gid in gone if gid.startswith("gen-")])
+        questions = {g.believer_question for g in in_play}
+        self._verdicts = {k: v for k, v in self._verdicts.items() if k[0] in questions}
+        # A hand being written has published evidence for goals not yet in play.
+        if self.maker is not None and not self._dealing:
+            self.maker.overhear.drop(self.maker.overhear.generated_ids() - ids)
 
     def percents(self, goals: list[Goal]) -> list[tuple[str, int]]:
         """Each goal's text and whole percent progress."""

@@ -48,6 +48,10 @@ class Overhear:
         for gid in goal_ids:
             self._evidence.pop(f"goal:{gid}", None)
 
+    def generated_ids(self) -> set[str]:
+        """The ids of the generated goals whose evidence is held."""
+        return {k.removeprefix("goal:") for k in self._evidence if k.startswith("goal:gen-")}
+
     async def keep(
         self, utterance: Utterance, player_place: str, hop: bool = False, goals: Collection[str] = (),
         listening: bool = False,
