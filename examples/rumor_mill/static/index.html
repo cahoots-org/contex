@@ -347,8 +347,9 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .swap:hover:not(:disabled) { color: var(--ink); background: var(--rail); }
 .swap:disabled { cursor: default; opacity: .25; }
 @media (hover: none) { .swap { opacity: .6; } .swap:disabled { opacity: .25; } }
-.goal-text, .doubt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.goal-text { font-size: .85rem; }
+.doubt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+/* A goal is read whole: the card grows to fit it rather than cutting it short. */
+.goal-text { font-size: .85rem; overflow-wrap: anywhere; }
 .doubt { margin: 0; font-size: .75rem; color: var(--muted); }
 .bar { margin-top: auto; display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: var(--muted); }
 .bar span:first-child { flex: 1; height: 4px; background: var(--rail); border-radius: 3px; overflow: hidden; }
@@ -1763,7 +1764,7 @@ function goalCard(g, label, swapId = null) {
   return [
     el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null,
       swapId && !g.met ? swapButton(swapId) : null),
-    el("div", { className: "goal-text", textContent: g.text, title: g.text }),
+    el("div", { className: "goal-text", textContent: g.text }),
     doubtLine(g),
     el("div", { className: "bar" },
       el("span", { role: "progressbar", ariaLabel: g.text, ariaValueNow: g.percent, ariaValueMin: 0, ariaValueMax: 100, ariaValueText: shown },
