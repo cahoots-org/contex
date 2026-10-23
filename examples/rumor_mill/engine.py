@@ -119,8 +119,8 @@ class Engine:
         self._turns = asyncio.Semaphore(config.turn_concurrency)
         # Care checks on the listeners of one-to-one rumor hops.
         self._following: set[asyncio.Task] = set()
-        # Each (subject, player, rumor root) already traced, the goals whose subject has denied, and the denials running.
-        self._traced: set[tuple[str, str, str]] = set()
+        # The share of a whisper's suspicion each (subject, player, rumor root) has taken on, the goals whose subject has denied, and the denials running.
+        self._traced: dict[tuple[str, str, str], float] = {}
         self._denied: set[str] = set()
         self._denials: set[asyncio.Task] = set()
         if rumors is not None:
@@ -416,18 +416,19 @@ class Engine:
     def traced(self, goal: Goal, subject_id: str, uid: str) -> None:
         """The goal's subject holds a memory descending from the owner's whisper: they suspect the owner of it.
 
-        Counts once per rumor, by hops from the whisper. A subject who crosses into wariness of the owner denies the
+        A rumor adds its closest hop's share in all, by hops from the whisper. A subject who crosses into wariness of the owner denies the
         rumor to the goal's audience, once per goal.
         """
         key = (subject_id, goal.owner, self.lineage.root(uid))
-        if key in self._traced:
-            return
-        self._traced.add(key)
-        before = self.suspicion.score(subject_id, goal.owner)
         scale = TRACE_SCALE.get(self.lineage.depth(uid) + 1, 0)
+        if scale <= self._traced.get(key, 0):
+            return
+        before = self.suspicion.score(subject_id, goal.owner)
         after = self.suspicion.bump(
-            subject_id, goal.owner, self.config.suspicion_whisper_bump * scale, "traced it to you", uid,
+            subject_id, goal.owner, (scale - self._traced.get(key, 0)) * self.config.suspicion_whisper_bump,
+            "traced it to you", uid,
         )
+        self._traced[key] = scale
         if before < self.config.warn_threshold <= after and goal.id not in self._denied:
             self._denied.add(goal.id)
             task = asyncio.create_task(self._deny(goal, subject_id))

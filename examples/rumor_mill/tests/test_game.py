@@ -617,9 +617,38 @@ async def test_subject_hearing_owner_rumor_bumps_by_hops():
 @pytest.mark.asyncio
 async def test_trace_bump_once_per_root():
     engine, goal, _, _ = await traced_engine()
-    engine.traced(goal, "v1", "w3-2")
     engine.traced(goal, "v1", "w3-1")
-    assert engine.suspicion.score("v1", PID) == pytest.approx(engine.config.suspicion_whisper_bump / 4)
+    engine.traced(goal, "v1", "w3-1")
+    engine.traced(goal, "v1", "w3-2")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(engine.config.suspicion_whisper_bump / 2)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_closer_memory_of_a_traced_root_tops_up_the_bump():
+    engine, goal, _, _ = await traced_engine()
+    bump = engine.config.suspicion_whisper_bump
+    engine.traced(goal, "v1", "w4-3")
+    assert engine.suspicion.score("v1", PID) == 0
+    engine.traced(goal, "v1", "w4")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(bump)
+    engine.traced(goal, "v1", "w3-2")
+    engine.traced(goal, "v1", "w3")
+    assert engine.suspicion.score("v1", PID) == pytest.approx(bump * 2)
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_second_crossing_for_the_same_goal_denies_nothing_more():
+    engine, goal, _, spoken = await traced_engine()
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold - 0.01, "x")
+    engine.traced(goal, "v1", "w1")
+    await wait_for(lambda: spoken)
+    engine.suspicion.decay(100)
+    engine.suspicion.bump("v1", PID, engine.config.warn_threshold - 0.01, "x")
+    engine.traced(goal, "v1", "w2")
+    await asyncio.sleep(0.05)
+    assert len(spoken) == 1
     await engine.stop()
 
 
