@@ -25,6 +25,7 @@ from examples.rumor_mill.models import Group, Utterance, Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.players import Players
+from examples.rumor_mill.rapport import Rapport
 from examples.rumor_mill.routine import Routine
 from examples.rumor_mill.rumors import Rumors
 from examples.rumor_mill.scenes import SCENE_SPEECH, Scene, Scenes
@@ -81,6 +82,7 @@ class Engine:
         self.facts = facts or Facts()
         self.hints = Hints(contex, config)
         self.suspicion = Suspicion(config, town)
+        self.rapport = Rapport(config)
         self.scenes = Scenes(config, town, random.Random())
         self.baselines = baselines
         self.rumors = rumors

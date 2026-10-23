@@ -30,6 +30,7 @@ REASON_LINES = {
     "was warned about the newcomer": "{} was warned about you.",
     "asked questions": "{} noticed you asking questions.",
     "stormed off": "{} stormed off on you.",
+    "lost patience with you": "{} lost patience with you.",
     "traced it to you": "{} traced a rumor back to you.",
 }
 

@@ -15,6 +15,7 @@ from examples.rumor_mill.models import Villager
 from examples.rumor_mill.overhear import Overhear
 from examples.rumor_mill.player import Player
 from examples.rumor_mill.pool import DEFAULT_ACCUSATIONS, DEFAULT_CLAIMS, Entry, Pool
+from examples.rumor_mill.rapport import Rapport
 from examples.rumor_mill.suspicion import Suspicion
 from examples.rumor_mill.town import Town
 
@@ -140,6 +141,7 @@ class FakeEngine:
         self.contex = contex or StubContex()
         self.baselines = baselines or StubBaselines(0.5)
         self.hints = Hints(self.contex, Config())
+        self.rapport = Rapport(Config())
         self.direct = []
         self.rumors = None
         self.facts = Facts()

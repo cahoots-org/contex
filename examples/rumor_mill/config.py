@@ -82,6 +82,20 @@ class Config:
     hint_margin: float = 0.0
     # How close under a threshold a line must fall to count as a near miss.
     near_miss_band: float = 0.01
+    # How a whisper moves a villager's interest in its rumor: a hit, a near miss from the band's bottom to the bar,
+    # and a brush-off.
+    interest_hit: float = 0.4
+    interest_near_min: float = 0.1
+    interest_near_max: float = 0.25
+    interest_brush_off: float = -0.35
+    # The share of each interest change that moves her rapport with the player.
+    rapport_share: float = 0.1
+    # Interest at or below which she ends the conversation.
+    interest_end: float = -0.6
+    # Interest in the open rumor at or below which she has had enough of the player.
+    interest_annoyed: float = -0.3
+    # How much her rapport drops when she runs out of patience.
+    rapport_lost_patience: float = -0.2
 
     @property
     def memory_seconds(self) -> int:

@@ -117,6 +117,9 @@ class StubWriter:
             raise line
         return line
 
+    async def lose_patience(self, villager):
+        return self.lines.pop(0)
+
     async def go_on(self, villager, newcomer_line):
         line = self.lines.pop(0)
         if isinstance(line, Exception):
@@ -154,6 +157,7 @@ async def brush_off_once(player, lines):
 async def test_misses_brush_off_with_unused_concerns_and_cycles():
     writer = StubWriter("Wheel's groaning.", "Girl wants the city.", "Rats again.", "Wheel again.")
     player, lines = make_hinting(writer)
+    player.config = replace(player.config, interest_brush_off=0.0)
     for _ in range(4):
         await brush_off_once(player, lines)
     assert writer.concerns == [NEEDS[0], NEEDS[1], NEEDS[2], NEEDS[0]]
@@ -527,7 +531,7 @@ async def test_a_missed_reply_leaves_a_newer_conversation_open():
     conversations = player.engine.conversations
     conversations[("v1", PID)] = {"id": "w-0", "answered": ["w-0"]}
 
-    async def miss_after_a_new_conversation_opens(target, utterance, since, hint_need=None):
+    async def miss_after_a_new_conversation_opens(target, utterance, since, hint_need=None, bar_drop=0.0):
         conversations[("v1", PID)] = {"id": "w-9", "answered": ["w-9"]}
         return []
 
@@ -582,11 +586,15 @@ async def test_the_same_score_misses_a_need_that_was_not_hinted():
 
 
 @pytest.mark.asyncio
-async def test_a_thread_takes_two_whispers_then_starts_a_new_card():
-    player = hinted_player("Wheel's groaning.", "Girl wants the city.", "Rats again.")
-    for _ in range(3):
+async def test_a_lean_in_thread_has_no_whisper_cap():
+    player = near_missing_player("Go on.", "Go on.", "Go on.", "Go on.")
+    player.config = replace(player.config, match_margin=0.0)
+    for i in range(1, 5):
+        player.engine.contex = StubContex({NEEDS[0]: landing(0.4905, f"utt:w-{i}")})
         await miss(player)
-    assert conversations(player) == [None, "w-1", None]
+    assert conversations(player) == [None, "w-1", "w-1", "w-1"]
+    missed = [s for s in statuses(player) if s["state"] != "checking"]
+    assert {s["state"] for s in missed} == {"near_miss"} and all(s["continues"] for s in missed)
 
 
 @pytest.mark.asyncio
@@ -623,8 +631,9 @@ async def test_a_thread_closes_after_a_quiet_talk_hold():
 
 @pytest.mark.asyncio
 async def test_a_reply_raises_suspicion_like_any_whisper():
-    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
+    player = near_missing_player("Go on.", "Go on.")
     await miss(player)
+    player.engine.contex = StubContex({NEEDS[0]: landing(0.495, "utt:w-2")})
     await miss(player)
     assert player.engine.suspicion.score("v1", PID) == pytest.approx(2 * player.config.suspicion_whisper_bump)
 
@@ -659,39 +668,67 @@ async def test_a_near_miss_leans_in_and_opens_a_thread():
 
 
 @pytest.mark.asyncio
-async def test_a_near_miss_on_the_last_try_is_a_brush_off():
-    player = near_missing_player("Wheel's groaning.", "Girl wants the city.")
-    await miss(player)
-    player.engine.contex = StubContex({NEEDS[1]: landing(0.495, "utt:w-2")})
-    await miss(player)
-    assert [s["state"] for s in statuses(player)] == ["checking", "near_miss", "near_miss", "checking", "brushed_off", "brushed_off"]
-    assert "v1" not in player._threads
-
-
-@pytest.mark.asyncio
 async def test_a_miss_says_whether_the_next_whisper_continues_it():
-    player = near_missing_player("Wheel's groaning.", "Girl wants the city.")
+    player = hinted_player("Wheel's groaning.", "Enough.")
     await miss(player)
-    player.engine.contex = StubContex({NEEDS[1]: landing(0.495, "utt:w-2")})
     await miss(player)
-    assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True, True, False, False]
+    assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True, True, False]
+
+
+def interest(player, rumor="w-1"):
+    return player.engine.rapport.interest("v1", PID, rumor)
 
 
 @pytest.mark.asyncio
-async def test_a_miss_reads_the_thread_as_it_stands_after_the_check():
-    player = hinted_player("Wheel's groaning.", "Girl wants the city.")
-    player.config = replace(player.config, talk_hold_seconds=0.05)
-    await miss(player)
-    check = player.check
+async def test_interest_rises_on_hits_and_near_misses_and_falls_on_brush_offs():
+    config = Config()
+    hit = hinted_player()
+    hit.engine.contex = StubContex({NEEDS[0]: landing(0.8)})
+    await miss(hit)
+    assert interest(hit) == pytest.approx(config.interest_hit)
+    assert hit.engine.rapport.rapport("v1", PID) == pytest.approx(config.rapport_share * config.interest_hit)
+    halfway = near_missing_player("Go on.")
+    await miss(halfway)
+    assert interest(halfway) == pytest.approx((config.interest_near_min + config.interest_near_max) / 2)
+    at_bar = near_missing_player("Go on.")
+    at_bar.engine.contex = StubContex({NEEDS[0]: landing(0.49999)})
+    await miss(at_bar)
+    assert interest(at_bar) == pytest.approx(config.interest_near_max, abs=1e-3)
+    brushed = hinted_player("Wheel's groaning.")
+    await miss(brushed)
+    assert interest(brushed) == pytest.approx(config.interest_brush_off)
 
-    async def lapse_then_check(*args):
-        await asyncio.sleep(0.06)
-        return await check(*args)
 
-    player.check = lapse_then_check
+@pytest.mark.asyncio
+async def test_lowered_bar_lands_a_near_miss_at_full_interest():
+    player = hinted_player("Wheel's groaning.")
     await miss(player)
-    assert [s.get("continues") for s in statuses(player) if s["state"] != "checking"] == [True] * 4
-    assert player._threads["v1"]["whispers"] == 1
+    player.engine.rapport.move("v1", PID, "w-1", 2.0)
+    player.engine.contex = StubContex({NEEDS[1]: landing(0.495, "utt:w-2")})
+    await player.whisper_to("v1", "the weaver's guild wants girls")
+    (vid, match), = player.engine.direct
+    assert (vid, match.data_key) == ("v1", "utt:w-2")
+
+
+@pytest.mark.asyncio
+async def test_running_out_of_patience_ends_the_conversation():
+    player = hinted_player("Wheel's groaning.", "I've no time for this.")
+    config = player.config
+    await miss(player)
+    await miss(player)
+    (stormed,) = [e for e in player.feed.recent if e.kind == "stormed_off"]
+    assert stormed.data["line"] == "I've no time for this."
+    assert [s["state"] for s in statuses(player)][-1] == "brushed_off" and "hint" not in statuses(player)[-1]
+    (bump,) = [e for e in player.engine.suspicion._evidence if e.reason == "lost patience with you"]
+    assert bump.amount == pytest.approx(config.suspicion_whisper_bump / 2)
+    assert "Aldwin Miller lost patience with you." in player.engine.suspicion.reasons(PID, 5)
+    rapport = player.engine.rapport.rapport("v1", PID)
+    assert rapport == pytest.approx(2 * config.rapport_share * config.interest_brush_off + config.rapport_lost_patience)
+    assert interest(player) == pytest.approx(rapport / 2)
+    assert player._exchange("v1") is None
+    player.engine.contex = StubContex({NEEDS[0]: landing(0.8, "utt:w-3")})
+    await player.whisper_to("v1", "the wheel is fixed")
+    assert conversations(player) == [None, "w-1", None]
 
 
 @pytest.mark.asyncio
@@ -1209,25 +1246,17 @@ async def test_no_hold_without_an_open_exchange():
 
 
 @pytest.mark.asyncio
-async def test_a_villager_is_annoyed_by_suspicion_or_two_misses_running():
+async def test_annoyed_by_low_interest_or_suspicion():
     player = await missed_once()
-    assert not player.annoyed("v1")
-    await player.whisper_to("v1", "the tide tables were misprinted again")
     assert player.annoyed("v1")
-    fresh = await missed_once()
-    fresh.engine.suspicion.bump("v1", PID, fresh.config.warn_threshold, "whispered to them directly")
-    assert fresh.annoyed("v1")
-
-
-@pytest.mark.asyncio
-async def test_a_landed_whisper_clears_the_misses():
-    player = await missed_once()
-    player.town.get("v1").needs.append("bread")
-    player.engine.contex = StubContex({"bread": landing(0.8, "utt:w-2")})
-    await player.whisper_to("v1", "the oven is cold")
-    player.engine.contex = StubContex()
-    await player.whisper_to("v1", "the tide tables were misprinted")
+    player.engine.rapport.move("v1", PID, "w-1", 0.1)
     assert not player.annoyed("v1")
+    player.engine.rapport.move("v1", PID, "w-1", -0.5)
+    player.part("v1")
+    assert not player.annoyed("v1")
+    player.engine.suspicion.bump("v1", PID, 0.3, "whispered to them directly")
+    player.config = replace(player.config, warn_threshold=0.3)
+    assert player.annoyed("v1")
 
 
 @pytest.mark.asyncio

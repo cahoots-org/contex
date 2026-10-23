@@ -26,9 +26,6 @@ MAX_WHISPER_CHARS = 500
 ECHO_WORDS = 4
 GAME_OVER = "The game is over."
 NOT_CARRIED = "The whisper didn't carry; try again."
-THREAD_WHISPERS = 2
-# Misses in a row in one exchange that wear a villager's patience.
-ANNOYING_MISSES = 2
 LISTEN_OPENING = 5
 LISTEN_LOOKBACK_DAYS = 1 / 4
 ALREADY_LISTENING = "You're already listening."
@@ -86,8 +83,6 @@ class Player:
         self._said_at: dict[str, float] = {}
         # When the player last typed in the whisper box.
         self._typed_at = 0.0
-        # Per villager, the player's misses in a row in their current exchange.
-        self._misses: dict[str, int] = {}
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
@@ -198,9 +193,9 @@ class Player:
             hint_need = thread["need"]
         rumors = self.engine.rumors
         exchange = self._exchange(target.id)
-        if exchange is None:
-            self._misses.pop(target.id, None)
         rumor = rumors.rumor_of(self.id, text, exchange) if rumors is not None else exchange
+        key = rumor or uid
+        bar_drop = max(0.0, self.engine.rapport.interest(target.id, self.id, key)) * self.config.near_miss_band
         place = self.town.place_of(target.id)
         utterance = Utterance(uid, NEWCOMER, "A newcomer", place, text, None, "whispered to you", conversation=rumor)
         self.engine.facts.record(utterance)
@@ -224,7 +219,7 @@ class Player:
             target.id, self.id, self.config.suspicion_whisper_bump, "whispered to them directly", uid,
         )
         self.feed.on_whisper_status(uid, target.id, target.name, "checking")
-        found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need), self._card(uid))
+        found, _ = await asyncio.gather(self.check(target, utterance, since, hint_need, bar_drop), self._card(uid))
         if found is None:
             self.feed.on_whisper_status(uid, target.id, target.name, "not_carried")
             return NOT_CARRIED
@@ -243,9 +238,9 @@ class Player:
             familiar = await self.engine.recall_heard(target.id, text, uid)
             hit = Match(f"utt:{uid}", utterance.to_data(), familiar[0].similarity, clearance=0.0) if familiar else None
         if hit:
-            self._misses.pop(target.id, None)
+            self.engine.rapport.move(target.id, self.id, key, self.config.interest_hit)
             self._threads.pop(target.id, None)
-            self._held[target.id] = (uid, rumor or uid)
+            self._held[target.id] = (uid, key)
             if not self.engine.hear_directly(target.id, hit):
                 return None
             until = self.engine.cooldown_ends(target.id)
@@ -254,23 +249,48 @@ class Player:
             else:
                 self.feed.on_whisper_status(uid, target.id, target.name, "heard")
         else:
-            self._misses[target.id] = self._misses.get(target.id, 0) + 1
-            current = self._thread(target.id)
-            continues = not (current and current["whispers"] + 1 >= THREAD_WHISPERS)
-            leaning = bool(near_misses) and continues
-            state = "near_miss" if leaning else "brushed_off"
+            closest = max(near_misses, key=lambda n: n[1].clearance, default=None)
+            interest = self.engine.rapport.move(target.id, self.id, key, self._miss_delta(closest))
+            continues = interest > self.config.interest_end
+            state = "near_miss" if closest else "brushed_off"
             self.feed.on_whisper_status(uid, target.id, target.name, state, continues=continues)
             open_now = self.engine.conversations.get((target.id, self.id))
             if utterance.conversation and open_now and open_now["id"] == utterance.conversation:
                 self.engine.end_conversation(target.id, self.id)
-            if leaning:
-                concern = max(near_misses, key=lambda n: n[1].clearance)[0]
-            else:
-                concern = self._next_concern(target.id)
+            if not continues:
+                await self._lose_patience(target, key)
+                return None
+            concern = closest[0] if closest else self._next_concern(target.id)
             self._extend_thread(target.id, uid, concern)
             task = asyncio.create_task(self._hint(target.id, target.name, uid, concern, state, text, continues))
             self._track(task)
         return None
+
+    def _miss_delta(self, closest: tuple[str, Match] | None) -> float:
+        """How a missed whisper moves interest: up for a near miss, more the closer it came to the bar; down for a
+        brush-off."""
+        if closest is None:
+            return self.config.interest_brush_off
+        closeness = 1 + closest[1].clearance / self.config.near_miss_band
+        low, high = self.config.interest_near_min, self.config.interest_near_max
+        return low + (high - low) * closeness
+
+    async def _lose_patience(self, target: Villager, rumor: str) -> None:
+        """The villager has had enough of the rumor: she ends the exchange, likes the player less and suspects them a
+        little."""
+        self.part(target.id)
+        self.engine.rapport.sour(target.id, self.id, self.config.rapport_lost_patience)
+        self.engine.rapport.forget(target.id, self.id, rumor)
+        self.engine.suspicion.bump(
+            target.id, self.id, self.config.suspicion_whisper_bump / 2, "lost patience with you",
+        )
+        line = None
+        if self.writer is not None:
+            try:
+                line = await self.writer.lose_patience(target) or None
+            except Exception:
+                log.exception("lose-patience line for %s failed", target.id)
+        self.feed.on_storm_off(target.id, target.name, line, player=self.id)
 
     def _marks_of(self, villager_id: str) -> list[Goal]:
         """This player's unmet claim goals about someone that the villager's belief counts toward."""
@@ -389,17 +409,16 @@ class Player:
         )
 
     def annoyed(self, villager_id: str) -> bool:
-        """Whether the villager has had enough of this player: wary of them, or missed with ANNOYING_MISSES in a row."""
-        return (
-            self.engine.suspicion.score(villager_id, self.id) >= self.config.warn_threshold
-            or self._misses.get(villager_id, 0) >= ANNOYING_MISSES
-        )
+        """Whether the villager has had enough of this player: wary of them, or tired of their open rumor."""
+        if self.engine.suspicion.score(villager_id, self.id) >= self.config.warn_threshold:
+            return True
+        rumor = self._exchange(villager_id)
+        return rumor is not None and self.engine.rapport.interest(villager_id, self.id, rumor) <= self.config.interest_annoyed
 
     def part(self, villager_id: str) -> None:
         """End every exchange this player has open with the villager."""
         self._threads.pop(villager_id, None)
         self._held.pop(villager_id, None)
-        self._misses.pop(villager_id, None)
         self.engine.end_conversation(villager_id, self.id)
 
     def _thread(self, villager_id: str) -> dict | None:
@@ -412,28 +431,22 @@ class Player:
         return thread
 
     def _extend_thread(self, villager_id: str, uid: str, concern: str | None) -> None:
-        """Open a thread on a missed whisper, or count one more on it, closing it at THREAD_WHISPERS."""
+        """Open a thread on a missed whisper, or carry the open one on to this concern."""
         thread = self._thread(villager_id)
-        if thread is None:
-            self._threads[villager_id] = {"id": uid, "need": concern, "whispers": 1, "at": time.time()}
-            return
-        thread["whispers"] += 1
-        thread["at"] = time.time()
-        thread["need"] = concern
-        if thread["whispers"] >= THREAD_WHISPERS:
-            del self._threads[villager_id]
+        self._threads[villager_id] = {"id": thread["id"] if thread else uid, "need": concern, "at": time.time()}
 
     async def check(
-        self, target: Villager, utterance: Utterance, since: str, hint_need: str | None = None,
+        self, target: Villager, utterance: Utterance, since: str, hint_need: str | None = None, bar_drop: float = 0.0,
     ) -> list[tuple[str, Match]] | None:
         """The whisper's (need, match) pairs within the near-miss band of each need's bar, None on error.
 
         Each match carries its clearance against the bar: below zero is a near miss.
         The hinted need is held to its bare baseline plus the hint margin; the rest to their full threshold.
+        Every bar is lowered by bar_drop.
         """
         key = f"utt:{utterance.id}"
         project = mind_project(self.config.session, target.id)
-        bars = {need: self._bar(need, need == hint_need) for need in target.needs}
+        bars = {need: self._bar(need, need == hint_need) - bar_drop for need in target.needs}
         floor = self.config.near_miss_band
         try:
             found = await asyncio.gather(*(

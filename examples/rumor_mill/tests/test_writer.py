@@ -78,6 +78,18 @@ async def test_storm_off_prompts_with_profile_and_returns_one_line():
 
 
 @pytest.mark.asyncio
+async def test_writer_lose_patience_is_one_line_in_temper():
+    client = StubClient('"I must be getting on, forgive me."\nSecond line.')
+    line = await Writer(client, "haiku-test").lose_patience(villager())
+    assert line == "I must be getting on, forgive me."
+    call = client.messages.calls[0]
+    assert all(s in call["system"] for s in ("Ada", "baker", "sharp-tongued"))
+    assert "a kindly villager excuses herself, a sour one cuts the newcomer off" in call["system"]
+    assert "owes me flour" not in call["system"]
+    assert call["max_tokens"] == SAY_MAX_TOKENS
+
+
+@pytest.mark.asyncio
 async def test_brush_off_prompts_with_profile_and_concern_and_returns_one_line():
     client = StubClient('"Not now, my oven is cracked."\nAnd another thing.')
     line = await Writer(client, "haiku-test").brush_off(villager(), "my oven needs a new hearthstone")

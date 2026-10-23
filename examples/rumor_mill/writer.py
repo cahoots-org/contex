@@ -161,6 +161,21 @@ class Writer:
             await self.complete(system, "You walk away from the newcomer.", max_tokens=TURN_AWAY_MAX_TOKENS)
         )
 
+    async def lose_patience(self, villager: Villager) -> str:
+        """The villager ending a conversation that has worn out her interest, in one line, in her temper."""
+        system = (
+            f"You are {villager.name}, a {villager.occupation} in a small village. "
+            f"Your personality: {villager.personality}. "
+            "The newcomer you were talking with has worn out your interest, and you end the conversation. Say so "
+            "in one short sentence, under 20 words, in your own voice and in keeping with your temperament: "
+            "a kindly villager excuses herself, a sour one cuts the newcomer off. "
+            "Name no one. "
+            "No stage directions, no quotation marks, no preamble."
+        )
+        return first_line(
+            await self.complete(system, "You have heard enough from the newcomer.", max_tokens=SAY_MAX_TOKENS)
+        )
+
     async def deny(self, villager: Villager, claim: str) -> str:
         """The villager flatly denying the claim about them, in one line."""
         system = (
