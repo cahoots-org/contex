@@ -618,6 +618,8 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
       <span><span class="badge" data-s="brushed_off" aria-hidden="true">–</span>brushed you off</span>
       <span><span class="badge" data-s="wary" aria-hidden="true">!</span>wary of you</span>
       <span><span class="badge" data-s="listening" aria-hidden="true">…</span>listening</span>
+      <span><span class="badge aim" data-s="mark" aria-hidden="true">→</span>your goal needs them</span>
+      <span><span class="badge aim" data-s="subject" aria-hidden="true">?</span>your goal is about them</span>
       <span><span class="touched" aria-hidden="true"></span><span id="legend-mark"></span>touched by the rumor you opened</span>
       <span><span class="might" aria-hidden="true"></span>this might interest them</span>
     </p>
@@ -1600,15 +1602,15 @@ function faceWith(v, big = false) {
   const { marks, subjects } = targets();
   return el("span", { className: big ? "face big" : "face", ariaHidden: "true" }, faceFor(v.id, v.occupation),
     BADGES[status] && badge(status),
-    marks.has(v.id) ? aim("mark", "your mark", "→") : null,
-    subjects.has(v.id) ? aim("subject", "the one it's about", "?") : null);
+    marks.has(v.id) ? aim("mark", "your goal needs them", "→") : null,
+    subjects.has(v.id) ? aim("subject", "your goal is about them", "?") : null);
 }
 
 // The villager's name and, when the player knows something, the status in words.
 function knownAs(v) {
   const b = BADGES[noteOf(v.id).status];
   const { marks, subjects } = targets();
-  return [v.name, b && b[1], marks.has(v.id) && "your mark", subjects.has(v.id) && "the one it's about"].filter(Boolean).join(", ");
+  return [v.name, b && b[1], marks.has(v.id) && "your goal needs them", subjects.has(v.id) && "your goal is about them"].filter(Boolean).join(", ");
 }
 
 const OUTCOMES = { lost: "The village ran you out of town." };

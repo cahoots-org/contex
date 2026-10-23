@@ -852,7 +852,7 @@ def test_state_hides_other_players_marks(game):
 
 def test_page_renders_badges_and_long_shot(game):
     html = game.client.get("/").text
-    for needle in ("your mark", "the one it's about", "Long shot", "long_shot", "goal_void", '"denied"', "was?.marks"):
+    for needle in ("your goal needs them", "your goal is about them", 'class="badge aim" data-s="mark"', "Long shot", "long_shot", "goal_void", '"denied"', "was?.marks"):
         assert needle in html
     assert "innerHTML" not in html
 
