@@ -48,6 +48,8 @@ KEPT_WHISPERS = 50
 # How many villagers set off together on their daily round, and how much of each part of the day the round spans.
 ROUTINE_BATCH = 5
 ROUTINE_SPREAD = 0.5
+# Slack under pressure_leave so pressure that adds up to the mark in floating point still counts as reaching it.
+LEAVE_TOLERANCE = 1e-9
 # How much of a whisper's suspicion a subject takes on, by hops from the whisper.
 TRACE_SCALE = {1: 1, 2: 0.5, 3: 0.25}
 MEETING = "The village meets in the square and runs the newcomer out of town."
@@ -577,8 +579,9 @@ class Engine:
                     self._gossip[v.id] = decision.gossip
                 if action in (MOVE, LEAVE_TOWN):
                     for p in holders:
-                        if forced or p.annoyed(v.id):
-                            await self._storm_off(v, p)
+                        annoyed = p.annoyed(v.id)
+                        if forced or annoyed:
+                            await self._storm_off(v, p, suspect=annoyed)
                 with charging(self._player_behind(decision.source) or payer):
                     scene, joined = await self._enter_scene(v, decision, place)
                     await act(
@@ -605,8 +608,9 @@ class Engine:
             )
         return True
 
-    async def _storm_off(self, v: Villager, player: Player) -> None:
-        """The villager breaks off with player: parting words to them alone, their exchange ended, a little suspicion."""
+    async def _storm_off(self, v: Villager, player: Player, suspect: bool = True) -> None:
+        """The villager breaks off with player: parting words to them alone, their exchange ended, and a little
+        suspicion when suspect."""
         with charging(player.id):
             try:
                 line = await self.writer.storm_off(v) or None
@@ -615,7 +619,8 @@ class Engine:
                 line = None
         self.feed.on_storm_off(v.id, v.name, line, player=player.id)
         player.part(v.id)
-        self.suspicion.bump(v.id, player.id, self.config.suspicion_whisper_bump / 2, "stormed off")
+        if suspect:
+            self.suspicion.bump(v.id, player.id, self.config.suspicion_whisper_bump / 2, "stormed off")
 
     def acted(self, decision: Decision, vid: str, target: str | None, creed: str | None = None) -> None:
         """Tell the judge of the villager's action and the player behind it: for leaving town, the one who pressed
@@ -633,7 +638,7 @@ class Engine:
         line = self.facts.get(m.data.get("id"))
         tie = self.config.pressure_tie_factor if line is not None and line.speaker in v.relationships else 1.0
         amount = self.config.pressure_per_hearing * ((decision.sting or 0.0) * tie + (decision.fear or 0.0))
-        return self.pressure.add(v.id, amount, self._player_behind(m)) >= self.config.pressure_leave
+        return self.pressure.add(v.id, amount, self._player_behind(m)) >= self.config.pressure_leave - LEAVE_TOLERANCE
 
     def _rumor_of(self, uid: str) -> str:
         """The key her interest is kept under for the player's whisper behind uid."""

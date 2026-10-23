@@ -600,19 +600,20 @@ def heard(engine, uid, speaker, player=PID):
     engine.minds["v1"].queue.put_nowait(None)
 
 
-async def leaving(monkeypatch, *shares):
-    """v1 under the given (amount, player) shares of pressure, held by PID, takes a turn on a line rooted in p-b's.
+async def leaving(monkeypatch, *shares, score=(0.0, 0.0)):
+    """v1 under the given (amount, player) shares of pressure, held by PID, takes a turn on a line rooted in p-b's
+    that scores (sting, fear).
 
     Returns the engine, feed, turn views, the judge's reports, and whether v1 was still in town at each storm-off.
     """
-    views = pressing(monkeypatch, (0.0, 0.0))
+    views = pressing(monkeypatch, score)
     engine, player, feed, _ = await start("v1", "v2")
     in_town = []
     storm_off = engine._storm_off
 
-    async def storming_off(v, p):
+    async def storming_off(v, p, **kw):
         in_town.append(v.id in engine.town)
-        await storm_off(v, p)
+        await storm_off(v, p, **kw)
 
     monkeypatch.setattr(engine, "_storm_off", storming_off)
     engine.writer = Writer(StubClient("I've heard quite enough from you.", "Farewell, all."), "haiku-test")
@@ -627,9 +628,9 @@ async def leaving(monkeypatch, *shares):
 
 
 @pytest.mark.asyncio
-async def test_tie_factor_scales_sting_only(monkeypatch):
+async def test_tie_factor_scales_sting_only(monkeypatch, caplog):
     pressing(monkeypatch, (1.0, 0.0), (0.0, 1.0), (1.0, 0.0))
-    engine, _, _, _ = await start("v1", "v2", "v3")
+    engine, _, _, _ = await start("v1", "v2", "v3", pressure_leave=10.0)
     engine.town.get("v1").relationships["v2"] = "sister"
     steps = []
     for uid, speaker in (("h-1", "v2"), ("h-2", "v2"), ("h-3", "v3")):
@@ -638,23 +639,26 @@ async def test_tie_factor_scales_sting_only(monkeypatch):
         steps.append(engine.pressure.level("v1"))
         engine._last_turn.clear()
     assert steps == pytest.approx([0.45, 0.75, 1.05])
+    assert "v1" in engine.town and "turn failed" not in caplog.text
     await engine.stop()
 
 
 @pytest.mark.asyncio
-async def test_breaking_words_reach_the_turn(monkeypatch):
+async def test_breaking_words_reach_the_turn(monkeypatch, caplog):
     views = pressing(monkeypatch, (0.0, 0.0))
     engine, _, _, _ = await start("v1", "v2")
     engine.pressure.add("v1", 0.5, PID)
     heard(engine, "h-1", "v2")
     await wait_for(lambda: views)
-    assert views[0].breaking == "shaken"
+    await wait_for(lambda: not engine._turning)
+    assert views[0].breaking == "shaken" and "turn failed" not in caplog.text
     await engine.stop()
 
 
 @pytest.mark.asyncio
-async def test_pressure_at_the_mark_forces_leave_town_and_credits_the_culprit(monkeypatch):
+async def test_pressure_at_the_mark_forces_leave_town_and_credits_the_culprit(monkeypatch, caplog):
     engine, _, _, reported, _ = await leaving(monkeypatch, (0.7, PID), (0.3, "p-b"))
+    assert "turn failed" not in caplog.text
     assert "v1" not in engine.town
     assert reported == [("v1", LEAVE_TOWN, None, PID, None)]
     assert engine.pressure.level("v1") == 0.0
@@ -662,19 +666,28 @@ async def test_pressure_at_the_mark_forces_leave_town_and_credits_the_culprit(mo
 
 
 @pytest.mark.asyncio
-async def test_forced_departure_overrides_a_hold(monkeypatch):
+async def test_forced_departure_overrides_a_hold(monkeypatch, caplog):
     engine, feed, views, _, in_town = await leaving(monkeypatch, (1.0, PID))
+    assert "turn failed" not in caplog.text
     assert views[0].held and views[0].breaking == "at the end of their rope"
     assert [e.data["line"] for e in kinds(feed, "stormed_off")] == ["I've heard quite enough from you."]
     assert in_town == [True] and "v1" not in engine.town
     assert ("v1", PID) not in engine.conversations
+    assert not [e for e in engine.suspicion._evidence if e.reason == "stormed off"]
     await engine.stop()
 
 
 @pytest.mark.asyncio
-async def test_departure_with_no_player_pressure_credits_no_one(monkeypatch):
+async def test_departure_with_no_player_pressure_credits_no_one(monkeypatch, caplog):
     engine, _, _, reported, _ = await leaving(monkeypatch, (1.0, None))
-    assert reported == [("v1", LEAVE_TOWN, None, None, None)]
+    assert reported == [("v1", LEAVE_TOWN, None, None, None)] and "turn failed" not in caplog.text
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_pressure_that_adds_up_to_the_mark_forces_leave_town(monkeypatch, caplog):
+    engine, _, _, reported, _ = await leaving(monkeypatch, (0.2, PID), (0.7, PID), score=(0.0, 1 / 3))
+    assert reported == [("v1", LEAVE_TOWN, None, PID, None)] and "turn failed" not in caplog.text
     await engine.stop()
 
 
