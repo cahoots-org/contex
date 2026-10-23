@@ -77,10 +77,12 @@ class Writer:
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
+            # Haiku 5.5 may think before answering; these short lines don't need it, and it costs output tokens.
+            thinking={"type": "disabled"},
         )
         if self.usage:
             self.usage.record("haiku", response.usage.input_tokens, response.usage.output_tokens, charged_to.get())
-        return response.content[0].text.strip()
+        return "".join(b.text for b in response.content if b.type == "text").strip()
 
     async def say(
         self, villager: Villager, decision: Decision, source_text: str | None, audience: str,

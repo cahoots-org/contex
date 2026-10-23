@@ -196,7 +196,7 @@ class StubMessages:
 
     async def create(self, **kwargs):
         self.calls.append(kwargs)
-        block = type("Block", (), {"text": self.texts.pop(0)})()
+        block = type("Block", (), {"type": "text", "text": self.texts.pop(0)})()
         usage = type("Usage", (), {"input_tokens": 120, "output_tokens": 30})()
         return type("Response", (), {"content": [block], "usage": usage})()
 

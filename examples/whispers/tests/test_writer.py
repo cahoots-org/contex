@@ -274,3 +274,20 @@ async def test_writer_lines_carry_the_mood():
     await writer.brush_off(v, "my oven is cracked")
     await writer.reply(v, "the well is dry", [])
     assert all("How you feel" not in c["system"] for c in client.messages.calls[3:])
+
+
+@pytest.mark.asyncio
+async def test_complete_turns_thinking_off_and_reads_only_text():
+    class Messages:
+        calls = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            thinking = type("Block", (), {"type": "thinking", "thinking": "hmm"})()
+            text = type("Block", (), {"type": "text", "text": " Aye. "})()
+            usage = type("Usage", (), {"input_tokens": 1, "output_tokens": 1})()
+            return type("Response", (), {"content": [thinking, text], "usage": usage})()
+
+    client = type("Client", (), {"messages": Messages()})()
+    assert await Writer(client, "haiku-test").complete("sys", "hi") == "Aye."
+    assert client.messages.calls[0]["thinking"] == {"type": "disabled"}
