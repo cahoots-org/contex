@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 from collections import Counter
+from dataclasses import asdict
 
 from typesafe_sdk import Noul
 
@@ -14,7 +15,7 @@ from examples.whispers.facts import Facts
 from examples.whispers.game import Game
 from examples.whispers.goal_maker import GoalMaker, names
 from examples.whispers.goals import (
-    Goal, Trophy, audience_of, claim, goal_counts, needed, trophy_line, void_reason,
+    Goal, Trophy, audience_of, claim, goal_counts, goal_from_state, needed, trophy_line, void_reason,
 )
 from examples.whispers.lineage import Lineage
 from examples.whispers.mind import mind_project
@@ -86,6 +87,18 @@ class Judge:
         # By goal id, where each action goal last stood, so a change in words reaches its holder.
         self._standing: dict[str, str | None] = {}
         self._preparing: set[asyncio.Task] = set()
+
+    def to_state(self) -> dict:
+        """The world goal, when it came into play, who whispered under it and each action goal's count."""
+        return {"world": asdict(self.world), "world_since": self.world_since, "whisperers": sorted(self.whisperers),
+                "acted": dict(self._acted)}
+
+    def restore(self, state: dict) -> None:
+        """Replace the world goal and its tallies with a saved state."""
+        self.world = goal_from_state(state["world"])
+        self.world_since = state["world_since"]
+        self.whisperers = set(state["whisperers"])
+        self._acted = dict(state["acted"])
 
     async def _believes(
         self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],

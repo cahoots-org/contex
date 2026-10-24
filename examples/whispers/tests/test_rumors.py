@@ -1,3 +1,4 @@
+import json
 import asyncio
 import logging
 import os
@@ -443,3 +444,39 @@ async def test_the_same_wording_to_another_villager_joins_the_first_card():
     assert card["uid"] == "w-1" and card["heard"] == 4
     assert {"v1", "v2", "v3", "v4"} == set(card["touched"])
     assert [h["uid"] for h in rumors.card("w-2").hops] == ["u-1", "u-2"]
+
+
+@pytest.mark.asyncio
+async def test_state_round_trips_as_json_without_scenes_or_waits():
+    rumors, _ = await make()
+    rumors.record("w-1", said("u-1", "v1", "Marta"), {"v2": "Bert"}, True)
+    rumors.reached("w-1", "v3", "Cal", "busy", until=123.0)
+    scene = Scene("s-1", "tavern", "w-1", "w-1", True, "u-1", {"v2", "v4"}, {"v2"}, ["u-1"], 0.5)
+    rumors.in_scene("w-1", scene, {"v2": "Bert", "v4": "Dora"})
+    assert rumors.first("w-1", "size:2") and rumors.first("w-1", "scene:s-1")
+    rumors._cards["w-1"].claims = ["gen-1"]
+    await asyncio.sleep(0)
+    state = json.loads(json.dumps(rumors.to_state()))
+    fresh = Rumors(StubContex(), StubBaselines(0.5), Config(session="s1"))
+    fresh.restore(state)
+    old, new = rumors._cards["w-1"], fresh._cards["w-1"]
+    assert new.measuring is None and new.published_at == old.published_at
+    assert (new.heard, new.told_at, new.hops, new.claims) == (old.heard, old.told_at, old.hops, old.claims)
+    assert new.baseline == 0.5
+    assert new.marked == {"size:2"}
+    assert all(e["scene"] is None and e["until"] is None for e in new.frontier.values())
+    assert {vid: e["state"] for vid, e in new.frontier.items()} == {vid: e["state"] for vid, e in old.frontier.items()}
+    assert fresh.cards(PID)[0]["frontier"] == [
+        {**e, "scene": None, "until": None} for e in rumors.cards(PID)[0]["frontier"]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_restored_card_with_no_baseline_measures_it_again():
+    rumors, _ = await make({"close": [Match("rumor:w-1", {}, 0.9)]})
+    state = rumors.to_state()
+    state["cards"][0]["baseline"] = None
+    rumors.restore(json.loads(json.dumps(state)))
+    assert await rumors.on_topic("w-1", "close")
+    assert rumors._cards["w-1"].baseline == 0.5
+    rumors.close()

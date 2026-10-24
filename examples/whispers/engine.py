@@ -136,6 +136,18 @@ class Engine:
         if rumors is not None:
             feed.sinks.append(rumors.on_event)
 
+    def to_state(self) -> dict:
+        """Each villager's taste for gossip and kept whispers, traced rumors and denied goals as plain JSON."""
+        return {"gossip": dict(self._gossip), "kept": {vid: list(kept) for vid, kept in self._kept.items()},
+                "traced": [[*key, x] for key, x in self._traced.items()], "denied": sorted(self._denied)}
+
+    def restore(self, state: dict) -> None:
+        """Replace gossip, kept whispers, traced rumors and denied goals with a saved state."""
+        self._gossip = dict(state["gossip"])
+        self._kept = {vid: dict.fromkeys(kept) for vid, kept in state["kept"].items()}
+        self._traced = {(subject, player, root): x for subject, player, root, x in state["traced"]}
+        self._denied = set(state["denied"])
+
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
         mind = self.mind_factory(v)
         await mind.open()

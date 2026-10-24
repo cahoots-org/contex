@@ -1,3 +1,4 @@
+import json
 import asyncio
 import logging
 import random
@@ -2151,3 +2152,15 @@ async def test_a_reply_that_fails_keeps_the_greeting_for_the_next(talks, monkeyp
     await wait_for(lambda: len(talks.moods) == 3)
     await engine.stop()
     assert ["Greet the newcomer" in m for m in talks.moods] == [True, True, False]
+
+
+def test_state_round_trips_as_json():
+    engine = Engine(Config(), Town(), None, None, None, Lineage(), Ids(), RecordingFeed())
+    engine._gossip = {"v1": 0.7}
+    engine._kept = {"v1": {"w-2": None, "w-1": None}}
+    engine._traced = {("v2", PID, "w-1"): 0.5}
+    engine._denied = {"gen-1"}
+    fresh = Engine(Config(), Town(), None, None, None, Lineage(), Ids(), RecordingFeed())
+    fresh.restore(json.loads(json.dumps(engine.to_state())))
+    assert (fresh._gossip, fresh._traced, fresh._denied) == (engine._gossip, engine._traced, engine._denied)
+    assert {vid: list(kept) for vid, kept in fresh._kept.items()} == {"v1": ["w-2", "w-1"]}

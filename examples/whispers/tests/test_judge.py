@@ -1,3 +1,4 @@
+import json
 import asyncio
 import random
 from dataclasses import replace
@@ -1357,3 +1358,15 @@ async def test_a_round_stops_once_the_village_rests():
     judge._forget = lambda *args: (rounds.append(1), forget(*args))
     await run_until(judge, everyone, lambda: rounds)
     assert len(checked) == 1
+
+
+def test_state_round_trips_as_json():
+    judge, *_ = make()
+    judge.world = Goal("world-3", "the cat is a spy", "belief", evidence=("the cat spies",), audience=("v1", "v2"))
+    judge.world_since = 1234.5
+    judge.whisperers = {"o-1", "o-2"}
+    judge._acted = {"gen-4": 2}
+    fresh, *_ = make()
+    fresh.restore(json.loads(json.dumps(judge.to_state())))
+    assert (fresh.world, fresh.world_since, fresh.whisperers, fresh._acted) == (
+        judge.world, judge.world_since, judge.whisperers, judge._acted)
