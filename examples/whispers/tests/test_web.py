@@ -1105,3 +1105,19 @@ def test_a_phone_keeps_its_goals_behind_one_pill(game):
     assert 'ev.target.matches("dialog.sheet")' in html and 'closest(".sheet-close")' in html
     assert ".sheet[open] { animation: none; }" in html.replace(".fresh, .fresh mark, .gameover, .swap.turning, ", "")
     assert ".strip.open" not in html
+
+
+def test_a_phone_whispers_from_one_row_with_a_recipient_chip(game):
+    html = game.client.get("/").text
+    assert 'id="to-pick" aria-haspopup="dialog" aria-controls="to-sheet">To…</button>' in html
+    assert 'id="to-clear" aria-label="Clear who to whisper to" hidden>✕</button>' in html
+    sheet = re.search(r'<dialog class="sheet" id="to-sheet"([^>]*)>', html).group(1)
+    assert 'aria-modal="true"' in sheet and 'aria-labelledby="to-sheet-title"' in sheet
+    assert '<form class="sheet-body" id="to-body" method="dialog">' in html
+    # The search moves into the sheet; the target logic stays the one the wide screen uses.
+    assert '$("to-body").append($("target"), $("suggest"))' in html
+    assert '$("to-pick").textContent = name ? `To ${name}` : "To…";' in html
+    assert 'if ($("to-sheet").open) $("to-sheet").close();' in html
+    assert '$("whisper").querySelector("button")' not in html
+    phone = phone_css(html)
+    assert ".composer form { flex-wrap: nowrap; }" in phone and "#to-label { display: none; }" in phone

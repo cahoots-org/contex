@@ -340,6 +340,7 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
 .sheet-body { padding: 0 1rem 1rem; }
 .sheet-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; background: var(--bg); }
 .sheet-head h2 { margin: 0; font: 500 1.25rem/1.2 var(--rumor); }
+.to-chip { display: none; }
 .sheet-close { width: 44px; height: 44px; margin-right: -.6rem; background: none; border: 0; font-size: 1.1rem; cursor: pointer; }
 @keyframes rise { from { transform: translateY(100%); } }
 .goals {
@@ -564,9 +565,20 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   .composer { padding: .6rem 1rem .8rem; }
   .dock { flex-wrap: nowrap; overflow-x: auto; padding: .5rem 1rem 0; }
   .chat { max-height: 30dvh; margin: .4rem 1rem 0; }
-  #target { flex: 1 1 100%; width: auto; }
+  /* One row: who to whisper to as a chip, the words, and Whisper. The name search is in the To sheet. */
+  .composer form { flex-wrap: nowrap; }
+  #to-label { display: none; }
+  .to-chip { display: flex; flex: 0 1 auto; min-width: 0; max-width: 7.5rem; }
+  .to-chip button { min-height: 44px; background: var(--panel); border: 1px solid var(--edge); cursor: pointer; }
+  #to-pick { min-width: 0; padding: 0 .6rem; border-radius: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #to-clear { flex: none; width: 44px; border-left: 0; border-radius: 0 22px 22px 0; color: var(--muted); }
+  .to-chip:has(#to-clear:not([hidden])) #to-pick { padding-right: .2rem; border-right: 0; border-radius: 22px 0 0 22px; }
+  .composer .primary { flex: none; min-height: 44px; padding: .5rem .75rem; }
+  .say-status:empty { min-height: 0; margin: 0; }
+  .sheet #target { width: 100%; min-height: 44px; margin-top: .25rem; }
+  .sheet .suggest { position: static; width: 100%; max-height: 50dvh; margin: .4rem 0 0; box-shadow: none; }
   .tile-act, .walk-there { min-height: 2.25rem; }
-  #text { flex-basis: 10rem; }
+  #text { flex: 1 1 0; min-height: 44px; }
   .card {
     position: sticky; top: auto; bottom: 0; right: auto; width: auto; max-height: 45dvh;
     margin: 0 -1rem; border-radius: 10px 10px 0 0; border-width: 1px 0 0;
@@ -629,6 +641,12 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     <div class="sheet-body" id="goals-body">
       <div class="sheet-head"><h2 id="goals-sheet-title">Goals</h2><button class="sheet-close" type="button" aria-label="Close">✕</button></div>
     </div>
+  </dialog>
+
+  <dialog class="sheet" id="to-sheet" aria-modal="true" aria-labelledby="to-sheet-title">
+    <form class="sheet-body" id="to-body" method="dialog">
+      <div class="sheet-head"><h2 id="to-sheet-title">Whisper to</h2><button class="sheet-close" type="button" aria-label="Close">✕</button></div>
+    </form>
   </dialog>
 
   <nav class="tabs" role="tablist" aria-label="Views">
@@ -697,6 +715,10 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
       <p class="resting" id="resting" role="status" hidden></p>
       <form id="whisper">
         <label for="target" id="to-label">Whisper to</label>
+        <span class="to-chip">
+          <button type="button" id="to-pick" aria-haspopup="dialog" aria-controls="to-sheet">To…</button>
+          <button type="button" id="to-clear" aria-label="Clear who to whisper to" hidden>✕</button>
+        </span>
         <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
         <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
@@ -1251,8 +1273,11 @@ function setResting(on) {
 
 function setComposer() {
   const on = talkingWith($("target").value);
+  const name = $("target").value.trim();
   $("to-label").textContent = on ? "Talking with" : "Whisper to";
-  $("whisper").querySelector("button").textContent = on ? "Reply" : "Whisper";
+  $("to-pick").textContent = name ? `To ${name}` : "To…";
+  $("to-clear").hidden = !name;
+  $("whisper").querySelector(".primary").textContent = on ? "Reply" : "Whisper";
   if (!over) $("text").placeholder = on ? "Say something back" : "the miller waters his flour";
 }
 
@@ -2190,6 +2215,12 @@ $("search").addEventListener("keydown", (ev) => {
 let cardRequest = 0;
 async function inspect(id, opener) {
   const request = ++cardRequest;
+  // On a phone, tapping a villager also makes them who the chip whispers to.
+  const v = villagers.find((x) => x.id === id);
+  if (phone.matches && v && !over) {
+    $("target").value = v.name;
+    setComposer();
+  }
   if (opener) cardOpener = { id: opener.dataset.id, node: opener, top: opener.getBoundingClientRect().top };
   selected = id;
   $("people").querySelectorAll(".row").forEach((row) => { row.ariaCurrent = String(row.dataset.id === id); });
@@ -2305,6 +2336,7 @@ function showSuggestions(list) {
 function pickTarget(v) {
   $("target").value = v.name;
   showSuggestions([]);
+  if ($("to-sheet").open) $("to-sheet").close();
   $("text").focus();
   setComposer();
 }
@@ -2332,6 +2364,21 @@ $("target").addEventListener("keydown", (ev) => {
   }
 });
 $("target").addEventListener("blur", () => showSuggestions([]));
+// On a phone the name search is a sheet behind the To chip; a name chosen there goes on to the words.
+$("to-pick").addEventListener("click", () => {
+  $("to-sheet").showModal();
+  $("target").focus();
+});
+$("to-clear").addEventListener("click", () => {
+  $("target").value = "";
+  setComposer();
+  $("to-pick").focus();
+});
+$("to-sheet").addEventListener("close", () => {
+  showSuggestions([]);
+  setComposer();
+  if ($("target").value.trim()) $("text").focus();
+});
 
 const PHASES = ["morning", "afternoon", "evening", "night"];
 let clockAt = null;
@@ -2488,7 +2535,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   const text = $("text").value.trim();
   if (!name || !text) return setStatus("Pick a villager and write what to whisper.", true);
   const match = villagers.find((v) => v.name.toLowerCase() === name.toLowerCase());
-  const button = ev.submitter || $("whisper").querySelector("button");
+  const button = ev.submitter || $("whisper").querySelector(".primary");
   const reply = talkingWith(name);
   button.disabled = true;
   setStatus("Whispering…");
@@ -2577,6 +2624,8 @@ function setPanels() {
   for (const sheet of document.querySelectorAll("dialog[open]")) sheet.close();
   // A phone's goal cards are in the goals sheet, the same nodes as the wide screen's strip.
   (phone.matches ? $("goals-body") : $("strip")).append($("goals"), $("world"));
+  if (phone.matches) $("to-body").append($("target"), $("suggest"));
+  else $("to-label").after($("target"), $("suggest"));
   for (const [t, id] of Object.entries(PANELS)) {
     if (phone.matches) {
       $(id).setAttribute("role", "tabpanel");
