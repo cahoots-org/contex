@@ -9,7 +9,8 @@ from datetime import datetime
 
 from examples.whispers.contex_client import Match
 from examples.whispers.game import Game, Summary
-from examples.whispers.goals import Goal
+from examples.whispers.goals import Goal, Trophy
+from examples.whispers.lineage import Ids
 from examples.whispers.models import Utterance, Villager
 from examples.whispers.actions import SPEAK, WARN
 from examples.whispers.player import ALREADY_LISTENING, GAME_OVER, MAX_WHISPER_CHARS, Player, Refusal, echoes
@@ -827,14 +828,82 @@ async def test_a_plain_shrug_adds_no_hint():
     assert player.engine.contex.published == []
 
 
-def test_someone_is_playing_only_while_a_player_is_not_over():
+def test_someone_is_playing_only_while_a_connected_player_is_not_over():
     players = Players(None)
     assert not players.any_playing()
     p = make("Ann")[0]
     players.add(p)
+    p.connected()
     assert players.any_playing()
     p.end(Summary("lost", [], []))
     assert not players.any_playing()
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = [1_000_000.0]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    return now
+
+
+def run_of(player, pid):
+    """Another run in the player's world, with its own id and owner."""
+    return Player(
+        player.engine, player.town, player.lineage, Ids(), player.feed, player.config, player_id=pid, owner=f"o-{pid}",
+    )
+
+
+def test_a_run_that_only_loaded_the_page_never_plays(clock):
+    players = Players(None)
+    p = make("Ann")[0]
+    players.add(p)
+    assert not players.any_playing() and players.at(p.place) == []
+    clock[0] += 10 * p.config.idle_after_seconds
+    assert not players.any_playing()
+
+
+def test_a_run_plays_while_connected_and_for_idle_after_seconds_after_it_disconnects(clock):
+    players = Players(None)
+    p = make("Ann")[0]
+    players.add(p)
+    p.connected()
+    p.connected()
+    clock[0] += 10 * p.config.idle_after_seconds
+    p.disconnected()
+    assert players.any_playing() and players.at(p.place) == [p]
+    p.disconnected()
+    clock[0] += p.config.idle_after_seconds - 1
+    assert players.any_playing()
+    clock[0] += 1
+    assert not players.any_playing() and players.at(p.place) == []
+
+
+@pytest.mark.parametrize("act", [lambda p: p.typing(), lambda p: p.walk("well"), lambda p: p.touch()])
+def test_a_run_plays_for_idle_after_seconds_after_an_action(clock, act):
+    players = Players(None)
+    p = make("Ann")[0]
+    players.add(p)
+    act(p)
+    clock[0] += p.config.idle_after_seconds - 1
+    assert players.any_playing() and players.at(p.place) == [p]
+    clock[0] += 1
+    assert not players.any_playing() and players.at(p.place) == []
+
+
+def test_a_new_run_prunes_only_stale_runs_that_never_played(clock):
+    first = make("Ann")[0]
+    players = Players(None)
+    stale, played, owed = (run_of(first, pid) for pid in ("p-stale", "p-played", "p-owed"))
+    played.typing()
+    players.pending[owed.owner] = [(Trophy("personal", ("a",), 1), "You won.")]
+    for p in (stale, played, owed):
+        players.add(p)
+    clock[0] += first.config.idle_after_seconds
+    recent = run_of(first, "p-recent")
+    players.add(recent)
+    assert players.prune() == [stale]
+    assert [p.id for p in players] == ["p-played", "p-owed", "p-recent"]
+    assert players.live(stale.owner) is None and players.get("p-stale") is None
 
 
 @pytest.mark.asyncio
@@ -1398,3 +1467,17 @@ async def test_a_retold_rumor_is_annoying_by_its_root_interest():
     engine.rapport.move("v1", PID, "w-1", -0.5)
     engine.conversations[("v1", PID)] = {"id": "w-2", "answered": ["w-2"]}
     assert player.annoyed("v1")
+
+
+def test_past_max_idle_runs_the_oldest_never_played_runs_go_whatever_their_age(clock):
+    first = make("Ann")[0]
+    first.config = replace(first.config, max_idle_runs=2)
+    players = Players(None)
+    runs = []
+    for pid in ("p-1", "p-2", "p-played", "p-3"):
+        clock[0] += 1
+        runs.append(run_of(first, pid))
+        players.add(runs[-1])
+    runs[2].typing()
+    assert players.prune() == [runs[0]]
+    assert [p.id for p in players] == ["p-2", "p-played", "p-3"]

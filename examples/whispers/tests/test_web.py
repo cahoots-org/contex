@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import threading
@@ -8,7 +9,7 @@ from functools import partial
 from types import SimpleNamespace
 
 import pytest
-from fastapi import WebSocketDisconnect
+from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from examples.whispers.config import Config
@@ -73,6 +74,7 @@ def game(monkeypatch):
     def join(owner):
         player = Player(engine, town, lineage, Ids(), feed, config, game=game, player_id=new_player_id(), owner=owner)
         players.add(player)
+        players.prune()
         player.goals = [GOAL]
         players.deliver_pending(player)
         return player
@@ -288,6 +290,21 @@ def test_ask_reports_problems_and_answers_through_the_feed(game):
     assert (bad.status_code, bad.json()) == (400, {"error": web.BAD_ASK})
     game.suspicion.bump("v1", game.player.id, 0.9, "whispered to them directly")
     assert post("/api/ask", json={"villager_id": "v1", "topic": "the mill"}).status_code == 409
+
+
+def eventually(check, timeout=5.0):
+    """Whether check comes true within timeout, for state another thread changes."""
+    done = threading.Event()
+    deadline = time.monotonic() + timeout
+    while not check() and time.monotonic() < deadline:
+        done.wait(0.01)
+    return check()
+
+
+def test_loading_the_page_wakes_no_one_but_an_open_socket_does(game):
+    assert not game.players.any_playing()
+    with game.client.websocket_connect(WS):
+        assert eventually(game.players.any_playing)
 
 
 def test_websocket_receives_the_whisper(game):
@@ -916,3 +933,146 @@ def test_a_bad_swap_payload_is_a_400_and_a_stranger_a_401(game):
     assert game.client.post("/api/goal/swap", content=b"nope").status_code == 400
     game.client.cookies.clear()
     assert game.client.post("/api/goal/swap", json={"goal_id": "cat"}).status_code == 401
+
+
+RESTING = "The village is resting for today. Come back after midnight UTC."
+
+
+def spend_the_day(game):
+    game.usage.record("haiku", 50_000_000, 0)
+
+
+def test_while_resting_model_actions_are_refused_and_walking_is_not(game):
+    called = []
+
+    async def swap(player, goal_id):
+        called.append(goal_id)
+
+    game.judge.swap = swap
+    assert game.client.get("/api/state").json()["resting"] is False
+    spend_the_day(game)
+    post = game.client.post
+    for path, body in (
+        ("/api/whisper", {"villager_id": "v1", "text": "the well is cursed"}),
+        ("/api/ask", {"villager_id": "v1", "topic": "the mill"}),
+        ("/api/goal/swap", {"goal_id": "cat"}),
+    ):
+        refused = post(path, json=body)
+        assert (refused.status_code, refused.json()) == (409, {"error": RESTING}), path
+    assert called == [] and game.rumors.cards(game.player.id) == []
+    assert post("/api/walk", json={"place": "well"}).json() == {"ok": True}
+    assert post("/api/listen").json() == {"ok": True}
+    assert game.client.get("/api/state").json()["resting"] is True
+
+
+def test_everyone_hears_when_the_village_rests_and_wakes(game, monkeypatch):
+    now = [datetime(2026, 10, 23, 23, 0, tzinfo=UTC).timestamp()]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    with game.client.websocket_connect(WS) as ws:
+        spend_the_day(game)
+        event = receive(ws)
+        while event["kind"] != "rest":
+            event = receive(ws)
+        assert (event["resting"], event["text"]) == (True, RESTING)
+        now[0] = datetime(2026, 10, 24, 0, 1, tzinfo=UTC).timestamp()
+        event = receive(ws)
+        while event["kind"] != "rest":
+            event = receive(ws)
+        assert event["resting"] is False and event["text"]
+
+
+def test_the_page_shows_a_resting_banner_and_locks_the_composer(game):
+    html = game.client.get("/").text
+    for needle in ('id="resting"', 'case "rest"', "state.resting", "setResting(", RESTING):
+        assert needle in html
+
+
+def test_healthz_answers_without_starting_a_run(game):
+    game.client.cookies.clear()
+    runs = list(game.players)
+    response = game.client.get("/healthz")
+    assert (response.status_code, response.text) == (200, "ok")
+    assert list(game.players) == runs and web.COOKIE not in response.cookies
+
+
+def guarded(host):
+    inner = FastAPI()
+    inner.get("/")(lambda: "read")
+    inner.post("/")(lambda: "wrote")
+    return TestClient(web.Guard(inner, PORT, host))
+
+
+def test_a_public_guard_takes_any_host_but_only_same_origin_writes():
+    client = guarded("0.0.0.0")
+    site = {"host": "whispers.usecontex.com"}
+    assert client.get("/", headers=site).status_code == 200
+    assert client.post("/", headers={**site, "origin": "https://whispers.usecontex.com"}).status_code == 200
+    assert client.post("/", headers={**site, "origin": "https://evil.example"}).status_code == 403
+
+
+def test_a_local_guard_still_refuses_other_hosts():
+    client = guarded("127.0.0.1")
+    assert client.get("/", headers={"host": "whispers.usecontex.com"}).status_code == 403
+    assert client.get("/", headers={"host": f"127.0.0.1:{PORT}"}).status_code == 200
+
+
+def test_the_page_opens_a_secure_socket_on_https(game):
+    assert 'location.protocol === "https:" ? "wss" : "ws"' in game.client.get("/").text
+
+
+def close_code(ws, timeout=5.0):
+    """The code the server closes the socket with, skipping messages before it; fails instead of hanging."""
+    codes = []
+
+    def read():
+        try:
+            while True:
+                ws.receive_json()
+        except WebSocketDisconnect as closed:
+            codes.append(closed.code)
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(timeout)
+    assert codes, "the socket stayed open"
+    return codes[0]
+
+
+def test_a_socket_that_falls_too_far_behind_is_closed(game, monkeypatch):
+    monkeypatch.setattr(web, "CLIENT_QUEUE", 1)
+    with game.client.websocket_connect(WS) as ws:
+        assert eventually(lambda: game.app.state.clients)
+        # Said on the server's loop in one go, so the tab can't catch up between lines.
+        game.client.portal.call(lambda: [game.feed.say(f"line {n}") for n in range(3)])
+        assert close_code(ws) == 1013
+    assert eventually(lambda: not game.app.state.clients)
+
+
+def test_offer_drops_a_full_queue_for_a_close():
+    queue = asyncio.Queue(2)
+    clients = {queue: "p-1"}
+    for n in range(3):
+        web.offer(clients, queue, {"n": n})
+    assert clients == {} and queue.qsize() == 1 and queue.get_nowait() is None
+
+
+def test_the_cookie_is_secure_over_https(game):
+    plain = TestClient(game.app, base_url=BASE).get("/")
+    secure = TestClient(game.app, base_url=f"https://127.0.0.1:{PORT}").get("/")
+    assert "secure" not in plain.headers["set-cookie"].lower()
+    assert "secure" in secure.headers["set-cookie"].lower()
+
+
+def test_a_pruned_run_leaves_no_notes_or_sent_snapshots(game, monkeypatch):
+    now = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    visitor = TestClient(game.app, base_url=BASE)
+    visitor.get("/")
+    gone = game.players.live(visitor.cookies[web.COOKIE])
+    visitor.get("/api/state")
+    game.app.state.sent["usage"][gone.id] = {}
+    assert gone.id in game.app.state.notes
+    now[0] += game.config.idle_after_seconds
+    TestClient(game.app, base_url=BASE).get("/")
+    assert game.players.get(gone.id) is None
+    assert gone.id not in game.app.state.notes and all(gone.id not in kind for kind in game.app.state.sent.values())

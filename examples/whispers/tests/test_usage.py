@@ -1,8 +1,12 @@
+import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
 from examples.whispers.config import Config
+from examples.whispers.players import Players
+from examples.whispers.tests.helpers import make_player
 from examples.whispers.usage import CountingJev, Usage
 
 
@@ -76,3 +80,49 @@ def test_a_players_sub_cent_share_reads_less_than_a_cent():
     usage = Usage(Config())
     usage.record("haiku", 1_000, 0, player="p-a")
     assert usage.summary("p-a") == "Your rumors have cost less than $0.01 so far"
+
+
+def at_utc(*parts):
+    return datetime(*parts, tzinfo=UTC).timestamp()
+
+
+def test_cost_today_resets_at_utc_midnight(monkeypatch):
+    now = [at_utc(2026, 10, 23, 23, 59)]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    usage = Usage(Config(haiku_input_per_mtok=1.0))
+    usage.record("haiku", 1_000_000, 0)
+    usage.record("haiku", 1_000_000, 0, player="p-1")
+    assert usage.cost_today() == pytest.approx(2.0)
+    now[0] = at_utc(2026, 10, 24, 0, 1)
+    assert usage.cost_today() == 0
+    usage.record("haiku", 500_000, 0)
+    assert usage.cost_today() == pytest.approx(0.5) and usage.cost() == pytest.approx(2.5)
+
+
+def test_the_village_rests_once_today_reaches_the_cap(monkeypatch):
+    now = [at_utc(2026, 10, 23, 12)]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    usage = Usage(Config(haiku_input_per_mtok=1.0, daily_spend_cap=1.0))
+    usage.record("haiku", 999_999, 0)
+    assert not usage.resting()
+    usage.record("haiku", 1, 0)
+    assert usage.resting()
+    now[0] = at_utc(2026, 10, 24, 0)
+    assert not usage.resting()
+
+
+def test_a_zero_cap_never_rests():
+    usage = Usage(Config(haiku_input_per_mtok=1.0, daily_spend_cap=0.0))
+    usage.record("haiku", 100_000_000, 0)
+    assert not usage.resting()
+
+
+def test_nobody_plays_while_the_village_rests():
+    usage = Usage(Config(haiku_input_per_mtok=1.0, daily_spend_cap=1.0))
+    players = Players(None, usage)
+    player = make_player("Ann")[0]
+    players.add(player)
+    player.connected()
+    assert players.any_playing()
+    usage.record("haiku", 1_000_000, 0)
+    assert not players.any_playing()

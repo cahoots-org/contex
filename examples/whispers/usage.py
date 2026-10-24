@@ -1,8 +1,10 @@
 """Token counts per provider and what they cost at the configured prices."""
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import UTC, date, datetime
 
 from examples.whispers.config import Config
 
@@ -20,6 +22,10 @@ def charging(player: str | None) -> Iterator[None]:
         yield
     finally:
         charged_to.reset(token)
+
+
+def _utc_day() -> date:
+    return datetime.fromtimestamp(time.time(), UTC).date()
 
 
 def _tokens(n: int) -> str:
@@ -43,6 +49,9 @@ class Usage:
         }
         self.tokens = {p: [0, 0] for p in PROVIDERS}
         self.players: dict[str, float] = {}
+        self.cap = config.daily_spend_cap
+        self._day: date | None = None
+        self._today = 0.0
 
     def record(
         self, provider: str, input_tokens: int | None, output_tokens: int | None, player: str | None = None,
@@ -51,9 +60,19 @@ class Usage:
         counts = self.tokens[provider]
         counts[0] += input_tokens or 0
         counts[1] += output_tokens or 0
+        dollars = self._dollars(provider, input_tokens or 0, output_tokens or 0)
+        self._today = self.cost_today() + dollars
+        self._day = _utc_day()
         if player is not None:
-            dollars = self._dollars(provider, input_tokens or 0, output_tokens or 0)
             self.players[player] = self.players.get(player, 0.0) + dollars
+
+    def cost_today(self) -> float:
+        """Estimated dollars spent since the last UTC midnight."""
+        return self._today if self._day == _utc_day() else 0.0
+
+    def resting(self) -> bool:
+        """Whether today's spend has reached the daily cap."""
+        return self.cap > 0 and self.cost_today() >= self.cap
 
     def _dollars(self, provider: str, input_tokens: int, output_tokens: int) -> float:
         return (input_tokens * self.prices[provider][0] + output_tokens * self.prices[provider][1]) / 1_000_000

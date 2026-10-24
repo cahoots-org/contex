@@ -931,7 +931,7 @@ class Engine:
             self._strolling.discard(vid)
 
     async def _suspicion_loop(self) -> None:
-        """Decay suspicion, then check where each player who is still playing stands with the town."""
+        """Decay suspicion, then check where each player someone is playing stands with the town."""
         days = self.config.suspicion_check_days
         labels: dict[str, str] = {}
         held: dict[str, int] = {}
@@ -940,7 +940,7 @@ class Engine:
             try:
                 self.suspicion.decay(days)
                 for p in self.players:
-                    if not p.over():
+                    if p.active() and not p.over():
                         self._check(p, labels, held)
             except Exception:
                 log.exception("town check failed")

@@ -305,6 +305,7 @@ input[type="text"], input[type="search"] {
 .over .primary:disabled { cursor: not-allowed; }
 .say-status { margin: .4rem 0 0; min-height: 1.25rem; font-size: .875rem; color: var(--muted); }
 .say-status.error { color: var(--danger); }
+.resting { margin: 0 0 .4rem; font-size: .875rem; color: var(--muted); }
 
 aside {
   background: var(--panel);
@@ -640,6 +641,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     <ul class="dock" id="dock" aria-label="Talking with you"></ul>
     <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
     <div class="composer">
+      <p class="resting" id="resting" role="status" hidden></p>
       <form id="whisper">
         <label for="target" id="to-label">Whisper to</label>
         <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
@@ -698,6 +700,8 @@ const dock = new Map();
 const saidTo = new Map();
 let chatWith = null;
 const DRIFT = "The story turned to other things after this.";
+const RESTING = "The village is resting for today. Come back after midnight UTC.";
+let resting = false;
 const REASONS = { heated: "heated", lively: "lively", goal: "about your goal" };
 // Where each person stands with a rumor, by frontier state.
 const FRONTIER = {
@@ -1183,6 +1187,14 @@ function talkingWith(name) {
   return [...dock.values()].some((t) => t.name.toLowerCase() === name.trim().toLowerCase());
 }
 
+// While the village rests for the day, one line says so and the composer is locked.
+function setResting(on) {
+  resting = on;
+  $("resting").hidden = !on;
+  $("resting").textContent = on ? RESTING : "";
+  for (const node of $("whisper").elements) node.disabled = over || on;
+}
+
 function setComposer() {
   const on = talkingWith($("target").value);
   $("to-label").textContent = on ? "Talking with" : "Whisper to";
@@ -1449,6 +1461,9 @@ function render(e, fresh) {
         el("button", { type: "button", className: "linkish trophy-open", tabIndex: -1, textContent: "Open the trophy case",
           onclick: () => setTrophies(true, true) }));
     case "system":
+      return line("quiet", null, e.text);
+    case "rest":
+      setResting(e.resting);
       return line("quiet", null, e.text);
     case "moment":
       return moment(e);
@@ -2534,7 +2549,7 @@ function reset() {
   over = false;
   $("gameover").hidden = true;
   $("whisper").classList.remove("over");
-  for (const node of $("whisper").elements) node.disabled = false;
+  for (const node of $("whisper").elements) node.disabled = resting;
   $("text").placeholder = "the miller waters his flour";
   setStatus("");
 }
@@ -2578,6 +2593,7 @@ async function loadState() {
   villagersKey = "";
   setVillagers(state.villagers);
   $("heat").textContent = state.heat_line;
+  setResting(state.resting);
 }
 
 function receive(e) {
@@ -2602,7 +2618,7 @@ let retry = 1000;
 let unknown = false;
 function connect() {
   setConn("connecting", "Connecting");
-  const socket = new WebSocket(`ws://${location.host}/ws`);
+  const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   let held = [];
   socket.onmessage = (msg) => {
     const e = JSON.parse(msg.data);

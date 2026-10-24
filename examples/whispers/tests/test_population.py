@@ -225,3 +225,17 @@ async def test_no_arrival_while_nobody_is_playing(newcomers):
     await asyncio.sleep(SETTLE + 0.05)
     assert engine.added == []
     await stop(task)
+
+
+@pytest.mark.asyncio
+async def test_no_arrival_while_the_only_run_is_away():
+    town = Town()
+    for i in range(2):
+        town.add(make(f"v{i}"), START_PLACE)
+    engine = StubEngine(town)
+    away = stub_player()
+    away.active = lambda: False
+    engine.players = Players(None)
+    engine.players.add(away)
+    await Replenisher(engine, town, None, Config(population=3), random.Random(1))._top_up()
+    assert engine.added == []

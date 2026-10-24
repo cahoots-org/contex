@@ -68,14 +68,17 @@ async def play(web: bool) -> None:
             contex, jev, town, config, feed, game, baselines=baselines, lineage=lineage, facts=facts,
             engine=engine, maker=maker,
         )
-        players = Players(feed)
+        players = Players(feed, usage)
         engine.players = players
         engine.judge = judge
 
         def join(owner: str) -> Player:
-            """Start a new run for the owner and deal it goals."""
+            """Start a new run for the owner and deal it goals, dropping stale runs that never played."""
             player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=owner)
             players.add(player)
+            for gone in players.prune():
+                maker.overhear.drop([g.id for g in gone.goals])
+                gone.close()
             judge.deal(player)
             players.deliver_pending(player)
             return player
@@ -94,17 +97,22 @@ async def play(web: bool) -> None:
             ))
             await engine.run()
             if web:
+                host, port = config.address()
                 app = create_app(
-                    players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=config.web_port,
-                    suspicion=engine.suspicion, game=game, rumors=engine.rumors, hints=engine.hints,
+                    players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=port,
+                    suspicion=engine.suspicion, game=game, rumors=engine.rumors, hints=engine.hints, host=host,
                 )
                 server = uvicorn.Server(uvicorn.Config(
-                    app, host="127.0.0.1", port=config.web_port, log_level="warning", timeout_graceful_shutdown=1,
+                    app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=1,
+                    # Behind a TLS proxy such as Railway's, the forwarded scheme says the page was served over https.
+                    proxy_headers=True, forwarded_allow_ips="*",
                 ))
-                print(f"Whispers is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
+                print(f"Whispers is running at http://{host}:{port} (Ctrl-C to stop)")
                 await server.serve()
             else:
                 player = join(LOCAL_OWNER)
+                # The terminal stays open for as long as the game runs.
+                player.connected()
                 show = terminal(print)
                 for event in feed.replay(player.id):
                     show(event)

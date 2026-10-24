@@ -38,6 +38,8 @@ MOMENTS = {
     "turned": "Your rumor turned against you: {name} says a newcomer started it.",
 }
 GAME_OVER = {"lost": "Game over: you were run out of town."}
+RESTING = "The village is resting for today. Come back after midnight UTC."
+WAKING = "The village wakes for a new day."
 
 
 @dataclass(frozen=True)
@@ -276,6 +278,11 @@ class Feed:
     def on_time(self, day: int, phase: str) -> None:
         line = TIME_LINES[phase].format(day=day)
         self.emit("time", line, text=line, day=day, phase=phase)
+
+    def on_rest(self, resting: bool) -> None:
+        """The village has started resting for the day, or woken."""
+        line = RESTING if resting else WAKING
+        self.emit("rest", line, text=line, resting=resting)
 
     def on_place(self, place: str, player: str | None = None) -> None:
         """The player is now at place; the terminal prints nothing."""

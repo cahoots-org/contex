@@ -336,14 +336,16 @@ class Judge:
                 continue
             self._note_whisperers(players)
             playing = [p for p in players if not p.over()]
-            # A player whose next hand is being written has won this one, so it is no longer judged.
-            judged = [p for p in playing if p.id not in self._dealing]
+            # Only runs someone is playing are judged; a player whose next hand is being written has won this one.
+            judged = [p for p in playing if p.active() and p.id not in self._dealing]
             for p in judged:
                 self._replace_void(p)
             await self.maker.prepare()
             in_play = {g.id: g for p in judged for g in p.goals}
             in_play[self.world.id] = self.world
             for goal in in_play.values():
+                if players.resting():
+                    break
                 before = dict(self.roots.get(goal.id, {}))
                 doubted = self.doubt.get(goal.id, {}).get("count")
                 try:

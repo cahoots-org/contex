@@ -21,6 +21,7 @@ from examples.whispers.overhear import Overhear
 from examples.whispers.players import Players
 from examples.whispers.pool import Entry, Pool
 from examples.whispers.tests.helpers import PID, goal_maker, wait_for
+from examples.whispers.usage import Usage
 from examples.whispers.tests.helpers import StubContex as OverhearContex
 from examples.whispers.town import Town
 
@@ -96,9 +97,9 @@ class Lines:
         self.trophies.append((trophy, line, player))
 
 
-def holder(pid, *goals, whispered_at=None, over=False):
+def holder(pid, *goals, whispered_at=None, over=False, active=True):
     return SimpleNamespace(
-        id=pid, owner=f"o-{pid}", goals=list(goals), met=set(), whispered_at=whispered_at, over=lambda: over,
+        id=pid, owner=f"o-{pid}", goals=list(goals), met=set(), whispered_at=whispered_at, over=lambda: over, active=lambda: active,
     )
 
 
@@ -1316,3 +1317,43 @@ async def test_a_villager_counts_as_a_believer_at_the_belief_cutoff():
     judge._verdicts.clear()
     judge.jev = StubJev(CONFIG.belief_cutoff - 0.01)
     assert await judge.check(goal) == 0.0
+
+
+HERE = Goal("h", "the baker sings", "belief", ("baker sings",), "Does the baker sing?", 0.5)
+
+
+@pytest.mark.asyncio
+async def test_only_runs_someone_is_playing_are_judged():
+    judge, *_ = make()
+    judge.world = QUIET
+    checked = []
+
+    async def check(goal):
+        checked.append(goal.id)
+        return 0.0
+
+    judge.check = check
+    away, here = holder("p-away", BELIEF, active=False), holder(PID, HERE)
+    await run_until(judge, players(away, here), lambda: checked.count(QUIET.id) >= 2)
+    assert BELIEF.id not in checked and HERE.id in checked
+
+
+@pytest.mark.asyncio
+async def test_a_round_stops_once_the_village_rests():
+    judge, *_ = make()
+    judge.world = QUIET
+    usage = Usage(Config(haiku_input_per_mtok=1.0, daily_spend_cap=1.0))
+    everyone = Players(None, usage)
+    everyone.add(holder(PID, BELIEF, HERE))
+    checked, rounds = [], []
+
+    async def check(goal):
+        checked.append(goal.id)
+        usage.record("haiku", 1_000_000, 0)
+        return 0.0
+
+    judge.check = check
+    forget = judge._forget
+    judge._forget = lambda *args: (rounds.append(1), forget(*args))
+    await run_until(judge, everyone, lambda: rounds)
+    assert len(checked) == 1

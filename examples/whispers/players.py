@@ -1,10 +1,12 @@
 """Player identity and the players of one world."""
 
 import secrets
+import time
 from collections.abc import Iterator
 
 from examples.whispers.goals import Trophy
 from examples.whispers.player import Player
+from examples.whispers.usage import Usage
 
 # The one person playing in the terminal.
 LOCAL_OWNER = "local"
@@ -23,8 +25,9 @@ def new_owner_id() -> str:
 class Players:
     """The players in one world, by id, and each owner's trophy case."""
 
-    def __init__(self, feed) -> None:
+    def __init__(self, feed, usage: Usage | None = None) -> None:
         self.feed = feed
+        self.usage = usage
         self._by_id: dict[str, Player] = {}
         self._latest: dict[str, Player] = {}
         self.cases: dict[str, list[Trophy]] = {}
@@ -46,12 +49,35 @@ class Players:
         return iter(self._by_id.values())
 
     def any_playing(self) -> bool:
-        """Whether some player's game is not over."""
-        return any(not p.over() for p in self._by_id.values())
+        """Whether some active player's game is not over, and the village is not resting for the day."""
+        if self.resting():
+            return False
+        return any(p.active() and not p.over() for p in self._by_id.values())
+
+    def resting(self) -> bool:
+        """Whether the village is resting for the day."""
+        return self.usage is not None and self.usage.resting()
 
     def at(self, place: str) -> list[Player]:
-        """The players at place whose game is not over."""
-        return [p for p in self._by_id.values() if p.place == place and not p.over()]
+        """The active players at place whose game is not over."""
+        return [p for p in self._by_id.values() if p.place == place and p.active() and not p.over()]
+
+    def prune(self) -> list[Player]:
+        """Drop and return the runs that never played and whose owner has no trophies: those older than
+        idle_after_seconds, and the oldest past the newest run's max_idle_runs."""
+        now = time.time()
+        idle = sorted(
+            (p for p in self._by_id.values()
+             if not p.ever_active() and p.owner not in self.pending and p.owner not in self.cases),
+            key=lambda p: p.created_at,
+        )
+        excess = len(idle) - idle[-1].config.max_idle_runs if idle else 0
+        stale = [p for i, p in enumerate(idle) if i < excess or now - p.created_at >= p.config.idle_after_seconds]
+        for p in stale:
+            del self._by_id[p.id]
+            if self._latest.get(p.owner) is p:
+                del self._latest[p.owner]
+        return stale
 
     def award(self, owner: str, trophy: Trophy, line: str) -> None:
         """Put the trophy in the owner's case and tell their live run, or keep the line for their next one."""
