@@ -115,6 +115,7 @@ jobs:
         pip install -r connectors/github/requirements-dev.txt
         pip install -r connectors/atlassian/requirements-dev.txt
         pip install -r connectors/kafka/requirements.txt
+        pip install -r examples/whispers/requirements.txt
 
     - name: Start Redpanda
       run: |
@@ -133,7 +134,7 @@ jobs:
         POSTGRES_TEST_DSN: postgresql://contex:contex_password@localhost:5432/contex_test
         KAFKA_TEST_BOOTSTRAP: localhost:9092
       run: |
-        pytest connectors/base connectors/postgres connectors/s3 connectors/github connectors/atlassian connectors/kafka -v --tb=short
+        pytest connectors/base connectors/postgres connectors/s3 connectors/github connectors/atlassian connectors/kafka examples/whispers -v --tb=short
 
   docker:
     name: Verify Docker Build
@@ -193,3 +194,18 @@ jobs:
         done
         docker logs contex
         exit 1
+
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Whispers test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest==9.1.1 pytest-asyncio==1.4.0
+        pip install -r examples/whispers/requirements.txt
+
+    - name: Run Whispers integration tests
+      run: |
+        WHISPERS_CONTEX_URL=http://localhost:8001/mcp pytest examples/whispers/tests/test_contex_integration.py -v
