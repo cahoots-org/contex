@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+import anyio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
@@ -212,11 +213,14 @@ class DatabaseManager:
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException:
+            # Shielded: a cancelled request must still return its connection to the pool.
+            with anyio.CancelScope(shield=True):
+                await session.rollback()
             raise
         finally:
-            await session.close()
+            with anyio.CancelScope(shield=True):
+                await session.close()
 
     @property
     def is_connected(self) -> bool:
