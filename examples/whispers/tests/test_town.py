@@ -91,3 +91,14 @@ def test_state_round_trips_as_json():
     assert fresh._villagers == t._villagers and fresh._places == t._places
     assert fresh._groups == t._groups and fresh.departed == t.departed
     assert fresh.found_group("a", "Third", "x").id == "g-3"
+
+
+def test_restore_drops_group_members_who_are_not_living_villagers():
+    t = Town()
+    t.add(v("a", "Ann"))
+    t.found_group("a", "Club", "creed")
+    state = t.to_state()
+    state["groups"][0]["members"] += ["gone", "never"]
+    fresh = Town()
+    fresh.restore(state)
+    assert fresh.groups[0].members == {"a"}

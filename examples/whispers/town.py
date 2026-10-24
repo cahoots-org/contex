@@ -28,7 +28,8 @@ class Town:
         """Replace the town with a saved state."""
         self._villagers = {v["id"]: Villager(**v) for v in state["villagers"]}
         self._places = dict(state["places"])
-        self._groups = {g["id"]: Group(**{**g, "members": set(g["members"])}) for g in state["groups"]}
+        self._groups = {g["id"]: Group(**{**g, "members": {m for m in g["members"] if m in self._villagers}})
+                        for g in state["groups"]}
         self.departed = [Villager(**v) for v in state["departed"]]
 
     def __contains__(self, vid: str) -> bool:
