@@ -1,3 +1,4 @@
+import json
 import asyncio
 import logging
 import time
@@ -878,3 +879,21 @@ async def test_a_run_nobody_is_playing_is_not_run_out():
     await asyncio.wait_for(here.finished.wait(), 2)
     assert not away.over()
     await engine.stop()
+
+
+def test_game_state_round_trips_with_the_phase_part_elapsed(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(game_mod.time, "time", lambda: now[0])
+    game = Game(memory_moves=2, day_seconds=400.0)
+    game.tick()
+    game.tick()
+    game.moved("p-1")
+    now[0] += 25.0
+    game.moved("p-2")
+    state = json.loads(json.dumps(game.to_state()))
+    now[0] = 5000.0
+    fresh = Game(memory_moves=2, day_seconds=400.0)
+    fresh.restore(state)
+    assert (fresh.day, fresh.phase) == (game.day, game.phase)
+    assert fresh.phase_started == pytest.approx(5000.0 - 25.0)
+    assert list(fresh._moves) == [(1000.0, "p-1"), (1025.0, "p-2")]

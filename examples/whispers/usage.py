@@ -53,6 +53,18 @@ class Usage:
         self._day: date | None = None
         self._today = 0.0
 
+    def to_state(self) -> dict:
+        """Tokens, spend per player, and today's spend with its day."""
+        return {"tokens": {p: list(c) for p, c in self.tokens.items()}, "players": dict(self.players),
+                "today": self._today, "day": self._day.isoformat() if self._day else None}
+
+    def restore(self, state: dict) -> None:
+        """Replace the totals with a saved state."""
+        self.tokens = {p: list(c) for p, c in state["tokens"].items()}
+        self.players = dict(state["players"])
+        self._today = state["today"]
+        self._day = date.fromisoformat(state["day"]) if state["day"] else None
+
     def record(
         self, provider: str, input_tokens: int | None, output_tokens: int | None, player: str | None = None,
     ) -> None:

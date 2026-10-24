@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from examples.whispers.config import Config
@@ -167,3 +168,13 @@ def test_influence_is_words_for_the_weighted_roles_only():
     assert influence(v("a", "Priest")) == "folk listen to the priest"
     assert influence(v("b", "Tavern keeper")) == "folk listen to the tavern keeper"
     assert influence(v("c", "baker")) is None
+
+
+def test_state_round_trips_as_json():
+    s, town = make(v("a"), v("b"))
+    s.bump("a", P, 0.3, "told them", "u1")
+    s.bump("b", "p-2", 0.2, "asked questions")
+    state = json.loads(json.dumps(s.to_state()))
+    fresh = Suspicion(Config(), town)
+    fresh.restore(state)
+    assert fresh._scores == s._scores and fresh._evidence == s._evidence

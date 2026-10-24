@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from examples.whispers.config import Config
@@ -70,3 +71,13 @@ def test_taken_words_bands():
     assert [taken_words(x) for x in xs] == [
         "eager", "eager", "interested", "interested", "indifferent", "indifferent", "indifferent", "put off", "put off",
     ]
+
+
+def test_state_round_trips_as_json():
+    r = Rapport(Config())
+    r.move("v1", "p-1", "w-1", 0.4)
+    r.greeted("v1", "p-1", "w-1")
+    r.greeted("v2", "p-2", "w-3")
+    fresh = Rapport(Config())
+    fresh.restore(json.loads(json.dumps(r.to_state())))
+    assert fresh._rapport == r._rapport and fresh._interest == r._interest and fresh._spoken == r._spoken

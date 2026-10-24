@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from examples.whispers.config import Config
 from examples.whispers.models import Villager
@@ -58,6 +58,16 @@ class Suspicion:
         self.town = town
         self._scores: dict[tuple[str, str], float] = {}
         self._evidence: list[Evidence] = []
+
+    def to_state(self) -> dict:
+        """The scores and evidence as plain JSON."""
+        return {"scores": [[vid, player, s] for (vid, player), s in self._scores.items()],
+                "evidence": [asdict(e) for e in self._evidence]}
+
+    def restore(self, state: dict) -> None:
+        """Replace the scores and evidence with a saved state."""
+        self._scores = {(vid, player): s for vid, player, s in state["scores"]}
+        self._evidence = [Evidence(**e) for e in state["evidence"]]
 
     def bump(self, vid: str, player: str, amount: float, reason: str, uid: str | None = None) -> float:
         """Raise the villager's suspicion of player, clamped to [0, 1]; ignores unknown villagers and amounts <= 0."""

@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from examples.whispers.models import Utterance, Villager
@@ -74,3 +75,19 @@ def test_villagers_lists_current_roster():
     town.add(b)
     town.remove("v1")
     assert town.villagers == [b]
+
+
+def test_state_round_trips_as_json():
+    t = Town()
+    t.add(v("a", "Ann"))
+    t.add(v("b", "Bob"), "tavern")
+    t.add(Villager("c", "Cy", "smith", "grim", "debt", ["coin"], {"a": "sister"}))
+    t.found_group("a", "Club", "creed")
+    t.found_group("b", "Gang", "other")
+    t.join("c", "g-1")
+    t.remove("c")
+    fresh = Town()
+    fresh.restore(json.loads(json.dumps(t.to_state())))
+    assert fresh._villagers == t._villagers and fresh._places == t._places
+    assert fresh._groups == t._groups and fresh.departed == t.departed
+    assert fresh.found_group("a", "Third", "x").id == "g-3"
