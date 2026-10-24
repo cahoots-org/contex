@@ -97,14 +97,15 @@ async def play(web: bool) -> None:
             ))
             await engine.run()
             if web:
+                host, port = config.address()
                 app = create_app(
-                    players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=config.web_port,
-                    suspicion=engine.suspicion, game=game, rumors=engine.rumors, hints=engine.hints,
+                    players=players, join=join, town=town, feed=feed, judge=judge, usage=usage, port=port,
+                    suspicion=engine.suspicion, game=game, rumors=engine.rumors, hints=engine.hints, host=host,
                 )
                 server = uvicorn.Server(uvicorn.Config(
-                    app, host="127.0.0.1", port=config.web_port, log_level="warning", timeout_graceful_shutdown=1,
+                    app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=1,
                 ))
-                print(f"Whispers is running at http://127.0.0.1:{config.web_port} (Ctrl-C to stop)")
+                print(f"Whispers is running at http://{host}:{port} (Ctrl-C to stop)")
                 await server.serve()
             else:
                 player = join(LOCAL_OWNER)

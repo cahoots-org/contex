@@ -41,14 +41,15 @@ COOKIE = "whispers_player"
 COOKIE_SECONDS = 365 * 24 * 3600
 RELOAD = "Reload the page to join the village."
 TALLY_KEYS = ("uid", "heard", "frontier", "stopped", "touched", "goals")
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
 class Guard:
-    """Refuse requests for other hosts (DNS rebinding) and writes from other origins."""
+    """Refuse writes from other origins and, on a local server, requests for other hosts (DNS rebinding)."""
 
-    def __init__(self, app, port: int):
+    def __init__(self, app, port: int, host: str = "127.0.0.1"):
         self.app = app
-        self.hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        self.hosts = {f"127.0.0.1:{port}", f"localhost:{port}"} if host in LOCAL_HOSTS else None
 
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket"):
@@ -56,7 +57,8 @@ class Guard:
             host = headers.get("host", "")
             origin = headers.get("origin")
             writes = scope["type"] == "websocket" or scope["method"] not in ("GET", "HEAD")
-            if host not in self.hosts or (writes and origin is not None and origin != f"http://{host}"):
+            foreign = self.hosts is not None and host not in self.hosts
+            if foreign or (writes and origin is not None and origin not in (f"http://{host}", f"https://{host}")):
                 if scope["type"] == "websocket":
                     await WebSocketClose(1008)(scope, receive, send)
                 else:
@@ -165,9 +167,9 @@ async def _payload(request: Request, bad: str, too_long: str) -> dict | JSONResp
 
 def create_app(
     *, players: Players, join: Callable[[str], Player], town: Town, feed: Feed, judge, usage: Usage, port: int,
-    suspicion: Suspicion, game: Game, rumors: Rumors, hints: Hints,
+    suspicion: Suspicion, game: Game, rumors: Rumors, hints: Hints, host: str = "127.0.0.1",
 ) -> FastAPI:
-    # ponytail: unbounded per-client queues; a stalled tab on localhost is the only consumer.
+    # ponytail: unbounded per-client queues; a stalled open tab grows its queue until it disconnects.
     clients: dict[asyncio.Queue, str] = {}
     boot = uuid.uuid4().hex
     notes: dict[str, Notes] = {}
@@ -237,8 +239,12 @@ def create_app(
             await asyncio.gather(*watchers, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(Guard, port=port)
+    app.add_middleware(Guard, port=port, host=host)
     app.state.clients = clients
+
+    @app.get("/healthz")
+    async def healthz():
+        return PlainTextResponse("ok")
 
     @app.get("/")
     async def page(request: Request):

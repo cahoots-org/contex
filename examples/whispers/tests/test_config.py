@@ -77,3 +77,12 @@ def test_listen_lasts_twenty_seconds_by_default():
 
 def test_drafts_match_hints_at_a_high_bar_by_default():
     assert Config().draft_floor == 0.82
+
+
+def test_the_address_is_the_web_host_and_railways_port_when_set(monkeypatch):
+    monkeypatch.setenv("PORT", "4321")
+    assert Config(web_host="0.0.0.0").address() == ("0.0.0.0", 4321)
+    monkeypatch.delenv("PORT")
+    assert Config().address() == ("127.0.0.1", 8765)
+    monkeypatch.setenv("WHISPERS_WEB_HOST", "0.0.0.0")
+    assert Config.from_env().address() == ("0.0.0.0", 8765)

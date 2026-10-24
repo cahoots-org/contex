@@ -8,7 +8,7 @@ from functools import partial
 from types import SimpleNamespace
 
 import pytest
-from fastapi import WebSocketDisconnect
+from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from examples.whispers.config import Config
@@ -983,3 +983,36 @@ def test_the_page_shows_a_resting_banner_and_locks_the_composer(game):
     html = game.client.get("/").text
     for needle in ('id="resting"', 'case "rest"', "state.resting", "setResting(", RESTING):
         assert needle in html
+
+
+def test_healthz_answers_without_starting_a_run(game):
+    game.client.cookies.clear()
+    runs = list(game.players)
+    response = game.client.get("/healthz")
+    assert (response.status_code, response.text) == (200, "ok")
+    assert list(game.players) == runs and web.COOKIE not in response.cookies
+
+
+def guarded(host):
+    inner = FastAPI()
+    inner.get("/")(lambda: "read")
+    inner.post("/")(lambda: "wrote")
+    return TestClient(web.Guard(inner, PORT, host))
+
+
+def test_a_public_guard_takes_any_host_but_only_same_origin_writes():
+    client = guarded("0.0.0.0")
+    site = {"host": "whispers.usecontex.com"}
+    assert client.get("/", headers=site).status_code == 200
+    assert client.post("/", headers={**site, "origin": "https://whispers.usecontex.com"}).status_code == 200
+    assert client.post("/", headers={**site, "origin": "https://evil.example"}).status_code == 403
+
+
+def test_a_local_guard_still_refuses_other_hosts():
+    client = guarded("127.0.0.1")
+    assert client.get("/", headers={"host": "whispers.usecontex.com"}).status_code == 403
+    assert client.get("/", headers={"host": f"127.0.0.1:{PORT}"}).status_code == 200
+
+
+def test_the_page_opens_a_secure_socket_on_https(game):
+    assert 'location.protocol === "https:" ? "wss" : "ws"' in game.client.get("/").text

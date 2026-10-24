@@ -56,6 +56,8 @@ class Config:
     haiku_model: str = "claude-haiku-5-5"
     # A saved village to play again; empty means a new village, saved under whispers_worlds/.
     seed_path: str = ""
+    # Where the web game listens; 0.0.0.0 serves it to anyone who can reach the machine.
+    web_host: str = "127.0.0.1"
     web_port: int = 8765
     # How long a player counts as playing after their last action or closed tab; the village thinks only while one is.
     idle_after_seconds: float = 600.0
@@ -117,6 +119,10 @@ class Config:
     @property
     def memory_seconds(self) -> int:
         return int(self.day_seconds * self.memory_days)
+
+    def address(self) -> tuple[str, int]:
+        """The web game's host, and its port: $PORT when set, as Railway sets it, else web_port."""
+        return self.web_host, int(os.environ.get("PORT") or self.web_port)
 
     @classmethod
     def from_env(cls) -> "Config":
