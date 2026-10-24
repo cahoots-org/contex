@@ -34,9 +34,9 @@ class Config:
     # How similar a line the villager heard must be to what the newcomer says to be recalled.
     heard_floor: float = 0.84
     # How much more clearance each retelling hop needs before it wakes a listener.
-    fatigue_per_hop: float = 0.0015
+    fatigue_per_hop: float = 0.004
     # How much more clearance overheard room talk needs than a line told to the listener.
-    overheard_margin: float = 0.005
+    overheard_margin: float = 0.01
     # The share of ordinary talk at the player's place that the player overhears.
     overhear_rate: float = 0.125
     # The share of lively talk at the player's place that the player overhears.

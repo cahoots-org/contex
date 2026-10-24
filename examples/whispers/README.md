@@ -339,7 +339,7 @@ Every field of `Config` can be set with an environment variable.
 | `WHISPERS_TOP_K` | `5` | memories kept per need |
 | `WHISPERS_CALIBRATION_PATH` | `whispers_baselines.json` | where need baselines are cached |
 | `WHISPERS_ON_TOPIC_MARGIN` | `0.035` | how far above a whisper's score against ordinary village talk a retelling must score to stay on its rumor card |
-| `WHISPERS_FATIGUE_PER_HOP` | `0.003` | extra clearance over a need's threshold each retelling hop needs before it wakes a listener |
+| `WHISPERS_FATIGUE_PER_HOP` | `0.004` | extra clearance over a need's threshold each retelling hop needs before it wakes a listener |
 | `WHISPERS_OVERHEARD_MARGIN` | `0.01` | extra clearance a line said to the room needs over one told to the listener |
 | `WHISPERS_OVERHEAR_RATE` | `0.125` | share of ordinary talk at your place that you overhear |
 | `WHISPERS_LIVELY_RATE` | `0.4` | share of lively talk at your place that you overhear |
