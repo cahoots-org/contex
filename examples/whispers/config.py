@@ -53,6 +53,8 @@ class Config:
     talk_hold_seconds: float = 60.0
     # Where villages and need baselines are kept; empty means the working directory.
     data_dir: str = ""
+    # How often the running game is saved, so a restart picks up where it left off.
+    save_every_seconds: float = 60.0
     # Where need baselines are cached; empty means whispers_baselines.json in the data directory, shared by every village.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-5-5"

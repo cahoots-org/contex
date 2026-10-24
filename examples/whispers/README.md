@@ -367,7 +367,11 @@ writing a new one. The image's entrypoint runs as root only to give the `whisper
 user the volume, then drops to it. Set deployment overlap to 0, so two copies
 never drive the same villagers, and draining to 30 seconds.
 
-Players and the game's progress still start over on each restart.
+The game itself is saved to `whispers_worlds/<session>.state.json` every
+`WHISPERS_SAVE_EVERY_SECONDS` and once on SIGTERM or Ctrl-C, and a start with the
+same session restores it: every run, goal, trophy, rumor card and the feed a
+reload replays. A save that is missing, unreadable, or for another version or
+session is logged and the game starts fresh in the same village.
 
 ## Settings
 
@@ -378,6 +382,7 @@ Every field of `Config` can be set with an environment variable.
 | `WHISPERS_CONTEX_URL` (or `CONTEX_MCP_URL`) | `http://localhost:8001/mcp` | Contex MCP endpoint |
 | `WHISPERS_SESSION` | random per run | prefix for this run's Contex projects; with a fixed value, the village saved under it is loaded again |
 | `WHISPERS_DATA_DIR` | working directory | where villages and need baselines are kept; `/data` when hosted |
+| `WHISPERS_SAVE_EVERY_SECONDS` | `60` | how often the running game is saved |
 | `WHISPERS_POPULATION` | `50` | village size; newcomers arrive to keep it there |
 | `WHISPERS_DAY_SECONDS` | `120` | length of a game day |
 | `WHISPERS_MEMORY_DAYS` | `2` | how many days a villager remembers what they heard |
