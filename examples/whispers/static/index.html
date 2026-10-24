@@ -390,6 +390,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .trophies li { margin: .1rem 0; }
 .trophies li.none { list-style: none; margin-left: -1.25rem; color: var(--muted); }
 #search { width: 100%; }
+.find { display: contents; }
 .find-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .5rem; margin-top: .25rem; }
 .tile { background: var(--bg); border: 1px solid var(--rail); border-radius: 6px; padding: .35rem .5rem .45rem; min-width: 0; }
@@ -577,6 +578,26 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   .sheet #target { width: 100%; min-height: 44px; margin-top: .25rem; }
   .sheet .suggest { position: static; width: 100%; max-height: 50dvh; margin: .4rem 0 0; box-shadow: none; }
   .tile-act, .walk-there { min-height: 2.25rem; }
+  /* The village as one row per place: name and count, the faces, and Walk or Listen. */
+  #town h2 { margin: .25rem 0 .4rem; }
+  /* The villager card sticks to the panel's very foot, so the panel ends without padding. */
+  #town { padding-bottom: 0; }
+  #town .legend { margin-bottom: 1.5rem; }
+  .find { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5rem; }
+  #search { flex: 1 1 8rem; width: auto; min-height: 44px; }
+  .find .sort { order: 2; margin: 0; }
+  .sort select { min-height: 44px; max-width: 8.5rem; }
+  .find-status { order: 3; flex: 1 0 100%; min-height: 0; }
+  .tiles { display: block; }
+  .tile {
+    display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; align-items: center; gap: 0 .5rem;
+    padding: .2rem 0; background: none; border: 0; border-bottom: 1px solid var(--rail); border-radius: 0;
+  }
+  .tile .place { flex-direction: column; gap: 0; margin: 0; line-height: 1.25; cursor: default; overflow-wrap: anywhere; }
+  .tile .faces { grid-column: 2; grid-row: 1; margin: 0; gap: 0; }
+  .tile .tile-act { grid-column: 3; grid-row: 1; margin: 0; min-height: 44px; padding: 0 .25rem; }
+  .tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }
+  .tiles .face canvas { width: 30px; height: 30px; border-radius: 6px; }
   #text { flex: 1 1 0; min-height: 44px; }
   .card {
     position: sticky; top: auto; bottom: 0; right: auto; width: auto; max-height: 45dvh;
@@ -675,16 +696,18 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 
   <aside id="town" aria-label="Villagers">
     <h2 id="people-heading">Village</h2>
-    <label for="search" class="visually-hidden">Find a villager</label>
-    <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
-    <p class="find-status" id="find-status" role="status"></p>
-    <p class="sort"><label for="sort">Sort</label>
-      <select id="sort">
-        <option value="place">By place</option>
-        <option value="notes">By what you know</option>
-        <option value="influence">By influence</option>
-      </select>
-    </p>
+    <div class="find">
+      <label for="search" class="visually-hidden">Find a villager</label>
+      <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
+      <p class="find-status" id="find-status" role="status"></p>
+      <p class="sort"><label for="sort">Sort</label>
+        <select id="sort">
+          <option value="place">By place</option>
+          <option value="notes">By what you know</option>
+          <option value="influence">By influence</option>
+        </select>
+      </p>
+    </div>
     <div class="tiles" id="people"></div>
     <p class="legend">
       <span><span class="badge" data-s="took_the_bait" aria-hidden="true">✓</span>took the bait</span>
@@ -2078,14 +2101,18 @@ function faceButton(v, hits) {
   said ? el("span", { className: "visually-hidden", textContent: said }) : null);
 }
 
-// Search hits, villagers the selected rumor touched and those the draft might interest come first, ahead of the cut.
+// Search hits, villagers the selected rumor touched and those the draft might interest come first, ahead of the cut;
+// a phone shows everyone.
 function closedTile(place, crowd, hits) {
   const touched = touchedBy();
   const lead = (v) => hits.has(v.id) || touched[v.id] || drafted.has(v.id);
   const first = crowd.some(lead) ? [...crowd.filter(lead), ...crowd.filter((v) => !lead(v))] : crowd;
-  const shown = first.slice(0, FACES_SHOWN);
+  const shown = phone.matches ? first : first.slice(0, FACES_SHOWN);
   const more = crowd.length - shown.length;
-  return el("div", { className: "faces" }, ...shown.map((v) => faceButton(v, hits)),
+  const buttons = shown.map((v) => faceButton(v, hits));
+  // On a phone a place's faces are one tab stop; the arrow keys move along them.
+  if (phone.matches && buttons.length) buttons[0].tabIndex = 0;
+  return el("div", { className: "faces" }, ...buttons,
     more > 0 ? el("button", { type: "button", tabIndex: -1, className: "more", textContent: `+${more}`, onclick: () => choosePlace(place) }) : null);
 }
 
@@ -2153,6 +2180,13 @@ function renderVillagers() {
       : hits.size ? `${crowd.filter((v) => hits.has(v.id)).length} of ${crowd.length}` : String(crowd.length);
     const label = selectedRumor ? `${capital(place)}, ${count}`
       : hits.size ? `${capital(place)}, ${count} villagers match` : `${capital(place)}, ${count} villagers`;
+    // A phone has no open tile: every place is one row with its faces and its Walk or Listen.
+    if (phone.matches) {
+      return el("section", { className: "tile" },
+        el("p", { className: "place" }, el("span", { className: "visually-hidden", textContent: label }),
+          el("b", { ariaHidden: "true", textContent: capital(place) }), el("span", { ariaHidden: "true", textContent: count })),
+        tileAction(place), closedTile(place, crowd, hits));
+    }
     return el("section", { className: place === open ? "tile open" : "tile" },
       el("button", {
         type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open), ariaLabel: label,
@@ -2192,6 +2226,15 @@ function flushVillagers() {
 $("people").addEventListener("pointerenter", () => { pointing = true; });
 $("people").addEventListener("pointerleave", () => { pointing = false; setTimeout(flushVillagers); });
 $("people").addEventListener("focusout", () => setTimeout(flushVillagers));
+$("people").addEventListener("keydown", (ev) => {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+  const face = ev.target.closest(".faces .pick");
+  if (!step || !face) return;
+  const next = step > 0 ? face.nextElementSibling : face.previousElementSibling;
+  if (!next?.matches(".pick")) return;
+  ev.preventDefault();
+  next.focus();
+});
 $("search").addEventListener("input", () => {
   const best = matches($("search").value)[0];
   searchPlace = best ? best.place : null;
@@ -2204,7 +2247,7 @@ $("search").addEventListener("keydown", (ev) => {
     searchPlace = null;
     renderVillagers();
   } else if (ev.key === "Enter") {
-    const best = $("people").querySelector(".open .row");
+    const best = $("people").querySelector(".open .row, .pick.hit");
     if (best) best.focus();
   }
 });
@@ -2634,7 +2677,10 @@ function setPanels() {
     }
   }
 }
-phone.addEventListener("change", setPanels);
+phone.addEventListener("change", () => {
+  setPanels();
+  refreshVillagers();
+});
 setPanels();
 
 $("strip-toggle").addEventListener("click", () => $("goals-sheet").showModal());

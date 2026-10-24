@@ -1131,3 +1131,18 @@ def test_a_phone_has_its_tabs_at_the_bottom(game):
     assert ".tabs { display: flex; border-bottom: 1px solid var(--rail); }" in phone
     assert "min-height: 44px; background: none; border: 0; border-top: 3px solid transparent;" in phone
     assert "border-top-color: var(--accent)" in phone
+
+
+def test_a_phone_lists_the_village_one_row_per_place(game):
+    html = game.client.get("/").text
+    find = re.search(r'<div class="find">(.*?)</div>', html, re.S).group(1)
+    assert 'id="search"' in find and 'id="sort"' in find
+    render = re.search(r"function renderVillagers\(\) \{(.*?)\n\}", html, re.S).group(1)
+    assert "if (phone.matches) {" in render and "tileAction(place), closedTile(place, crowd, hits));" in render
+    assert "const shown = phone.matches ? first : first.slice(0, FACES_SHOWN);" in html
+    # One tab stop per place, not one per villager; the arrows move along a place's faces.
+    assert "if (phone.matches && buttons.length) buttons[0].tabIndex = 0;" in html
+    assert 'const face = ev.target.closest(".faces .pick");' in html
+    phone = phone_css(html)
+    assert ".find { display: flex;" in phone and ".tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }" in phone
+    assert "grid-template-columns: 4.5rem minmax(0, 1fr) auto;" in phone
