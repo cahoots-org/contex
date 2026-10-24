@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import threading
@@ -73,6 +74,7 @@ def game(monkeypatch):
     def join(owner):
         player = Player(engine, town, lineage, Ids(), feed, config, game=game, player_id=new_player_id(), owner=owner)
         players.add(player)
+        players.prune()
         player.goals = [GOAL]
         players.deliver_pending(player)
         return player
@@ -1016,3 +1018,40 @@ def test_a_local_guard_still_refuses_other_hosts():
 
 def test_the_page_opens_a_secure_socket_on_https(game):
     assert 'location.protocol === "https:" ? "wss" : "ws"' in game.client.get("/").text
+
+
+def close_code(ws, timeout=5.0):
+    """The code the server closes the socket with, skipping messages before it; fails instead of hanging."""
+    codes = []
+
+    def read():
+        try:
+            while True:
+                ws.receive_json()
+        except WebSocketDisconnect as closed:
+            codes.append(closed.code)
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(timeout)
+    assert codes, "the socket stayed open"
+    return codes[0]
+
+
+def test_a_socket_that_falls_too_far_behind_is_closed(game, monkeypatch):
+    monkeypatch.setattr(web, "CLIENT_QUEUE", 1)
+    with game.client.websocket_connect(WS) as ws:
+        assert eventually(lambda: game.app.state.clients)
+        # Said on the server's loop in one go, so the tab can't catch up between lines.
+        game.client.portal.call(lambda: [game.feed.say(f"line {n}") for n in range(3)])
+        assert close_code(ws) == 1013
+    assert eventually(lambda: not game.app.state.clients)
+
+
+def test_offer_drops_a_full_queue_for_a_close():
+    queue = asyncio.Queue(2)
+    clients = {queue: "p-1"}
+    for n in range(3):
+        web.offer(clients, queue, {"n": n})
+    assert clients == {} and queue.qsize() == 1 and queue.get_nowait() is None
+

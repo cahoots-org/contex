@@ -74,11 +74,11 @@ async def play(web: bool) -> None:
 
         def join(owner: str) -> Player:
             """Start a new run for the owner and deal it goals, dropping stale runs that never played."""
+            player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=owner)
+            players.add(player)
             for gone in players.prune():
                 maker.overhear.drop([g.id for g in gone.goals])
                 gone.close()
-            player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=owner)
-            players.add(player)
             judge.deal(player)
             players.deliver_pending(player)
             return player

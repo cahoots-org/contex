@@ -33,6 +33,8 @@ PAGE = Path(__file__).parent / "static" / "index.html"
 MAX_BODY_BYTES = 8192
 VILLAGER_POLL_SECONDS = 1.0
 USAGE_POLL_SECONDS = 3.0
+# How many messages a tab may fall behind before its socket is closed.
+CLIENT_QUEUE = 256
 BAD_WHISPER = 'Send JSON like {"name": "Marta", "text": "the miller waters his flour"}.'
 BAD_WALK = 'Send JSON like {"place": "tavern"}.'
 BAD_SWAP = 'Send JSON like {"goal_id": "g1"}.'
@@ -142,6 +144,17 @@ def goal_json(judge, goal: Goal, met: bool, villagers: int) -> dict:
             **goal_targets(goal)}
 
 
+def offer(clients: dict[asyncio.Queue, str], queue: asyncio.Queue, message: dict) -> None:
+    """Queue the message for a tab; a tab too far behind stops getting messages and is told to close."""
+    try:
+        queue.put_nowait(message)
+    except asyncio.QueueFull:
+        clients.pop(queue, None)
+        while not queue.empty():
+            queue.get_nowait()
+        queue.put_nowait(None)
+
+
 def player_for(players: Players, cookie: str | None) -> Player | None:
     """The run of the owner the cookie names, if it names one."""
     return players.live(cookie) if cookie else None
@@ -169,7 +182,6 @@ def create_app(
     *, players: Players, join: Callable[[str], Player], town: Town, feed: Feed, judge, usage: Usage, port: int,
     suspicion: Suspicion, game: Game, rumors: Rumors, hints: Hints, host: str = "127.0.0.1",
 ) -> FastAPI:
-    # ponytail: unbounded per-client queues; a stalled open tab grows its queue until it disconnects.
     clients: dict[asyncio.Queue, str] = {}
     boot = uuid.uuid4().hex
     notes: dict[str, Notes] = {}
@@ -182,13 +194,13 @@ def create_app(
         return notes[player.id]
 
     def broadcast(message: dict) -> None:
-        for queue in clients:
-            queue.put_nowait(message)
+        for queue in list(clients):
+            offer(clients, queue, message)
 
     def on_event(event: Event) -> None:
-        for queue, pid in clients.items():
+        for queue, pid in list(clients.items()):
             if feed.sees(pid, event):
-                queue.put_nowait(event_json(event))
+                offer(clients, queue, event_json(event))
 
     async def watch(kind: str, snapshot, seconds: float) -> None:
         """Send the snapshot whenever it has changed, checking every few seconds."""
@@ -209,7 +221,7 @@ def create_app(
                 if now != sent[kind].get(pid):
                     sent[kind][pid] = now
                     for queue in [q for q, p in clients.items() if p == pid]:
-                        queue.put_nowait({"kind": kind, kind: now})
+                        offer(clients, queue, {"kind": kind, kind: now})
 
     async def watch_rest() -> None:
         """Tell everyone when the village starts resting for the day and when it wakes."""
@@ -406,7 +418,7 @@ def create_app(
         if (player := player_for(players, socket.cookies.get(COOKIE))) is None:
             await socket.close(1008)
             return
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(CLIENT_QUEUE)
         sent["rumors"].setdefault(player.id, tallies(rumors, judge, players, player.id))
         sent["usage"].setdefault(player.id, usage.to_json(player.id))
         sent["beliefs"].setdefault(player.id, beliefs(judge, player))
@@ -414,15 +426,16 @@ def create_app(
         player.connected()
 
         async def pump() -> None:
-            while True:
-                await socket.send_json(await queue.get())
+            while (message := await queue.get()) is not None:
+                await socket.send_json(message)
+            await socket.close(1013)
 
         sender = asyncio.create_task(pump())
         try:
             while (await socket.receive())["type"] != "websocket.disconnect":
                 pass
         finally:
-            del clients[queue]
+            clients.pop(queue, None)
             player.disconnected()
             sender.cancel()
             await asyncio.gather(sender, return_exceptions=True)

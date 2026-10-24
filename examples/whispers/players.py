@@ -63,13 +63,16 @@ class Players:
         return [p for p in self._by_id.values() if p.place == place and p.active() and not p.over()]
 
     def prune(self) -> list[Player]:
-        """Drop and return the runs older than idle_after_seconds that never played and whose owner has no trophies."""
+        """Drop and return the runs that never played and whose owner has no trophies: those older than
+        idle_after_seconds, and the oldest past the newest run's max_idle_runs."""
         now = time.time()
-        stale = [
-            p for p in self._by_id.values()
-            if not p.ever_active() and now - p.created_at >= p.config.idle_after_seconds
-            and p.owner not in self.pending and p.owner not in self.cases
-        ]
+        idle = sorted(
+            (p for p in self._by_id.values()
+             if not p.ever_active() and p.owner not in self.pending and p.owner not in self.cases),
+            key=lambda p: p.created_at,
+        )
+        excess = len(idle) - idle[-1].config.max_idle_runs if idle else 0
+        stale = [p for i, p in enumerate(idle) if i < excess or now - p.created_at >= p.config.idle_after_seconds]
         for p in stale:
             del self._by_id[p.id]
             if self._latest.get(p.owner) is p:

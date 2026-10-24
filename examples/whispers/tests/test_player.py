@@ -1467,3 +1467,17 @@ async def test_a_retold_rumor_is_annoying_by_its_root_interest():
     engine.rapport.move("v1", PID, "w-1", -0.5)
     engine.conversations[("v1", PID)] = {"id": "w-2", "answered": ["w-2"]}
     assert player.annoyed("v1")
+
+
+def test_past_max_idle_runs_the_oldest_never_played_runs_go_whatever_their_age(clock):
+    first = make("Ann")[0]
+    first.config = replace(first.config, max_idle_runs=2)
+    players = Players(None)
+    runs = []
+    for pid in ("p-1", "p-2", "p-played", "p-3"):
+        clock[0] += 1
+        runs.append(run_of(first, pid))
+        players.add(runs[-1])
+    runs[2].typing()
+    assert players.prune() == [runs[0]]
+    assert [p.id for p in players] == ["p-2", "p-played", "p-3"]
