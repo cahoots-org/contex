@@ -1146,7 +1146,7 @@ def test_a_phone_lists_the_village_one_row_per_place(game):
     assert 'const face = ev.target.closest(".faces .pick");' in html
     phone = phone_css(html)
     assert ".find { display: flex;" in phone and ".tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }" in phone
-    assert "grid-template-columns: 4.5rem minmax(0, 1fr) auto;" in phone
+    assert "grid-template-columns: 4rem minmax(0, 1fr) 3.25rem;" in phone
 
 
 def test_a_phone_opens_a_conversation_as_a_sheet_over_the_content(game):

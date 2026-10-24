@@ -599,16 +599,17 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   .find { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5rem; }
   #search { flex: 1 1 8rem; width: auto; min-height: 44px; }
   .find .sort { order: 2; margin: 0; }
+  .find .sort label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .sort select { min-height: 44px; max-width: 8.5rem; }
   .find-status { order: 3; flex: 1 0 100%; min-height: 0; }
   .tiles { display: block; }
   .tile {
-    display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; align-items: center; gap: 0 .5rem;
+    display: grid; grid-template-columns: 4rem minmax(0, 1fr) 3.25rem; align-items: center; gap: 0 .4rem;
     padding: .2rem 0; background: none; border: 0; border-bottom: 1px solid var(--rail); border-radius: 0;
   }
   .tile .place { flex-direction: column; gap: 0; margin: 0; line-height: 1.25; cursor: default; overflow-wrap: anywhere; }
   .tile .faces { grid-column: 2; grid-row: 1; margin: 0; gap: 0; }
-  .tile .tile-act { grid-column: 3; grid-row: 1; margin: 0; min-height: 44px; padding: 0 .25rem; }
+  .tile .tile-act { grid-column: 3; grid-row: 1; margin: 0; min-height: 44px; padding: 0; font-size: .75rem; line-height: 1.15; text-align: right; }
   .tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }
   .tiles .face canvas { width: 30px; height: 30px; border-radius: 6px; }
   #text { flex: 1 1 0; min-height: 44px; }
@@ -2260,6 +2261,8 @@ $("search").addEventListener("input", () => {
   const best = matches($("search").value)[0];
   searchPlace = best ? best.place : null;
   renderVillagers();
+  // A phone has no open tile to bring the best match up, so the list scrolls to it.
+  if (phone.matches) $("people").querySelector(".pick.hit")?.scrollIntoView({ block: "nearest" });
 });
 $("search").addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && $("search").value) {
@@ -2429,7 +2432,7 @@ $("target").addEventListener("blur", () => showSuggestions([]));
 // On a phone the name search is a sheet behind the To chip; a name chosen there goes on to the words.
 $("to-pick").addEventListener("click", () => {
   $("to-sheet").showModal();
-  $("target").focus();
+  $("target").select();
 });
 $("to-clear").addEventListener("click", () => {
   $("target").value = "";
