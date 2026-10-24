@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.embedder import encode_async
@@ -32,6 +33,10 @@ _RECONCILE_LOCK_NS = 0x7375
 
 # How long a subscription outlives its last create or read.
 SUBSCRIPTION_TTL_SECONDS = positive_int_env("SUBSCRIPTION_TTL_SECONDS", 3600)
+
+# Reconciles running at once. Each holds up to two pooled connections, so keep
+# this well under the pool size or reconciles starve requests.
+RECONCILE_CONCURRENCY = positive_int_env("RECONCILE_CONCURRENCY", 2)
 
 # Per (subscription, need): documents held and the weakest one's similarity.
 _FLOORS_SQL = text("""
@@ -91,7 +96,7 @@ def _bundle_documents(bundle) -> list[str]:
 class SubscriptionService:
     def __init__(
         self, db, matcher, encoder=None, default_threshold=0.35, default_top_k=10,
-        ttl_seconds=SUBSCRIPTION_TTL_SECONDS,
+        ttl_seconds=SUBSCRIPTION_TTL_SECONDS, reconcile_concurrency=RECONCILE_CONCURRENCY,
     ) -> None:
         self.db = db
         self.ttl = timedelta(seconds=ttl_seconds)
@@ -102,6 +107,7 @@ class SubscriptionService:
         # ponytail: unbounded, ~3KB per distinct need; persist vectors behind an ANN index if this binds.
         self._need_vecs: dict[str, np.ndarray] = {}
         self._project_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+        self._reconcile_slots = asyncio.Semaphore(reconcile_concurrency)
 
     async def create(
         self, project_id, needs, tenant_id=DEFAULT_TENANT_ID, scope=None, subscription_id=None, top_k=None, threshold=None
@@ -209,10 +215,12 @@ class SubscriptionService:
         (buffer-until-complete) and emits a `subscription:{id}:updated` event. Returns
         the list of subscription ids that changed. `changed_keys` names the documents
         just published; `None`, or more keys than one batch holds, reconciles every subscription.
+        A database error while narrowing to the affected subscriptions raises rather than
+        re-matching all of them, which would need the database just as much.
         """
         if changed_keys is not None and len(changed_keys) > MAX_BATCH_SIZE:
             changed_keys = None
-        async with self._project_lock(project_id):
+        async with self._reconcile_slots, self._project_lock(project_id):
             return await self._reconcile_locked(project_id, changed_keys)
 
     @asynccontextmanager
@@ -220,8 +228,8 @@ class SubscriptionService:
         """One bundle writer per project at a time, across replicas, so a slow one
         can't commit a bundle older than one a later writer already committed."""
         # The in-process lock keeps same-project waiters from each holding a connection.
-        # ponytail: the lock holder needs a second pooled connection to match; many
-        # distinct projects reconciling at once can exhaust the pool until its timeout.
+        # The holder needs a second pooled connection to match, so reconcile_project
+        # bounds how many projects hold one at once.
         lock = self._project_locks.setdefault(project_id, asyncio.Lock())
         async with lock, self.db.session() as lock_session:
             await lock_session.execute(
@@ -235,6 +243,8 @@ class SubscriptionService:
         if changed_keys is not None:
             try:
                 affected = await self._affected(project_id, changed_keys)
+            except SQLAlchemyError:
+                raise
             except Exception:
                 logger.exception("affected-subscription filter failed for %s; reconciling all", project_id)
 

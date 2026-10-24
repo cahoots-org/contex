@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+import anyio
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
@@ -24,6 +25,7 @@ from sqlalchemy.pool import NullPool
 
 from src.core.config import DEFAULT_DATABASE_URL
 from src.core.json_utils import json_safe_default
+from src.core.limits import positive_int_env
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -109,9 +111,9 @@ class DatabaseManager:
     async def connect(
         self,
         database_url: Optional[str] = None,
-        pool_size: int = 5,
-        max_overflow: int = 10,
-        pool_timeout: float = 30.0,
+        pool_size: Optional[int] = None,
+        max_overflow: Optional[int] = None,
+        pool_timeout: Optional[float] = None,
         pool_recycle: int = 1800,
         echo: bool = False,
     ) -> None:
@@ -120,9 +122,9 @@ class DatabaseManager:
 
         Args:
             database_url: PostgreSQL connection URL (postgresql+asyncpg://...)
-            pool_size: Number of connections to keep in the pool
-            max_overflow: Maximum overflow connections above pool_size
-            pool_timeout: Timeout waiting for connection from pool
+            pool_size: Number of connections to keep in the pool (env DB_POOL_SIZE, default 5)
+            max_overflow: Maximum overflow connections above pool_size (env DB_MAX_OVERFLOW, default 10)
+            pool_timeout: Seconds to wait for a pooled connection (env DB_POOL_TIMEOUT, default 30)
             pool_recycle: Recycle connections after this many seconds
             echo: Echo SQL statements to log
         """
@@ -132,6 +134,12 @@ class DatabaseManager:
 
         url = database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
         self._database_url = url
+        if pool_size is None:
+            pool_size = positive_int_env("DB_POOL_SIZE", 5)
+        if max_overflow is None:
+            max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+        if pool_timeout is None:
+            pool_timeout = positive_int_env("DB_POOL_TIMEOUT", 30)
 
         self.engine = create_async_engine(
             url,
@@ -205,11 +213,14 @@ class DatabaseManager:
         try:
             yield session
             await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException:
+            # Shielded: a cancelled request must still return its connection to the pool.
+            with anyio.CancelScope(shield=True):
+                await session.rollback()
             raise
         finally:
-            await session.close()
+            with anyio.CancelScope(shield=True):
+                await session.close()
 
     @property
     def is_connected(self) -> bool:

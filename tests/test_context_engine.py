@@ -58,6 +58,18 @@ async def test_publish_survives_reconcile_failure():
 
 
 @pytest.mark.asyncio
+async def test_failed_reconcile_keys_join_the_next_run():
+    engine = _engine([None], AsyncMock(side_effect=[RuntimeError("boom"), None]))
+
+    for key in ("k1", "k2"):
+        await engine.publish_data(DataPublishEvent(project_id="p1", data_key=key, data={"a": 1}))
+        await asyncio.gather(*engine._reconcile_tasks.values())
+
+    assert engine.subscriptions.reconcile_project.await_args_list == [call("p1", {"k1"}), call("p1", {"k1", "k2"})]
+    assert engine._reconcile_pending == {}
+
+
+@pytest.mark.asyncio
 async def test_dict_under_a_file_key_keeps_its_implicit_format():
     engine = _engine([None], AsyncMock())
 

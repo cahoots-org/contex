@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 
 from src.core.db_models import Symbol
 from src.core import subscriptions
@@ -79,6 +80,21 @@ async def test_reconcile_falls_back_to_all_when_filter_raises(db):
     await svc.reconcile_project("p1", {"a.py"})
 
     assert sorted(svc.matcher.calls) == [("a",), ("b",)]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_does_not_rematch_all_when_the_filter_cannot_reach_the_database(db):
+    svc, _, _ = await _service(db)
+
+    async def pool_exhausted(project_id, keys):
+        raise PoolTimeout("QueuePool limit reached")
+    svc._ids_admitting = pool_exhausted
+    svc.matcher.calls.clear()
+
+    with pytest.raises(PoolTimeout):
+        await svc.reconcile_project("p1", {"a.py"})
+
+    assert svc.matcher.calls == []
 
 
 @pytest.mark.asyncio

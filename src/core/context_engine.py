@@ -85,6 +85,9 @@ class ContextEngine:
                     await self.subscriptions.reconcile_project(project_id, keys)
                 except Exception:
                     logger.exception("subscription reconcile failed for %s", project_id)
+                    # Retried with the project's next publish; the sweep catches the rest.
+                    self._reconcile_pending.setdefault(project_id, set()).update(keys)
+                    break
         finally:
             del self._reconcile_tasks[project_id]
 
