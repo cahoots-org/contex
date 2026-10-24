@@ -326,10 +326,11 @@ whispers and a three-reply conversation, under $0.004.
 
 ## Hosting
 
-`examples/whispers/Dockerfile` builds the web game from the repo root, and
-`examples/whispers/railway.json` deploys it on Railway with `/healthz` as the
-health check. Point the Railway service's config file at
-`examples/whispers/railway.json` and set:
+`examples/whispers/Dockerfile` builds the web game from the repo root. On
+Railway, create a service from this repo and set its Dockerfile path to
+`examples/whispers/Dockerfile`, its health check to `/healthz` with a 600-second
+timeout (the server starts only once the village is written), and its restart
+policy to on-failure with at most 3 retries. Then set:
 
 | Variable | Value |
 |---|---|
@@ -355,9 +356,8 @@ work. Calls already under way finish, so the day can go a little over the cap.
 
 The cap counts spend in the running process only. A restart starts the count
 again, and each start also pays Haiku to write a new village, so the worst case
-is about the cap per UTC day for each start. Railway restarts a crashed game at
-most 3 times (`restartPolicyMaxRetries` in `railway.json`), which bounds a crash
-loop.
+is about the cap per UTC day for each start. With the restart policy above, Railway
+restarts a crashed game at most 3 times, which bounds a crash loop.
 
 Worlds aren't persisted: each deploy or restart starts a new village, and
 players start over.
