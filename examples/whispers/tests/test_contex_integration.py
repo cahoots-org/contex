@@ -17,7 +17,7 @@ from examples.whispers.mind import Mind, mind_project, said_project
 from examples.whispers.models import Utterance, Villager
 from examples.whispers.player import Player
 from examples.whispers.suspicion import Suspicion
-from examples.whispers.tests.helpers import PID, FakeEngine, StubBaselines
+from examples.whispers.tests.helpers import PID, FakeEngine, StubBaselines, stub_player
 from examples.whispers.town import Town
 
 URL = os.environ.get("WHISPERS_CONTEX_URL")
@@ -99,6 +99,8 @@ async def test_publish_before_listening_still_wakes_only_the_listener(monkeypatc
         config = Config(contex_url=URL, session=f"test-{uuid.uuid4().hex[:8]}", cooldown_seconds=0.1)
         baselines = StubBaselines(0.5)
         engine = Engine(config, Town(), client, None, None, Lineage(), Ids(), NullFeed(), baselines=baselines)
+        # The village only takes turns while someone is playing.
+        engine.players.add(stub_player())
         ann = Villager("v1", "Ann", "baker", "kind", "none", ["anything about my bakery"], {})
         early = Mind(client, ann, config, baselines)
         await early.open()
