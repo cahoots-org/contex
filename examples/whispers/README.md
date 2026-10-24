@@ -359,6 +359,7 @@ Every field of `Config` can be set with an environment variable.
 | `WHISPERS_SUSPICION_HEAR_MAX` | `0.25` | most suspicion one rumor about the newcomer can add |
 | `WHISPERS_SUSPICION_DECAY_PER_DAY` | `0.05` | suspicion each villager loses per game day |
 | `WHISPERS_WARN_THRESHOLD` | `0.3` | suspicion at which a villager may warn others |
+| `WHISPERS_BELIEF_CUTOFF` | `0.4` | Jev's odds that a villager believes a claim at which they count as a believer |
 | `WHISPERS_REFUSE_THRESHOLD` | `0.7` | suspicion at which a villager turns you away |
 | `WHISPERS_RUN_OUT_LEVEL` | `0.08` | village mood at which the run-out checks start counting |
 | `WHISPERS_RUN_OUT_CHECKS` | `3` | checks in a row at that level before you are run out |

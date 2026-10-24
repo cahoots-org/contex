@@ -34,10 +34,10 @@ def _best(matches: list[Match]) -> Match:
     return max(matches, key=lambda m: m.similarity or 0.0)
 
 
-async def _yes(jev, state: dict, question: str) -> bool:
-    """Whether Jev thinks a yes is more likely than a no."""
+async def _yes(jev, state: dict, question: str, cutoff: float = 0.5) -> bool:
+    """Whether Jev's odds of a yes reach the cutoff."""
     response = await jev.system_one(state=state, questions={"q": Noul(instructions=question)})
-    return response.nouls["q"].noul > 0.5
+    return response.nouls["q"].noul >= cutoff
 
 
 def _last_claim(player: Player, last: Goal) -> str | None:
@@ -114,7 +114,7 @@ class Judge:
                     }
                     if taken:
                         state["how taken they were with the newcomer's story"] = taken
-                    self._verdicts[key] = await _yes(self.jev, state, goal.believer_question)
+                    self._verdicts[key] = await _yes(self.jev, state, goal.believer_question, self.config.belief_cutoff)
                 believes = self._verdicts[key]
             except Exception:
                 log.exception("judging %s failed for %s", goal.id, villager.id)

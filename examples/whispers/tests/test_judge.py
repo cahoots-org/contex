@@ -1304,3 +1304,15 @@ def test_action_goals_say_where_they_stand_in_words():
     assert judge.standing(exodus) == "1 of 3 gone"
     assert judge.standing(confront) == "Not yet"
     assert judge.standing(Goal("b", "A third believes it", "belief")) is None
+
+
+@pytest.mark.asyncio
+async def test_a_villager_counts_as_a_believer_at_the_belief_cutoff():
+    judge, _, _, _, town = make(n=1, believers=1)
+    goal = Goal("g", "Half the village believes the cat is a spy", "belief", ("the cat is a spy",),
+                "Does this villager believe the cat is a spy?", 0.5)
+    judge.jev = StubJev(CONFIG.belief_cutoff)
+    assert await judge.check(goal) == 1.0
+    judge._verdicts.clear()
+    judge.jev = StubJev(CONFIG.belief_cutoff - 0.01)
+    assert await judge.check(goal) == 0.0

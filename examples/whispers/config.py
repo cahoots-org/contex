@@ -66,6 +66,8 @@ class Config:
     suspicion_hear_max: float = 0.25
     suspicion_decay_per_day: float = 0.05
     warn_threshold: float = 0.3
+    # Jev's odds that a villager believes a claim at which the judge counts them as a believer.
+    belief_cutoff: float = 0.4
     refuse_threshold: float = 0.7
     # Weighted town suspicion at which villagers start moving to run the newcomer out.
     run_out_level: float = 0.08
