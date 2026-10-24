@@ -1366,10 +1366,15 @@ def test_state_round_trips_as_json():
     judge.world_since = 1234.5
     judge.whisperers = {"o-1", "o-2"}
     judge._acted = {"gen-4": 2}
+    judge.progress, judge.counts = {"gen-4": 0.5}, {"gen-4": (2, 4)}
+    judge.roots, judge.doubt = {"gen-4": {"v1": "w-1", "v2": None}}, {"gen-4": {"count": 1, "saying": "no"}}
+    judge._standing, judge._holds = {"gen-4": "Not yet"}, {"gen-4": 1}
     fresh, *_ = make()
     fresh.restore(json.loads(json.dumps(judge.to_state())))
     assert (fresh.world, fresh.world_since, fresh.whisperers, fresh._acted) == (
         judge.world, judge.world_since, judge.whisperers, judge._acted)
+    assert (fresh.progress, fresh.counts, fresh.roots, fresh.doubt, fresh._standing, fresh._holds) == (
+        judge.progress, judge.counts, judge.roots, judge.doubt, judge._standing, judge._holds)
 
 
 @pytest.mark.asyncio

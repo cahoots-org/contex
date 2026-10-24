@@ -87,18 +87,26 @@ class Judge:
         # By goal id, where each action goal last stood, so a change in words reaches its holder.
         self._standing: dict[str, str | None] = {}
         self._preparing: set[asyncio.Task] = set()
+        # By goal id, how many checks in a row it has stood at full progress.
+        self._holds: dict[str, int] = {}
 
     def to_state(self) -> dict:
-        """The world goal, when it came into play, who whispered under it and each action goal's count."""
+        """The world goal, when it came into play, who whispered under it, and where each goal stands."""
         return {"world": asdict(self.world), "world_since": self.world_since, "whisperers": sorted(self.whisperers),
-                "acted": dict(self._acted)}
+                "acted": dict(self._acted), "progress": dict(self.progress),
+                "counts": {gid: list(c) for gid, c in self.counts.items()}, "roots": self.roots, "doubt": self.doubt,
+                "standing": dict(self._standing), "holds": dict(self._holds)}
 
     def restore(self, state: dict) -> None:
-        """Replace the world goal and its tallies with a saved state."""
+        """Replace the world goal and where each goal stands with a saved state."""
         self.world = goal_from_state(state["world"])
         self.world_since = state["world_since"]
         self.whisperers = set(state["whisperers"])
         self._acted = dict(state["acted"])
+        self.progress = dict(state["progress"])
+        self.counts = {gid: tuple(c) for gid, c in state["counts"].items()}
+        self.roots, self.doubt = state["roots"], state["doubt"]
+        self._standing, self._holds = dict(state["standing"]), dict(state["holds"])
 
     async def _believes(
         self, goal: Goal, villager: Villager, roots: dict[str, str | None], doubters: dict[str, Match | None],
@@ -340,7 +348,7 @@ class Judge:
         A player whose goals are all met wins a trophy and is dealt new ones; a met world goal gives a trophy to
         everyone who whispered while it was in play, and is replaced by a new one.
         """
-        holds: dict[str, int] = {}
+        holds = self._holds
         self._players = players
         interval = self.config.judge_every_days * self.config.day_seconds
         while True:

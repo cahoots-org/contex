@@ -110,6 +110,8 @@ async def played(monkeypatch):
     goal = player.goals[0]
     player.met.add(goal.id)
     g.feed.on_met(goal, player=player.id)
+    rising = player.goals[1]
+    g.judge.progress[rising.id], g.judge.counts[rising.id] = 0.5, (1, 2)
     g.players.award("o-abc", Trophy("personal", ("a",), 1), "A trophy.")
     g.players.award("o-gone", Trophy("world", ("b",), 1), "Another trophy.")
     player.disconnected()
@@ -130,6 +132,7 @@ async def test_a_played_game_restores_to_the_same_state_with_fresh_ids(monkeypat
     card = g.engine.rumors._cards["w-1"]
     assert card.hops and g.players.pending["o-gone"] and player.met
     before = await api_state(g, player.owner)
+    assert before["goals"][1]["percent"] == 50
     path = state_path(SESSION, str(tmp_path))
     save_game(path, g.parts, SESSION)
 
