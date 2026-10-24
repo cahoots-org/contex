@@ -50,9 +50,13 @@ class Players:
 
     def any_playing(self) -> bool:
         """Whether some active player's game is not over, and the village is not resting for the day."""
-        if self.usage is not None and self.usage.resting():
+        if self.resting():
             return False
         return any(p.active() and not p.over() for p in self._by_id.values())
+
+    def resting(self) -> bool:
+        """Whether the village is resting for the day."""
+        return self.usage is not None and self.usage.resting()
 
     def at(self, place: str) -> list[Player]:
         """The active players at place whose game is not over."""

@@ -854,3 +854,27 @@ async def test_drive_out_holds_through_a_void_pass_during_the_farewell(monkeypat
     await wait_for(lambda: "v1" not in engine.town and not engine._turning)
     assert player.goals == [goal] and await judge.check(goal) == 1.0
     await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_no_routine_walks_while_the_only_run_is_away():
+    engine, player, feed, _ = await start("v1", "v2")
+    engine.players = Players(feed)
+    engine.players.add(Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-away"))
+    engine.routine = StubRoutine({"v1": "mill", "v2": "tavern"})
+    await engine._walk("morning", 0.0)
+    assert (engine.town.place_of("v1"), engine.town.place_of("v2")) == ("square", "square")
+    await engine.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_run_nobody_is_playing_is_not_run_out():
+    engine, here, feed, _ = await start("v1")
+    away = Player(engine, engine.town, engine.lineage, Ids(), feed, engine.config, player_id="p-away")
+    engine.players.add(away)
+    engine.suspicion.bump("v1", PID, 0.9, "whispered to them directly")
+    engine.suspicion.bump("v1", away.id, 0.9, "whispered to them directly")
+    await engine.run()
+    await asyncio.wait_for(here.finished.wait(), 2)
+    assert not away.over()
+    await engine.stop()
