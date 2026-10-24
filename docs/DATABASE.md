@@ -26,8 +26,11 @@ To run Contex outside Docker against a standalone ParadeDB container, follow
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://contex:contex_password@localhost:5432/contex` |
+| `DB_POOL_SIZE` | Connections the pool keeps open | `5` |
+| `DB_MAX_OVERFLOW` | Extra connections opened under load | `10` |
+| `DB_POOL_TIMEOUT` | Seconds a request waits for a connection | `30` |
 
-The connection pool holds 5 connections and grows to 15 under load, plus one
+By default the pool holds 5 connections and grows to 15 under load, plus one
 LISTEN connection for live updates.
 
 The format is `postgresql+asyncpg://username:password@host:port/database`. Add
