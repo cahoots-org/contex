@@ -528,8 +528,12 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     margin: 0 -1rem; border-radius: 10px 10px 0 0; border-width: 1px 0 0;
   }
 }
+/* A goal being swapped: its button turns and its words wait for the new goal. */
+@keyframes turn { to { transform: rotate(360deg); } }
+.swap.turning { opacity: 1; animation: turn 1s linear infinite; }
+.goal-card.swapping .goal-text { opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
-  .fresh, .fresh mark, .gameover { animation: none; }
+  .fresh, .fresh mark, .gameover, .swap.turning { animation: none; }
 }
 </style>
 </head>
@@ -1394,6 +1398,7 @@ function render(e, fresh) {
       return line("speech", null, e.line ? `${e.name}: “${e.line}”` : `${e.name} denies it.`);
     case "goal_swapped":
     case "goal_void": {
+      swapping.delete(e.goal_id);
       const kept = [...goals].map(([id, g]) => (id === e.goal_id ? [e.new.id, goalOf(e.new)] : [id, g]));
       goals.clear();
       for (const [id, g] of kept) goals.set(id, g);
@@ -1782,25 +1787,37 @@ function doubtLine(g) {
   return el("p", { className: "doubt", textContent: `${who} believe it — they're saying: “${clip(d.saying, 80)}”` });
 }
 
+// How long a swap may wait for its new goal before the card gives up waiting.
+const SWAP_WAIT_MS = 15000;
+
+function swapDone(id) {
+  if (swapping.delete(id)) renderGoals();
+}
+
+// A swap stays pending until the new goal arrives (goal_swapped), not just until the request returns.
 function swapButton(id) {
+  const busy = swapping.has(id);
   const button = el("button", {
-    type: "button", className: "swap", textContent: "↻", ariaLabel: "Swap for a new goal",
-    title: "Swap for a new goal", disabled: swapping.size > 0 || over,
+    type: "button", className: busy ? "swap turning" : "swap", textContent: "↻",
+    ariaLabel: busy ? "Finding a new goal" : "Swap for a new goal", title: busy ? "Finding a new goal…" : "Swap for a new goal",
+    disabled: swapping.size > 0 || over,
   });
   button.addEventListener("click", async () => {
     swapping.add(id);
     renderGoals();
+    setTimeout(() => swapDone(id), SWAP_WAIT_MS);
     const { ok, error } = await post("/api/goal/swap", { goal_id: id });
-    swapping.delete(id);
-    if (!ok) setStatus(error, true);
-    renderGoals();
+    if (!ok) {
+      setStatus(error, true);
+      swapDone(id);
+    }
   });
   return button;
 }
 
 // A goal card's label, claim, doubt, and bar with progress words at its foot; a swap button when given the goal's id.
 function goalCard(g, label, swapId = null) {
-  const shown = g.met ? "Met" : goalProgress(g);
+  const shown = swapping.has(swapId) ? "Finding a new goal…" : g.met ? "Met" : goalProgress(g);
   return [
     el("div", { className: "goal-label" }, label, g.longShot ? el("span", { className: "tag", textContent: "Long shot" }) : null,
       swapId && !g.met ? swapButton(swapId) : null),
@@ -1822,7 +1839,8 @@ function renderGoals() {
   const all = [...goals.values()];
   $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
   $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", {
-    className: ["goal-card", g.met && "met", id === pickedGoal && "picked"].filter(Boolean).join(" "),
+    className: ["goal-card", g.met && "met", id === pickedGoal && "picked", swapping.has(id) && "swapping"].filter(Boolean).join(" "),
+    ariaBusy: String(swapping.has(id)),
   }, ...goalCard(g, "Your goal", id))));
   for (const uid of rumorRows.keys()) setRow(uid);
   refreshVillagers();

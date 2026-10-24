@@ -208,6 +208,11 @@ def test_page_says_where_an_action_goal_stands_instead_of_a_percent(game):
     assert 'g.standing || "Not yet"' in html and "bar standing" in html
 
 
+def test_page_shows_a_goal_waiting_for_its_swap(game):
+    html = game.client.get("/").text
+    assert "Finding a new goal…" in html and "swap turning" in html and "swapping.delete(e.goal_id)" in html
+
+
 def test_page_shows_departures_and_arrivals(game):
     html = game.client.get("/").text
     assert 'case "departure"' in html and 'case "arrival"' in html
