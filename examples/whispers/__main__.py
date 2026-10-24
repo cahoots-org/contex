@@ -43,7 +43,7 @@ async def play(web: bool) -> None:
     rng = random.Random()
     usage = Usage(config)
     writer = Writer(anthropic.AsyncAnthropic(), config.haiku_model, usage)
-    seed = config.seed_path or world_path(config.session)
+    seed = config.seed_path or world_path(config.session, config.data_dir)
     villagers = await load_or_generate(seed, writer, config.population, rng)
     if not config.seed_path:
         print(f"A new village, saved as {seed}. Set WHISPERS_SEED_PATH={seed} to play it again.")

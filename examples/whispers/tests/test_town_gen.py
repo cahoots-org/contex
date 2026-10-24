@@ -1,4 +1,5 @@
 import json
+import os
 import random
 
 import pytest
@@ -294,3 +295,16 @@ async def test_a_new_world_is_saved_in_a_folder_of_its_own(tmp_path, monkeypatch
     path = world_path("abc123")
     await load_or_generate(path, FreshBatches(10), 10, random.Random(1))
     assert (tmp_path / "whispers_worlds" / "abc123.json").exists()
+
+
+def test_world_path_sits_under_the_data_dir(tmp_path):
+    assert world_path("abc", str(tmp_path)) == str(tmp_path / "whispers_worlds" / "abc.json")
+    assert world_path("abc") == os.path.join("whispers_worlds", "abc.json")
+
+
+@pytest.mark.asyncio
+async def test_a_fixed_session_reuses_its_saved_village(tmp_path):
+    path = world_path("fixed", str(tmp_path))
+    first = await load_or_generate(path, FreshBatches(10), 10, random.Random(1))
+    again = await load_or_generate(path, FreshBatches(0), 10, random.Random(2))
+    assert [v.id for v in again] == [v.id for v in first]

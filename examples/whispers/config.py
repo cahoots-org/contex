@@ -51,7 +51,9 @@ class Config:
     talk_turns: int = 3
     # How long a villager stays put for a player at their place who has an open exchange with them and stopped talking and typing.
     talk_hold_seconds: float = 60.0
-    # Where need baselines are cached; empty means whispers_baselines.json, shared by every village.
+    # Where villages and need baselines are kept; empty means the working directory.
+    data_dir: str = ""
+    # Where need baselines are cached; empty means whispers_baselines.json in the data directory, shared by every village.
     calibration_path: str = ""
     haiku_model: str = "claude-haiku-5-5"
     # A saved village to play again; empty means a new village, saved under whispers_worlds/.
