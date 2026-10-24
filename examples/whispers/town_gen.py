@@ -109,9 +109,9 @@ NEWCOMER_TRIES = 3
 WORLDS_DIR = "whispers_worlds"
 
 
-def world_path(session: str) -> str:
-    """Where a new village for this session is saved."""
-    return os.path.join(WORLDS_DIR, f"{session}.json")
+def world_path(session: str, data_dir: str = "") -> str:
+    """Where a new village for this session is saved, under the data directory."""
+    return os.path.join(data_dir, WORLDS_DIR, f"{session}.json")
 
 
 def _first(name: str) -> str:

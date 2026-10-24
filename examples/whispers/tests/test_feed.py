@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from examples.whispers.feed import REPLAY_EVENTS, Feed
@@ -382,3 +383,20 @@ def test_departures_and_arrivals_are_told_to_everyone():
     assert gone.line == "Odo Fennelwhite has left town for good."
     assert (came.kind, came.player, came.line) == ("arrival", None, "Hawise Marlowe, a tanner, has arrived at the gate.")
     assert (left.data["text"], came.data["text"]) == (left.line, came.line)
+
+
+def test_state_round_trips_as_json_and_ids_go_on_past_it():
+    feed, _ = make()
+    feed.on_delivery(utt("u-1"), ["v2"])
+    feed.on_whisper_status("w-1", "v1", "Bert", "answered")
+    feed.on_whisper_status("w-2", "v2", "Marta", "heard")
+    feed.on_whisper_status("w-3", "v2", "Marta", "kept")
+    feed.close("p-2")
+    fresh, _ = make()
+    fresh.restore(json.loads(json.dumps(feed.to_state())))
+    assert list(fresh.recent) == list(feed.recent)
+    assert (fresh._closed, fresh._resolved, fresh._answered) == (feed._closed, feed._resolved, feed._answered)
+    assert fresh._listening == feed._listening
+    assert fresh.say("next").id == feed.say("next").id
+    fresh.ensure_past(40)
+    assert fresh.say("later").id == 41

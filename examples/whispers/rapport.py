@@ -53,6 +53,18 @@ class Rapport:
         self._interest: dict[tuple[str, str, str], float] = {}
         self._spoken: set[tuple[str, str, str]] = set()
 
+    def to_state(self) -> dict:
+        """Rapport, interest and spoken lines as plain JSON."""
+        return {"rapport": [[vid, player, x] for (vid, player), x in self._rapport.items()],
+                "interest": [[vid, player, rumor, x] for (vid, player, rumor), x in self._interest.items()],
+                "spoken": [list(key) for key in self._spoken]}
+
+    def restore(self, state: dict) -> None:
+        """Replace rapport, interest and spoken lines with a saved state."""
+        self._rapport = {(vid, player): x for vid, player, x in state["rapport"]}
+        self._interest = {(vid, player, rumor): x for vid, player, rumor, x in state["interest"]}
+        self._spoken = {tuple(key) for key in state["spoken"]}
+
     def rapport(self, vid: str, player: str) -> float:
         """How much the villager likes talking with player."""
         return self._rapport.get((vid, player), 0.0)

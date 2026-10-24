@@ -201,3 +201,8 @@ async def test_whisper_baseline_is_not_cached_to_disk(tmp_path):
     await baselines.load(["a need"])
     assert set(cached(tmp_path / "baselines.json")) == {"a need"}
     assert len(contex.published) == len(CALIBRATION)
+
+
+def test_baselines_cache_sits_under_the_data_dir(tmp_path):
+    cfg = Config(data_dir=str(tmp_path))
+    assert Baselines(FakeContex(), cfg).path == str(tmp_path / "whispers_baselines.json")

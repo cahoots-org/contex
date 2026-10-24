@@ -136,6 +136,27 @@ class Engine:
         if rumors is not None:
             feed.sinks.append(rumors.on_event)
 
+    def to_state(self) -> dict:
+        """Each villager's gossip taste, kept whispers and read keys, traced rumors and denied goals as plain JSON."""
+        return {"gossip": dict(self._gossip), "kept": {vid: list(kept) for vid, kept in self._kept.items()},
+                "consumed": {vid: list(keys) for vid, keys in self._consumed.items()},
+                "traced": [[*key, x] for key, x in self._traced.items()], "denied": sorted(self._denied)}
+
+    def restore(self, state: dict) -> None:
+        """Replace gossip, kept whispers, read keys, traced rumors and denied goals with a saved state.
+
+        A whisper a villager had read but not yet answered when the game stopped is told as kept.
+        """
+        self._gossip = dict(state["gossip"])
+        self._kept = {vid: dict.fromkeys(kept) for vid, kept in state["kept"].items()}
+        self._consumed = {vid: dict.fromkeys(keys) for vid, keys in state["consumed"].items()}
+        self._traced = {(subject, player, root): x for subject, player, root, x in state["traced"]}
+        self._denied = set(state["denied"])
+        for vid, keys in self._consumed.items():
+            for wid, name in self.feed.listening(vid):
+                if f"utt:{wid}" in keys:
+                    self.feed.on_whisper_status(wid, vid, name, "kept")
+
     async def add_villager(self, v: Villager, place: str = START_PLACE) -> None:
         mind = self.mind_factory(v)
         await mind.open()

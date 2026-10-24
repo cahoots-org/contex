@@ -28,6 +28,20 @@ class Game:
         self.day, self.phase = 1, PHASES[0]
         self.phase_started = time.time()
 
+    def to_state(self) -> dict:
+        """The day, phase, how far through the phase it is (0 to 1), and recent moves."""
+        part = self.day_seconds / len(PHASES)
+        return {"day": self.day, "phase": self.phase,
+                "elapsed": min(1.0, (time.time() - self.phase_started) / part),
+                "moves": [list(m) for m in self._moves]}
+
+    def restore(self, state: dict) -> None:
+        """Replace the clock and moves with a saved state; the phase resumes where it left off."""
+        self.day, self.phase = state["day"], state["phase"]
+        self.phase_started = time.time() - state["elapsed"] * self.day_seconds / len(PHASES)
+        self._moves.clear()
+        self._moves.extend((at, player) for at, player in state["moves"])
+
     def tick(self) -> None:
         """Move the village clock on to the next part of the day."""
         at = PHASES.index(self.phase) + 1

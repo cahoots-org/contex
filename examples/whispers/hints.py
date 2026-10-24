@@ -1,6 +1,5 @@
 """Each player's hint lines, kept in their own Contex project so a draft can be matched against them."""
 
-import itertools
 import logging
 
 from examples.whispers.config import Config
@@ -15,8 +14,21 @@ class Hints:
     def __init__(self, contex: ContexClient, config: Config):
         self.contex = contex
         self.config = config
-        self._keys = itertools.count(1)
+        self._last_key = 0
         self._hinted: set[str] = set()
+
+    def ensure_past(self, n: int) -> None:
+        """Make the next hint key come after hint:n."""
+        self._last_key = max(self._last_key, n)
+
+    def to_state(self) -> dict:
+        """The last key used and the players with hints."""
+        return {"last_key": self._last_key, "hinted": sorted(self._hinted)}
+
+    def restore(self, state: dict) -> None:
+        """Replace the key counter and hinted players with a saved state."""
+        self._last_key = state["last_key"]
+        self._hinted = set(state["hinted"])
 
     def project(self, player: str) -> str:
         """The player's hints project."""
@@ -25,8 +37,9 @@ class Hints:
     async def add(self, player: str, villager_id: str, line: str) -> None:
         """Keep a hint line the villager gave the player; a failure is logged."""
         self._hinted.add(player)
+        self._last_key += 1
         try:
-            await self.contex.publish(self.project(player), f"hint:{next(self._keys)}", {"id": villager_id, "text": line})
+            await self.contex.publish(self.project(player), f"hint:{self._last_key}", {"id": villager_id, "text": line})
         except Exception:
             log.warning("hint from %s for %s was not published", villager_id, player)
             log.debug("hint publish failure", exc_info=True)

@@ -1,3 +1,4 @@
+import json
 import logging
 
 import pytest
@@ -50,3 +51,19 @@ async def test_a_failed_query_matches_no_one(caplog):
     with caplog.at_level(logging.DEBUG):
         assert await hints.matching("p-1", DRAFT) == []
     assert DRAFT not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_state_round_trips_as_json_and_the_key_can_be_raised():
+    hints, contex, config = make()
+    await hints.add("p-1", "v1", "The vines worry me.")
+    await hints.add("p-2", "v1", "Hm.")
+    fresh = Hints(contex, config)
+    fresh.restore(json.loads(json.dumps(hints.to_state())))
+    assert fresh._hinted == {"p-1", "p-2"}
+    await fresh.add("p-1", "v2", "Again.")
+    assert contex.published[-1][1] == "hint:3"
+    fresh.ensure_past(10)
+    fresh.ensure_past(5)
+    await fresh.add("p-1", "v2", "Later.")
+    assert contex.published[-1][1] == "hint:11"

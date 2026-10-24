@@ -233,6 +233,19 @@ async def test_drawn_goals_are_published_when_prepared():
     assert len(baselines.loaded) == 4
 
 
+@pytest.mark.usefixtures("claims_only")
+@pytest.mark.asyncio
+async def test_goals_readied_instead_replace_those_drawn():
+    baselines = LoggingBaselines()
+    maker = goal_maker(town_of(AGNES, HOB, *FARMERS), baselines=baselines)
+    stale = maker.world_goal(set())
+    kept = maker.draw("p-1", set())
+    maker.ready_instead(kept)
+    await maker.prepare()
+    assert baselines.loaded == [g.claim_text for g in kept]
+    assert f"goal:{stale.id}" not in maker.overhear._evidence
+
+
 @pytest.mark.asyncio
 async def test_generated_ids_unique_across_players():
     maker = goal_maker(town_of(AGNES, HOB, *FARMERS), ids=Ids())

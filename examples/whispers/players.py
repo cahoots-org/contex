@@ -2,9 +2,9 @@
 
 import secrets
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
-from examples.whispers.goals import Trophy
+from examples.whispers.goals import Trophy, trophy_from_state
 from examples.whispers.player import Player
 from examples.whispers.usage import Usage
 
@@ -33,6 +33,23 @@ class Players:
         self.cases: dict[str, list[Trophy]] = {}
         # Trophy lines for an owner with no live run, sent when their next run starts.
         self.pending: dict[str, list[tuple[Trophy, str]]] = {}
+
+    def to_state(self) -> dict:
+        """Every run, each owner's trophy case and pending trophy lines as plain JSON."""
+        return {"runs": [p.to_state() for p in self._by_id.values()],
+                "cases": {owner: [t.to_json() for t in case] for owner, case in self.cases.items()},
+                "pending": {owner: [[t.to_json(), line] for t, line in lines] for owner, lines in self.pending.items()}}
+
+    def restore(self, state: dict, make: Callable[[str, str], Player]) -> None:
+        """Replace the runs, cases and pending lines with a saved state; make(id, owner) builds a wired run."""
+        self._by_id, self._latest = {}, {}
+        for run in state["runs"]:
+            player = make(run["id"], run["owner"])
+            player.restore(run)
+            self.add(player)
+        self.cases = {owner: [trophy_from_state(t) for t in case] for owner, case in state["cases"].items()}
+        self.pending = {owner: [(trophy_from_state(t), line) for t, line in lines]
+                        for owner, lines in state["pending"].items()}
 
     def add(self, player: Player) -> None:
         self._by_id[player.id] = player

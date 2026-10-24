@@ -60,7 +60,7 @@ class Baselines:
     def __init__(self, contex: ContexClient, config: Config):
         self.contex = contex
         self.config = config
-        self.path = config.calibration_path or BASELINES_PATH
+        self.path = config.calibration_path or os.path.join(config.data_dir, BASELINES_PATH)
         self.values: dict[str, float] = {}
         self._lock = asyncio.Lock()
         self._published = False

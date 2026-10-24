@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -126,3 +127,14 @@ def test_nobody_plays_while_the_village_rests():
     assert players.any_playing()
     usage.record("haiku", 1_000_000, 0)
     assert not players.any_playing()
+
+
+def test_state_round_trips_as_json():
+    usage = Usage(Config())
+    usage.record("haiku", 1000, 200, "p-1")
+    usage.record("jev", 5, 6)
+    fresh = Usage(Config())
+    fresh.restore(json.loads(json.dumps(usage.to_state())))
+    assert fresh.tokens == usage.tokens and fresh.players == usage.players
+    assert fresh._today == usage._today and fresh._day == usage._day
+    assert fresh.cost_today() == usage.cost_today() > 0

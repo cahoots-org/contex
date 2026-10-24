@@ -1,3 +1,4 @@
+import json
 import asyncio
 from types import SimpleNamespace
 
@@ -1481,3 +1482,42 @@ def test_past_max_idle_runs_the_oldest_never_played_runs_go_whatever_their_age(c
     runs[2].typing()
     assert players.prune() == [runs[0]]
     assert [p.id for p in players] == ["p-2", "p-played", "p-3"]
+
+
+def durable(p):
+    return (p.id, p.owner, p.place, p.state, p.ended_at, p.created_at, p.summary, p.goals, p.met, p.whispered_at,
+            p._threads, p._held, p._hinted, p._said_at, p._typed_at, p.over())
+
+
+def test_players_round_trip_as_json_with_no_sockets():
+    player, town, _, engine, lineage = make("Bert")
+    goal = Goal("gen-1", "Bert is a spy", "belief", evidence=("bert spies",), audience=("v1",), owner=PID)
+    player.goals, player.met, player.place = [goal], {"gen-1"}, "tavern"
+    player._threads["v1"] = {"id": "w-1", "need": "bread", "at": 5.0}
+    player._held["v1"] = ("w-1", "w-1")
+    player._hinted["v1"] = {1, 2}
+    player._said_at["v1"], player._typed_at, player.whispered_at = 4.0, 6.0, 4.0
+    player.connected()
+    ended = Player(engine, town, lineage, Ids(), player.feed, player.config, player_id="p-2", owner="o-1")
+    ended.end(Summary("lost", [("Bert is a spy", 40)], ["ran out"]))
+    players = Players(player.feed)
+    players.add(player)
+    players.add(ended)
+    trophy = Trophy("personal", ("Bert is a spy",), 2)
+    players.award("o-1", trophy, "well done")
+    players.cases[PID] = [Trophy("world", ("all hold it",), 3, long_shot=True)]
+    assert players.any_playing()
+
+    def wire(pid, owner):
+        return Player(engine, town, lineage, Ids(), player.feed, player.config, player_id=pid, owner=owner)
+
+    fresh = Players(player.feed)
+    fresh.restore(json.loads(json.dumps(players.to_state())), wire)
+    assert [durable(p) for p in fresh] == [durable(p) for p in players]
+    assert fresh.get("p-2").finished.is_set() and fresh.get("p-2").summary.goals == [("Bert is a spy", 40)]
+    assert fresh.live("o-1") is fresh.get("p-2") and fresh.live(PID) is fresh.get(PID)
+    assert fresh.cases == players.cases and fresh.pending == {"o-1": [(trophy, "well done")]}
+    assert fresh.get(PID).ever_active() and not fresh.get(PID).listening()
+    assert not fresh.any_playing()
+    fresh.get(PID).connected()
+    assert fresh.any_playing()

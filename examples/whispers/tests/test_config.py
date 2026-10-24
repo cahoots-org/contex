@@ -86,3 +86,9 @@ def test_the_address_is_the_web_host_and_railways_port_when_set(monkeypatch):
     assert Config().address() == ("127.0.0.1", 8765)
     monkeypatch.setenv("WHISPERS_WEB_HOST", "0.0.0.0")
     assert Config.from_env().address() == ("0.0.0.0", 8765)
+
+
+def test_data_dir_defaults_to_the_working_directory_and_reads_the_environment(monkeypatch):
+    assert Config().data_dir == ""
+    monkeypatch.setenv("WHISPERS_DATA_DIR", "/data")
+    assert Config.from_env().data_dir == "/data"

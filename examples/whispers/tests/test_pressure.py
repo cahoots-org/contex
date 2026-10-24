@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from examples.whispers.config import Config
@@ -42,3 +43,13 @@ def test_pressure_from_no_player_has_no_culprit():
     p = Pressure(Config())
     p.add("v1", 1.2, None)
     assert p.culprit("v1") is None
+
+
+def test_state_round_trips_as_json():
+    p = Pressure(Config())
+    p.add("v1", 0.3, "p-1")
+    p.add("v1", 0.1, "p-2")
+    p.add("v2", 0.05, None)
+    fresh = Pressure(Config())
+    fresh.restore(json.loads(json.dumps(p.to_state())))
+    assert fresh._level == p._level and fresh._shares == p._shares

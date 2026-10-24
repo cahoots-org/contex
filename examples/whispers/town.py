@@ -1,6 +1,7 @@
 """Town state: villagers, their places, and groups."""
 
 import re
+from dataclasses import asdict
 
 from examples.whispers.models import Group, Villager
 
@@ -16,6 +17,20 @@ class Town:
         self._places: dict[str, str] = {}
         self._groups: dict[str, Group] = {}
         self.departed: list[Villager] = []
+
+    def to_state(self) -> dict:
+        """Villagers, places, groups and departed villagers as plain JSON."""
+        return {"villagers": [asdict(v) for v in self._villagers.values()], "places": dict(self._places),
+                "groups": [{**asdict(g), "members": sorted(g.members)} for g in self._groups.values()],
+                "departed": [asdict(v) for v in self.departed]}
+
+    def restore(self, state: dict) -> None:
+        """Replace the town with a saved state."""
+        self._villagers = {v["id"]: Villager(**v) for v in state["villagers"]}
+        self._places = dict(state["places"])
+        self._groups = {g["id"]: Group(**{**g, "members": {m for m in g["members"] if m in self._villagers}})
+                        for g in state["groups"]}
+        self.departed = [Villager(**v) for v in state["departed"]]
 
     def __contains__(self, vid: str) -> bool:
         return vid in self._villagers

@@ -11,6 +11,18 @@ class Ids:
         self._counts[prefix] += 1
         return f"{prefix}-{self._counts[prefix]}"
 
+    def ensure_past(self, prefix: str, n: int) -> None:
+        """Make the next id for prefix come after n."""
+        self._counts[prefix] = max(self._counts[prefix], n)
+
+    def to_state(self) -> dict:
+        """The counter for each prefix."""
+        return dict(self._counts)
+
+    def restore(self, state: dict) -> None:
+        """Replace the counters with a saved state."""
+        self._counts = defaultdict(int, state)
+
 
 class Lineage:
     def __init__(self) -> None:
@@ -22,6 +34,15 @@ class Lineage:
         self._parent[uid] = parent
         if player is not None:
             self._player[uid] = player
+
+    def to_state(self) -> dict:
+        """Parents and players as plain JSON."""
+        return {"parent": dict(self._parent), "player": dict(self._player)}
+
+    def restore(self, state: dict) -> None:
+        """Replace parents and players with a saved state."""
+        self._parent = dict(state["parent"])
+        self._player = dict(state["player"])
 
     def root(self, uid: str) -> str:
         while self._parent.get(uid) is not None:

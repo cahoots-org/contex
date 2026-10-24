@@ -11,8 +11,9 @@ COPY examples/whispers/requirements.txt examples/whispers/requirements.txt
 RUN pip install --no-cache-dir -r examples/whispers/requirements.txt
 
 COPY examples/whispers examples/whispers
-# The game saves its village and need baselines in the working directory.
+# Without a volume the game saves its village and need baselines in the working directory.
 RUN chown whispers /app
-USER whispers
 
+# The entrypoint runs as root to take the volume, then drops to whispers.
+ENTRYPOINT ["examples/whispers/entrypoint.sh"]
 CMD ["python", "-m", "examples.whispers", "--web"]

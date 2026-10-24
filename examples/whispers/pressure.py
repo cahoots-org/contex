@@ -11,6 +11,15 @@ class Pressure:
         self._level: dict[str, float] = {}
         self._shares: dict[str, dict[str, float]] = {}
 
+    def to_state(self) -> dict:
+        """Levels and shares as plain JSON."""
+        return {"level": dict(self._level), "shares": {vid: dict(s) for vid, s in self._shares.items()}}
+
+    def restore(self, state: dict) -> None:
+        """Replace levels and shares with a saved state."""
+        self._level = dict(state["level"])
+        self._shares = {vid: dict(s) for vid, s in state["shares"].items()}
+
     def add(self, vid: str, amount: float, player: str | None) -> float:
         """Raise the villager's pressure by amount, crediting player with it; returns the new pressure."""
         self._level[vid] = self.level(vid) + amount

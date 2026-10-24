@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta
 
 from examples.whispers.calibration import Baselines
@@ -74,6 +74,14 @@ def _entry(name: str, state: str, **extra) -> dict:
             "depth": 0, **extra}
 
 
+def _measured(card: Card) -> float | None:
+    """The card's baseline, or its first measurement if that has finished."""
+    m = card.measuring
+    if card.baseline is None and m is not None and m.done() and not m.cancelled():
+        return m.result()
+    return card.baseline
+
+
 def _wording(text: str) -> str:
     """Text with case, spacing and trailing punctuation set aside."""
     return " ".join(text.casefold().split()).rstrip(".!?,;:…\"'”’)] ")
@@ -95,6 +103,22 @@ class Rumors:
         self.overhear = overhear
         self.project = f"whispers:{config.session}:rumors"
         self._cards: dict[str, Card] = {}
+
+    def to_state(self) -> dict:
+        """Every card as plain JSON, without its measurement in flight."""
+        return {"cards": [{**asdict(replace(c, measuring=None, baseline=_measured(c))),
+                           "published_at": c.published_at.isoformat(), "heard": sorted(c.heard),
+                           "marked": sorted(c.marked)} for c in self._cards.values()]}
+
+    def restore(self, state: dict) -> None:
+        """Replace the cards with a saved state; scenes and waits did not survive, so their marks are cleared."""
+        self._cards = {}
+        for c in state["cards"]:
+            card = Card(**{**c, "published_at": datetime.fromisoformat(c["published_at"]), "heard": set(c["heard"]),
+                           "marked": {k for k in c["marked"] if not k.startswith("scene:")}})
+            for held in card.frontier.values():
+                held["scene"] = held["until"] = None
+            self._cards[card.uid] = card
 
     async def add(
         self, whisper_uid: str, text: str, published_at: datetime, target_id: str, target_name: str,
@@ -162,7 +186,7 @@ class Rumors:
             return False
         since = card.published_at - timedelta(seconds=self.config.check_lookback_seconds)
         try:
-            if card.baseline is None and not card.measuring.cancelled():
+            if card.baseline is None and card.measuring is not None and not card.measuring.cancelled():
                 card.baseline = await asyncio.shield(card.measuring)
             if card.baseline is None:
                 card.baseline = await self.baselines.measure(card.text)
@@ -291,7 +315,8 @@ class Rumors:
     def close(self) -> None:
         """Cancel any baseline measurement still running."""
         for card in self._cards.values():
-            card.measuring.cancel()
+            if card.measuring is not None:
+                card.measuring.cancel()
 
     def cards(self, player: str) -> list[dict]:
         """The player's cards but replies, oldest first, with how many heard it and how many heard it in the last game day,

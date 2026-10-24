@@ -1,3 +1,4 @@
+import json
 import asyncio
 import random
 from dataclasses import replace
@@ -1357,3 +1358,33 @@ async def test_a_round_stops_once_the_village_rests():
     judge._forget = lambda *args: (rounds.append(1), forget(*args))
     await run_until(judge, everyone, lambda: rounds)
     assert len(checked) == 1
+
+
+def test_state_round_trips_as_json():
+    judge, *_ = make()
+    judge.world = Goal("world-3", "the cat is a spy", "belief", evidence=("the cat spies",), audience=("v1", "v2"))
+    judge.world_since = 1234.5
+    judge.whisperers = {"o-1", "o-2"}
+    judge._acted = {"gen-4": 2}
+    judge.progress, judge.counts = {"gen-4": 0.5}, {"gen-4": (2, 4)}
+    judge.roots, judge.doubt = {"gen-4": {"v1": "w-1", "v2": None}}, {"gen-4": {"count": 1, "saying": "no"}}
+    judge._standing, judge._holds = {"gen-4": "Not yet"}, {"gen-4": 1}
+    fresh, *_ = make()
+    fresh.restore(json.loads(json.dumps(judge.to_state())))
+    assert (fresh.world, fresh.world_since, fresh.whisperers, fresh._acted) == (
+        judge.world, judge.world_since, judge.whisperers, judge._acted)
+    assert (fresh.progress, fresh.counts, fresh.roots, fresh.doubt, fresh._standing, fresh._holds) == (
+        judge.progress, judge.counts, judge.roots, judge.doubt, judge._standing, judge._holds)
+
+
+@pytest.mark.asyncio
+async def test_a_won_hand_with_no_redeal_running_is_redealt():
+    judge, _, _, feed, _ = make()
+    judge.world = world_goal(Goal("world-cat", "cat", "belief", ("cat spy",), claim_text="The cat is a spy"))
+    judge.maker = GatedMaker()
+    judge.maker.ready.set()
+    scripted(judge, [0.0] * 100, goal=QUIET)
+    pa = holder("p-a", QUIET)
+    pa.met = {QUIET.id}
+    await run_until(judge, players(pa, feed=feed), lambda: feed.deals)
+    assert [g.id for g in pa.goals] == ["t", "g"] and pa.met == set() and feed.trophies == []

@@ -36,6 +36,11 @@ class Goal:
     count: int = 1
 
 
+def goal_from_state(state: dict) -> Goal:
+    """A goal saved with asdict and read back from JSON."""
+    return Goal(**{**state, "evidence": tuple(state["evidence"]), "audience": tuple(state["audience"])})
+
+
 MIN_CIRCLE = 3
 WORLD_FRACTION = 2 / 3
 
@@ -109,6 +114,11 @@ class Trophy:
 
     def to_json(self) -> dict:
         return {"kind": self.kind, "goals": list(self.goals), "day": self.day, "long_shot": self.long_shot}
+
+
+def trophy_from_state(state: dict) -> Trophy:
+    """A trophy saved with to_json and read back from JSON."""
+    return Trophy(**{**state, "goals": tuple(state["goals"])})
 
 
 def trophy_line(trophy: Trophy, claim: str | None, unseen: str | None = None) -> str:

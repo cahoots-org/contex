@@ -1,10 +1,9 @@
 """The feed: typed events about the game, sent to every sink and kept for replay."""
 
-import itertools
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from examples.whispers.game import Summary
 from examples.whispers.goals import Goal, Trophy, claim, goal_targets
@@ -74,7 +73,7 @@ class Feed:
         self.town = town
         self.sinks: list[Sink] = [terminal(out)] if out else []
         self.recent: deque[Event] = deque(maxlen=REPLAY_EVENTS)
-        self._ids = itertools.count(1)
+        self._last_id = 0
         # Each closed player's id, with the id of the last event they see.
         self._closed: dict[str, int] = {}
         self._listening: dict[str, tuple[str, str]] = {}
@@ -82,11 +81,31 @@ class Feed:
         self._resolved: set[str] = set()
         self._answered: set[str] = set()
 
+    def to_state(self) -> dict:
+        """Recent events, the last event id, closed players and whisper states as plain JSON."""
+        return {"recent": [asdict(e) for e in self.recent], "last_id": self._last_id, "closed": dict(self._closed),
+                "listening": {wid: list(held) for wid, held in self._listening.items()},
+                "resolved": sorted(self._resolved), "answered": sorted(self._answered)}
+
+    def restore(self, state: dict) -> None:
+        """Replace the events and whisper states with a saved state."""
+        self.recent.clear()
+        self.recent.extend(Event(**e) for e in state["recent"])
+        self._last_id = state["last_id"]
+        self._closed = dict(state["closed"])
+        self._listening = {wid: tuple(held) for wid, held in state["listening"].items()}
+        self._resolved, self._answered = set(state["resolved"]), set(state["answered"])
+
+    def ensure_past(self, n: int) -> None:
+        """Make the next event id come after n."""
+        self._last_id = max(self._last_id, n)
+
     def emit(self, kind: str, line: str = "", /, player: str | None = None, **data) -> Event | None:
         """Send an event to every sink; drop one addressed to a closed player and return None."""
         if player in self._closed:
             return None
-        event = Event(next(self._ids), time.time(), kind, line, data, player)
+        self._last_id += 1
+        event = Event(self._last_id, time.time(), kind, line, data, player)
         self.recent.append(event)
         for sink in self.sinks:
             sink(event)

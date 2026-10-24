@@ -4,7 +4,7 @@ import asyncio
 import logging
 import re
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 
 from typesafe_sdk import Noul
@@ -12,7 +12,7 @@ from typesafe_sdk import Noul
 from examples.whispers.config import Config
 from examples.whispers.contex_client import Match
 from examples.whispers.game import Game, Summary
-from examples.whispers.goals import Goal
+from examples.whispers.goals import Goal, goal_from_state
 from examples.whispers.lineage import Ids, Lineage
 from examples.whispers.mind import mind_project
 from examples.whispers.overhear import audible
@@ -87,6 +87,35 @@ class Player:
         # Open tabs, and when the player last acted or closed one; None until they first do.
         self._sockets = 0
         self._active_at: float | None = None
+
+    def to_state(self) -> dict:
+        """The run's durable fields as plain JSON; listens, tabs and tasks are left out."""
+        return {
+            "id": self.id, "owner": self.owner, "place": self.place, "state": self.state, "ended_at": self.ended_at,
+            "created_at": self.created_at, "summary": self.summary and asdict(self.summary),
+            "goals": [asdict(g) for g in self.goals], "met": sorted(self.met), "whispered_at": self.whispered_at,
+            "active_at": self._active_at, "threads": self._threads,
+            "held": {vid: list(held) for vid, held in self._held.items()},
+            "hinted": {vid: sorted(used) for vid, used in self._hinted.items()},
+            "said_at": self._said_at, "typed_at": self._typed_at,
+        }
+
+    def restore(self, state: dict) -> None:
+        """Fill the run from a saved state; with no tab open it is idle until its player reconnects."""
+        self.place, self.state, self.ended_at = state["place"], state["state"], state["ended_at"]
+        self.created_at, self.whispered_at = state["created_at"], state["whispered_at"]
+        summary = state["summary"]
+        self.summary = summary and Summary(summary["outcome"], [tuple(g) for g in summary["goals"]], summary["reasons"])
+        self.goals = [goal_from_state(g) for g in state["goals"]]
+        self.met = set(state["met"])
+        active_at = state["active_at"]
+        self._active_at = None if active_at is None else min(active_at, time.time() - self.config.idle_after_seconds)
+        self._threads = state["threads"]
+        self._held = {vid: tuple(held) for vid, held in state["held"].items()}
+        self._hinted = {vid: set(used) for vid, used in state["hinted"].items()}
+        self._said_at, self._typed_at = state["said_at"], state["typed_at"]
+        if self.state != "playing":
+            self.finished.set()
 
     def connected(self) -> None:
         """A tab opened its feed."""
