@@ -3,4 +3,4 @@ typesafe-sdk>=0.7,<0.8
 anthropic>=1,<2
 python-dotenv>=1,<2
 fastapi>=0.141,<1
-uvicorn>=0.54,<1
+uvicorn[standard]>=0.54,<1
