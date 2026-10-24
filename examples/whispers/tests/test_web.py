@@ -1055,3 +1055,10 @@ def test_offer_drops_a_full_queue_for_a_close():
         web.offer(clients, queue, {"n": n})
     assert clients == {} and queue.qsize() == 1 and queue.get_nowait() is None
 
+
+def test_the_cookie_is_secure_over_https(game):
+    plain = TestClient(game.app, base_url=BASE).get("/")
+    secure = TestClient(game.app, base_url=f"https://127.0.0.1:{PORT}").get("/")
+    assert "secure" not in plain.headers["set-cookie"].lower()
+    assert "secure" in secure.headers["set-cookie"].lower()
+

@@ -270,7 +270,9 @@ def create_app(
             join(owner)
         response = FileResponse(PAGE)
         if fresh:
-            response.set_cookie(COOKIE, owner, max_age=COOKIE_SECONDS, httponly=True, samesite="lax")
+            response.set_cookie(
+                COOKIE, owner, max_age=COOKIE_SECONDS, httponly=True, samesite="lax", secure=request.url.scheme == "https",
+            )
         return response
 
     @app.get("/api/state")

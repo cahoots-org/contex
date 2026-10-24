@@ -104,6 +104,8 @@ async def play(web: bool) -> None:
                 )
                 server = uvicorn.Server(uvicorn.Config(
                     app, host=host, port=port, log_level="warning", timeout_graceful_shutdown=1,
+                    # Behind a TLS proxy such as Railway's, the forwarded scheme says the page was served over https.
+                    proxy_headers=True, forwarded_allow_ips="*",
                 ))
                 print(f"Whispers is running at http://{host}:{port} (Ctrl-C to stop)")
                 await server.serve()
