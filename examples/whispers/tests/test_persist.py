@@ -23,7 +23,7 @@ from examples.whispers.judge import Judge
 from examples.whispers.lineage import Ids, Lineage
 from examples.whispers.models import Utterance, Villager
 from examples.whispers.overhear import Overhear
-from examples.whispers.persist import components, load_game, restore_game, save_every, save_game, state_path, stop
+from examples.whispers.persist import components, load_game, restore_game, resume_game, save_every, save_game, state_path, stop
 from examples.whispers.player import Player
 from examples.whispers.players import Players
 from examples.whispers.rumors import Rumors
@@ -139,7 +139,7 @@ async def test_a_played_game_restores_to_the_same_state_with_fresh_ids(monkeypat
     save_game(path, g.parts, SESSION)
 
     fresh = build()
-    assert restore_game(load_game(path, SESSION), fresh.parts, fresh.make)
+    assert resume_game(path, SESSION, fresh.parts, fresh.make)
     restored = fresh.players.get(player.id)
     assert await api_state(fresh, player.owner) == before
     assert fresh.players.pending == g.players.pending and fresh.players.cases == g.players.cases
@@ -192,7 +192,8 @@ def test_a_save_is_written_whole_or_not_at_all(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("content", [None, "{not json", json.dumps({"version": 99, "session": SESSION}),
                                      json.dumps({"version": persist.STATE_VERSION, "session": "other"}), "[]"])
-def test_a_save_that_cannot_be_used_is_logged_and_ignored(tmp_path, caplog, content):
+def test_a_save_that_cannot_be_used_is_logged_and_set_aside(tmp_path, caplog, monkeypatch, content):
+    monkeypatch.setattr(time, "time", lambda: NOW)
     path = state_path(SESSION, str(tmp_path))
     if content is not None:
         os.makedirs(os.path.dirname(path))
@@ -201,6 +202,10 @@ def test_a_save_that_cannot_be_used_is_logged_and_ignored(tmp_path, caplog, cont
     with caplog.at_level(logging.INFO, logger="examples.whispers.persist"):
         assert load_game(path, SESSION) is None
     assert "starting fresh" in caplog.text
+    assert not os.path.exists(path)
+    if content is not None:
+        with open(f"{path}.bad-{int(NOW)}") as f:
+            assert f.read() == content
 
 
 @pytest.mark.asyncio
@@ -210,13 +215,16 @@ async def test_a_save_that_fails_to_restore_leaves_the_game_fresh(monkeypatch, t
     save_game(path, g.parts, SESSION)
     state = load_game(path, SESSION)
     del state["judge"]["world"]
+    with open(path, "w") as f:
+        json.dump(state, f)
 
     fresh = build()
     for v in VILLAGERS:
         fresh.engine.town.add(v)
     world = fresh.judge.world
-    assert not restore_game(state, fresh.parts, fresh.make)
+    assert not resume_game(path, SESSION, fresh.parts, fresh.make)
     assert "could not be restored" in caplog.text
+    assert not os.path.exists(path) and os.path.exists(f"{path}.bad-{int(NOW)}")
     assert fresh.players.get(player.id) is None and not fresh.feed.recent
     assert fresh.judge.world == world and fresh.engine.ids.next("w") == "w-1"
     assert [v.id for v in fresh.engine.town.villagers] == [v.id for v in VILLAGERS]
@@ -239,3 +247,8 @@ async def test_the_game_is_saved_every_interval():
     task = asyncio.create_task(save_every(0, lambda: saves.append(1)))
     await wait_for(lambda: len(saves) >= 3)
     task.cancel()
+
+
+def test_setting_aside_a_missing_save_does_nothing(tmp_path):
+    persist.set_aside(state_path(SESSION, str(tmp_path)))
+    assert not os.listdir(tmp_path)

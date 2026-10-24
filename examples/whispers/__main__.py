@@ -26,7 +26,7 @@ from examples.whispers.goal_maker import GoalMaker
 from examples.whispers.judge import Judge
 from examples.whispers.lineage import Ids, Lineage
 from examples.whispers.overhear import Overhear
-from examples.whispers.persist import components, load_game, restore_game, save_every, save_quietly, state_path, stop
+from examples.whispers.persist import components, resume_game, save_every, save_quietly, state_path, stop
 from examples.whispers.player import Player
 from examples.whispers.pool import load_pool
 from examples.whispers.players import LOCAL_OWNER, Players, new_player_id
@@ -94,8 +94,7 @@ async def play(web: bool) -> None:
 
         parts = components(engine)
         saves = state_path(config.session, config.data_dir)
-        saved = load_game(saves, config.session)
-        if saved is not None and restore_game(saved, parts, make):
+        if resume_game(saves, config.session, parts, make):
             maker.ready_instead([g for p in players if not p.over() for g in p.goals] + [judge.world])
             villagers = town.villagers
         else:

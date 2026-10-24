@@ -49,8 +49,21 @@ def save_game(path: str, components: dict, session: str) -> None:
     os.replace(temp, path)
 
 
+def set_aside(path: str) -> None:
+    """Rename a save that can't be used to <path>.bad-<time>, so the next save does not overwrite it."""
+    aside = f"{path}.bad-{int(time.time())}"
+    try:
+        os.replace(path, aside)
+    except FileNotFoundError:
+        return
+    log.warning("set the saved game aside as %s", aside)
+
+
 def load_game(path: str, session: str) -> dict | None:
-    """The saved game at path, or None, logged, when it is missing, unreadable, or for another version or session."""
+    """The saved game at path, or None, logged, when it is missing, unreadable, or for another version or session.
+
+    A save that is there but can't be used is set aside.
+    """
     try:
         with open(path) as f:
             state = json.load(f)
@@ -59,9 +72,11 @@ def load_game(path: str, session: str) -> dict | None:
         return None
     except (OSError, ValueError):
         log.warning("the saved game at %s is unreadable; starting fresh", path, exc_info=True)
+        set_aside(path)
         return None
     if not isinstance(state, dict) or state.get("version") != STATE_VERSION or state.get("session") != session:
         log.warning("the saved game at %s is for another version or session; starting fresh", path)
+        set_aside(path)
         return None
     return state
 
@@ -79,6 +94,17 @@ def restore_game(state: dict, components: dict, make: Callable) -> bool:
         _restore(fresh, components, make)
         return False
     return True
+
+
+def resume_game(path: str, session: str, components: dict, make: Callable) -> bool:
+    """Restore the game saved at path; a save that can't be used is set aside and the game left fresh."""
+    state = load_game(path, session)
+    if state is None:
+        return False
+    if restore_game(state, components, make):
+        return True
+    set_aside(path)
+    return False
 
 
 def _restore(state: dict, components: dict, make: Callable, margin: int = 0) -> None:
