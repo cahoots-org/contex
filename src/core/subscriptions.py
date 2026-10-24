@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.db_models import Embedding, Subscription, Symbol
 from src.core.embedder import encode_async
@@ -214,6 +215,8 @@ class SubscriptionService:
         (buffer-until-complete) and emits a `subscription:{id}:updated` event. Returns
         the list of subscription ids that changed. `changed_keys` names the documents
         just published; `None`, or more keys than one batch holds, reconciles every subscription.
+        A database error while narrowing to the affected subscriptions raises rather than
+        re-matching all of them, which would need the database just as much.
         """
         if changed_keys is not None and len(changed_keys) > MAX_BATCH_SIZE:
             changed_keys = None
@@ -240,6 +243,8 @@ class SubscriptionService:
         if changed_keys is not None:
             try:
                 affected = await self._affected(project_id, changed_keys)
+            except SQLAlchemyError:
+                raise
             except Exception:
                 logger.exception("affected-subscription filter failed for %s; reconciling all", project_id)
 
