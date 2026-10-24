@@ -327,6 +327,7 @@ def create_app(
         goal_id = payload.get("goal_id")
         if not isinstance(goal_id, str):
             return _error(400, BAD_SWAP)
+        player.touch()
         if problem := await judge.swap(player, goal_id):
             return _error(409, problem)
         return {"ok": True}
@@ -387,6 +388,7 @@ def create_app(
         sent["usage"].setdefault(player.id, usage.to_json(player.id))
         sent["beliefs"].setdefault(player.id, beliefs(judge, player))
         clients[queue] = player.id
+        player.connected()
 
         async def pump() -> None:
             while True:
@@ -398,6 +400,7 @@ def create_app(
                 pass
         finally:
             del clients[queue]
+            player.disconnected()
             sender.cancel()
             await asyncio.gather(sender, return_exceptions=True)
 

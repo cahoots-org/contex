@@ -83,12 +83,40 @@ class Player:
         self._said_at: dict[str, float] = {}
         # When the player last typed in the whisper box.
         self._typed_at = 0.0
+        self.created_at = time.time()
+        # Open tabs, and when the player last acted or closed one; None until they first do.
+        self._sockets = 0
+        self._active_at: float | None = None
+
+    def connected(self) -> None:
+        """A tab opened its feed."""
+        self._sockets += 1
+        self.touch()
+
+    def disconnected(self) -> None:
+        """A tab closed its feed."""
+        self._sockets -= 1
+        self.touch()
+
+    def touch(self) -> None:
+        """The player did something."""
+        self._active_at = time.time()
+
+    def ever_active(self) -> bool:
+        return self._active_at is not None
+
+    def active(self) -> bool:
+        """Whether a tab is open, or the player acted or closed one within idle_after_seconds."""
+        return self._sockets > 0 or (
+            self._active_at is not None and time.time() - self._active_at < self.config.idle_after_seconds
+        )
 
     async def whisper(self, name: str, text: str) -> str | None:
         """Whisper text to the villager called name; returns why it could not be done, if it couldn't.
 
         A villager turning the whisper away comes back as a Refusal.
         """
+        self.touch()
         if self.over():
             return GAME_OVER
         name = name.strip()
@@ -111,6 +139,7 @@ class Player:
 
     def walk(self, place: str) -> str | None:
         """Move to place for free; returns why it could not be done, if it couldn't."""
+        self.touch()
         if self.over():
             return GAME_OVER
         if place not in PLACES:
@@ -125,6 +154,7 @@ class Player:
 
         It opens with the last few lines said here in this part of the day.
         """
+        self.touch()
         if self.over():
             return GAME_OVER
         if self.listening():
@@ -165,6 +195,7 @@ class Player:
 
         A villager turning the whisper away comes back as a Refusal. Every model call it sets off is charged to this player.
         """
+        self.touch()
         with charging(self.id):
             return await self._whisper_to(villager_id, text)
 
@@ -329,6 +360,7 @@ class Player:
 
         A villager turning the question away comes back as a Refusal. The model call is charged to this player.
         """
+        self.touch()
         with charging(self.id):
             return await self._ask(villager_id, topic)
 
@@ -403,6 +435,7 @@ class Player:
     def typing(self) -> None:
         """The player is writing, which keeps whoever they are talking with where they are."""
         self._typed_at = time.time()
+        self.touch()
 
     def holds(self, villager_id: str) -> bool:
         """Whether the villager stays put for this player: they share a place and an open exchange, and the player

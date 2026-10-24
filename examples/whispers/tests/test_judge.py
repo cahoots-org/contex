@@ -98,7 +98,7 @@ class Lines:
 
 def holder(pid, *goals, whispered_at=None, over=False):
     return SimpleNamespace(
-        id=pid, owner=f"o-{pid}", goals=list(goals), met=set(), whispered_at=whispered_at, over=lambda: over,
+        id=pid, owner=f"o-{pid}", goals=list(goals), met=set(), whispered_at=whispered_at, over=lambda: over, active=lambda: True,
     )
 
 

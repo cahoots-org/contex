@@ -290,6 +290,21 @@ def test_ask_reports_problems_and_answers_through_the_feed(game):
     assert post("/api/ask", json={"villager_id": "v1", "topic": "the mill"}).status_code == 409
 
 
+def eventually(check, timeout=5.0):
+    """Whether check comes true within timeout, for state another thread changes."""
+    done = threading.Event()
+    deadline = time.monotonic() + timeout
+    while not check() and time.monotonic() < deadline:
+        done.wait(0.01)
+    return check()
+
+
+def test_loading_the_page_wakes_no_one_but_an_open_socket_does(game):
+    assert not game.players.any_playing()
+    with game.client.websocket_connect(WS):
+        assert eventually(game.players.any_playing)
+
+
 def test_websocket_receives_the_whisper(game):
     with game.client.websocket_connect(WS) as ws:
         response = game.client.post("/api/whisper", json={"villager_id": "v1", "text": "the well is cursed"})

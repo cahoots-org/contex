@@ -57,6 +57,8 @@ class Config:
     # A saved village to play again; empty means a new village, saved under whispers_worlds/.
     seed_path: str = ""
     web_port: int = 8765
+    # How long a player counts as playing after their last action or closed tab; the village thinks only while one is.
+    idle_after_seconds: float = 600.0
     # Estimated list prices in dollars per million tokens.
     haiku_input_per_mtok: float = 0.1
     haiku_output_per_mtok: float = 0.5

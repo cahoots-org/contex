@@ -73,7 +73,10 @@ async def play(web: bool) -> None:
         engine.judge = judge
 
         def join(owner: str) -> Player:
-            """Start a new run for the owner and deal it goals."""
+            """Start a new run for the owner and deal it goals, dropping stale runs that never played."""
+            for gone in players.prune():
+                maker.overhear.drop([g.id for g in gone.goals])
+                gone.close()
             player = Player(engine, town, lineage, ids, feed, config, writer, game, player_id=new_player_id(), owner=owner)
             players.add(player)
             judge.deal(player)
@@ -105,6 +108,8 @@ async def play(web: bool) -> None:
                 await server.serve()
             else:
                 player = join(LOCAL_OWNER)
+                # The terminal stays open for as long as the game runs.
+                player.connected()
                 show = terminal(print)
                 for event in feed.replay(player.id):
                     show(event)

@@ -41,6 +41,7 @@ async def start(*vids, **cfg):
     )
     player = Player(engine, town, lineage, Ids(), feed, config, player_id=PID)
     engine.players.add(player)
+    player.connected()
     for vid in vids:
         await engine.add_villager(make(vid))
     return engine, player, feed, lines
@@ -244,7 +245,7 @@ async def test_judge_skips_the_goals_of_a_player_whose_game_is_over():
     player.end(Summary("lost", [], []))
     everyone = Players(player.feed)
     everyone.add(player)
-    everyone.add(SimpleNamespace(id="p-2", owner="o-2", goals=[], met=set(), whispered_at=None, over=lambda: False))
+    everyone.add(SimpleNamespace(id="p-2", owner="o-2", goals=[], met=set(), whispered_at=None, over=lambda: False, active=lambda: True))
     checked = []
 
     async def check(goal):
