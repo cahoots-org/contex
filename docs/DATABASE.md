@@ -31,7 +31,9 @@ To run Contex outside Docker against a standalone ParadeDB container, follow
 | `DB_POOL_TIMEOUT` | Seconds a request waits for a connection | `30` |
 
 By default the pool holds 5 connections and grows to 15 under load, plus one
-LISTEN connection for live updates.
+LISTEN connection for live updates. Subscription reconciles take at most two
+connections each, `RECONCILE_CONCURRENCY` (default 2) at a time, so requests
+always have the rest.
 
 The format is `postgresql+asyncpg://username:password@host:port/database`. Add
 `?ssl=require` for a database that needs TLS.
