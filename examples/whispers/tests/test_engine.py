@@ -2164,3 +2164,15 @@ def test_state_round_trips_as_json():
     fresh.restore(json.loads(json.dumps(engine.to_state())))
     assert (fresh._gossip, fresh._traced, fresh._denied) == (engine._gossip, engine._traced, engine._denied)
     assert {vid: list(kept) for vid, kept in fresh._kept.items()} == {"v1": ["w-2", "w-1"]}
+
+
+def test_consumed_keys_round_trip_and_a_whisper_cut_off_by_the_restart_is_kept():
+    engine = Engine(Config(), Town(), None, None, None, Lineage(), Ids(), RecordingFeed())
+    engine._consumed = {"v1": {"utt:w-1": None, "utt:u-2": None}}
+    feed = RecordingFeed()
+    feed._listening = {"w-1": ("v1", "Marta"), "w-3": ("v1", "Marta")}
+    fresh = Engine(Config(), Town(), None, None, None, Lineage(), Ids(), feed)
+    fresh.restore(json.loads(json.dumps(engine.to_state())))
+    assert {vid: list(keys) for vid, keys in fresh._consumed.items()} == {"v1": ["utt:w-1", "utt:u-2"]}
+    assert [(e.data["whisper_id"], e.data["state"]) for e in feed.recent] == [("w-1", "kept")]
+    assert feed.listening("v1") == [("w-3", "Marta")]
