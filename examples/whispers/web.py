@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.datastructures import Headers
 from starlette.websockets import WebSocketClose
 
-from examples.whispers.feed import Event, Feed
+from examples.whispers.feed import RESTING, Event, Feed
 from examples.whispers.game import Game
 from examples.whispers.goals import Goal, claim, goal_counts, goal_targets
 from examples.whispers.hints import Hints
@@ -209,6 +209,15 @@ def create_app(
                     for queue in [q for q, p in clients.items() if p == pid]:
                         queue.put_nowait({"kind": kind, kind: now})
 
+    async def watch_rest() -> None:
+        """Tell everyone when the village starts resting for the day and when it wakes."""
+        resting = usage.resting()
+        while True:
+            await asyncio.sleep(USAGE_POLL_SECONDS)
+            if usage.resting() != resting:
+                resting = not resting
+                feed.on_rest(resting)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         feed.sinks.append(on_event)
@@ -217,6 +226,7 @@ def create_app(
             asyncio.create_task(watch_each("usage", usage.to_json, USAGE_POLL_SECONDS)),
             asyncio.create_task(watch_each("rumors", partial(tallies, rumors, judge, players), VILLAGER_POLL_SECONDS)),
             asyncio.create_task(watch_each("beliefs", partial(beliefs_of, judge, players), VILLAGER_POLL_SECONDS)),
+            asyncio.create_task(watch_rest()),
         ]
         try:
             yield
@@ -267,6 +277,7 @@ def create_app(
             "heat_line": HEAT_LINES[label],
             "game": game_json(player),
             "trophies": [t.to_json() for t in players.cases.get(player.owner, [])],
+            "resting": usage.resting(),
         }
 
     @app.get("/api/villagers/{vid}")
@@ -313,6 +324,8 @@ def create_app(
         text, vid, name = payload.get("text"), payload.get("villager_id"), payload.get("name", "")
         if not isinstance(text, str) or not isinstance(name, str) or not isinstance(vid, str | None):
             return _error(400, BAD_WHISPER)
+        if usage.resting():
+            return _error(409, RESTING)
         if problem := await (player.whisper_to(vid, text) if vid else player.whisper(name, text)):
             return _error(409 if isinstance(problem, Refusal) else 400, problem)
         return {"ok": True}
@@ -327,6 +340,8 @@ def create_app(
         goal_id = payload.get("goal_id")
         if not isinstance(goal_id, str):
             return _error(400, BAD_SWAP)
+        if usage.resting():
+            return _error(409, RESTING)
         player.touch()
         if problem := await judge.swap(player, goal_id):
             return _error(409, problem)
@@ -356,6 +371,8 @@ def create_app(
         vid, topic = payload.get("villager_id"), payload.get("topic")
         if not isinstance(vid, str) or not isinstance(topic, str):
             return _error(400, BAD_ASK)
+        if usage.resting():
+            return _error(409, RESTING)
         if problem := await player.ask(vid, topic):
             return _error(409 if isinstance(problem, Refusal) else 400, problem)
         return {"ok": True}

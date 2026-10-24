@@ -64,6 +64,8 @@ class Config:
     haiku_output_per_mtok: float = 0.5
     jev_input_per_mtok: float = 0.04
     jev_output_per_mtok: float = 0.0
+    # Estimated dollars of model calls per UTC day after which the village rests until midnight; 0 means no cap.
+    daily_spend_cap: float = 5.0
     suspicion_whisper_bump: float = 0.12
     suspicion_hear_max: float = 0.25
     suspicion_decay_per_day: float = 0.05

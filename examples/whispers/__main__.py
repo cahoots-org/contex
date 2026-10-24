@@ -68,7 +68,7 @@ async def play(web: bool) -> None:
             contex, jev, town, config, feed, game, baselines=baselines, lineage=lineage, facts=facts,
             engine=engine, maker=maker,
         )
-        players = Players(feed)
+        players = Players(feed, usage)
         engine.players = players
         engine.judge = judge
 

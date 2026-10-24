@@ -931,3 +931,55 @@ def test_a_bad_swap_payload_is_a_400_and_a_stranger_a_401(game):
     assert game.client.post("/api/goal/swap", content=b"nope").status_code == 400
     game.client.cookies.clear()
     assert game.client.post("/api/goal/swap", json={"goal_id": "cat"}).status_code == 401
+
+
+RESTING = "The village is resting for today. Come back after midnight UTC."
+
+
+def spend_the_day(game):
+    game.usage.record("haiku", 50_000_000, 0)
+
+
+def test_while_resting_model_actions_are_refused_and_walking_is_not(game):
+    called = []
+
+    async def swap(player, goal_id):
+        called.append(goal_id)
+
+    game.judge.swap = swap
+    assert game.client.get("/api/state").json()["resting"] is False
+    spend_the_day(game)
+    post = game.client.post
+    for path, body in (
+        ("/api/whisper", {"villager_id": "v1", "text": "the well is cursed"}),
+        ("/api/ask", {"villager_id": "v1", "topic": "the mill"}),
+        ("/api/goal/swap", {"goal_id": "cat"}),
+    ):
+        refused = post(path, json=body)
+        assert (refused.status_code, refused.json()) == (409, {"error": RESTING}), path
+    assert called == [] and game.rumors.cards(game.player.id) == []
+    assert post("/api/walk", json={"place": "well"}).json() == {"ok": True}
+    assert post("/api/listen").json() == {"ok": True}
+    assert game.client.get("/api/state").json()["resting"] is True
+
+
+def test_everyone_hears_when_the_village_rests_and_wakes(game, monkeypatch):
+    now = [datetime(2026, 10, 23, 23, 0, tzinfo=UTC).timestamp()]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    with game.client.websocket_connect(WS) as ws:
+        spend_the_day(game)
+        event = receive(ws)
+        while event["kind"] != "rest":
+            event = receive(ws)
+        assert (event["resting"], event["text"]) == (True, RESTING)
+        now[0] = datetime(2026, 10, 24, 0, 1, tzinfo=UTC).timestamp()
+        event = receive(ws)
+        while event["kind"] != "rest":
+            event = receive(ws)
+        assert event["resting"] is False and event["text"]
+
+
+def test_the_page_shows_a_resting_banner_and_locks_the_composer(game):
+    html = game.client.get("/").text
+    for needle in ('id="resting"', 'case "rest"', "state.resting", "setResting(", RESTING):
+        assert needle in html

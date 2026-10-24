@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 from examples.whispers.goals import Trophy
 from examples.whispers.player import Player
+from examples.whispers.usage import Usage
 
 # The one person playing in the terminal.
 LOCAL_OWNER = "local"
@@ -24,8 +25,9 @@ def new_owner_id() -> str:
 class Players:
     """The players in one world, by id, and each owner's trophy case."""
 
-    def __init__(self, feed) -> None:
+    def __init__(self, feed, usage: Usage | None = None) -> None:
         self.feed = feed
+        self.usage = usage
         self._by_id: dict[str, Player] = {}
         self._latest: dict[str, Player] = {}
         self.cases: dict[str, list[Trophy]] = {}
@@ -47,7 +49,9 @@ class Players:
         return iter(self._by_id.values())
 
     def any_playing(self) -> bool:
-        """Whether some active player's game is not over."""
+        """Whether some active player's game is not over, and the village is not resting for the day."""
+        if self.usage is not None and self.usage.resting():
+            return False
         return any(p.active() and not p.over() for p in self._by_id.values())
 
     def at(self, place: str) -> list[Player]:
