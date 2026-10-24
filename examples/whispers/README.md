@@ -367,11 +367,12 @@ writing a new one. The image's entrypoint runs as root only to give the `whisper
 user the volume, then drops to it. Set deployment overlap to 0, so two copies
 never drive the same villagers, and draining to 30 seconds.
 
-The game itself is saved to `whispers_worlds/<session>.state.json` every
-`WHISPERS_SAVE_EVERY_SECONDS` and once on SIGTERM or Ctrl-C, and a start with the
-same session restores it: every run, goal, trophy, rumor card and the feed a
-reload replays. A save that is missing, unreadable, or for another version or
-session is logged and the game starts fresh in the same village.
+With a fixed `WHISPERS_SESSION`, the game itself is saved to
+`whispers_worlds/<session>.state.json` every `WHISPERS_SAVE_EVERY_SECONDS` and
+once on SIGTERM or Ctrl-C, and a start with the same session restores it: every
+run, goal, trophy, rumor card and the feed a reload replays. A save that is
+unreadable, for another version or session, fails to restore, or has lost its
+village file is renamed to `<name>.bad-<time>` and the game starts fresh.
 
 ## Settings
 

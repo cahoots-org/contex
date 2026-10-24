@@ -26,7 +26,7 @@ from examples.whispers.goal_maker import GoalMaker
 from examples.whispers.judge import Judge
 from examples.whispers.lineage import Ids, Lineage
 from examples.whispers.overhear import Overhear
-from examples.whispers.persist import components, resume_game, save_every, save_quietly, state_path, stop
+from examples.whispers.persist import components, resume_game, save_every, save_quietly, set_aside, state_path, stop
 from examples.whispers.player import Player
 from examples.whispers.pool import load_pool
 from examples.whispers.players import LOCAL_OWNER, Players, new_player_id
@@ -94,7 +94,11 @@ async def play(web: bool) -> None:
 
         parts = components(engine)
         saves = state_path(config.session, config.data_dir)
-        if resume_game(saves, config.session, parts, make):
+        # Only a fixed session is started again, so only its game is saved.
+        fixed = "WHISPERS_SESSION" in os.environ
+        if fixed and not kept:
+            set_aside(saves)
+        if fixed and resume_game(saves, config.session, parts, make):
             maker.ready_instead([g for p in players if not p.over() for g in p.goals] + [judge.world])
             villagers = town.villagers
         else:
@@ -116,10 +120,11 @@ async def play(web: bool) -> None:
             def save() -> None:
                 save_quietly(saves, parts, config.session)
 
-            saving = asyncio.create_task(save_every(config.save_every_seconds, save))
-            loop, main_task = asyncio.get_running_loop(), asyncio.current_task()
-            for sig in (signal.SIGTERM, signal.SIGINT):
-                loop.add_signal_handler(sig, stop, save, main_task)
+            if fixed:
+                saving = asyncio.create_task(save_every(config.save_every_seconds, save))
+                loop, main_task = asyncio.get_running_loop(), asyncio.current_task()
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    loop.add_signal_handler(sig, stop, save, main_task)
             await engine.run()
             if web:
                 host, port = config.address()
