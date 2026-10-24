@@ -134,6 +134,10 @@ class GoalMaker:
         self._unready.append(goal)
         return goal
 
+    def ready_instead(self, goals: list[Goal]) -> None:
+        """Make the next prepare ready these goals in place of those drawn so far."""
+        self._unready = list(goals)
+
     async def prepare(self) -> None:
         """Load baselines for, and publish, the goals drawn since the last call."""
         goals, self._unready = self._unready, []
