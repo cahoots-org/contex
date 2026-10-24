@@ -27,7 +27,7 @@ numpy==2.5.3
 # Document parsing (PDF, DOCX, image headers)
 pypdfium2==5.14.0
 python-docx==1.2.0
-pillow==12.3.0
+pillow==13.0.0
 
 # Code parsing (tree-sitter). language-pack ships prebuilt grammars; we walk the
 # AST directly (it ships no query files). tree-sitter is pinned explicitly because
