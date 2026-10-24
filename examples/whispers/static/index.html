@@ -117,6 +117,10 @@ header {
   margin-left: auto; font-size: .85rem;
 }
 .hud p { margin: 0; }
+.hud .heat { order: -2; }
+#trophies-toggle { order: -1; }
+.menu { display: contents; }
+.mood, .menu-toggle { display: none; }
 h1 { font: 500 1.5rem/1.2 var(--rumor); margin: 0; }
 .conn { font-size: .875rem; color: var(--muted); }
 .conn::before {
@@ -277,6 +281,7 @@ mark.kept {
 .chat { max-width: 42rem; max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
 .chat[hidden] { display: none; }
 .chat-about { margin: 0 0 .3rem; font-size: .8rem; color: var(--muted); }
+.chat-close { display: none; }
 .chat-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 .msg { max-width: 85%; padding: .3rem .7rem; border-radius: 10px; overflow-wrap: anywhere; }
 .msg.you { align-self: flex-end; background: var(--panel); }
@@ -325,6 +330,20 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   border-bottom: 1px solid var(--rail);
 }
 .strip-toggle { display: none; }
+/* A phone's sheets rise from the foot of the screen; a tap on the shade or Escape closes them. */
+.sheet {
+  position: fixed; inset: auto 0 0; width: 100%; max-width: 100%; max-height: 85dvh; margin: 0; padding: 0; overflow-y: auto;
+  background: var(--bg); color: var(--ink); border: 0; border-top: 1px solid var(--edge); border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 24px rgb(0 0 0 / .2);
+}
+.sheet[open] { animation: rise 220ms ease-out; }
+.sheet::backdrop { background: rgb(0 0 0 / .35); }
+.sheet-body { padding: 0 1rem 1rem; }
+.sheet-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; background: var(--bg); }
+.sheet-head h2 { margin: 0; font: 500 1.25rem/1.2 var(--rumor); }
+.to-chip { display: none; }
+.sheet-close { width: 44px; height: 44px; margin-right: -.6rem; background: none; border: 0; font-size: 1.1rem; cursor: pointer; }
+@keyframes rise { from { transform: translateY(100%); } }
 .goals {
   display: flex;
   flex-wrap: wrap;
@@ -372,6 +391,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .trophies li { margin: .1rem 0; }
 .trophies li.none { list-style: none; margin-left: -1.25rem; color: var(--muted); }
 #search { width: 100%; }
+.find { display: contents; }
 .find-status { margin: .25rem 0 0; min-height: 1.25rem; font-size: .8rem; color: var(--muted); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .5rem; margin-top: .25rem; }
 .tile { background: var(--bg); border: 1px solid var(--rail); border-radius: 6px; padding: .35rem .5rem .45rem; min-width: 0; }
@@ -490,40 +510,109 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
   header { padding: .6rem 1rem; align-items: center; }
-  .app { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
   .app:not([data-tab="rumors"]) #rumors-panel,
   .app:not([data-tab="hear"]) #hear-panel,
   .app:not([data-tab="village"]) #town { display: none; }
-  .tabs { display: flex; grid-column: 1 / -1; border-bottom: 1px solid var(--rail); }
+  .tabs { display: flex; border-bottom: 1px solid var(--rail); }
   .tabs button {
-    flex: 1; background: none; border: 0; border-bottom: 3px solid transparent;
-    padding: .5rem 0; cursor: pointer; font-size: .9rem; color: var(--muted);
+    flex: 1; min-height: 44px; background: none; border: 0; border-top: 3px solid transparent;
+    padding: 0; cursor: pointer; font-size: .9rem; color: var(--muted);
   }
-  .tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--ink); font-weight: 700; }
-  .hud { order: 5; flex: 1 0 100%; margin-left: 0; justify-content: space-between; gap: .25rem 1rem; }
-  .conn { margin-left: auto; }
+  .tabs button[aria-selected="true"] { border-top-color: var(--accent); color: var(--ink); font-weight: 700; }
+  /* One line: the name, the day, the mood, the connection dot and a menu for the rest. */
+  header { position: relative; flex-wrap: nowrap; gap: .5rem; min-height: 56px; padding: .25rem .5rem .25rem 1rem; }
+  h1 { font-size: 1.2rem; }
+  .hud { display: contents; }
+  .hud .heat {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .sky { order: 1; flex-direction: column; gap: 0; }
+  .sky svg { width: 2.4rem; height: 1.3rem; }
+  .clock { font-size: .7rem; line-height: 1.2; white-space: nowrap; }
+  .mood {
+    order: 2; display: block; min-width: 0; padding: .1rem .55rem; border: 1px solid var(--edge); border-radius: 1rem;
+    font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mood:empty { display: none; }
+  .mood[data-label="watched"], .mood[data-label="hunted"] { border-color: var(--danger); color: var(--danger); }
+  .conn { order: 3; margin-left: auto; font-size: 0; }
+  .conn::before { width: .6rem; height: .6rem; margin: 0; }
+  .menu-toggle {
+    order: 4; display: grid; place-items: center; flex: none; width: 44px; height: 44px;
+    background: none; border: 0; border-radius: 6px; font-size: 1.25rem; cursor: pointer;
+  }
+  .menu {
+    display: none; position: absolute; top: calc(100% - .25rem); right: .5rem; z-index: 6; flex-direction: column; gap: .25rem;
+    min-width: 12rem; max-width: calc(100vw - 1rem); padding: .5rem .75rem; background: var(--bg);
+    border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 6px 24px rgb(0 0 0 / .2);
+  }
+  .menu.open { display: flex; }
+  .menu .where, .menu .usage { font-size: .8rem; }
+  #trophies-toggle { order: 0; min-height: 44px; text-align: left; font-size: .95rem; }
   aside { padding: .5rem 1rem 1.5rem; }
   .feed { padding: .5rem 1rem 1rem; }
-  .strip { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .25rem 1rem .5rem; }
+  .strip { padding: .2rem 1rem; }
   .strip-toggle {
-    display: inline-block; flex: none; background: none; border: 0; padding: .2rem 0;
-    cursor: pointer; font-size: .875rem; font-weight: 700;
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 1rem; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 22px; cursor: pointer; font-size: .9rem; font-weight: 700;
   }
-  .strip-toggle::after { content: " \25BE"; }
-  .strip-toggle[aria-expanded="true"]::after { content: " \25B4"; }
-  .goals { display: none; flex: 1 0 100%; order: 3; flex-direction: column; }
-  .strip.open .goals { display: flex; }
-  .goal-card { flex: 1 1 100%; gap: .1rem; }
-  .goal-card.world { order: 3; }
+  .sheet .goals { flex-direction: column; flex-wrap: nowrap; }
+  .sheet .goal-card { flex: none; margin-top: .5rem; }
+  .sheet .swap { min-width: 44px; min-height: 44px; margin: -.65rem -.6rem -.65rem auto; opacity: .7; }
+  .sheet .swap:disabled { opacity: .25; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
-  .dock { flex-wrap: nowrap; overflow-x: auto; padding: .5rem 1rem 0; }
-  .chat { max-height: 30dvh; margin: .4rem 1rem 0; }
-  #target { flex: 1 1 100%; width: auto; }
+  /* The dock is a slim strip of faces; an open conversation rises over the content as a sheet. */
+  .bottom { position: relative; }
+  .dock { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: .25rem; padding: 0 1rem; }
+  .dock-face { display: flex; align-items: center; gap: .5rem; flex: none; min-height: 44px; }
+  .dock-face canvas { width: 28px; height: 28px; }
+  .dock-face small { white-space: nowrap; }
+  .chat {
+    position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; max-width: none; max-height: 60dvh; margin: 0;
+    padding: 0 1rem .75rem; background: var(--bg); border: 0; border-top: 1px solid var(--edge); border-radius: 14px 14px 0 0;
+    box-shadow: 0 -6px 24px rgb(0 0 0 / .2); animation: rise 220ms ease-out;
+  }
+  .chat-head { position: sticky; top: 0; display: flex; align-items: center; gap: .5rem; background: var(--bg); }
+  .chat-about { flex: 1; margin: 0; }
+  .chat-close { display: block; }
+  /* One row: who to whisper to as a chip, the words, and Whisper. The name search is in the To sheet. */
+  .composer form { flex-wrap: nowrap; }
+  #to-label { display: none; }
+  .to-chip { display: flex; flex: 0 1 auto; min-width: 0; max-width: 7.5rem; }
+  .to-chip button { min-height: 44px; background: var(--panel); border: 1px solid var(--edge); cursor: pointer; }
+  #to-pick { min-width: 0; padding: 0 .6rem; border-radius: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #to-clear { flex: none; width: 44px; border-left: 0; border-radius: 0 22px 22px 0; color: var(--muted); }
+  .to-chip:has(#to-clear:not([hidden])) #to-pick { padding-right: .2rem; border-right: 0; border-radius: 22px 0 0 22px; }
+  .composer .primary { flex: none; min-height: 44px; padding: .5rem .75rem; }
+  .say-status:empty { min-height: 0; margin: 0; }
+  .sheet #target { width: 100%; min-height: 44px; margin-top: .25rem; }
+  .sheet .suggest { position: static; width: 100%; max-height: 50dvh; margin: .4rem 0 0; box-shadow: none; }
   .tile-act, .walk-there { min-height: 2.25rem; }
-  #text { flex-basis: 10rem; }
+  /* The village as one row per place: name and count, the faces, and Walk or Listen. */
+  #town h2 { margin: .25rem 0 .4rem; }
+  /* The villager card sticks to the panel's very foot, so the panel ends without padding. */
+  #town { padding-bottom: 0; }
+  #town .legend { margin-bottom: 1.5rem; }
+  .find { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5rem; }
+  #search { flex: 1 1 8rem; width: auto; min-height: 44px; }
+  .find .sort { order: 2; margin: 0; }
+  .find .sort label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .sort select { min-height: 44px; max-width: 8.5rem; }
+  .find-status { order: 3; flex: 1 0 100%; min-height: 0; }
+  .tiles { display: block; }
+  .tile {
+    display: grid; grid-template-columns: 4rem minmax(0, 1fr) 3.25rem; align-items: center; gap: 0 .4rem;
+    padding: .2rem 0; background: none; border: 0; border-bottom: 1px solid var(--rail); border-radius: 0;
+  }
+  .tile .place { flex-direction: column; gap: 0; margin: 0; line-height: 1.25; cursor: default; overflow-wrap: anywhere; }
+  .tile .faces { grid-column: 2; grid-row: 1; margin: 0; gap: 0; }
+  .tile .tile-act { grid-column: 3; grid-row: 1; margin: 0; min-height: 44px; padding: 0; font-size: .75rem; line-height: 1.15; text-align: right; }
+  .tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }
+  .tiles .face canvas { width: 30px; height: 30px; border-radius: 6px; }
+  #text { flex: 1 1 0; min-height: 44px; }
   .card {
     position: sticky; top: auto; bottom: 0; right: auto; width: auto; max-height: 45dvh;
     margin: 0 -1rem; border-radius: 10px 10px 0 0; border-width: 1px 0 0;
@@ -534,7 +623,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .swap.turning { opacity: 1; animation: turn 1s linear infinite; }
 .goal-card.swapping .goal-text { opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
-  .fresh, .fresh mark, .gameover, .swap.turning { animation: none; }
+  .fresh, .fresh mark, .gameover, .swap.turning, .sheet[open], .chat { animation: none; }
 }
 </style>
 </head>
@@ -544,7 +633,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     <h1>Whispers</h1>
     <div class="hud">
       <p class="heat" id="heat" aria-live="polite"></p>
-      <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
+      <span class="mood" id="mood" aria-hidden="true"></span>
       <div class="sky" id="sky">
         <svg viewBox="0 0 64 34" aria-hidden="true">
           <defs>
@@ -566,23 +655,33 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
         </svg>
         <p class="clock" id="clock"></p>
       </div>
-      <p class="where" id="where"></p>
-      <p class="usage" id="usage"></p>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="More" aria-expanded="false" aria-controls="menu">⋯</button>
+      <div class="menu" id="menu">
+        <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
+        <p class="where" id="where"></p>
+        <p class="usage" id="usage"></p>
+      </div>
     </div>
     <span class="conn" id="conn" data-state="connecting" role="status">Connecting</span>
   </header>
 
   <section class="strip" id="strip" aria-label="Goals and mood">
-    <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
+    <button class="strip-toggle" id="strip-toggle" type="button" aria-haspopup="dialog" aria-controls="goals-sheet"></button>
     <ul class="goals" id="goals"></ul>
     <div class="goal-card world" id="world" aria-live="polite"></div>
   </section>
 
-  <nav class="tabs" role="tablist" aria-label="Views">
-    <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
-    <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
-    <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
-  </nav>
+  <dialog class="sheet" id="goals-sheet" aria-modal="true" aria-labelledby="goals-sheet-title">
+    <div class="sheet-body" id="goals-body">
+      <div class="sheet-head"><h2 id="goals-sheet-title">Goals</h2><button class="sheet-close" type="button" aria-label="Close">✕</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="to-sheet" aria-modal="true" aria-labelledby="to-sheet-title">
+    <form class="sheet-body" id="to-body" method="dialog">
+      <div class="sheet-head"><h2 id="to-sheet-title">Whisper to</h2><button class="sheet-close" type="button" aria-label="Close">✕</button></div>
+    </form>
+  </dialog>
 
   <aside class="rumors" id="rumors-panel" aria-label="Your rumors">
     <h2>Your rumors</h2>
@@ -611,16 +710,18 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 
   <aside id="town" aria-label="Villagers">
     <h2 id="people-heading">Village</h2>
-    <label for="search" class="visually-hidden">Find a villager</label>
-    <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
-    <p class="find-status" id="find-status" role="status"></p>
-    <p class="sort"><label for="sort">Sort</label>
-      <select id="sort">
-        <option value="place">By place</option>
-        <option value="notes">By what you know</option>
-        <option value="influence">By influence</option>
-      </select>
-    </p>
+    <div class="find">
+      <label for="search" class="visually-hidden">Find a villager</label>
+      <input type="search" id="search" placeholder="Find by name, trade, or place" autocomplete="off">
+      <p class="find-status" id="find-status" role="status"></p>
+      <p class="sort"><label for="sort">Sort</label>
+        <select id="sort">
+          <option value="place">By place</option>
+          <option value="notes">By what you know</option>
+          <option value="influence">By influence</option>
+        </select>
+      </p>
+    </div>
     <div class="tiles" id="people"></div>
     <p class="legend">
       <span><span class="badge" data-s="took_the_bait" aria-hidden="true">✓</span>took the bait</span>
@@ -639,11 +740,21 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 
   <div class="bottom">
     <ul class="dock" id="dock" aria-label="Talking with you"></ul>
-    <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
+    <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden>
+      <div class="chat-head"><p class="chat-about" id="chat-about"></p><button class="sheet-close chat-close" id="chat-close" type="button" aria-label="Close the conversation">✕</button></div><ol class="chat-lines" id="chat-lines"></ol></section>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
+      <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
+      <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
+    </nav>
     <div class="composer">
       <p class="resting" id="resting" role="status" hidden></p>
       <form id="whisper">
         <label for="target" id="to-label">Whisper to</label>
+        <span class="to-chip">
+          <button type="button" id="to-pick" aria-haspopup="dialog" aria-controls="to-sheet">To…</button>
+          <button type="button" id="to-clear" aria-label="Clear who to whisper to" hidden>✕</button>
+        </span>
         <input type="text" id="target" autocomplete="off" placeholder="a name or a trade" required
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
         <ul class="suggest" id="suggest" role="listbox" aria-label="Villagers" hidden></ul>
@@ -736,6 +847,7 @@ let drafted = new Set();
 const DRAFT_MIN = 12;
 const DRAFT_WAIT = 400;
 const MIGHT = "this might interest them";
+const phone = matchMedia("(max-width: 760px)");
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -1197,8 +1309,11 @@ function setResting(on) {
 
 function setComposer() {
   const on = talkingWith($("target").value);
+  const name = $("target").value.trim();
   $("to-label").textContent = on ? "Talking with" : "Whisper to";
-  $("whisper").querySelector("button").textContent = on ? "Reply" : "Whisper";
+  $("to-pick").textContent = name ? `To ${name}` : "To…";
+  $("to-clear").hidden = !name;
+  $("whisper").querySelector(".primary").textContent = on ? "Reply" : "Whisper";
   if (!over) $("text").placeholder = on ? "Say something back" : "the miller waters his flour";
 }
 
@@ -1319,6 +1434,13 @@ function openChat(villagerId) {
   $("text").focus();
 }
 
+// Closing the sheet's conversation returns focus to its face in the dock.
+$("chat-close").addEventListener("click", () => {
+  const id = chatWith;
+  openChat(null);
+  $("dock").querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus();
+});
+
 function renderChat() {
   const t = dock.get(chatWith);
   const about = opening(t.rumor);
@@ -1418,7 +1540,7 @@ function render(e, fresh) {
       return line("quiet", null, e.text);
     }
     case "heat":
-      $("heat").textContent = e.text;
+      setHeat(e.text, e.label);
       return null;
     case "gameover":
       showGameOver(e, fresh);
@@ -1771,8 +1893,11 @@ feed.addEventListener("keydown", (ev) => {
   }
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key !== "Escape" || ev.defaultPrevented) return;
-  if (!$("card").hidden) closeCard();
+  if (ev.key !== "Escape" || ev.defaultPrevented || document.querySelector("dialog[open]")) return;
+  if ($("menu").classList.contains("open")) {
+    setMenu(false);
+    $("menu-toggle").focus();
+  } else if (!$("card").hidden) closeCard();
   else if (chatWith != null) openChat(null);
   else if (!$("trophies").hidden) setTrophies(false);
   else if (selectedRumor != null) selectRumor(null);
@@ -1852,7 +1977,7 @@ function goalCard(g, label, swapId = null) {
 
 function renderGoals() {
   const all = [...goals.values()];
-  $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
+  $("strip-toggle").textContent = `Goals ${all.filter((g) => g.met).length} of ${all.length}`;
   $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", {
     className: ["goal-card", g.met && "met", id === pickedGoal && "picked", swapping.has(id) && "swapping"].filter(Boolean).join(" "),
     ariaBusy: String(swapping.has(id)),
@@ -1877,15 +2002,43 @@ function renderTrophies() {
     : [el("li", { className: "none", textContent: "No trophies yet." })]));
 }
 
-// Opening from a feed note moves focus to the case; closing returns it to the toggle when it was inside.
+// Opening from a feed note moves focus to the case; closing returns it to the toggle (on a phone, the menu's) when it
+// was inside.
 function setTrophies(open, focus = false) {
   const inside = $("trophies").contains(document.activeElement);
   $("trophies").hidden = !open;
   $("trophies-toggle").setAttribute("aria-expanded", String(open));
   if (open && focus) $("trophies-title").focus();
-  else if (!open && inside) $("trophies-toggle").focus();
+  else if (!open && inside) $(phone.matches ? "menu-toggle" : "trophies-toggle").focus();
 }
-$("trophies-toggle").addEventListener("click", () => setTrophies($("trophies").hidden));
+// On a phone the toggle sits in the menu, and the case is on the Hear tab.
+$("trophies-toggle").addEventListener("click", () => {
+  const open = $("trophies").hidden;
+  if (phone.matches) {
+    setMenu(false);
+    if (open) setTab("hear");
+  }
+  setTrophies(open, open && phone.matches);
+});
+
+// The mood in full for the live region, and in a word for the phone's header.
+function setHeat(text, label) {
+  $("heat").textContent = text;
+  $("mood").textContent = label ? capital(label) : "";
+  $("mood").title = text;
+  $("mood").dataset.label = label || "";
+}
+
+function setMenu(open) {
+  $("menu").classList.toggle("open", open);
+  $("menu-toggle").ariaExpanded = String(open);
+}
+$("menu-toggle").addEventListener("click", () => setMenu(!$("menu").classList.contains("open")));
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest("#menu, #menu-toggle")) setMenu(false);
+  if (ev.target.matches("dialog.sheet")) ev.target.close();
+  else ev.target.closest(".sheet-close")?.closest("dialog")?.close();
+});
 
 function capital(word) {
   return `${word[0].toUpperCase()}${word.slice(1)}`;
@@ -1970,14 +2123,18 @@ function faceButton(v, hits) {
   said ? el("span", { className: "visually-hidden", textContent: said }) : null);
 }
 
-// Search hits, villagers the selected rumor touched and those the draft might interest come first, ahead of the cut.
+// Search hits, villagers the selected rumor touched and those the draft might interest come first, ahead of the cut;
+// a phone shows everyone.
 function closedTile(place, crowd, hits) {
   const touched = touchedBy();
   const lead = (v) => hits.has(v.id) || touched[v.id] || drafted.has(v.id);
   const first = crowd.some(lead) ? [...crowd.filter(lead), ...crowd.filter((v) => !lead(v))] : crowd;
-  const shown = first.slice(0, FACES_SHOWN);
+  const shown = phone.matches ? first : first.slice(0, FACES_SHOWN);
   const more = crowd.length - shown.length;
-  return el("div", { className: "faces" }, ...shown.map((v) => faceButton(v, hits)),
+  const buttons = shown.map((v) => faceButton(v, hits));
+  // On a phone a place's faces are one tab stop; the arrow keys move along them.
+  if (phone.matches && buttons.length) buttons[0].tabIndex = 0;
+  return el("div", { className: "faces" }, ...buttons,
     more > 0 ? el("button", { type: "button", tabIndex: -1, className: "more", textContent: `+${more}`, onclick: () => choosePlace(place) }) : null);
 }
 
@@ -2045,6 +2202,13 @@ function renderVillagers() {
       : hits.size ? `${crowd.filter((v) => hits.has(v.id)).length} of ${crowd.length}` : String(crowd.length);
     const label = selectedRumor ? `${capital(place)}, ${count}`
       : hits.size ? `${capital(place)}, ${count} villagers match` : `${capital(place)}, ${count} villagers`;
+    // A phone has no open tile: every place is one row with its faces and its Walk or Listen.
+    if (phone.matches) {
+      return el("section", { className: "tile" },
+        el("p", { className: "place" }, el("span", { className: "visually-hidden", textContent: label }),
+          el("b", { ariaHidden: "true", textContent: capital(place) }), el("span", { ariaHidden: "true", textContent: count })),
+        tileAction(place), closedTile(place, crowd, hits));
+    }
     return el("section", { className: place === open ? "tile open" : "tile" },
       el("button", {
         type: "button", className: "place", dataset: { place }, ariaExpanded: String(place === open), ariaLabel: label,
@@ -2084,10 +2248,21 @@ function flushVillagers() {
 $("people").addEventListener("pointerenter", () => { pointing = true; });
 $("people").addEventListener("pointerleave", () => { pointing = false; setTimeout(flushVillagers); });
 $("people").addEventListener("focusout", () => setTimeout(flushVillagers));
+$("people").addEventListener("keydown", (ev) => {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+  const face = ev.target.closest(".faces .pick");
+  if (!step || !face) return;
+  const next = step > 0 ? face.nextElementSibling : face.previousElementSibling;
+  if (!next?.matches(".pick")) return;
+  ev.preventDefault();
+  next.focus();
+});
 $("search").addEventListener("input", () => {
   const best = matches($("search").value)[0];
   searchPlace = best ? best.place : null;
   renderVillagers();
+  // A phone has no open tile to bring the best match up, so the list scrolls to it.
+  if (phone.matches) $("people").querySelector(".pick.hit")?.scrollIntoView({ block: "nearest" });
 });
 $("search").addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && $("search").value) {
@@ -2096,7 +2271,7 @@ $("search").addEventListener("keydown", (ev) => {
     searchPlace = null;
     renderVillagers();
   } else if (ev.key === "Enter") {
-    const best = $("people").querySelector(".open .row");
+    const best = $("people").querySelector(".open .row, .pick.hit");
     if (best) best.focus();
   }
 });
@@ -2105,6 +2280,12 @@ $("search").addEventListener("keydown", (ev) => {
 let cardRequest = 0;
 async function inspect(id, opener) {
   const request = ++cardRequest;
+  // On a phone, tapping a villager also makes them who the chip whispers to.
+  const v = villagers.find((x) => x.id === id);
+  if (phone.matches && v && !over) {
+    $("target").value = v.name;
+    setComposer();
+  }
   if (opener) cardOpener = { id: opener.dataset.id, node: opener, top: opener.getBoundingClientRect().top };
   selected = id;
   $("people").querySelectorAll(".row").forEach((row) => { row.ariaCurrent = String(row.dataset.id === id); });
@@ -2220,6 +2401,7 @@ function showSuggestions(list) {
 function pickTarget(v) {
   $("target").value = v.name;
   showSuggestions([]);
+  if ($("to-sheet").open) $("to-sheet").close();
   $("text").focus();
   setComposer();
 }
@@ -2247,6 +2429,21 @@ $("target").addEventListener("keydown", (ev) => {
   }
 });
 $("target").addEventListener("blur", () => showSuggestions([]));
+// On a phone the name search is a sheet behind the To chip; a name chosen there goes on to the words.
+$("to-pick").addEventListener("click", () => {
+  $("to-sheet").showModal();
+  $("target").select();
+});
+$("to-clear").addEventListener("click", () => {
+  $("target").value = "";
+  setComposer();
+  $("to-pick").focus();
+});
+$("to-sheet").addEventListener("close", () => {
+  showSuggestions([]);
+  setComposer();
+  if ($("target").value.trim()) $("text").focus();
+});
 
 const PHASES = ["morning", "afternoon", "evening", "night"];
 let clockAt = null;
@@ -2403,7 +2600,7 @@ $("whisper").addEventListener("submit", async (ev) => {
   const text = $("text").value.trim();
   if (!name || !text) return setStatus("Pick a villager and write what to whisper.", true);
   const match = villagers.find((v) => v.name.toLowerCase() === name.toLowerCase());
-  const button = ev.submitter || $("whisper").querySelector("button");
+  const button = ev.submitter || $("whisper").querySelector(".primary");
   const reply = talkingWith(name);
   button.disabled = true;
   setStatus("Whispering…");
@@ -2488,8 +2685,12 @@ try { storedTab = localStorage.getItem(TAB_KEY); } catch { /* the Hear tab */ }
 if (TABS.includes(storedTab)) setTab(storedTab);
 // The columns are tab panels only while they are tabs, so a wide screen keeps its landmarks.
 const PANELS = { rumors: "rumors-panel", hear: "hear-panel", village: "town" };
-const phone = matchMedia("(max-width: 760px)");
 function setPanels() {
+  for (const sheet of document.querySelectorAll("dialog[open]")) sheet.close();
+  // A phone's goal cards are in the goals sheet, the same nodes as the wide screen's strip.
+  (phone.matches ? $("goals-body") : $("strip")).append($("goals"), $("world"));
+  if (phone.matches) $("to-body").append($("target"), $("suggest"));
+  else $("to-label").after($("target"), $("suggest"));
   for (const [t, id] of Object.entries(PANELS)) {
     if (phone.matches) {
       $(id).setAttribute("role", "tabpanel");
@@ -2499,14 +2700,17 @@ function setPanels() {
       $(id).removeAttribute("aria-labelledby");
     }
   }
+  // A phone's conversation is a sheet that leaves the whisper box usable, so it is a dialog but not a modal one.
+  if (phone.matches) $("chat").setAttribute("role", "dialog");
+  else $("chat").removeAttribute("role");
 }
-phone.addEventListener("change", setPanels);
+phone.addEventListener("change", () => {
+  setPanels();
+  refreshVillagers();
+});
 setPanels();
 
-$("strip-toggle").addEventListener("click", () => {
-  const open = $("strip").classList.toggle("open");
-  $("strip-toggle").setAttribute("aria-expanded", String(open));
-});
+$("strip-toggle").addEventListener("click", () => $("goals-sheet").showModal());
 
 function setConn(state, text) {
   $("conn").dataset.state = state;
@@ -2592,7 +2796,7 @@ async function loadState() {
   setHere(state.place);
   villagersKey = "";
   setVillagers(state.villagers);
-  $("heat").textContent = state.heat_line;
+  setHeat(state.heat_line, state.heat);
   setResting(state.resting);
 }
 

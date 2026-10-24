@@ -1076,3 +1076,86 @@ def test_a_pruned_run_leaves_no_notes_or_sent_snapshots(game, monkeypatch):
     TestClient(game.app, base_url=BASE).get("/")
     assert game.players.get(gone.id) is None
     assert gone.id not in game.app.state.notes and all(gone.id not in kind for kind in game.app.state.sent.values())
+
+
+def phone_css(html: str) -> str:
+    """The rules under the phone breakpoint."""
+    at = html.index("@media (max-width: 760px) {")
+    return bracketed(html, html.index("{", at))
+
+
+def test_a_phone_header_is_one_line_with_a_menu(game):
+    html = game.client.get("/").text
+    for needle in ('id="mood"', 'id="menu-toggle"', 'aria-controls="menu"', 'class="menu" id="menu"', "setHeat(e.text, e.label)"):
+        assert needle in html
+    menu = re.search(r'<div class="menu" id="menu">(.*?)</div>', html, re.S).group(1)
+    assert 'id="trophies-toggle"' in menu and 'id="usage"' in menu
+    phone = phone_css(html)
+    assert ".hud { display: contents; }" in phone and ".menu.open { display: flex; }" in phone
+    assert "width: 44px; height: 44px;" in phone and ".conn { order: 3; margin-left: auto; font-size: 0; }" in phone
+
+
+def test_a_phone_keeps_its_goals_behind_one_pill(game):
+    html = game.client.get("/").text
+    sheet = re.search(r'<dialog class="sheet" id="goals-sheet"([^>]*)>', html).group(1)
+    assert 'aria-modal="true"' in sheet and 'aria-labelledby="goals-sheet-title"' in sheet
+    assert 'aria-haspopup="dialog" aria-controls="goals-sheet"' in html
+    assert "`Goals ${all.filter((g) => g.met).length} of ${all.length}`" in html
+    assert '$("goals-sheet").showModal()' in html and '.append($("goals"), $("world"))' in html
+    assert 'ev.target.matches("dialog.sheet")' in html and 'closest(".sheet-close")' in html
+    calm = bracketed(html, html.index("{", html.index("@media (prefers-reduced-motion: reduce)")))
+    assert ".sheet[open]" in calm
+    assert ".strip.open" not in html
+
+
+def test_a_phone_whispers_from_one_row_with_a_recipient_chip(game):
+    html = game.client.get("/").text
+    assert 'id="to-pick" aria-haspopup="dialog" aria-controls="to-sheet">To…</button>' in html
+    assert 'id="to-clear" aria-label="Clear who to whisper to" hidden>✕</button>' in html
+    sheet = re.search(r'<dialog class="sheet" id="to-sheet"([^>]*)>', html).group(1)
+    assert 'aria-modal="true"' in sheet and 'aria-labelledby="to-sheet-title"' in sheet
+    assert '<form class="sheet-body" id="to-body" method="dialog">' in html
+    # The search moves into the sheet; the target logic stays the one the wide screen uses.
+    assert '$("to-body").append($("target"), $("suggest"))' in html
+    assert '$("to-pick").textContent = name ? `To ${name}` : "To…";' in html
+    assert 'if ($("to-sheet").open) $("to-sheet").close();' in html
+    assert '$("whisper").querySelector("button")' not in html
+    phone = phone_css(html)
+    assert ".composer form { flex-wrap: nowrap; }" in phone and "#to-label { display: none; }" in phone
+
+
+def test_a_phone_has_its_tabs_at_the_bottom(game):
+    html = game.client.get("/").text
+    bottom = html[html.index('<div class="bottom">'):html.index("<script>")]
+    assert bottom.index('id="dock"') < bottom.index('role="tablist"') < bottom.index('class="composer"')
+    phone = phone_css(html)
+    assert ".tabs { display: flex; border-bottom: 1px solid var(--rail); }" in phone
+    assert "min-height: 44px; background: none; border: 0; border-top: 3px solid transparent;" in phone
+    assert "border-top-color: var(--accent)" in phone
+
+
+def test_a_phone_lists_the_village_one_row_per_place(game):
+    html = game.client.get("/").text
+    find = re.search(r'<div class="find">(.*?)</div>', html, re.S).group(1)
+    assert 'id="search"' in find and 'id="sort"' in find
+    render = re.search(r"function renderVillagers\(\) \{(.*?)\n\}", html, re.S).group(1)
+    assert "if (phone.matches) {" in render and "tileAction(place), closedTile(place, crowd, hits));" in render
+    assert "const shown = phone.matches ? first : first.slice(0, FACES_SHOWN);" in html
+    # One tab stop per place, not one per villager; the arrows move along a place's faces.
+    assert "if (phone.matches && buttons.length) buttons[0].tabIndex = 0;" in html
+    assert 'const face = ev.target.closest(".faces .pick");' in html
+    phone = phone_css(html)
+    assert ".find { display: flex;" in phone and ".tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }" in phone
+    assert "grid-template-columns: 4rem minmax(0, 1fr) 3.25rem;" in phone
+
+
+def test_a_phone_opens_a_conversation_as_a_sheet_over_the_content(game):
+    html = game.client.get("/").text
+    assert 'id="chat-close" type="button" aria-label="Close the conversation">✕</button>' in html
+    # Not modal, since the whisper box below it stays in use; a dialog only on a phone.
+    assert '$("chat").setAttribute("role", "dialog")' in html and '<section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden>' in html
+    phone = phone_css(html)
+    assert "position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; max-width: none; max-height: 60dvh;" in phone
+    assert ".dock-face { display: flex; align-items: center;" in phone
+    calm = bracketed(html, html.index("{", html.index("@media (prefers-reduced-motion: reduce)")))
+    assert ".chat { animation: none; }" in calm
