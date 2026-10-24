@@ -1121,3 +1121,13 @@ def test_a_phone_whispers_from_one_row_with_a_recipient_chip(game):
     assert '$("whisper").querySelector("button")' not in html
     phone = phone_css(html)
     assert ".composer form { flex-wrap: nowrap; }" in phone and "#to-label { display: none; }" in phone
+
+
+def test_a_phone_has_its_tabs_at_the_bottom(game):
+    html = game.client.get("/").text
+    bottom = html[html.index('<div class="bottom">'):html.index("<script>")]
+    assert bottom.index('id="dock"') < bottom.index('role="tablist"') < bottom.index('class="composer"')
+    phone = phone_css(html)
+    assert ".tabs { display: flex; border-bottom: 1px solid var(--rail); }" in phone
+    assert "min-height: 44px; background: none; border: 0; border-top: 3px solid transparent;" in phone
+    assert "border-top-color: var(--accent)" in phone

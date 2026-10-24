@@ -508,16 +508,15 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
   header { padding: .6rem 1rem; align-items: center; }
-  .app { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
   .app:not([data-tab="rumors"]) #rumors-panel,
   .app:not([data-tab="hear"]) #hear-panel,
   .app:not([data-tab="village"]) #town { display: none; }
-  .tabs { display: flex; grid-column: 1 / -1; border-bottom: 1px solid var(--rail); }
+  .tabs { display: flex; border-bottom: 1px solid var(--rail); }
   .tabs button {
-    flex: 1; background: none; border: 0; border-bottom: 3px solid transparent;
-    padding: .5rem 0; cursor: pointer; font-size: .9rem; color: var(--muted);
+    flex: 1; min-height: 44px; background: none; border: 0; border-top: 3px solid transparent;
+    padding: 0; cursor: pointer; font-size: .9rem; color: var(--muted);
   }
-  .tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--ink); font-weight: 700; }
+  .tabs button[aria-selected="true"] { border-top-color: var(--accent); color: var(--ink); font-weight: 700; }
   /* One line: the name, the day, the mood, the connection dot and a menu for the rest. */
   header { position: relative; flex-wrap: nowrap; gap: .5rem; min-height: 56px; padding: .25rem .5rem .25rem 1rem; }
   h1 { font-size: 1.2rem; }
@@ -649,12 +648,6 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     </form>
   </dialog>
 
-  <nav class="tabs" role="tablist" aria-label="Views">
-    <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
-    <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
-    <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
-  </nav>
-
   <aside class="rumors" id="rumors-panel" aria-label="Your rumors">
     <h2>Your rumors</h2>
     <ol class="rumor-list" id="rumor-list"></ol>
@@ -711,6 +704,11 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   <div class="bottom">
     <ul class="dock" id="dock" aria-label="Talking with you"></ul>
     <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
+      <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
+      <button type="button" role="tab" id="tab-village" aria-controls="town" aria-selected="false" tabindex="-1">Village</button>
+    </nav>
     <div class="composer">
       <p class="resting" id="resting" role="status" hidden></p>
       <form id="whisper">
