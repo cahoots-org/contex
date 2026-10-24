@@ -344,12 +344,20 @@ The village thinks only while someone is playing: a player counts while one of
 their tabs is open, and for `WHISPERS_IDLE_AFTER_SECONDS` (10 minutes) after
 their last whisper, walk, question, listen, keystroke, goal swap or closed tab.
 A visitor who loads the page but never opens its feed never wakes the village,
-and their run is dropped once it is that old.
+and their run is dropped once it is that old, or sooner once more than
+`WHISPERS_MAX_IDLE_RUNS` such runs pile up. A single open tab keeps the village
+awake, so expect it to spend up to the cap every UTC day.
 
 Once the day's estimated spend reaches `WHISPERS_DAILY_SPEND_CAP` the village
 rests until midnight UTC: villagers stop thinking, the page says so, and
 whispers, questions and goal swaps are refused. Walking and listening still
 work. Calls already under way finish, so the day can go a little over the cap.
+
+The cap counts spend in the running process only. A restart starts the count
+again, and each start also pays Haiku to write a new village, so the worst case
+is about the cap per UTC day for each start. Railway restarts a crashed game at
+most 3 times (`restartPolicyMaxRetries` in `railway.json`), which bounds a crash
+loop.
 
 Worlds aren't persisted: each deploy or restart starts a new village, and
 players start over.
@@ -387,6 +395,7 @@ Every field of `Config` can be set with an environment variable.
 | `WHISPERS_WEB_HOST` | `127.0.0.1` | address `--web` listens on; `0.0.0.0` serves anyone who can reach the machine |
 | `WHISPERS_WEB_PORT` | `8765` | port for `--web`; `PORT` wins when set |
 | `WHISPERS_IDLE_AFTER_SECONDS` | `600` | how long a player counts as playing after their last action or closed tab |
+| `WHISPERS_MAX_IDLE_RUNS` | `200` | most runs kept that never played; past it the oldest are dropped |
 | `WHISPERS_DAILY_SPEND_CAP` | `5.0` | estimated dollars per UTC day before the village rests until midnight; `0` for no cap |
 | `WHISPERS_SUSPICION_WHISPER_BUMP` | `0.12` | suspicion a whisper adds to the villager you whisper to |
 | `WHISPERS_SUSPICION_HEAR_MAX` | `0.25` | most suspicion one rumor about the newcomer can add |
