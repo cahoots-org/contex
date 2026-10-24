@@ -352,6 +352,8 @@ class Judge:
             # Only runs someone is playing are judged; a player whose next hand is being written has won this one.
             judged = [p for p in playing if p.active() and p.id not in self._dealing]
             for p in judged:
+                if p.goals and all(g.id in p.met for g in p.goals):
+                    self._start_redeal(p)
                 self._replace_void(p)
             await self.maker.prepare()
             in_play = {g.id: g for p in judged for g in p.goals}

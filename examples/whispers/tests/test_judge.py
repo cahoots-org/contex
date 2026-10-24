@@ -1370,3 +1370,16 @@ def test_state_round_trips_as_json():
     fresh.restore(json.loads(json.dumps(judge.to_state())))
     assert (fresh.world, fresh.world_since, fresh.whisperers, fresh._acted) == (
         judge.world, judge.world_since, judge.whisperers, judge._acted)
+
+
+@pytest.mark.asyncio
+async def test_a_won_hand_with_no_redeal_running_is_redealt():
+    judge, _, _, feed, _ = make()
+    judge.world = world_goal(Goal("world-cat", "cat", "belief", ("cat spy",), claim_text="The cat is a spy"))
+    judge.maker = GatedMaker()
+    judge.maker.ready.set()
+    scripted(judge, [0.0] * 100, goal=QUIET)
+    pa = holder("p-a", QUIET)
+    pa.met = {QUIET.id}
+    await run_until(judge, players(pa, feed=feed), lambda: feed.deals)
+    assert [g.id for g in pa.goals] == ["t", "g"] and pa.met == set() and feed.trophies == []
