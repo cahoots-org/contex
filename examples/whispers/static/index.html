@@ -117,6 +117,10 @@ header {
   margin-left: auto; font-size: .85rem;
 }
 .hud p { margin: 0; }
+.hud .heat { order: -2; }
+#trophies-toggle { order: -1; }
+.menu { display: contents; }
+.mood, .menu-toggle { display: none; }
 h1 { font: 500 1.5rem/1.2 var(--rumor); margin: 0; }
 .conn { font-size: .875rem; color: var(--muted); }
 .conn::before {
@@ -500,8 +504,36 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     padding: .5rem 0; cursor: pointer; font-size: .9rem; color: var(--muted);
   }
   .tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--ink); font-weight: 700; }
-  .hud { order: 5; flex: 1 0 100%; margin-left: 0; justify-content: space-between; gap: .25rem 1rem; }
-  .conn { margin-left: auto; }
+  /* One line: the name, the day, the mood, the connection dot and a menu for the rest. */
+  header { position: relative; flex-wrap: nowrap; gap: .5rem; min-height: 56px; padding: .25rem .5rem .25rem 1rem; }
+  h1 { font-size: 1.2rem; }
+  .hud { display: contents; }
+  .hud .heat {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .sky { order: 1; flex-direction: column; gap: 0; }
+  .sky svg { width: 2.4rem; height: 1.3rem; }
+  .clock { font-size: .7rem; line-height: 1.2; white-space: nowrap; }
+  .mood {
+    order: 2; display: block; min-width: 0; padding: .1rem .55rem; border: 1px solid var(--edge); border-radius: 1rem;
+    font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mood:empty { display: none; }
+  .mood[data-label="watched"], .mood[data-label="hunted"] { border-color: var(--danger); color: var(--danger); }
+  .conn { order: 3; margin-left: auto; font-size: 0; }
+  .conn::before { width: .6rem; height: .6rem; margin: 0; }
+  .menu-toggle {
+    order: 4; display: grid; place-items: center; flex: none; width: 44px; height: 44px;
+    background: none; border: 0; border-radius: 6px; font-size: 1.25rem; cursor: pointer;
+  }
+  .menu {
+    display: none; position: absolute; top: calc(100% - .25rem); right: .5rem; z-index: 6; flex-direction: column; gap: .25rem;
+    min-width: 12rem; max-width: calc(100vw - 1rem); padding: .5rem .75rem; background: var(--bg);
+    border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 6px 24px rgb(0 0 0 / .2);
+  }
+  .menu.open { display: flex; }
+  .menu .where, .menu .usage { font-size: .8rem; }
+  #trophies-toggle { order: 0; min-height: 44px; text-align: left; font-size: .95rem; }
   aside { padding: .5rem 1rem 1.5rem; }
   .feed { padding: .5rem 1rem 1rem; }
   .strip { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .25rem 1rem .5rem; }
@@ -544,7 +576,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
     <h1>Whispers</h1>
     <div class="hud">
       <p class="heat" id="heat" aria-live="polite"></p>
-      <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
+      <span class="mood" id="mood" aria-hidden="true"></span>
       <div class="sky" id="sky">
         <svg viewBox="0 0 64 34" aria-hidden="true">
           <defs>
@@ -566,8 +598,12 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
         </svg>
         <p class="clock" id="clock"></p>
       </div>
-      <p class="where" id="where"></p>
-      <p class="usage" id="usage"></p>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="More" aria-expanded="false" aria-controls="menu">⋯</button>
+      <div class="menu" id="menu">
+        <button class="linkish" id="trophies-toggle" type="button" aria-expanded="false" aria-controls="trophies">Trophies (0)</button>
+        <p class="where" id="where"></p>
+        <p class="usage" id="usage"></p>
+      </div>
     </div>
     <span class="conn" id="conn" data-state="connecting" role="status">Connecting</span>
   </header>
@@ -736,6 +772,7 @@ let drafted = new Set();
 const DRAFT_MIN = 12;
 const DRAFT_WAIT = 400;
 const MIGHT = "this might interest them";
+const phone = matchMedia("(max-width: 760px)");
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -1418,7 +1455,7 @@ function render(e, fresh) {
       return line("quiet", null, e.text);
     }
     case "heat":
-      $("heat").textContent = e.text;
+      setHeat(e.text, e.label);
       return null;
     case "gameover":
       showGameOver(e, fresh);
@@ -1772,7 +1809,10 @@ feed.addEventListener("keydown", (ev) => {
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.key !== "Escape" || ev.defaultPrevented) return;
-  if (!$("card").hidden) closeCard();
+  if ($("menu").classList.contains("open")) {
+    setMenu(false);
+    $("menu-toggle").focus();
+  } else if (!$("card").hidden) closeCard();
   else if (chatWith != null) openChat(null);
   else if (!$("trophies").hidden) setTrophies(false);
   else if (selectedRumor != null) selectRumor(null);
@@ -1877,15 +1917,41 @@ function renderTrophies() {
     : [el("li", { className: "none", textContent: "No trophies yet." })]));
 }
 
-// Opening from a feed note moves focus to the case; closing returns it to the toggle when it was inside.
+// Opening from a feed note moves focus to the case; closing returns it to the toggle (on a phone, the menu's) when it
+// was inside.
 function setTrophies(open, focus = false) {
   const inside = $("trophies").contains(document.activeElement);
   $("trophies").hidden = !open;
   $("trophies-toggle").setAttribute("aria-expanded", String(open));
   if (open && focus) $("trophies-title").focus();
-  else if (!open && inside) $("trophies-toggle").focus();
+  else if (!open && inside) $(phone.matches ? "menu-toggle" : "trophies-toggle").focus();
 }
-$("trophies-toggle").addEventListener("click", () => setTrophies($("trophies").hidden));
+// On a phone the toggle sits in the menu, and the case is on the Hear tab.
+$("trophies-toggle").addEventListener("click", () => {
+  const open = $("trophies").hidden;
+  if (phone.matches) {
+    setMenu(false);
+    if (open) setTab("hear");
+  }
+  setTrophies(open, open && phone.matches);
+});
+
+// The mood in full for the live region, and in a word for the phone's header.
+function setHeat(text, label) {
+  $("heat").textContent = text;
+  $("mood").textContent = label ? capital(label) : "";
+  $("mood").title = text;
+  $("mood").dataset.label = label || "";
+}
+
+function setMenu(open) {
+  $("menu").classList.toggle("open", open);
+  $("menu-toggle").ariaExpanded = String(open);
+}
+$("menu-toggle").addEventListener("click", () => setMenu(!$("menu").classList.contains("open")));
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest("#menu, #menu-toggle")) setMenu(false);
+});
 
 function capital(word) {
   return `${word[0].toUpperCase()}${word.slice(1)}`;
@@ -2488,7 +2554,6 @@ try { storedTab = localStorage.getItem(TAB_KEY); } catch { /* the Hear tab */ }
 if (TABS.includes(storedTab)) setTab(storedTab);
 // The columns are tab panels only while they are tabs, so a wide screen keeps its landmarks.
 const PANELS = { rumors: "rumors-panel", hear: "hear-panel", village: "town" };
-const phone = matchMedia("(max-width: 760px)");
 function setPanels() {
   for (const [t, id] of Object.entries(PANELS)) {
     if (phone.matches) {
@@ -2592,7 +2657,7 @@ async function loadState() {
   setHere(state.place);
   villagersKey = "";
   setVillagers(state.villagers);
-  $("heat").textContent = state.heat_line;
+  setHeat(state.heat_line, state.heat);
   setResting(state.resting);
 }
 

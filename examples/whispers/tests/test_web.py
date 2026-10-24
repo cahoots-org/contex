@@ -1076,3 +1076,20 @@ def test_a_pruned_run_leaves_no_notes_or_sent_snapshots(game, monkeypatch):
     TestClient(game.app, base_url=BASE).get("/")
     assert game.players.get(gone.id) is None
     assert gone.id not in game.app.state.notes and all(gone.id not in kind for kind in game.app.state.sent.values())
+
+
+def phone_css(html: str) -> str:
+    """The rules under the phone breakpoint."""
+    at = html.index("@media (max-width: 760px) {")
+    return bracketed(html, html.index("{", at))
+
+
+def test_a_phone_header_is_one_line_with_a_menu(game):
+    html = game.client.get("/").text
+    for needle in ('id="mood"', 'id="menu-toggle"', 'aria-controls="menu"', 'class="menu" id="menu"', "setHeat(e.text, e.label)"):
+        assert needle in html
+    menu = re.search(r'<div class="menu" id="menu">(.*?)</div>', html, re.S).group(1)
+    assert 'id="trophies-toggle"' in menu and 'id="usage"' in menu
+    phone = phone_css(html)
+    assert ".hud { display: contents; }" in phone and ".menu.open { display: flex; }" in phone
+    assert "width: 44px; height: 44px;" in phone and ".conn { order: 3; margin-left: auto; font-size: 0; }" in phone
