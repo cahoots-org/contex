@@ -1103,7 +1103,8 @@ def test_a_phone_keeps_its_goals_behind_one_pill(game):
     assert "`Goals ${all.filter((g) => g.met).length} of ${all.length}`" in html
     assert '$("goals-sheet").showModal()' in html and '.append($("goals"), $("world"))' in html
     assert 'ev.target.matches("dialog.sheet")' in html and 'closest(".sheet-close")' in html
-    assert ".sheet[open] { animation: none; }" in html.replace(".fresh, .fresh mark, .gameover, .swap.turning, ", "")
+    calm = bracketed(html, html.index("{", html.index("@media (prefers-reduced-motion: reduce)")))
+    assert ".sheet[open]" in calm
     assert ".strip.open" not in html
 
 
@@ -1146,3 +1147,15 @@ def test_a_phone_lists_the_village_one_row_per_place(game):
     phone = phone_css(html)
     assert ".find { display: flex;" in phone and ".tiles .pick { display: grid; place-items: center; width: 44px; height: 44px; }" in phone
     assert "grid-template-columns: 4.5rem minmax(0, 1fr) auto;" in phone
+
+
+def test_a_phone_opens_a_conversation_as_a_sheet_over_the_content(game):
+    html = game.client.get("/").text
+    assert 'id="chat-close" type="button" aria-label="Close the conversation">✕</button>' in html
+    # Not modal, since the whisper box below it stays in use; a dialog only on a phone.
+    assert '$("chat").setAttribute("role", "dialog")' in html and '<section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden>' in html
+    phone = phone_css(html)
+    assert "position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; max-width: none; max-height: 60dvh;" in phone
+    assert ".dock-face { display: flex; align-items: center;" in phone
+    calm = bracketed(html, html.index("{", html.index("@media (prefers-reduced-motion: reduce)")))
+    assert ".chat { animation: none; }" in calm

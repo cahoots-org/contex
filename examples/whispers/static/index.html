@@ -281,6 +281,7 @@ mark.kept {
 .chat { max-width: 42rem; max-height: 12rem; overflow-y: auto; margin: .5rem 1.25rem 0; padding: .4rem 0; border-bottom: 1px solid var(--rail); }
 .chat[hidden] { display: none; }
 .chat-about { margin: 0 0 .3rem; font-size: .8rem; color: var(--muted); }
+.chat-close { display: none; }
 .chat-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 .msg { max-width: 85%; padding: .3rem .7rem; border-radius: 10px; overflow-wrap: anywhere; }
 .msg.you { align-self: flex-end; background: var(--panel); }
@@ -563,8 +564,20 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
   .composer { padding: .6rem 1rem .8rem; }
-  .dock { flex-wrap: nowrap; overflow-x: auto; padding: .5rem 1rem 0; }
-  .chat { max-height: 30dvh; margin: .4rem 1rem 0; }
+  /* The dock is a slim strip of faces; an open conversation rises over the content as a sheet. */
+  .bottom { position: relative; }
+  .dock { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: .25rem; padding: 0 1rem; }
+  .dock-face { display: flex; align-items: center; gap: .5rem; flex: none; min-height: 44px; }
+  .dock-face canvas { width: 28px; height: 28px; }
+  .dock-face small { white-space: nowrap; }
+  .chat {
+    position: absolute; left: 0; right: 0; bottom: 100%; z-index: 4; max-width: none; max-height: 60dvh; margin: 0;
+    padding: 0 1rem .75rem; background: var(--bg); border: 0; border-top: 1px solid var(--edge); border-radius: 14px 14px 0 0;
+    box-shadow: 0 -6px 24px rgb(0 0 0 / .2); animation: rise 220ms ease-out;
+  }
+  .chat-head { position: sticky; top: 0; display: flex; align-items: center; gap: .5rem; background: var(--bg); }
+  .chat-about { flex: 1; margin: 0; }
+  .chat-close { display: block; }
   /* One row: who to whisper to as a chip, the words, and Whisper. The name search is in the To sheet. */
   .composer form { flex-wrap: nowrap; }
   #to-label { display: none; }
@@ -609,7 +622,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .swap.turning { opacity: 1; animation: turn 1s linear infinite; }
 .goal-card.swapping .goal-text { opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
-  .fresh, .fresh mark, .gameover, .swap.turning, .sheet[open] { animation: none; }
+  .fresh, .fresh mark, .gameover, .swap.turning, .sheet[open], .chat { animation: none; }
 }
 </style>
 </head>
@@ -726,7 +739,8 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 
   <div class="bottom">
     <ul class="dock" id="dock" aria-label="Talking with you"></ul>
-    <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden><p class="chat-about" id="chat-about"></p><ol class="chat-lines" id="chat-lines"></ol></section>
+    <section class="chat" id="chat" aria-label="Conversation" tabindex="0" hidden>
+      <div class="chat-head"><p class="chat-about" id="chat-about"></p><button class="sheet-close chat-close" id="chat-close" type="button" aria-label="Close the conversation">✕</button></div><ol class="chat-lines" id="chat-lines"></ol></section>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
       <button type="button" role="tab" id="tab-hear" aria-controls="hear-panel" aria-selected="true">Hear</button>
@@ -1419,6 +1433,13 @@ function openChat(villagerId) {
   $("text").focus();
 }
 
+// Closing the sheet's conversation returns focus to its face in the dock.
+$("chat-close").addEventListener("click", () => {
+  const id = chatWith;
+  openChat(null);
+  $("dock").querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus();
+});
+
 function renderChat() {
   const t = dock.get(chatWith);
   const about = opening(t.rumor);
@@ -2015,7 +2036,7 @@ $("menu-toggle").addEventListener("click", () => setMenu(!$("menu").classList.co
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest("#menu, #menu-toggle")) setMenu(false);
   if (ev.target.matches("dialog.sheet")) ev.target.close();
-  else ev.target.closest(".sheet-close")?.closest("dialog").close();
+  else ev.target.closest(".sheet-close")?.closest("dialog")?.close();
 });
 
 function capital(word) {
@@ -2676,6 +2697,9 @@ function setPanels() {
       $(id).removeAttribute("aria-labelledby");
     }
   }
+  // A phone's conversation is a sheet that leaves the whisper box usable, so it is a dialog but not a modal one.
+  if (phone.matches) $("chat").setAttribute("role", "dialog");
+  else $("chat").removeAttribute("role");
 }
 phone.addEventListener("change", () => {
   setPanels();
