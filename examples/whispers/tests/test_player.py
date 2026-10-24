@@ -1521,3 +1521,18 @@ def test_players_round_trip_as_json_with_no_sockets():
     assert not fresh.any_playing()
     fresh.get(PID).connected()
     assert fresh.any_playing()
+
+
+@pytest.mark.asyncio
+async def test_a_first_visit_each_whisper_and_the_end_are_logged_for_counting(capsys):
+    player, *_ = make("Marta")
+    player.connected()
+    player.disconnected()
+    player.connected()
+    assert await player.whisper("Marta", "the miller waters his flour") is None
+    player.end(Summary("lost", [], []))
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("analytics")]
+    tag = f"owner={player.owner} run={player.id}"
+    assert lines == [f"analytics visit {tag}", f"analytics whisper {tag}",
+                     f"analytics end {tag} outcome=lost met=0/{len(player.goals)}"]
+    player.close()
