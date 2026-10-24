@@ -329,6 +329,19 @@ h3 { font-size: .875rem; color: var(--muted); font-weight: 400; margin: .9rem 0 
   border-bottom: 1px solid var(--rail);
 }
 .strip-toggle { display: none; }
+/* A phone's sheets rise from the foot of the screen; a tap on the shade or Escape closes them. */
+.sheet {
+  position: fixed; inset: auto 0 0; width: 100%; max-width: 100%; max-height: 85dvh; margin: 0; padding: 0; overflow-y: auto;
+  background: var(--bg); color: var(--ink); border: 0; border-top: 1px solid var(--edge); border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 24px rgb(0 0 0 / .2);
+}
+.sheet[open] { animation: rise 220ms ease-out; }
+.sheet::backdrop { background: rgb(0 0 0 / .35); }
+.sheet-body { padding: 0 1rem 1rem; }
+.sheet-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; background: var(--bg); }
+.sheet-head h2 { margin: 0; font: 500 1.25rem/1.2 var(--rumor); }
+.sheet-close { width: 44px; height: 44px; margin-right: -.6rem; background: none; border: 0; font-size: 1.1rem; cursor: pointer; }
+@keyframes rise { from { transform: translateY(100%); } }
 .goals {
   display: flex;
   flex-wrap: wrap;
@@ -536,17 +549,15 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   #trophies-toggle { order: 0; min-height: 44px; text-align: left; font-size: .95rem; }
   aside { padding: .5rem 1rem 1.5rem; }
   .feed { padding: .5rem 1rem 1rem; }
-  .strip { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; padding: .25rem 1rem .5rem; }
+  .strip { padding: .2rem 1rem; }
   .strip-toggle {
-    display: inline-block; flex: none; background: none; border: 0; padding: .2rem 0;
-    cursor: pointer; font-size: .875rem; font-weight: 700;
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 1rem; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 22px; cursor: pointer; font-size: .9rem; font-weight: 700;
   }
-  .strip-toggle::after { content: " \25BE"; }
-  .strip-toggle[aria-expanded="true"]::after { content: " \25B4"; }
-  .goals { display: none; flex: 1 0 100%; order: 3; flex-direction: column; }
-  .strip.open .goals { display: flex; }
-  .goal-card { flex: 1 1 100%; gap: .1rem; }
-  .goal-card.world { order: 3; }
+  .sheet .goals { flex-direction: column; flex-wrap: nowrap; }
+  .sheet .goal-card { flex: none; margin-top: .5rem; }
+  .sheet .swap { min-width: 44px; min-height: 44px; margin: -.65rem -.6rem -.65rem auto; opacity: .7; }
+  .sheet .swap:disabled { opacity: .25; }
   .gameover { max-height: 45%; padding: .75rem 1rem; }
   .gameover h2 { font-size: 1.25rem; }
   .gameover ul { font-size: .875rem; }
@@ -566,7 +577,7 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
 .swap.turning { opacity: 1; animation: turn 1s linear infinite; }
 .goal-card.swapping .goal-text { opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
-  .fresh, .fresh mark, .gameover, .swap.turning { animation: none; }
+  .fresh, .fresh mark, .gameover, .swap.turning, .sheet[open] { animation: none; }
 }
 </style>
 </head>
@@ -609,10 +620,16 @@ button.goal-text:focus-visible { outline: 2px solid var(--accent); outline-offse
   </header>
 
   <section class="strip" id="strip" aria-label="Goals and mood">
-    <button class="strip-toggle" id="strip-toggle" aria-expanded="false" aria-controls="goals"></button>
+    <button class="strip-toggle" id="strip-toggle" type="button" aria-haspopup="dialog" aria-controls="goals-sheet"></button>
     <ul class="goals" id="goals"></ul>
     <div class="goal-card world" id="world" aria-live="polite"></div>
   </section>
+
+  <dialog class="sheet" id="goals-sheet" aria-modal="true" aria-labelledby="goals-sheet-title">
+    <div class="sheet-body" id="goals-body">
+      <div class="sheet-head"><h2 id="goals-sheet-title">Goals</h2><button class="sheet-close" type="button" aria-label="Close">✕</button></div>
+    </div>
+  </dialog>
 
   <nav class="tabs" role="tablist" aria-label="Views">
     <button type="button" role="tab" id="tab-rumors" aria-controls="rumors-panel" aria-selected="false" tabindex="-1">Rumors</button>
@@ -1808,7 +1825,7 @@ feed.addEventListener("keydown", (ev) => {
   }
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key !== "Escape" || ev.defaultPrevented) return;
+  if (ev.key !== "Escape" || ev.defaultPrevented || document.querySelector("dialog[open]")) return;
   if ($("menu").classList.contains("open")) {
     setMenu(false);
     $("menu-toggle").focus();
@@ -1892,7 +1909,7 @@ function goalCard(g, label, swapId = null) {
 
 function renderGoals() {
   const all = [...goals.values()];
-  $("strip-toggle").textContent = `Goals: ${all.map((g) => (g.met ? "met" : g.needed == null ? `${g.percent}%` : `${g.believers}/${g.needed}`)).join(" · ")}`;
+  $("strip-toggle").textContent = `Goals ${all.filter((g) => g.met).length} of ${all.length}`;
   $("goals").replaceChildren(...[...goals].map(([id, g]) => el("li", {
     className: ["goal-card", g.met && "met", id === pickedGoal && "picked", swapping.has(id) && "swapping"].filter(Boolean).join(" "),
     ariaBusy: String(swapping.has(id)),
@@ -1951,6 +1968,8 @@ function setMenu(open) {
 $("menu-toggle").addEventListener("click", () => setMenu(!$("menu").classList.contains("open")));
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest("#menu, #menu-toggle")) setMenu(false);
+  if (ev.target.matches("dialog.sheet")) ev.target.close();
+  else ev.target.closest(".sheet-close")?.closest("dialog").close();
 });
 
 function capital(word) {
@@ -2555,6 +2574,9 @@ if (TABS.includes(storedTab)) setTab(storedTab);
 // The columns are tab panels only while they are tabs, so a wide screen keeps its landmarks.
 const PANELS = { rumors: "rumors-panel", hear: "hear-panel", village: "town" };
 function setPanels() {
+  for (const sheet of document.querySelectorAll("dialog[open]")) sheet.close();
+  // A phone's goal cards are in the goals sheet, the same nodes as the wide screen's strip.
+  (phone.matches ? $("goals-body") : $("strip")).append($("goals"), $("world"));
   for (const [t, id] of Object.entries(PANELS)) {
     if (phone.matches) {
       $(id).setAttribute("role", "tabpanel");
@@ -2568,10 +2590,7 @@ function setPanels() {
 phone.addEventListener("change", setPanels);
 setPanels();
 
-$("strip-toggle").addEventListener("click", () => {
-  const open = $("strip").classList.toggle("open");
-  $("strip-toggle").setAttribute("aria-expanded", String(open));
-});
+$("strip-toggle").addEventListener("click", () => $("goals-sheet").showModal());
 
 function setConn(state, text) {
   $("conn").dataset.state = state;

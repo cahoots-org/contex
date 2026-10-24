@@ -1093,3 +1093,15 @@ def test_a_phone_header_is_one_line_with_a_menu(game):
     phone = phone_css(html)
     assert ".hud { display: contents; }" in phone and ".menu.open { display: flex; }" in phone
     assert "width: 44px; height: 44px;" in phone and ".conn { order: 3; margin-left: auto; font-size: 0; }" in phone
+
+
+def test_a_phone_keeps_its_goals_behind_one_pill(game):
+    html = game.client.get("/").text
+    sheet = re.search(r'<dialog class="sheet" id="goals-sheet"([^>]*)>', html).group(1)
+    assert 'aria-modal="true"' in sheet and 'aria-labelledby="goals-sheet-title"' in sheet
+    assert 'aria-haspopup="dialog" aria-controls="goals-sheet"' in html
+    assert "`Goals ${all.filter((g) => g.met).length} of ${all.length}`" in html
+    assert '$("goals-sheet").showModal()' in html and '.append($("goals"), $("world"))' in html
+    assert 'ev.target.matches("dialog.sheet")' in html and 'closest(".sheet-close")' in html
+    assert ".sheet[open] { animation: none; }" in html.replace(".fresh, .fresh mark, .gameover, .swap.turning, ", "")
+    assert ".strip.open" not in html
