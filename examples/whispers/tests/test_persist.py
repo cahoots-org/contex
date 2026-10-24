@@ -122,10 +122,10 @@ async def played(monkeypatch):
 
 
 def assert_next_ids_are_new(fresh, g, player):
-    ids = fresh.engine.ids
-    assert ids.next("w") == "w-2" and ids.next("u") == "u-2"
-    assert ids.next("world") == f"world-{int(g.judge.world.id.split('-')[1]) + 1}"
-    assert ids.next("goal") == f"goal-{max(int(gl.id.rsplit('-', 1)[1]) for gl in player.goals) + 1}"
+    ids, skip = fresh.engine.ids, persist.ID_MARGIN
+    assert ids.next("w") == f"w-{1 + skip + 1}" and ids.next("u") == f"u-{1 + skip + 1}"
+    assert ids.next("world") == f"world-{int(g.judge.world.id.split('-')[1]) + skip + 1}"
+    assert ids.next("goal") == f"goal-{max(int(gl.id.rsplit('-', 1)[1]) for gl in player.goals) + skip + 1}"
 
 
 @pytest.mark.asyncio
@@ -170,7 +170,7 @@ async def test_counters_resume_past_every_id_in_use_even_when_saved_counters_lag
     assert_next_ids_are_new(fresh, g, player)
     assert fresh.feed.say("next").id == 1000
     await fresh.engine.hints.add("p-abc", "v1", "line")
-    assert fresh.engine.contex.published[-1][1] == "hint:8"
+    assert fresh.engine.contex.published[-1][1] == f"hint:{7 + persist.ID_MARGIN + 1}"
 
 
 def test_a_save_is_written_whole_or_not_at_all(tmp_path, monkeypatch):

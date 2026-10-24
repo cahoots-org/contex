@@ -16,6 +16,9 @@ STATE_VERSION = 1
 # Every id the game's Ids counters hand out, as prefix and number.
 ID = re.compile(r"\b(world|goal|u|w)-(\d+)\b")
 SCENE_ID = re.compile(r"s-(\d+)")
+# How far a restore skips each id that also keys Contex data past the last one saved, so ids handed out after a save
+# that a crash lost are not handed out again.
+ID_MARGIN = 1000
 
 
 def state_path(session: str, data_dir: str = "") -> str:
@@ -70,7 +73,7 @@ def restore_game(state: dict, components: dict, make: Callable) -> bool:
     """
     fresh = {name: part.to_state() for name, part in components.items()}
     try:
-        _restore(state, components, make)
+        _restore(state, components, make, ID_MARGIN)
     except Exception:
         log.exception("the saved game could not be restored; starting fresh")
         _restore(fresh, components, make)
@@ -78,14 +81,18 @@ def restore_game(state: dict, components: dict, make: Callable) -> bool:
     return True
 
 
-def _restore(state: dict, components: dict, make: Callable) -> None:
+def _restore(state: dict, components: dict, make: Callable, margin: int = 0) -> None:
     for name, part in components.items():
         if name == "players":
             part.restore(state[name], make)
         else:
             part.restore(state[name])
+    ids, last = components["ids"], components["ids"].to_state()
     for prefix, n in ID.findall(json.dumps(state)):
-        components["ids"].ensure_past(prefix, int(n))
+        last[prefix] = max(last.get(prefix, 0), int(n))
+    for prefix, n in last.items():
+        ids.ensure_past(prefix, n + margin)
+    components["hints"].ensure_past(state["hints"]["last_key"] + margin)
     feed = state["feed"]
     components["feed"].ensure_past(max([e["id"] for e in feed["recent"]] + list(feed["closed"].values()), default=0))
     scenes = [e["data"].get(k) for e in feed["recent"] for k in ("scene_id", "scene")]
