@@ -253,6 +253,8 @@ def create_app(
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(Guard, port=port, host=host)
     app.state.clients = clients
+    app.state.notes = notes
+    app.state.sent = sent
 
     @app.get("/healthz")
     async def healthz():
@@ -268,6 +270,11 @@ def create_app(
             owner = new_owner_id()
         if fresh or (player.over() and time.time() - player.ended_at >= RUN_OUT_LOCKOUT_SECONDS):
             join(owner)
+            # Joining may have pruned runs; forget what their tabs were shown.
+            kept = {p.id for p in players}
+            for shown in (notes, *sent.values()):
+                for pid in shown.keys() - kept:
+                    del shown[pid]
         response = FileResponse(PAGE)
         if fresh:
             response.set_cookie(

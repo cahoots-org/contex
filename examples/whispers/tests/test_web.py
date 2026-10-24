@@ -1062,3 +1062,17 @@ def test_the_cookie_is_secure_over_https(game):
     assert "secure" not in plain.headers["set-cookie"].lower()
     assert "secure" in secure.headers["set-cookie"].lower()
 
+
+def test_a_pruned_run_leaves_no_notes_or_sent_snapshots(game, monkeypatch):
+    now = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    visitor = TestClient(game.app, base_url=BASE)
+    visitor.get("/")
+    gone = game.players.live(visitor.cookies[web.COOKIE])
+    visitor.get("/api/state")
+    game.app.state.sent["usage"][gone.id] = {}
+    assert gone.id in game.app.state.notes
+    now[0] += game.config.idle_after_seconds
+    TestClient(game.app, base_url=BASE).get("/")
+    assert game.players.get(gone.id) is None
+    assert gone.id not in game.app.state.notes and all(gone.id not in kind for kind in game.app.state.sent.values())
