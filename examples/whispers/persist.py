@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 STATE_VERSION = 1
 # Every id the game's Ids counters hand out, as prefix and number.
 ID = re.compile(r"\b(world|goal|u|w)-(\d+)\b")
+SCENE_ID = re.compile(r"s-(\d+)")
 
 
 def state_path(session: str, data_dir: str = "") -> str:
@@ -87,6 +88,9 @@ def _restore(state: dict, components: dict, make: Callable) -> None:
         components["ids"].ensure_past(prefix, int(n))
     feed = state["feed"]
     components["feed"].ensure_past(max([e["id"] for e in feed["recent"]] + list(feed["closed"].values()), default=0))
+    scenes = [e["data"].get(k) for e in feed["recent"] for k in ("scene_id", "scene")]
+    found = [SCENE_ID.fullmatch(s) for s in scenes if isinstance(s, str)]
+    components["engine"].scenes.ensure_past(max((int(m[1]) for m in found if m), default=0))
 
 
 def save_quietly(path: str, components: dict, session: str) -> None:

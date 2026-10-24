@@ -66,6 +66,10 @@ class Scenes:
     _active: dict[str, Scene] = field(default_factory=dict)
     _count: int = 0
 
+    def ensure_past(self, n: int) -> None:
+        """Make the next scene id come after s-n."""
+        self._count = max(self._count, n)
+
     def of(self, vid: str) -> Scene | None:
         """The scene vid is taking part in."""
         return next((s for s in self._active.values() if vid in s.participants), None)

@@ -112,6 +112,8 @@ async def played(monkeypatch):
     g.feed.on_met(goal, player=player.id)
     rising = player.goals[1]
     g.judge.progress[rising.id], g.judge.counts[rising.id] = 0.5, (1, 2)
+    g.feed.emit("scene", "", player=player.id, scene_id="s-4")
+    g.feed.emit("overheard", "", player=player.id, scene="s-7")
     g.players.award("o-abc", Trophy("personal", ("a",), 1), "A trophy.")
     g.players.award("o-gone", Trophy("world", ("b",), 1), "Another trophy.")
     player.disconnected()
@@ -149,6 +151,7 @@ async def test_a_played_game_restores_to_the_same_state_with_fresh_ids(monkeypat
     assert_next_ids_are_new(fresh, g, player)
     assert fresh.feed.say("next").id == g.feed.recent[-1].id + 1
     assert fresh.engine.town.found_group("v1", "New", "x").id == "g-2"
+    assert fresh.engine.scenes._count == 7
 
 
 @pytest.mark.asyncio
