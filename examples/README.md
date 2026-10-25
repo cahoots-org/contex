@@ -52,20 +52,12 @@ then asks a plain-English question and prints the matches ranked by meaning.
 python examples/query.py
 ```
 
-### [`whispers/`](whispers/README.md)
+### Games
 
-A gossip game with 50 villagers, played in the terminal or a browser. Each villager's mind is a project
-with one subscription on their needs, they wake only on push, and they forget
-through `max_age_seconds`. You whisper rumors and watch them spread and change
-by meaning. Needs `ANTHROPIC_API_KEY` and `TYPESAFE_API_KEY`. An
-optional faster reconcile sweep makes quiet minds forget sooner; see its README
-for setup and cost.
-
-```bash
-pip install -r examples/whispers/requirements.txt
-python -m examples.whispers          # terminal
-python -m examples.whispers --web    # browser, at http://127.0.0.1:8765
-```
+[contex-games](https://github.com/cahoots-org/contex-games) holds larger apps built on Contex. Whispers, a
+gossip game whose 50 villagers each have a Contex mind, wake only on push and
+forget through `max_age_seconds`, lives there and at
+[whispers.usecontex.com](https://whispers.usecontex.com).
 
 ## Also here
 
