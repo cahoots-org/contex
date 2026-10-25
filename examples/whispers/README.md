@@ -374,6 +374,11 @@ run, goal, trophy, rumor card and the feed a reload replays. A save that is
 unreadable, for another version or session, fails to restore, or has lost its
 village file is renamed to `<name>.bad-<time>` and the game starts fresh.
 
+To count players, search the logs for `analytics`. The game prints one line when a run first opens its feed
+(`analytics visit`), one per whisper (`analytics whisper`), and one when a run ends (`analytics end`, with its
+outcome and goals met). Each carries the player's anonymous `owner` id, so distinct owners in `analytics whisper`
+lines are the people who played.
+
 ## Settings
 
 Every field of `Config` can be set with an environment variable.

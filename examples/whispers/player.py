@@ -22,6 +22,12 @@ from examples.whispers.usage import charging
 
 log = logging.getLogger(__name__)
 
+
+def analytics(event: str, **fields) -> None:
+    """One line on stdout per countable event, for the host's log search: `analytics <event> key=value ...`."""
+    print("analytics", event, *(f"{k}={v}" for k, v in fields.items()))
+
+
 MAX_WHISPER_CHARS = 500
 ECHO_WORDS = 4
 GAME_OVER = "The game is over."
@@ -119,6 +125,8 @@ class Player:
 
     def connected(self) -> None:
         """A tab opened its feed."""
+        if not self.ever_active():
+            analytics("visit", owner=self.owner, run=self.id)
         self._sockets += 1
         self.touch()
 
@@ -271,6 +279,7 @@ class Player:
                 rumors.discard(uid)
             return NOT_CARRIED
         self.whispered_at = self._said_at[target.id] = time.time()
+        analytics("whisper", owner=self.owner, run=self.id)
         if self.game is not None and rumor is None:
             self.game.moved(self.id)
         if utterance.place != self.place:
@@ -556,6 +565,8 @@ class Player:
             return
         self.state, self.summary, self.ended_at = summary.outcome, summary, time.time()
         self.finished.set()
+        analytics("end", owner=self.owner, run=self.id, outcome=summary.outcome,
+                  met=f"{len(self.met)}/{len(self.goals)}")
         self.feed.on_game_over(summary, player=self.id)
         self.feed.close(self.id)
 
