@@ -1,6 +1,0 @@
-# Shortens Contex's forgetting sweep so quiet villagers lose old memories sooner; applies to the whole server.
-# Use: docker compose -f docker-compose.yml -f examples/whispers/compose.sweep.yaml up
-services:
-  contex:
-    environment:
-      - RECONCILE_SWEEP_SECONDS=60

@@ -79,16 +79,3 @@ dmypy.json
 # Superpowers SDD ledgers / workflow scratch
 .superpowers/
 
-# Whispers village cache (python -m examples.whispers); legacy rumor_mill names kept below
-rumor_mill_seed.json
-rumor_mill_seed.json.baselines.json
-rumor_mill_seed.json.places.json
-rumor_mill_seed.json.goals.json
-rumor_mill_worlds/
-rumor_mill_baselines.json
-whispers_seed.json
-whispers_seed.json.baselines.json
-whispers_seed.json.places.json
-whispers_seed.json.goals.json
-whispers_worlds/
-whispers_baselines.json

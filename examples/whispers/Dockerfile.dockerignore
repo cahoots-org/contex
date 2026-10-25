@@ -1,6 +1,0 @@
-*
-!examples/whispers
-examples/whispers/tests
-examples/whispers/Dockerfile*
-examples/whispers/railway.json
-**/__pycache__
