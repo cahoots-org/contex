@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.db_models import Embedding, Subscription, Symbol
-from src.core.embedder import encode_async
+from src.core.embedder import encode_queries
 from src.core.limits import MAX_BATCH_SIZE, MAX_SUBSCRIPTIONS_PER_PROJECT, check_needs, clamp_top_k, positive_int_env
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
@@ -104,8 +104,6 @@ class SubscriptionService:
         self.encoder = encoder
         self.default_threshold = default_threshold
         self.default_top_k = default_top_k
-        # ponytail: unbounded, ~3KB per distinct need; persist vectors behind an ANN index if this binds.
-        self._need_vecs: dict[str, np.ndarray] = {}
         self._project_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._reconcile_slots = asyncio.Semaphore(reconcile_concurrency)
 
@@ -326,10 +324,7 @@ class SubscriptionService:
         ]
 
     async def _need_vectors(self, needs) -> np.ndarray:
-        missing = sorted({n for n in needs if n not in self._need_vecs})
-        if missing:
-            self._need_vecs.update(zip(missing, await encode_async(self.encoder, missing)))
-        return np.stack([self._need_vecs[n] for n in needs])
+        return np.stack(await encode_queries(self.encoder, needs))
 
     async def _ids_admitting(self, project_id, keys) -> set[str] | None:
         """Subscriptions with a need some changed node reaches the floor of; None when unknown."""

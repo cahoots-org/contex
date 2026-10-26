@@ -40,9 +40,9 @@ async def test_hnsw_scan_widened_to_the_request(db):
 @pytest.mark.asyncio
 async def test_query_encoding_runs_off_the_event_loop_thread(db):
     class _Recorder:
-        def encode(self, text):
+        def encode(self, texts):
             self.thread = threading.current_thread()
-            return np.ones(768, dtype=np.float32)
+            return np.ones((len(texts), 768), dtype=np.float32)
     model = _Recorder()
     await PgVectorSearch(db, model).search("p1", "anything", top_k=5)
     assert model.thread is not threading.main_thread()

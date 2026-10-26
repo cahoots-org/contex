@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 from sqlalchemy import text
 
 from src.core.database import DatabaseManager, run_migrations_to_head
+from src.core import embedder
 from src.core.embedder import OnnxEmbedder
 from src.core.notifier import Notifier, listen_connect_kwargs
 from src.core.semantic_matcher import _MODEL_CACHE
@@ -22,13 +23,15 @@ if TEST_DATABASE_URL:
 
 @pytest.fixture(autouse=True)
 def _evict_mock_models():
-    """Drop mocked embedders from the process-wide model cache after each test.
+    """Drop mocked embedders from the process-wide model cache, and all cached
+    query vectors, after each test.
 
     Fixtures that patch OnnxEmbedder still go through _load_model, which caches
     the mock under the real model name; real-embedding tests then rank random
     vectors.
     """
     yield
+    embedder._query_vecs.clear()
     for name, model in list(_MODEL_CACHE.items()):
         if not isinstance(model, OnnxEmbedder):
             del _MODEL_CACHE[name]
