@@ -1,5 +1,5 @@
-"""Periodic sweep: purges expired subscriptions, then reconciles the rest to catch
-matches the publish-time filter misses."""
+"""Periodic sweep: purges expired subscriptions and re-matches those that can have
+changed with no publish-time reconcile to catch it."""
 from __future__ import annotations
 
 import asyncio
@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 _LOCK_KEY = 0x636F6E746578
 
 
-async def sweep_once(db, subscriptions, reconcile: bool = True) -> bool:
-    """Purge expired subscriptions and, if `reconcile`, reconcile every project with
-    subscriptions. False if another replica holds the sweep."""
+async def sweep_once(db, subscriptions, reconcile: bool = True, full: bool = False) -> bool:
+    """Purge expired subscriptions and, if `reconcile`, sweep every project with
+    subscriptions; `full` re-matches all of them. False if another replica holds the sweep."""
     async with db.session() as lock_session:
         if not await lock_session.scalar(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}):
             return False
@@ -28,7 +28,10 @@ async def sweep_once(db, subscriptions, reconcile: bool = True) -> bool:
             )).scalars().all()
             for project_id in projects:
                 try:
-                    await subscriptions.reconcile_project(project_id)
+                    if full:
+                        await subscriptions.reconcile_project(project_id)
+                    else:
+                        await subscriptions.sweep_project(project_id)
                 except Exception:
                     logger.exception("sweep reconcile failed for %s", project_id)
         purged = (await lock_session.execute(

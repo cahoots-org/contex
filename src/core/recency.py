@@ -25,11 +25,16 @@ def window_start(since: Optional[datetime], max_age_seconds: Optional[int]) -> O
     return start if since is None else max(since, start)
 
 
+def freshness():
+    """When a node's content last changed, as a SQL expression."""
+    return func.coalesce(Embedding.published_at, Embedding.updated_at, Embedding.created_at)
+
+
 def recency_filter(since: Optional[datetime]):
     """Return a SQLAlchemy predicate for ``since``, or None when unbounded."""
     if since is None:
         return None
-    return func.coalesce(Embedding.published_at, Embedding.updated_at, Embedding.created_at) >= since
+    return freshness() >= since
 
 
 def recency_sql_clause(since: Optional[datetime]) -> str:

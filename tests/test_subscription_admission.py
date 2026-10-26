@@ -100,6 +100,15 @@ async def test_node_below_floor_admits_nothing_and_reconcile_skips(db):
 
 
 @pytest.mark.asyncio
+async def test_node_a_rounding_error_below_the_floor_still_admits(db):
+    svc = _svc(db, {"axis0": [_m("d1", 0.9), _m("d2", 0.8)]})
+    sub = await svc.create("p1", ["axis0"], top_k=2)
+    await _node(db, "p1", "new", _blend(0, 2, 0.8 - 5e-7))
+
+    assert await svc._ids_admitting("p1", {"new"}) == {sub}
+
+
+@pytest.mark.asyncio
 async def test_keys_without_nodes_or_subscriptions_admit_nothing(db):
     svc = _svc(db, {})
     assert await svc._ids_admitting("p1", {"binary.pdf"}) == set()

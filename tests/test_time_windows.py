@@ -1,4 +1,5 @@
 """Sliding time windows (max_age_seconds) and caller-supplied publish times."""
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -67,7 +68,31 @@ async def test_non_positive_max_age_is_rejected(db):
 
 
 @pytest.mark.asyncio
-async def test_windowed_subscription_ages_items_out_on_the_sweep(db):
+async def test_idle_sweep_neither_matches_nor_encodes(db, monkeypatch):
+    engine = await _engine(db)
+    await _publish(engine, "w", "fresh")
+    server, _ = build_mcp_server(engine)
+    await _call(server, "contex_create_subscription", {
+        "project_id": "w", "needs": ["payments api"], "top_k": 10, "threshold": 0.0, "max_age_seconds": 3600,
+    })
+    await _call(server, "contex_create_subscription", {"project_id": "w", "needs": ["refunds"], "threshold": 0.0})
+    matcher = engine.semantic_matcher
+    calls = []
+    monkeypatch.setattr(matcher.model, "encode", lambda *a, **k: calls.append("encode"))
+    real_match = matcher.match_agent_needs
+
+    async def match(*a, **k):
+        calls.append("match")
+        return await real_match(*a, **k)
+    monkeypatch.setattr(matcher, "match_agent_needs", match)
+
+    await sweep_once(db, engine.subscriptions)
+
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_windowed_subscription_ages_items_out_on_the_sweep(db, notifier):
     engine = await _engine(db)
     await _publish(engine, "w", "fresh", "stale")
     await _age(db, "stale", timedelta(hours=2))
@@ -82,8 +107,10 @@ async def test_windowed_subscription_ages_items_out_on_the_sweep(db):
 
     # No publish happens; time passing alone must drop the item.
     await _age(db, "fresh", timedelta(hours=2))
+    queue = notifier.listen(sub_id)
     await sweep_once(db, engine.subscriptions)
 
+    assert await asyncio.wait_for(queue.get(), 2.0) == sub_id
     bundle = await engine.subscriptions.get_bundle(sub_id)
     assert bundle["payments api"] == []
 

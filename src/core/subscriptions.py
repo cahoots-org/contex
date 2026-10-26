@@ -10,8 +10,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
-from sqlalchemy import delete, func, select, text, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Text, any_, delete, func, literal, select, text, update
+from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.db_models import Embedding, Subscription, Symbol
@@ -20,7 +20,7 @@ from src.core.limits import MAX_BATCH_SIZE, MAX_SUBSCRIPTIONS_PER_PROJECT, check
 from src.core.tenant import DEFAULT_TENANT_ID
 from src.core.authz import auth_enabled
 from src.core.notifier import SUBSCRIPTION_UPDATED
-from src.core.recency import window_start
+from src.core.recency import freshness, window_start
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,9 @@ SUBSCRIPTION_TTL_SECONDS = positive_int_env("SUBSCRIPTION_TTL_SECONDS", 3600)
 # Reconciles running at once. Each holds up to two pooled connections, so keep
 # this well under the pool size or reconciles starve requests.
 RECONCILE_CONCURRENCY = positive_int_env("RECONCILE_CONCURRENCY", 2)
+
+# Slack for float32 numpy vs pgvector rounding, so a node at the floor is never missed.
+_FLOOR_TOLERANCE = 1e-6
 
 # Per (subscription, need): documents held and the weakest one's similarity.
 _FLOORS_SQL = text("""
@@ -83,6 +86,11 @@ def _expired(row) -> bool:
     return row.expires_at <= datetime.now(timezone.utc)
 
 
+def _bundled_nodes(bundle) -> set[str]:
+    """Node keys of every match and its related nodes in a bundle."""
+    return {n["data_key"] for ms in bundle.values() for m in ms for n in (m, *m.get("related", ()))}
+
+
 def _bundle_documents(bundle) -> list[str]:
     """Sorted document keys of every match and link in a bundle."""
     docs = set()
@@ -104,6 +112,8 @@ class SubscriptionService:
         self.encoder = encoder
         self.default_threshold = default_threshold
         self.default_top_k = default_top_k
+        # Projects a publish-time reconcile failed in; the next sweep re-matches them in full.
+        self._missed: set[str] = set()
         self._project_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._reconcile_slots = asyncio.Semaphore(reconcile_concurrency)
 
@@ -218,8 +228,24 @@ class SubscriptionService:
         """
         if changed_keys is not None and len(changed_keys) > MAX_BATCH_SIZE:
             changed_keys = None
+        try:
+            async with self._reconcile_slots, self._project_lock(project_id):
+                return await self._reconcile_locked(project_id, changed_keys)
+        except Exception:
+            self._missed.add(project_id)
+            raise
+
+    async def sweep_project(self, project_id) -> list[str]:
+        """Re-match subscriptions whose time window has passed a bundled node, or every
+        one in a project whose publish-time reconcile failed.
+
+        Hybrid search can admit a node the publish-time filter rejects, so under it
+        every subscription is re-matched.
+        """
+        if project_id in self._missed or getattr(self.matcher, "hybrid_search", None):
+            return await self.reconcile_project(project_id)
         async with self._reconcile_slots, self._project_lock(project_id):
-            return await self._reconcile_locked(project_id, changed_keys)
+            return await self._reconcile_locked(project_id, None, aged_only=True)
 
     @asynccontextmanager
     async def _project_lock(self, project_id):
@@ -236,7 +262,9 @@ class SubscriptionService:
             )
             yield
 
-    async def _reconcile_locked(self, project_id, changed_keys) -> list[str]:
+    async def _reconcile_locked(self, project_id, changed_keys, aged_only=False) -> list[str]:
+        if changed_keys is None and not aged_only:
+            self._missed.discard(project_id)
         affected = None
         if changed_keys is not None:
             try:
@@ -255,6 +283,8 @@ class SubscriptionService:
             stmt = stmt.where(Subscription.subscription_id.in_(affected))
         async with self.db.session() as session:
             subs = (await session.execute(stmt)).scalars().all()
+        if aged_only:
+            subs = await self._aged(project_id, subs)
 
         changed_ids: list[str] = []
         for sub in subs:
@@ -278,8 +308,27 @@ class SubscriptionService:
                 changed_ids.append(sub.subscription_id)
             except Exception:
                 logger.exception("reconcile failed for subscription %s", sub.subscription_id)
+                self._missed.add(project_id)
                 continue
         return changed_ids
+
+    async def _aged(self, project_id, subs) -> list:
+        """Windowed subscriptions with a bundled node now older than the window, or gone."""
+        starts = {s.subscription_id: _since_from_scope(s.scope) for s in subs}
+        nodes = {s.subscription_id: _bundled_nodes(s.bundle) for s in subs if starts[s.subscription_id] is not None}
+        keys = set().union(*nodes.values())
+        if not keys:
+            return []
+        async with self.db.session() as session:
+            fresh = dict((await session.execute(
+                select(Embedding.node_key, freshness())
+                .where(Embedding.project_id == project_id)
+                .where(Embedding.node_key == any_(literal(list(keys), ARRAY(Text))))
+            )).all())
+        return [
+            s for s in subs
+            if any(fresh.get(k) is None or fresh[k] < starts[s.subscription_id] for k in nodes.get(s.subscription_id, ()))
+        ]
 
     async def _ids_including(self, project_id, keys) -> set[str]:
         """Subscriptions whose bundle already touches a changed document."""
@@ -341,7 +390,7 @@ class SubscriptionService:
             return set()
         need_vecs = await self._need_vectors([need for _, need, _ in floors])
         best = (np.stack(nodes) @ need_vecs.T).max(axis=0)
-        return {sub for (sub, _, floor), score in zip(floors, best) if score >= floor}
+        return {sub for (sub, _, floor), score in zip(floors, best) if score >= floor - _FLOOR_TOLERANCE}
 
     async def _affected(self, project_id, keys) -> set[str] | None:
         """Subscriptions a publish of ``keys`` can change; None means all of them."""
