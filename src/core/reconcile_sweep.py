@@ -46,10 +46,14 @@ async def sweep_once(db, subscriptions, reconcile: bool = True, full: bool = Fal
 
 
 async def run_sweep(db, subscriptions, interval: float, reconcile: bool = True) -> None:
-    """Sweep every `interval` seconds until cancelled."""
+    """Sweep every `interval` seconds until cancelled.
+
+    The first sweep is full: a restart loses publish-time reconciles still in flight."""
+    full = True
     while True:
         await asyncio.sleep(interval)
         try:
-            await sweep_once(db, subscriptions, reconcile)
+            if await sweep_once(db, subscriptions, reconcile, full):
+                full = False
         except Exception:
             logger.exception("reconcile sweep failed")

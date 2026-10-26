@@ -6,7 +6,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import OperationalError
 
 from src.core.db_models import Embedding, Subscription
-from src.core.reconcile_sweep import sweep_once
+from src.core.reconcile_sweep import run_sweep, sweep_once
 from src.core.subscriptions import SubscriptionService
 
 WINDOW = {"max_age_seconds": 3600}
@@ -249,3 +249,19 @@ async def test_sweep_rematches_everything_under_hybrid_search(db):
 
     assert m.calls == [("a",)]
 
+
+@pytest.mark.asyncio
+async def test_first_sweep_after_start_is_full(db):
+    m = _Matcher()
+    svc = SubscriptionService(db, m)
+    await _node(db, "p1", "a.k")
+    await svc.create("p1", ["a"])
+    m.calls.clear()
+
+    task = asyncio.create_task(run_sweep(db, svc, interval=0.05))
+    await asyncio.sleep(0.5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert m.calls == [("a",)]
