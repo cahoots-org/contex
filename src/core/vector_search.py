@@ -6,7 +6,7 @@ from typing import Collection, Optional
 
 from sqlalchemy import select, text
 from src.core.db_models import Embedding
-from src.core.embedder import encode_async
+from src.core.embedder import encode_queries
 from src.core.recency import recency_filter
 
 
@@ -45,7 +45,7 @@ class PgVectorSearch:
         self, project_id: str, query: str, top_k: int,
         since: Optional[datetime] = None, exclude_documents: Collection[str] = (),
     ) -> list[tuple[str, float]]:
-        query_vec = (await encode_async(self.model, query)).tolist()
+        query_vec = (await encode_queries(self.model, [query]))[0].tolist()
         distance = Embedding.embedding.cosine_distance(query_vec)
         recency = recency_filter(since)
         stmt = (
@@ -72,7 +72,7 @@ class PgVectorSearch:
         """Cosine similarity for specific node_keys (keys without an embedding are omitted)."""
         if not node_keys:
             return {}
-        query_vec = (await encode_async(self.model, query)).tolist()
+        query_vec = (await encode_queries(self.model, [query]))[0].tolist()
         stmt = (
             select(
                 Embedding.node_key,

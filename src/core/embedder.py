@@ -6,6 +6,7 @@ models (e.g. thenlper/gte-base) without pulling in torch.
 """
 
 import asyncio
+from collections import OrderedDict
 from typing import List, Union
 
 import numpy as np
@@ -17,10 +18,29 @@ from src.core.limits import MAX_EMBED_CHARS, MAX_SEQ_LENGTH
 
 ONNX_FILE = "onnx/model.onnx"
 
+# Query vectors kept per process, ~3KB each at 768 dims.
+QUERY_CACHE_SIZE = 4096
+_query_vecs: OrderedDict[tuple, np.ndarray] = OrderedDict()
+
 
 async def encode_async(model, texts, **kwargs):
     """Run ``model.encode`` in a worker thread so inference never blocks the event loop."""
     return await asyncio.to_thread(model.encode, texts, **kwargs)
+
+
+async def encode_queries(model, texts: List[str]) -> List[np.ndarray]:
+    """Embed query texts, reusing vectors cached per (model, text) in a bounded LRU."""
+    found = {t: _query_vecs[(model, t)] for t in set(texts) if (model, t) in _query_vecs}
+    missing = sorted(set(texts) - found.keys())
+    if missing:
+        # Copies, so a cached row doesn't keep its whole batch alive.
+        found.update((t, v.copy()) for t, v in zip(missing, await encode_async(model, missing)))
+    for t, vec in found.items():
+        _query_vecs[(model, t)] = vec
+        _query_vecs.move_to_end((model, t))
+    while len(_query_vecs) > QUERY_CACHE_SIZE:
+        _query_vecs.popitem(last=False)
+    return [found[t] for t in texts]
 
 
 class OnnxEmbedder:
